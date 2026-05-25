@@ -21,21 +21,30 @@ export async function getItems() {
 export async function getItemsWithStock() {
   const supabase = await createClient();
 
-  const { data: items, error: itemsErr } = await supabase
-    .from("items")
-    .select(`
-      *,
-      category:item_categories(id, name),
-      uom:units_of_measurement(id, abbreviation),
-      inventory(quantity, warehouse_id)
-    `)
-    .eq("is_active", true)
-    .order("code")
-    .limit(5000);
+  const PAGE = 1000;
+  let allItems: any[] = [];
+  let offset = 0;
 
-  if (itemsErr) throw itemsErr;
+  while (true) {
+    const { data, error } = await supabase
+      .from("items")
+      .select(`
+        *,
+        category:item_categories(id, name),
+        uom:units_of_measurement(id, abbreviation),
+        inventory(quantity, warehouse_id)
+      `)
+      .eq("is_active", true)
+      .order("code")
+      .range(offset, offset + PAGE - 1);
 
-  return (items ?? []).map((item) => ({
+    if (error) throw error;
+    allItems = allItems.concat(data ?? []);
+    if (!data || data.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return allItems.map((item) => ({
     id: item.id as string,
     code: item.code as string,
     name: item.name as string,
