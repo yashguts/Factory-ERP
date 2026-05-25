@@ -24,6 +24,7 @@ export interface Item {
   code: string;
   name: string;
   description: string | null;
+  lookup_key: string | null;
   item_type: ItemType;
   category_id: string | null;
   uom_id: string;

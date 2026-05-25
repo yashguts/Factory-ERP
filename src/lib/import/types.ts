@@ -4,6 +4,7 @@ export interface ParsedRow {
   code: string;
   name: string;
   description: string;
+  lookup_key: string;
   item_type: ItemType;
   category_name: string;
   sub_category_name: string;

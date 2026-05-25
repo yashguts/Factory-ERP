@@ -152,10 +152,11 @@ export function parseDoorPanels(rows: string[][]): ParsedRow[] {
   let currentPart: "landing" | "car" = "landing";
 
   for (const row of rows) {
-    const colA = (row[0] || "").trim();
-    const colB = (row[1] || "").trim();
-    const colC = (row[2] || "").trim();
-    const colG = (row[6] || "").trim();
+    const colA = String(row[0] ?? "").trim();
+    const colB = String(row[1] ?? "").trim();
+    const colC = String(row[2] ?? "").trim();
+    const colD = String(row[3] ?? "").trim();
+    const colG = String(row[6] ?? "").trim();
 
     if (colA && !colB) {
       currentPart = parseSectionPart(colA);
@@ -171,13 +172,17 @@ export function parseDoorPanels(rows: string[][]): ParsedRow[] {
 
     if (!parsed.doorType && !parsed.panelType) continue;
 
-    const part = colB.toLowerCase().includes("car") ? "car" as const : currentPart;
+    const colBLower = colB.toLowerCase();
+    const part = colBLower.includes("car") ? "car" as const
+      : colBLower.includes("landing") ? "landing" as const
+      : currentPart;
     const code = generateCode(parsed, part);
 
     results.push({
       code,
       name: colB,
       description: spec,
+      lookup_key: colD || `${colB} ${spec}`,
       item_type: "sub_assembly",
       category_name: "Doors",
       sub_category_name: "Door Panels",

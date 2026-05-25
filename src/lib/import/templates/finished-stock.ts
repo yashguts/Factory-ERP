@@ -54,11 +54,12 @@ export function parseFinishedStock(rows: string[][]): ParsedRow[] {
   const sequenceCounters: Record<string, number> = {};
 
   for (const row of rows) {
-    const colA = (row[0] || "").trim();
-    const colB = (row[1] || "").trim();
-    const colC = (row[2] || "").trim();
-    const colG = (row[6] || "").trim();
-    const colL = (row[11] || "").trim();
+    const colA = String(row[0] ?? "").trim();
+    const colB = String(row[1] ?? "").trim();
+    const colC = String(row[2] ?? "").trim();
+    const colD = String(row[3] ?? "").trim();
+    const colG = String(row[6] ?? "").trim();
+    const colL = String(row[11] ?? "").trim();
 
     if (colA && !colB) {
       const detected = detectCategory(colA);
@@ -67,6 +68,7 @@ export function parseFinishedStock(rows: string[][]): ParsedRow[] {
     }
 
     if (!colB) continue;
+    if (colB.toLowerCase() === "name") continue;
 
     const name = colB;
     const spec = colC;
@@ -87,6 +89,7 @@ export function parseFinishedStock(rows: string[][]): ParsedRow[] {
       code,
       name,
       description,
+      lookup_key: colD || `${name} ${spec}`.trim(),
       item_type: itemType,
       category_name: cat.category,
       sub_category_name: cat.subCategory,

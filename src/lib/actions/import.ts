@@ -82,6 +82,7 @@ export async function executeImport(
           code: row.code,
           name: row.name,
           description: row.description || null,
+          lookup_key: (row as any).lookup_key || null,
           item_type: row.item_type,
           category_id: categoryId,
           uom_id: nosUnit.id,
