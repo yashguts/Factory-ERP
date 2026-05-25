@@ -1,19 +1,37 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import type { Item, ItemType } from "@/lib/supabase/types";
+import { createItem, updateItem } from "@/lib/actions/inventory";
+import type { ItemType, ItemCategory, UnitOfMeasurement } from "@/lib/supabase/types";
 
 interface ItemFormModalProps {
-  item?: (Item & { uom_abbr?: string; category_name?: string }) | null;
+  item?: {
+    id: string;
+    code: string;
+    name: string;
+    description: string | null;
+    item_type: ItemType;
+    category_id: string | null;
+    uom_id: string;
+    minimum_stock: number;
+    reorder_point: number;
+    lead_time_days: number;
+    cost_price: number;
+  } | null;
+  categories: ItemCategory[];
+  units: UnitOfMeasurement[];
   onClose: () => void;
+  onSaved: () => void;
 }
 
-export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
+export function ItemFormModal({ item, categories, units, onClose, onSaved }: ItemFormModalProps) {
   const isEditing = !!item;
+  const [isPending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
 
   const [form, setForm] = useState({
     code: item?.code ?? "",
@@ -22,22 +40,46 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
     item_type: item?.item_type ?? ("raw_material" as ItemType),
     category_id: item?.category_id ?? "",
     uom_id: item?.uom_id ?? "",
-    minimum_stock: item?.minimum_stock ?? 0,
-    reorder_point: item?.reorder_point ?? 0,
-    lead_time_days: item?.lead_time_days ?? 0,
-    cost_price: item?.cost_price ?? 0,
+    minimum_stock: Number(item?.minimum_stock ?? 0),
+    reorder_point: Number(item?.reorder_point ?? 0),
+    lead_time_days: Number(item?.lead_time_days ?? 0),
+    cost_price: Number(item?.cost_price ?? 0),
   });
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // TODO: Save to Supabase
-    console.log("Save item:", form);
-    onClose();
+    setError(null);
+
+    startTransition(async () => {
+      try {
+        if (isEditing && item) {
+          await updateItem(item.id, {
+            ...form,
+            category_id: form.category_id || null,
+          });
+        } else {
+          await createItem({
+            ...form,
+            category_id: form.category_id || undefined,
+          });
+        }
+        onSaved();
+        onClose();
+      } catch (err) {
+        setError(err instanceof Error ? err.message : "Failed to save item");
+      }
+    });
   };
 
   return (
     <Modal title={isEditing ? "Edit Item" : "Add New Item"} onClose={onClose} className="max-w-2xl">
       <form onSubmit={handleSubmit} className="space-y-4">
+        {error && (
+          <div className="p-3 text-sm bg-red-50 text-red-700 rounded-md border border-red-200">
+            {error}
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Item Code</label>
@@ -87,13 +129,10 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
               value={form.category_id}
               onChange={(e) => setForm({ ...form, category_id: e.target.value })}
             >
-              <option value="">Select category</option>
-              <option value="1">Mechanical</option>
-              <option value="2">Electrical</option>
-              <option value="3">Structural</option>
-              <option value="4">Cabin & Interiors</option>
-              <option value="5">Safety</option>
-              <option value="6">Doors</option>
+              <option value="">No category</option>
+              {categories.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
             </Select>
           </div>
           <div>
@@ -104,16 +143,9 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
               required
             >
               <option value="">Select UOM</option>
-              <option value="1">Pieces (pcs)</option>
-              <option value="2">Numbers (nos)</option>
-              <option value="3">Meters (m)</option>
-              <option value="4">Millimeters (mm)</option>
-              <option value="5">Feet (ft)</option>
-              <option value="6">Kilograms (kg)</option>
-              <option value="7">Grams (g)</option>
-              <option value="8">Square Meters (sqm)</option>
-              <option value="9">Liters (L)</option>
-              <option value="10">Sets (set)</option>
+              {units.map((u) => (
+                <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
+              ))}
             </Select>
           </div>
         </div>
@@ -126,6 +158,7 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
               value={form.minimum_stock}
               onChange={(e) => setForm({ ...form, minimum_stock: Number(e.target.value) })}
               min={0}
+              step="0.001"
             />
           </div>
           <div>
@@ -135,6 +168,7 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
               value={form.reorder_point}
               onChange={(e) => setForm({ ...form, reorder_point: Number(e.target.value) })}
               min={0}
+              step="0.001"
             />
           </div>
           <div>
@@ -153,6 +187,7 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
               value={form.cost_price}
               onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })}
               min={0}
+              step="0.01"
             />
           </div>
         </div>
@@ -161,7 +196,9 @@ export function ItemFormModal({ item, onClose }: ItemFormModalProps) {
           <Button type="button" variant="secondary" onClick={onClose}>
             Cancel
           </Button>
-          <Button type="submit">{isEditing ? "Update Item" : "Create Item"}</Button>
+          <Button type="submit" disabled={isPending}>
+            {isPending ? "Saving..." : isEditing ? "Update Item" : "Create Item"}
+          </Button>
         </div>
       </form>
     </Modal>
