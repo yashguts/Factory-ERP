@@ -30,7 +30,8 @@ export async function getItemsWithStock() {
       inventory(quantity, warehouse_id)
     `)
     .eq("is_active", true)
-    .order("code");
+    .order("code")
+    .limit(5000);
 
   if (itemsErr) throw itemsErr;
 
