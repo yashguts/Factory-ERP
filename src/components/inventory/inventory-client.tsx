@@ -17,6 +17,7 @@ interface ItemWithStock {
   id: string;
   code: string;
   name: string;
+  lookup_key: string | null;
   description: string | null;
   item_type: ItemType;
   category_id: string | null;
@@ -102,7 +103,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
       if (search) {
         const q = search.toLowerCase();
         const matchesSearch =
-          item.name.toLowerCase().includes(q) ||
+          (item.lookup_key || item.name).toLowerCase().includes(q) ||
           item.code.toLowerCase().includes(q) ||
           (item.description?.toLowerCase().includes(q) ?? false);
         if (!matchesSearch) return false;
@@ -144,7 +145,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           cmp = a.code.localeCompare(b.code);
           break;
         case "name":
-          cmp = a.name.localeCompare(b.name);
+          cmp = (a.lookup_key || a.name).localeCompare(b.lookup_key || b.name);
           break;
         case "stock":
           cmp = a.total_stock - b.total_stock;
@@ -313,7 +314,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                   >
                     <TableCell className="font-mono text-xs">{item.code}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{item.name}</div>
+                      <div className="font-medium">{item.lookup_key || item.name}</div>
                       {item.description && (
                         <div className="text-xs text-[var(--muted-foreground)] truncate max-w-[300px]">
                           {item.description}

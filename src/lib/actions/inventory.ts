@@ -48,6 +48,7 @@ export async function getItemsWithStock() {
     id: item.id as string,
     code: item.code as string,
     name: item.name as string,
+    lookup_key: item.lookup_key as string | null,
     description: item.description as string | null,
     item_type: item.item_type as ItemType,
     category_id: item.category_id as string | null,
