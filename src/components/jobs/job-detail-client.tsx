@@ -8,8 +8,10 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { ArrowLeft, Search, ArrowUpDown } from "lucide-react";
+import { ArrowLeft, Search, ArrowUpDown, Pencil } from "lucide-react";
 import { updateJob } from "@/lib/actions/jobs";
+import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
+import { shouldRenderSection } from "@/lib/bom/section-gating";
 import type { Job, JobStatus } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -30,12 +32,15 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 interface BomLineWithItem {
   id: string;
-  item_id: string;
+  item_id: string | null;
   required_quantity: number;
   issued_quantity: number;
   wastage_percent: number;
   sort_order: number;
   source_col_index: number | null;
+  category: string | null;
+  variant: string | null;
+  value_text: string | null;
   item: {
     id: string;
     code: string;
@@ -48,21 +53,34 @@ interface BomLineWithItem {
   } | null;
 }
 
+interface BomSectionLine {
+  category: string;
+  variant: string;
+  value_text: string | null;
+  required_quantity: number;
+}
+
 interface Props {
   job: Job;
   bomLines: BomLineWithItem[];
   bomHeaderId: string | null;
+  bomSectionLines: BomSectionLine[];
 }
 
 type SortKey = "code" | "name" | "category" | "required" | "issued";
 type SortDir = "asc" | "desc";
+type ViewTab = "sections" | "items";
 
-export function JobDetailClient({ job, bomLines, bomHeaderId }: Props) {
+export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [bomSearch, setBomSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
+
+  const hasItemBom = bomLines.some((l) => l.item_id != null);
+  const hasSectionBom = bomSectionLines.length > 0;
+  const [viewTab, setViewTab] = useState<ViewTab>(hasSectionBom ? "sections" : "items");
 
   const pct = Math.round((job.progress ?? 0) * 100);
 
@@ -73,10 +91,71 @@ export function JobDetailClient({ job, bomLines, bomHeaderId }: Props) {
     });
   };
 
+  // Section-based BOM grouped by phase → category
+  const sectionData = useMemo(() => {
+    const lookup = new Map<string, BomSectionLine>();
+    for (const l of bomSectionLines) {
+      lookup.set(`${l.category}::${l.variant}`, l);
+    }
+
+    const phases: Array<{
+      phase: string;
+      sections: Array<{
+        category: string;
+        lines: Array<{ variant: string; value: string }>;
+      }>;
+    }> = [];
+
+    for (const phase of PHASE_ORDER) {
+      const sections = BOM_SECTIONS.filter(
+        (s) =>
+          s.phase === phase &&
+          shouldRenderSection(s, job.door_type, job.drive_type),
+      );
+
+      const filledSections = sections
+        .map((sec) => {
+          const lines = sec.leaves
+            .map((leaf) => {
+              const line = lookup.get(`${sec.category}::${leaf.variant}`);
+              if (!line) return null;
+              const display =
+                leaf.kind === "number"
+                  ? line.required_quantity
+                    ? `${Number(line.required_quantity).toLocaleString()}${leaf.unit ? ` ${leaf.unit}` : ""}`
+                    : ""
+                  : line.value_text ?? "";
+              if (!display) return null;
+              return { variant: leaf.variant, value: display };
+            })
+            .filter(Boolean) as Array<{ variant: string; value: string }>;
+
+          if (lines.length === 0) return null;
+          return { category: sec.category, lines };
+        })
+        .filter(Boolean) as Array<{
+        category: string;
+        lines: Array<{ variant: string; value: string }>;
+      }>;
+
+      if (filledSections.length > 0) {
+        phases.push({ phase, sections: filledSections });
+      }
+    }
+
+    return phases;
+  }, [bomSectionLines, job.door_type, job.drive_type]);
+
+  // Item-based BOM filtering/sorting
+  const itemBomLines = useMemo(
+    () => bomLines.filter((l) => l.item_id != null),
+    [bomLines],
+  );
+
   const filteredBom = useMemo(() => {
-    if (!bomSearch) return bomLines;
+    if (!bomSearch) return itemBomLines;
     const q = bomSearch.toLowerCase();
-    return bomLines.filter((line) => {
+    return itemBomLines.filter((line) => {
       const item = line.item;
       if (!item) return false;
       return (
@@ -85,7 +164,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId }: Props) {
         (item.category?.name?.toLowerCase().includes(q) ?? false)
       );
     });
-  }, [bomLines, bomSearch]);
+  }, [itemBomLines, bomSearch]);
 
   const sortedBom = useMemo(() => {
     const copy = [...filteredBom];
@@ -160,6 +239,14 @@ export function JobDetailClient({ job, bomLines, bomHeaderId }: Props) {
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push(`/jobs/${job.id}/edit`)}
+            >
+              <Pencil className="h-4 w-4 mr-1" />
+              Edit BOM
+            </Button>
             <Select
               value={job.status}
               onChange={(e) => handleStatusChange(e.target.value as JobStatus)}
@@ -231,66 +318,140 @@ export function JobDetailClient({ job, bomLines, bomHeaderId }: Props) {
         <div className="flex items-center justify-between mb-4">
           <div>
             <h2 className="text-lg font-semibold">Bill of Materials</h2>
-            <p className="text-sm text-[var(--muted-foreground)]">
-              {bomLines.length} items{filteredBom.length !== bomLines.length ? ` (${filteredBom.length} shown)` : ""}
-            </p>
+            {(hasSectionBom && hasItemBom) && (
+              <div className="flex gap-1 mt-2">
+                <button
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    viewTab === "sections"
+                      ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                  onClick={() => setViewTab("sections")}
+                >
+                  By Section ({bomSectionLines.length})
+                </button>
+                <button
+                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                    viewTab === "items"
+                      ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                  }`}
+                  onClick={() => setViewTab("items")}
+                >
+                  By Item ({itemBomLines.length})
+                </button>
+              </div>
+            )}
           </div>
-          <div className="relative w-64">
-            <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-            <Input
-              placeholder="Search BOM items..."
-              value={bomSearch}
-              onChange={(e) => setBomSearch(e.target.value)}
-              className="pl-9"
-            />
-          </div>
+          {viewTab === "items" && hasItemBom && (
+            <div className="relative w-64">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <Input
+                placeholder="Search BOM items..."
+                value={bomSearch}
+                onChange={(e) => setBomSearch(e.target.value)}
+                className="pl-9"
+              />
+            </div>
+          )}
         </div>
 
-        {sortedBom.length === 0 ? (
-          <div className="border border-[var(--border)] rounded-lg p-8 text-center">
-            <p className="text-[var(--muted-foreground)]">
-              {bomLines.length === 0
-                ? "No BOM data yet. Import from Excel to populate."
-                : "No BOM items match your search."}
-            </p>
-          </div>
-        ) : (
-          <div className="border border-[var(--border)] rounded-lg">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <SortHeader label="Code" sortField="code" />
-                  <SortHeader label="Item" sortField="name" />
-                  <SortHeader label="Category" sortField="category" />
-                  <SortHeader label="Required" sortField="required" />
-                  <SortHeader label="Issued" sortField="issued" />
-                  <TableHead>Remaining</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {sortedBom.map((line) => {
-                  const remaining = line.required_quantity - line.issued_quantity;
-                  return (
-                    <TableRow key={line.id}>
-                      <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
-                      <TableCell className="font-medium text-sm">{line.item?.name ?? "-"}</TableCell>
-                      <TableCell className="text-sm">{line.item?.category?.name ?? "-"}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        {Number(line.required_quantity).toLocaleString()}{" "}
-                        <span className="text-xs text-[var(--muted-foreground)]">{line.item?.uom?.abbreviation}</span>
-                      </TableCell>
-                      <TableCell className="text-right text-sm">{Number(line.issued_quantity).toLocaleString()}</TableCell>
-                      <TableCell className="text-right font-medium">
-                        <span className={remaining > 0 ? "text-amber-600" : "text-green-600"}>
-                          {remaining > 0 ? remaining.toLocaleString() : "Done"}
-                        </span>
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-            </Table>
-          </div>
+        {/* Section View */}
+        {viewTab === "sections" && (
+          hasSectionBom ? (
+            <div className="space-y-6">
+              {sectionData.map((phase) => (
+                <div key={phase.phase}>
+                  <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
+                    {phase.phase}
+                  </h3>
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+                    {phase.sections.map((sec) => (
+                      <div
+                        key={sec.category}
+                        className="border border-[var(--border)] rounded-lg p-4"
+                      >
+                        <h4 className="font-medium text-sm mb-2">{sec.category}</h4>
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
+                          {sec.lines.map((line) => (
+                            <div key={line.variant} className="flex justify-between text-sm py-0.5">
+                              <span className="text-[var(--muted-foreground)] truncate mr-2">
+                                {line.variant}
+                              </span>
+                              <span className="font-medium whitespace-nowrap">
+                                {line.value}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="border border-[var(--border)] rounded-lg p-8 text-center">
+              <p className="text-[var(--muted-foreground)] mb-3">
+                No section-based BOM data yet.
+              </p>
+              <Button
+                variant="secondary"
+                onClick={() => router.push(`/jobs/${job.id}/edit`)}
+              >
+                <Pencil className="h-4 w-4 mr-1" />
+                Add BOM Data
+              </Button>
+            </div>
+          )
+        )}
+
+        {/* Item View */}
+        {viewTab === "items" && (
+          hasItemBom ? (
+            <div className="border border-[var(--border)] rounded-lg">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <SortHeader label="Code" sortField="code" />
+                    <SortHeader label="Item" sortField="name" />
+                    <SortHeader label="Category" sortField="category" />
+                    <SortHeader label="Required" sortField="required" />
+                    <SortHeader label="Issued" sortField="issued" />
+                    <TableHead>Remaining</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sortedBom.map((line) => {
+                    const remaining = line.required_quantity - line.issued_quantity;
+                    return (
+                      <TableRow key={line.id}>
+                        <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
+                        <TableCell className="font-medium text-sm">{line.item?.name ?? "-"}</TableCell>
+                        <TableCell className="text-sm">{line.item?.category?.name ?? "-"}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          {Number(line.required_quantity).toLocaleString()}{" "}
+                          <span className="text-xs text-[var(--muted-foreground)]">{line.item?.uom?.abbreviation}</span>
+                        </TableCell>
+                        <TableCell className="text-right text-sm">{Number(line.issued_quantity).toLocaleString()}</TableCell>
+                        <TableCell className="text-right font-medium">
+                          <span className={remaining > 0 ? "text-amber-600" : "text-green-600"}>
+                            {remaining > 0 ? remaining.toLocaleString() : "Done"}
+                          </span>
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          ) : (
+            <div className="border border-[var(--border)] rounded-lg p-8 text-center">
+              <p className="text-[var(--muted-foreground)]">
+                No item-based BOM data. Import from Excel to populate.
+              </p>
+            </div>
+          )
         )}
       </div>
     </div>

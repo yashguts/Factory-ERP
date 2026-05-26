@@ -144,6 +144,10 @@ export function JobsClient({ initialJobs }: Props) {
           </p>
         </div>
         <div className="flex gap-2">
+          <Button onClick={() => router.push("/jobs/new")}>
+            <Plus size={16} className="mr-2" />
+            New Job
+          </Button>
           <Button variant="secondary" onClick={() => router.push("/jobs/import")}>
             <Upload size={16} className="mr-2" />
             Import Excel

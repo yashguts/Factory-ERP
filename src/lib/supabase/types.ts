@@ -127,13 +127,16 @@ export interface JobBomHeader {
 export interface JobBomLine {
   id: string;
   job_bom_id: string;
-  item_id: string;
+  item_id: string | null;
   required_quantity: number;
   issued_quantity: number;
   wastage_percent: number;
   notes: string | null;
   sort_order: number;
   source_col_index: number | null;
+  category: string | null;
+  variant: string | null;
+  value_text: string | null;
   created_at: string;
 }
 

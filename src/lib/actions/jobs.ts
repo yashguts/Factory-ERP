@@ -3,6 +3,14 @@
 import { createClient } from "@/lib/supabase/server";
 import type { JobStatus } from "@/lib/supabase/types";
 
+export interface BomLineInput {
+  category: string;
+  variant: string;
+  value_text?: string | null;
+  required_quantity?: number;
+  item_id?: string | null;
+}
+
 export async function getJobs() {
   const supabase = await createClient();
 
@@ -94,6 +102,175 @@ export async function createJob(data: {
 
   if (error) throw error;
   return job;
+}
+
+export async function createJobWithBom(
+  jobData: {
+    job_number: string;
+    customer_name?: string;
+    description?: string;
+    status?: JobStatus;
+    spec_string?: string;
+    door_finish?: string;
+    location?: string;
+    brand?: string;
+    floors?: number;
+    door_type?: string;
+    drive_type?: string;
+    capacity?: string;
+    remark?: string;
+    order_date?: string;
+    expected_delivery?: string;
+  },
+  bomLines: BomLineInput[],
+) {
+  const supabase = await createClient();
+
+  const { data: job, error: jobErr } = await supabase
+    .from("jobs")
+    .insert(jobData)
+    .select()
+    .single();
+  if (jobErr) throw jobErr;
+
+  const { data: header, error: hdrErr } = await supabase
+    .from("job_bom_headers")
+    .insert({ job_id: job.id, quantity: 1 })
+    .select("id")
+    .single();
+  if (hdrErr) throw hdrErr;
+
+  const nonEmpty = bomLines.filter(
+    (l) =>
+      (l.required_quantity != null && l.required_quantity !== 0) ||
+      (l.value_text != null && l.value_text !== ""),
+  );
+
+  if (nonEmpty.length > 0) {
+    const rows = nonEmpty.map((l, i) => ({
+      job_bom_id: header.id,
+      category: l.category,
+      variant: l.variant,
+      value_text: l.value_text ?? null,
+      required_quantity: l.required_quantity ?? 0,
+      item_id: l.item_id ?? null,
+      sort_order: i,
+    }));
+
+    const BATCH = 200;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error: lineErr } = await supabase
+        .from("job_bom_lines")
+        .insert(rows.slice(i, i + BATCH));
+      if (lineErr) throw lineErr;
+    }
+  }
+
+  return job;
+}
+
+export async function updateJobWithBom(
+  jobId: string,
+  jobData: {
+    customer_name?: string;
+    description?: string;
+    status?: JobStatus;
+    spec_string?: string;
+    door_finish?: string;
+    location?: string;
+    brand?: string;
+    floors?: number;
+    door_type?: string;
+    drive_type?: string;
+    capacity?: string;
+    remark?: string;
+    order_date?: string;
+    expected_delivery?: string;
+  },
+  bomLines: BomLineInput[],
+) {
+  const supabase = await createClient();
+
+  const { error: jobErr } = await supabase
+    .from("jobs")
+    .update(jobData)
+    .eq("id", jobId);
+  if (jobErr) throw jobErr;
+
+  let headerId: string;
+  const { data: existing } = await supabase
+    .from("job_bom_headers")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .single();
+
+  if (existing) {
+    headerId = existing.id;
+    // Delete old denormalized lines (category-based) — keep Excel-imported lines (source_col_index)
+    await supabase
+      .from("job_bom_lines")
+      .delete()
+      .eq("job_bom_id", headerId)
+      .not("category", "is", null);
+  } else {
+    const { data: header, error: hdrErr } = await supabase
+      .from("job_bom_headers")
+      .insert({ job_id: jobId, quantity: 1 })
+      .select("id")
+      .single();
+    if (hdrErr) throw hdrErr;
+    headerId = header.id;
+  }
+
+  const nonEmpty = bomLines.filter(
+    (l) =>
+      (l.required_quantity != null && l.required_quantity !== 0) ||
+      (l.value_text != null && l.value_text !== ""),
+  );
+
+  if (nonEmpty.length > 0) {
+    const rows = nonEmpty.map((l, i) => ({
+      job_bom_id: headerId,
+      category: l.category,
+      variant: l.variant,
+      value_text: l.value_text ?? null,
+      required_quantity: l.required_quantity ?? 0,
+      item_id: l.item_id ?? null,
+      sort_order: i,
+    }));
+
+    const BATCH = 200;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error: lineErr } = await supabase
+        .from("job_bom_lines")
+        .insert(rows.slice(i, i + BATCH));
+      if (lineErr) throw lineErr;
+    }
+  }
+}
+
+export async function getJobBomSections(jobId: string) {
+  const supabase = await createClient();
+
+  const { data: header } = await supabase
+    .from("job_bom_headers")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .single();
+
+  if (!header) return [];
+
+  const { data, error } = await supabase
+    .from("job_bom_lines")
+    .select("category, variant, value_text, required_quantity")
+    .eq("job_bom_id", header.id)
+    .not("category", "is", null)
+    .order("sort_order");
+
+  if (error) throw error;
+  return data ?? [];
 }
 
 export async function updateJob(
