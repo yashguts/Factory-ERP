@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useMemo, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -33,12 +33,68 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Build category hierarchy
+  const parentCategories = useMemo(
+    () => categories.filter((c) => c.parent_id === null).sort((a, b) => a.name.localeCompare(b.name)),
+    [categories]
+  );
+
+  const childrenByParent = useMemo(() => {
+    const map: Record<string, ItemCategory[]> = {};
+    for (const cat of categories) {
+      if (cat.parent_id) {
+        if (!map[cat.parent_id]) map[cat.parent_id] = [];
+        map[cat.parent_id].push(cat);
+      }
+    }
+    // Sort children alphabetically
+    for (const key of Object.keys(map)) {
+      map[key].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return map;
+  }, [categories]);
+
+  // Resolve initial parent + sub-category from item's category_id
+  const resolveInitialCategories = () => {
+    if (!item?.category_id) return { parentId: "", subId: "" };
+
+    const cat = categories.find((c) => c.id === item.category_id);
+    if (!cat) return { parentId: "", subId: "" };
+
+    // If it's a top-level category
+    if (cat.parent_id === null) return { parentId: cat.id, subId: "" };
+
+    // If it's a child, check if its parent is top-level
+    const parent = categories.find((c) => c.id === cat.parent_id);
+    if (parent && parent.parent_id === null) return { parentId: parent.id, subId: cat.id };
+
+    // It's a grandchild — find the grandparent
+    if (parent) {
+      const grandparent = categories.find((c) => c.id === parent.parent_id);
+      if (grandparent) return { parentId: grandparent.id, subId: parent.id };
+    }
+
+    return { parentId: "", subId: "" };
+  };
+
+  const initial = resolveInitialCategories();
+  const [parentCategoryId, setParentCategoryId] = useState(initial.parentId);
+  const [subCategoryId, setSubCategoryId] = useState(initial.subId);
+
+  // Sub-categories for the selected parent
+  const subCategories = useMemo(
+    () => (parentCategoryId ? childrenByParent[parentCategoryId] ?? [] : []),
+    [parentCategoryId, childrenByParent]
+  );
+
+  // The actual category_id to save: most specific selection
+  const resolvedCategoryId = subCategoryId || parentCategoryId || null;
+
   const [form, setForm] = useState({
     code: item?.code ?? "",
     name: item?.name ?? "",
     description: item?.description ?? "",
     item_type: item?.item_type ?? ("raw_material" as ItemType),
-    category_id: item?.category_id ?? "",
     uom_id: item?.uom_id ?? "",
     minimum_stock: Number(item?.minimum_stock ?? 0),
     reorder_point: Number(item?.reorder_point ?? 0),
@@ -52,15 +108,16 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
 
     startTransition(async () => {
       try {
+        const payload = {
+          ...form,
+          category_id: resolvedCategoryId,
+        };
         if (isEditing && item) {
-          await updateItem(item.id, {
-            ...form,
-            category_id: form.category_id || null,
-          });
+          await updateItem(item.id, payload);
         } else {
           await createItem({
-            ...form,
-            category_id: form.category_id || undefined,
+            ...payload,
+            category_id: payload.category_id || undefined,
           });
         }
         onSaved();
@@ -123,15 +180,37 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-3 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">Category</label>
             <Select
-              value={form.category_id}
-              onChange={(e) => setForm({ ...form, category_id: e.target.value })}
+              value={parentCategoryId}
+              onChange={(e) => {
+                setParentCategoryId(e.target.value);
+                setSubCategoryId("");
+              }}
             >
-              <option value="">No category</option>
-              {categories.map((cat) => (
+              <option value="">Select category</option>
+              {parentCategories.map((cat) => (
+                <option key={cat.id} value={cat.id}>{cat.name}</option>
+              ))}
+            </Select>
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Sub-Category</label>
+            <Select
+              value={subCategoryId}
+              onChange={(e) => setSubCategoryId(e.target.value)}
+              disabled={!parentCategoryId || subCategories.length === 0}
+            >
+              <option value="">
+                {!parentCategoryId
+                  ? "Select category first"
+                  : subCategories.length === 0
+                  ? "No sub-categories"
+                  : "Select sub-category"}
+              </option>
+              {subCategories.map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </Select>
