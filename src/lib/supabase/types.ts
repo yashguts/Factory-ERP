@@ -1,4 +1,4 @@
-export type ItemType = "raw_material" | "sub_assembly" | "finished_good";
+export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
 export type JobStatus = "draft" | "planned" | "in_progress" | "completed" | "cancelled";
 export type UomCategory = "quantity" | "length" | "weight" | "area" | "volume";

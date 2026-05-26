@@ -99,6 +99,7 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
               <option value="raw_material">Raw Material</option>
               <option value="sub_assembly">Sub Assembly</option>
               <option value="finished_good">Finished Good</option>
+              <option value="mechanical_finished_stock">Mechanical Finished Stock</option>
             </Select>
           </div>
         </div>
