@@ -98,6 +98,18 @@ export interface Job {
   actual_start: string | null;
   actual_end: string | null;
   notes: string | null;
+  spec_string: string | null;
+  door_finish: string | null;
+  location: string | null;
+  progress: number;
+  order_date: string | null;
+  expected_delivery: string | null;
+  brand: string | null;
+  floors: number | null;
+  door_type: string | null;
+  drive_type: string | null;
+  capacity: string | null;
+  remark: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -105,7 +117,7 @@ export interface Job {
 export interface JobBomHeader {
   id: string;
   job_id: string;
-  item_id: string;
+  item_id: string | null;
   source_bom_id: string | null;
   quantity: number;
   notes: string | null;
@@ -121,7 +133,21 @@ export interface JobBomLine {
   wastage_percent: number;
   notes: string | null;
   sort_order: number;
+  source_col_index: number | null;
   created_at: string;
+}
+
+export interface TargetColumnMap {
+  id: string;
+  column_index: number;
+  column_label: string;
+  item_lookup_key: string | null;
+  item_id: string | null;
+  category: string | null;
+  is_active: boolean;
+  notes: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 // Supabase Database type definition
@@ -182,6 +208,11 @@ export interface Database {
         Row: JobBomLine;
         Insert: Omit<JobBomLine, "id" | "created_at">;
         Update: Partial<Omit<JobBomLine, "id" | "created_at">>;
+      };
+      target_column_map: {
+        Row: TargetColumnMap;
+        Insert: Omit<TargetColumnMap, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<TargetColumnMap, "id" | "created_at" | "updated_at">>;
       };
     };
     Enums: {
