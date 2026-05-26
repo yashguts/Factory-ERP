@@ -9,7 +9,7 @@ export async function getItems() {
     .from("items")
     .select(`
       *,
-      category:item_categories(id, name),
+      category:item_categories!items_category_id_fkey(id, name, parent_id),
       uom:units_of_measurement(id, abbreviation)
     `)
     .order("code");
@@ -30,7 +30,7 @@ export async function getItemsWithStock() {
       .from("items")
       .select(`
         *,
-        category:item_categories(id, name),
+        category:item_categories!items_category_id_fkey(id, name, parent_id),
         uom:units_of_measurement(id, abbreviation),
         inventory(quantity, warehouse_id)
       `)
@@ -57,7 +57,7 @@ export async function getItemsWithStock() {
     lead_time_days: Number(item.lead_time_days),
     cost_price: Number(item.cost_price),
     is_active: item.is_active as boolean,
-    category: item.category as { id: string; name: string } | null,
+    category: item.category as { id: string; name: string; parent_id: string | null } | null,
     uom: item.uom as { id: string; abbreviation: string } | null,
     total_stock: (item.inventory ?? []).reduce(
       (sum: number, inv: { quantity: number }) => sum + Number(inv.quantity),
@@ -144,7 +144,9 @@ export async function recordTransaction(data: {
   if (txnError) throw txnError;
 
   const isOutbound = ["production_out", "scrap"].includes(data.transaction_type);
-  const delta = isOutbound ? -Math.abs(data.quantity) : Math.abs(data.quantity);
+  const isAdjustment = data.transaction_type === "adjustment";
+  // Adjustments use the raw quantity (positive or negative). Others force direction.
+  const delta = isAdjustment ? data.quantity : isOutbound ? -Math.abs(data.quantity) : Math.abs(data.quantity);
 
   const { data: existing } = await supabase
     .from("inventory")

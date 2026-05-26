@@ -16,6 +16,9 @@ import {
   CAPACITY_PASS,
   CAPACITY_KG,
 } from "@/lib/bom/section-gating";
+import { CarLandingDoorsEditor } from "@/components/jobs/car-landing-doors-editor";
+import { MainBracketEditor } from "@/components/jobs/main-bracket-editor";
+import { CounterBracketEditor } from "@/components/jobs/counter-bracket-editor";
 import { createJobWithBom, updateJobWithBom } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import type { Job } from "@/lib/supabase/types";
@@ -379,14 +382,37 @@ export function JobForm({ mode, job, existingBom }: Props) {
             {phase}
           </h2>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {sections.map((section) => (
-              <SectionCard
-                key={section.category}
-                section={section}
-                getBomValue={getBomValue}
-                setBomValue={setBomValue}
-              />
-            ))}
+            {sections.map((section) =>
+              section.customEditor === "car-landing-doors" ? (
+                <CarLandingDoorsEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "main-bracket" ? (
+                <MainBracketEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "counter-bracket" ? (
+                <CounterBracketEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : (
+                <SectionCard
+                  key={section.category}
+                  section={section}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ),
+            )}
           </div>
         </div>
       ))}

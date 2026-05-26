@@ -207,12 +207,12 @@ export async function updateJobWithBom(
 
   if (existing) {
     headerId = existing.id;
-    // Delete old denormalized lines (category-based) — keep Excel-imported lines (source_col_index)
+    // Delete old form-created lines — keep Excel-imported lines (which have source_col_index set)
     await supabase
       .from("job_bom_lines")
       .delete()
       .eq("job_bom_id", headerId)
-      .not("category", "is", null);
+      .is("source_col_index", null);
   } else {
     const { data: header, error: hdrErr } = await supabase
       .from("job_bom_headers")

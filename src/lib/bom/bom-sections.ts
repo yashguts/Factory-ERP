@@ -18,6 +18,7 @@ export interface BomSection {
   phase: typeof PHASE_ORDER[number];
   gate: SectionGate;
   fullWidth?: boolean;
+  customEditor?: string;
   leaves: BomLeaf[];
 }
 
@@ -74,6 +75,8 @@ export const BOM_SECTIONS: BomSection[] = [
     description:
       "Pick how many bracket types this job uses (1-4), then specify each one.",
     gate: ALWAYS,
+    fullWidth: true,
+    customEditor: "main-bracket",
     leaves: [
       { variant: "Number of Types", kind: "select", options: ["1", "2", "3", "4"] },
       { variant: "Type 1", kind: "text" },
@@ -95,6 +98,7 @@ export const BOM_SECTIONS: BomSection[] = [
     phase: "Brackets",
     description: "Counter bracket types (1-4). Only shown for MR drives.",
     gate: { kind: "driveType", drives: ["MR"] },
+    customEditor: "counter-bracket",
     leaves: [
       { variant: "Number of Types", kind: "select", options: ["1", "2", "3", "4"] },
       { variant: "Type 1", kind: "text" },
@@ -115,7 +119,9 @@ export const BOM_SECTIONS: BomSection[] = [
     description: "Specify each car door and landing door.",
     gate: ALWAYS,
     fullWidth: true,
+    customEditor: "car-landing-doors",
     leaves: [
+      { variant: "Fire Rated", kind: "select", options: ["Yes", "No"] },
       { variant: "Door Opening Height", kind: "text" },
       { variant: "Number of Car Doors", kind: "select", options: ["1", "2"] },
       { variant: "Car Door 1 Type", kind: "text" },

@@ -69,14 +69,19 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
   const [showStockAdjust, setShowStockAdjust] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ItemWithStock | null>(null);
 
-  // Build category tree for filter
+  // Build category tree for filter (supports 3 levels: parent → child → grandchild)
   const categoryTree = useMemo(() => {
     const parents = categories.filter((c) => !c.parent_id);
-    const children = categories.filter((c) => c.parent_id);
-    return parents.map((p) => ({
-      ...p,
-      subCategories: children.filter((c) => c.parent_id === p.id),
-    }));
+    return parents.map((p) => {
+      const directChildren = categories.filter((c) => c.parent_id === p.id);
+      // Collect grandchildren (children of children)
+      const grandchildren = directChildren.flatMap((child) =>
+        categories.filter((c) => c.parent_id === child.id)
+      );
+      // Sub-categories = direct children + grandchildren (all descendants)
+      const subCategories = [...directChildren, ...grandchildren];
+      return { ...p, subCategories };
+    });
   }, [categories]);
 
   // Get sub-categories that belong to the selected parent
@@ -248,7 +253,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           <Select
             value={subCategoryFilter}
             onChange={(e) => { setSubCategoryFilter(e.target.value); resetPage(); }}
-            className="w-[180px]"
+            className="w-[220px]"
           >
             <option value="all">All Sub-categories</option>
             {subCategoryOptions.map((cat) => (
