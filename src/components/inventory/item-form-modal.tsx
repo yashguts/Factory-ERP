@@ -8,6 +8,11 @@ import { Select } from "@/components/ui/select";
 import { createItem, updateItem } from "@/lib/actions/inventory";
 import type { ItemType, ItemCategory, UnitOfMeasurement } from "@/lib/supabase/types";
 
+interface ItemRef {
+  item_type: ItemType;
+  category_id: string | null;
+}
+
 interface ItemFormModalProps {
   item?: {
     id: string;
@@ -24,11 +29,12 @@ interface ItemFormModalProps {
   } | null;
   categories: ItemCategory[];
   units: UnitOfMeasurement[];
+  items: ItemRef[];
   onClose: () => void;
   onSaved: () => void;
 }
 
-export function ItemFormModal({ item, categories, units, onClose, onSaved }: ItemFormModalProps) {
+export function ItemFormModal({ item, categories, units, items, onClose, onSaved }: ItemFormModalProps) {
   const isEditing = !!item;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -47,12 +53,44 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
         map[cat.parent_id].push(cat);
       }
     }
-    // Sort children alphabetically
     for (const key of Object.keys(map)) {
       map[key].sort((a, b) => a.name.localeCompare(b.name));
     }
     return map;
   }, [categories]);
+
+  // Build mapping: item_type → Set of parent category IDs that contain items of that type
+  const typeToParentCatIds = useMemo(() => {
+    // First, map each category_id to its parent (top-level) category ID
+    const catToParent: Record<string, string> = {};
+    for (const cat of categories) {
+      if (cat.parent_id === null) {
+        catToParent[cat.id] = cat.id; // parent maps to itself
+      }
+    }
+    for (const cat of categories) {
+      if (cat.parent_id && catToParent[cat.parent_id] !== undefined) {
+        // Direct child of a top-level category
+        catToParent[cat.id] = cat.parent_id;
+      }
+    }
+    // Handle grandchildren (3-level)
+    for (const cat of categories) {
+      if (cat.parent_id && catToParent[cat.id] === undefined && catToParent[cat.parent_id] !== undefined) {
+        catToParent[cat.id] = catToParent[cat.parent_id];
+      }
+    }
+
+    const map: Record<string, Set<string>> = {};
+    for (const it of items) {
+      if (!it.category_id) continue;
+      const parentId = catToParent[it.category_id];
+      if (!parentId) continue;
+      if (!map[it.item_type]) map[it.item_type] = new Set();
+      map[it.item_type].add(parentId);
+    }
+    return map;
+  }, [items, categories]);
 
   // Resolve initial parent + sub-category from item's category_id
   const resolveInitialCategories = () => {
@@ -61,14 +99,11 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
     const cat = categories.find((c) => c.id === item.category_id);
     if (!cat) return { parentId: "", subId: "" };
 
-    // If it's a top-level category
     if (cat.parent_id === null) return { parentId: cat.id, subId: "" };
 
-    // If it's a child, check if its parent is top-level
     const parent = categories.find((c) => c.id === cat.parent_id);
     if (parent && parent.parent_id === null) return { parentId: parent.id, subId: cat.id };
 
-    // It's a grandchild — find the grandparent
     if (parent) {
       const grandparent = categories.find((c) => c.id === parent.parent_id);
       if (grandparent) return { parentId: grandparent.id, subId: parent.id };
@@ -81,13 +116,11 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
   const [parentCategoryId, setParentCategoryId] = useState(initial.parentId);
   const [subCategoryId, setSubCategoryId] = useState(initial.subId);
 
-  // Sub-categories for the selected parent
   const subCategories = useMemo(
     () => (parentCategoryId ? childrenByParent[parentCategoryId] ?? [] : []),
     [parentCategoryId, childrenByParent]
   );
 
-  // The actual category_id to save: most specific selection
   const resolvedCategoryId = subCategoryId || parentCategoryId || null;
 
   const [form, setForm] = useState({
@@ -101,6 +134,23 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
     lead_time_days: Number(item?.lead_time_days ?? 0),
     cost_price: Number(item?.cost_price ?? 0),
   });
+
+  // Filter parent categories by selected item type
+  const filteredParentCategories = useMemo(() => {
+    const allowedIds = typeToParentCatIds[form.item_type];
+    if (!allowedIds || allowedIds.size === 0) return parentCategories; // show all if no data
+    return parentCategories.filter((c) => allowedIds.has(c.id));
+  }, [form.item_type, typeToParentCatIds, parentCategories]);
+
+  // When item type changes, reset category selections if they're no longer valid
+  const handleTypeChange = (newType: ItemType) => {
+    setForm({ ...form, item_type: newType });
+    const allowedIds = typeToParentCatIds[newType];
+    if (allowedIds && !allowedIds.has(parentCategoryId)) {
+      setParentCategoryId("");
+      setSubCategoryId("");
+    }
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -151,7 +201,7 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
             <label className="block text-sm font-medium mb-1">Item Type</label>
             <Select
               value={form.item_type}
-              onChange={(e) => setForm({ ...form, item_type: e.target.value as ItemType })}
+              onChange={(e) => handleTypeChange(e.target.value as ItemType)}
             >
               <option value="raw_material">Raw Material</option>
               <option value="sub_assembly">Sub Assembly</option>
@@ -191,7 +241,7 @@ export function ItemFormModal({ item, categories, units, onClose, onSaved }: Ite
               }}
             >
               <option value="">Select category</option>
-              {parentCategories.map((cat) => (
+              {filteredParentCategories.map((cat) => (
                 <option key={cat.id} value={cat.id}>{cat.name}</option>
               ))}
             </Select>

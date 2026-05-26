@@ -397,6 +397,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           item={selectedItem}
           categories={categories}
           units={units}
+          items={initialItems}
           onClose={() => setShowItemForm(false)}
           onSaved={refresh}
         />
