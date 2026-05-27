@@ -64,9 +64,11 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
   const toggleOpen = () => {
     if (!isOpen && wrapperRef.current) {
       const rect = wrapperRef.current.getBoundingClientRect();
-      // Position popover to the left of the button, below it
+      const popoverHeight = 260; // approximate popover height
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const flipUp = spaceBelow < popoverHeight;
       setPopoverPos({
-        top: rect.bottom + 4,
+        top: flipUp ? rect.top - popoverHeight - 4 : rect.bottom + 4,
         left: Math.max(8, rect.right - 272), // 272 = w-68 = 17rem
       });
     }
