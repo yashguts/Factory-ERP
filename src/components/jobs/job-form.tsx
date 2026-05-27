@@ -134,6 +134,17 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const setPickerItems = useCallback(
     (category: string, items: PickedItem[]) => {
       setPickerState((prev) => ({ ...prev, [category]: items }));
+      // Clear "Saved" badge for any phase containing this category — picker
+      // state diverged from what was last saved.
+      const phase = BOM_SECTIONS.find((s) => s.category === category)?.phase;
+      if (phase) {
+        setSavedPhases((prev) => {
+          if (!prev[phase]) return prev;
+          const next = { ...prev };
+          delete next[phase];
+          return next;
+        });
+      }
     },
     [],
   );
@@ -250,6 +261,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         const lines = collectBomLines(sections);
         await saveBomSection(jobId, categories, lines);
         setSavedPhases((prev) => ({ ...prev, [phase]: true }));
+        // Refresh Router Cache so navigating to detail/edit shows fresh data
+        router.refresh();
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
       } finally {
@@ -266,6 +279,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         const categories = visibleSections.map((s) => s.category);
         const lines = collectBomLines(visibleSections);
         await saveBomSection(jobId, categories, lines);
+        // Invalidate client-side Router Cache so detail page shows fresh data
+        router.refresh();
         router.push(`/jobs/${jobId}`);
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);

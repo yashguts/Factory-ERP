@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { unstable_cache, revalidateTag } from "next/cache";
+import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage } from "@/lib/supabase/types";
 
 export interface BomLineInput {
@@ -269,6 +269,8 @@ export async function updateJobWithBom(
 
   revalidateTag("jobs");
   revalidateTag("bom-lines");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/edit`);
 }
 
 export async function getJobBomSections(jobId: string) {
@@ -321,33 +323,32 @@ export async function getJobBomItemLines(jobId: string) {
 
   if (error) throw error;
 
-  // PostgREST returns joined relations as arrays; flatten to single objects
-  return (data ?? []).map((row: any) => ({
-    category: row.category as string,
-    variant: row.variant as string | null,
-    value_text: row.value_text as string | null,
-    required_quantity: row.required_quantity as number,
-    item_id: row.item_id as string | null,
-    item: Array.isArray(row.item) && row.item.length > 0
-      ? {
-          code: row.item[0].code as string,
-          name: row.item[0].name as string,
-          uom: Array.isArray(row.item[0].uom) && row.item[0].uom.length > 0
-            ? { abbreviation: row.item[0].uom[0].abbreviation as string }
-            : null,
-        }
-      : row.item && typeof row.item === "object" && !Array.isArray(row.item)
+  // PostgREST may return a belongsTo relation as either an object or a
+  // single-element array depending on the planner. Normalize both shapes.
+  const flatten = <T,>(rel: any): T | null => {
+    if (!rel) return null;
+    if (Array.isArray(rel)) return (rel[0] ?? null) as T | null;
+    return rel as T;
+  };
+
+  return (data ?? []).map((row: any) => {
+    const itemRow = flatten<{ code: string; name: string; uom: any }>(row.item);
+    const uomRow = itemRow ? flatten<{ abbreviation: string }>(itemRow.uom) : null;
+    return {
+      category: row.category as string,
+      variant: row.variant as string | null,
+      value_text: row.value_text as string | null,
+      required_quantity: row.required_quantity as number,
+      item_id: row.item_id as string | null,
+      item: itemRow
         ? {
-            code: row.item.code as string,
-            name: row.item.name as string,
-            uom: row.item.uom && typeof row.item.uom === "object" && !Array.isArray(row.item.uom)
-              ? { abbreviation: row.item.uom.abbreviation as string }
-              : Array.isArray(row.item.uom) && row.item.uom.length > 0
-                ? { abbreviation: row.item.uom[0].abbreviation as string }
-                : null,
+            code: itemRow.code,
+            name: itemRow.name,
+            uom: uomRow ? { abbreviation: uomRow.abbreviation } : null,
           }
         : null,
-  }));
+    };
+  });
 }
 
 /** Save BOM lines for specific categories only (per-section save). */
@@ -416,6 +417,9 @@ export async function saveBomSection(
   }
 
   revalidateTag("bom-lines");
+  revalidateTag("jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/edit`);
 }
 
 export async function updateJob(
@@ -457,5 +461,7 @@ export async function updateJob(
 
   if (error) throw error;
   revalidateTag("jobs");
+  revalidatePath(`/jobs/${id}`);
+  revalidatePath(`/jobs/${id}/edit`);
   return job;
 }
