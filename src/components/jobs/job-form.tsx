@@ -10,7 +10,6 @@ import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import {
   shouldRenderSection,
-  DOOR_TYPES,
   DRIVE_TYPES,
   STOPS_OPTIONS,
   CAPACITY_PASS,
@@ -95,18 +94,15 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [jobSaved, setJobSaved] = useState(mode === "edit");
 
   // ── Job metadata ──────────────────────────────────────────────────
+  // Only the fields the spec keeps. Other DB columns (door_finish, brand,
+  // order_date, expected_delivery, remark, door_type) are no longer
+  // editable from this form — they stay untouched on existing jobs
+  // because buildJobData omits them entirely.
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
   const [customerName, setCustomerName] = useState(
     job?.customer_name ?? "",
   );
   const [location, setLocation] = useState(job?.location ?? "");
-  const [doorFinish, setDoorFinish] = useState(job?.door_finish ?? "");
-  const [brand, setBrand] = useState(job?.brand ?? "");
-  const [remark, setRemark] = useState(job?.remark ?? "");
-  const [orderDate, setOrderDate] = useState(job?.order_date ?? "");
-  const [expectedDelivery, setExpectedDelivery] = useState(
-    job?.expected_delivery ?? "",
-  );
   const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
   const [requirementStage, setRequirementStage] = useState<JobStage | "">(
     job?.requirement_stage ?? "",
@@ -117,7 +113,6 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
   // ── Elevator spec (controls which BOM sections are visible) ──────
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
-  const [doorType, setDoorType] = useState(job?.door_type ?? "");
   const [driveType, setDriveType] = useState(job?.drive_type ?? "");
   const [capacity, setCapacity] = useState(job?.capacity ?? "");
 
@@ -174,6 +169,35 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       cancelled = true;
     };
   }, []);
+
+  // ── Required-field validation ─────────────────────────────────────
+  // Both "Save Details" and any "Save Phase" action must enforce that
+  // these fields are filled. Returns a list of human-readable labels of
+  // missing fields — empty list means the form is valid.
+  const missingFields = useMemo(() => {
+    const missing: string[] = [];
+    if (!jobNumber.trim()) missing.push("Job Number");
+    if (!customerName.trim()) missing.push("Customer Name");
+    if (!location.trim()) missing.push("Location");
+    if (!stage) missing.push("Stage");
+    if (!requirementStage) missing.push("Requirement Stage");
+    if (!requirementDispatchDate) missing.push("Req. Dispatch Date");
+    if (!floors) missing.push("Floors");
+    if (!driveType) missing.push("Drive Type");
+    if (!capacity) missing.push("Capacity");
+    return missing;
+  }, [
+    jobNumber,
+    customerName,
+    location,
+    stage,
+    requirementStage,
+    requirementDispatchDate,
+    floors,
+    driveType,
+    capacity,
+  ]);
+  const isFormValid = missingFields.length === 0;
 
   // ── Ad-hoc sections (user-added via +Add Section) ─────────────────
   // Each ad-hoc section binds to one inventory category path. Stored on
@@ -271,8 +295,11 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   // each promoted to a synthetic BomSection so the renderer can treat
   // them uniformly.
   const visibleSections = useMemo<BomSection[]>(() => {
+    // Door type is no longer collected in this form (no doorType gates
+    // are currently in use); pass null so any future doorType gate
+    // defaults to hidden until it's reintroduced.
     const hardcoded = BOM_SECTIONS.filter((s) =>
-      shouldRenderSection(s, doorType || null, driveType || null),
+      shouldRenderSection(s, null, driveType || null),
     );
     const adHoc: BomSection[] = adHocSections.map((s) => ({
       category: s.category,
@@ -281,7 +308,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       defaultItemCategories: [s.categoryPath],
     }));
     return [...hardcoded, ...adHoc];
-  }, [doorType, driveType, adHocSections]);
+  }, [driveType, adHocSections]);
 
   const sectionsByPhase = useMemo(() => {
     const map = new Map<string, BomSection[]>();
@@ -329,30 +356,24 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   function buildSpecString(): string | null {
     const parts = [];
     if (floors) parts.push(`G+${floors}`);
-    if (doorType) parts.push(doorType);
     if (driveType) parts.push(driveType);
     if (capacity) parts.push(capacity);
     return parts.join("/") || null;
   }
 
   function buildJobData() {
-    // Use null (not undefined) for cleared fields so Supabase actually
-    // overwrites the column. undefined would be silently dropped from the
-    // update payload, leaving stale DB values.
+    // Only send the fields the form actively manages. Other DB columns
+    // (door_finish, brand, order_date, expected_delivery, remark,
+    // door_type) are intentionally omitted so they stay untouched on
+    // existing jobs.
     return {
       job_number: jobNumber.trim(),
-      customer_name: customerName || null,
+      customer_name: customerName.trim() || null,
+      location: location.trim() || null,
       spec_string: buildSpecString(),
-      door_finish: doorFinish || null,
-      location: location || null,
-      brand: brand || null,
       floors: floors || null,
-      door_type: doorType || null,
       drive_type: driveType || null,
       capacity: capacity || null,
-      remark: remark || null,
-      order_date: orderDate || null,
-      expected_delivery: expectedDelivery || null,
       stage,
       requirement_stage: requirementStage || null,
       requirement_dispatch_date: requirementDispatchDate || null,
@@ -398,8 +419,20 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   }
 
   // ── Save handlers ─────────────────────────────────────────────────
+  // Every save action enforces the same required-field check. If any
+  // field is missing we surface an alert and bail before hitting the DB.
+  function guardRequired(): boolean {
+    if (isFormValid) return true;
+    alert(
+      `Please fill the following required field${
+        missingFields.length === 1 ? "" : "s"
+      } before saving:\n\n• ${missingFields.join("\n• ")}`,
+    );
+    return false;
+  }
+
   function handleSaveJobDetails() {
-    if (!jobNumber.trim()) return;
+    if (!guardRequired()) return;
     startTransition(async () => {
       try {
         if (savedJobId) {
@@ -416,6 +449,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   }
 
   function handleSavePhase(phase: string, sections: BomSection[]) {
+    if (!guardRequired()) return;
     startTransition(async () => {
       setSavingPhase(phase);
       try {
@@ -435,7 +469,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   }
 
   function handleSaveAll() {
-    if (!jobNumber.trim()) return;
+    if (!guardRequired()) return;
     startTransition(async () => {
       try {
         const jobId = await ensureJob();
@@ -485,7 +519,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <Button
             size="sm"
             onClick={handleSaveAll}
-            disabled={isPending || !jobNumber.trim()}
+            disabled={isPending || !isFormValid}
           >
             {isPending && !savingPhase ? (
               <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
@@ -507,7 +541,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             size="sm"
             variant={jobSaved ? "secondary" : "primary"}
             onClick={handleSaveJobDetails}
-            disabled={isPending || !jobNumber.trim()}
+            disabled={isPending || !isFormValid}
           >
             {isPending && !savingPhase ? (
               <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -519,7 +553,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             {jobSaved ? "Saved" : "Save Details"}
           </Button>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <Field label="Job Number *">
             <Input
               value={jobNumber}
@@ -531,7 +565,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               disabled={mode === "edit" || !!savedJobId}
             />
           </Field>
-          <Field label="Customer Name">
+          <Field label="Customer Name *">
             <Input
               value={customerName}
               onChange={(e) => {
@@ -541,7 +575,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               placeholder="Customer"
             />
           </Field>
-          <Field label="Location">
+          <Field label="Location *">
             <Input
               value={location}
               onChange={(e) => {
@@ -551,60 +585,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               placeholder="Site location"
             />
           </Field>
-          <Field label="Door Finish">
-            <Input
-              value={doorFinish}
-              onChange={(e) => {
-                setDoorFinish(e.target.value);
-                setJobSaved(false);
-              }}
-              placeholder="e.g. SS Hairline"
-            />
-          </Field>
-          <Field label="Brand">
-            <Select
-              value={brand}
-              onChange={(e) => {
-                setBrand(e.target.value);
-                setJobSaved(false);
-              }}
-            >
-              <option value="">Select brand</option>
-              <option value="Ricardo">Ricardo</option>
-              <option value="LT">LT</option>
-            </Select>
-          </Field>
-          <Field label="Order Date">
-            <Input
-              type="date"
-              value={orderDate}
-              onChange={(e) => {
-                setOrderDate(e.target.value);
-                setJobSaved(false);
-              }}
-            />
-          </Field>
-          <Field label="Expected Delivery">
-            <Input
-              type="date"
-              value={expectedDelivery}
-              onChange={(e) => {
-                setExpectedDelivery(e.target.value);
-                setJobSaved(false);
-              }}
-            />
-          </Field>
-          <Field label="Remark">
-            <Input
-              value={remark}
-              onChange={(e) => {
-                setRemark(e.target.value);
-                setJobSaved(false);
-              }}
-              placeholder="Notes"
-            />
-          </Field>
-          <Field label="Stage">
+          <Field label="Stage *">
             <Select
               value={stage}
               onChange={(e) => {
@@ -619,7 +600,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               ))}
             </Select>
           </Field>
-          <Field label="Requirement Stage">
+          <Field label="Requirement Stage *">
             <Select
               value={requirementStage}
               onChange={(e) => {
@@ -635,7 +616,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               ))}
             </Select>
           </Field>
-          <Field label="Req. Dispatch Date">
+          <Field label="Req. Dispatch Date *">
             <Input
               type="date"
               value={requirementDispatchDate}
@@ -658,8 +639,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             Controls which BOM sections appear below.
           </p>
         </div>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          <Field label="Floors (Stops)">
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="Floors (Stops) *">
             <Select
               value={floors}
               onChange={(e) => {
@@ -675,23 +656,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               ))}
             </Select>
           </Field>
-          <Field label="Door Type">
-            <Select
-              value={doorType}
-              onChange={(e) => {
-                setDoorType(e.target.value);
-                markSpecChanged();
-              }}
-            >
-              <option value="">Select</option>
-              {DOOR_TYPES.map((d) => (
-                <option key={d.value} value={d.value}>
-                  {d.label}
-                </option>
-              ))}
-            </Select>
-          </Field>
-          <Field label="Drive Type">
+          <Field label="Drive Type *">
             <Select
               value={driveType}
               onChange={(e) => {
@@ -707,7 +672,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               ))}
             </Select>
           </Field>
-          <Field label="Capacity">
+          <Field label="Capacity *">
             <Select
               value={capacity}
               onChange={(e) => {
@@ -740,6 +705,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         )}
       </div>
 
+      {/* ── Missing-field banner ── */}
+      {!isFormValid && (
+        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+          <span className="font-medium">Required to save:</span>{" "}
+          {missingFields.join(", ")}.
+        </div>
+      )}
+
       {/* ── BOM Sections by Phase ── */}
       {Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
         const isSaving = savingPhase === phase;
@@ -771,7 +744,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
                 size="sm"
                 variant={isSaved ? "secondary" : "primary"}
                 onClick={() => handleSavePhase(phase, sections)}
-                disabled={isPending || !jobNumber.trim()}
+                disabled={isPending || !isFormValid}
               >
                 {isSaving ? (
                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
@@ -864,7 +837,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         <Button
           size="sm"
           onClick={handleSaveAll}
-          disabled={isPending || !jobNumber.trim()}
+          disabled={isPending || !isFormValid}
         >
           {isPending && !savingPhase ? (
             <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
