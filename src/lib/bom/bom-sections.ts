@@ -251,6 +251,8 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Filler Weight",
     phase: "Buffer & Channels",
     gate: ALWAYS,
+    fullWidth: true,
+    customEditor: "filler-weight",
     leaves: [
       { variant: "610/AHM", kind: "number", unit: "pcs" },
       { variant: "710/AHM", kind: "number", unit: "pcs" },
@@ -278,17 +280,19 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Machine",
     phase: "Drive / Machine / Governor",
     gate: ALWAYS,
+    customEditor: "machine",
     leaves: [
-      { variant: "Machine Type", kind: "text" },
-      { variant: "Machine Capacity", kind: "text" },
+      { variant: "Machine Type", kind: "select", options: ["ECO", "SE-24", "HOME", "Hydraulic", "6P/200", "6P/240 PULLY", "6P", "6P/1.5", "6P/1.75", "8P", "8P/1.5", "8P/1.75", "10P/240 PULLY", "10P", "10P/1.5", "10P/1.75", "13P", "13P/1.75", "16P", "16P/N", "16P/2.5", "20P", "20P/1.5", "20P/1.75", "20P/2.5", "26P", "26P/1.25", "1250KG", "1250KG/2mts", "1600KG", "2000KG", "BELT", "BELT-13P", "BELT-20P", "3HP", "5HP", "6HP", "7.5HP", "10HP", "12.5HP", "12.5HP/1.5", "15HP", "20HP", "HYD-6P", "HYD-500KG"] },
+      { variant: "Machine Capacity", kind: "select", options: ["ECO", "SE-24", "HOME", "Hydraulic", "6P/200", "6P/240 PULLY", "6P", "6P/1.5", "6P/1.75", "8P", "8P/1.5", "8P/1.75", "10P/240 PULLY", "10P", "10P/1.5", "10P/1.75", "13P", "13P/1.75", "16P", "16P/N", "16P/2.5", "20P", "20P/1.5", "20P/1.75", "20P/2.5", "26P", "26P/1.25", "1250KG", "1250KG/2mts", "1600KG", "2000KG", "BELT", "BELT-13P", "BELT-20P", "3HP", "5HP", "6HP", "7.5HP", "10HP", "12.5HP", "12.5HP/1.5", "15HP", "20HP", "HYD-6P", "HYD-500KG"] },
     ],
   },
   {
     category: "Governor",
     phase: "Drive / Machine / Governor",
     gate: ALWAYS,
+    customEditor: "governor",
     leaves: [
-      { variant: "Type", kind: "text" },
+      { variant: "Type", kind: "select", options: ["HOME", "1/LH R1", ".5/LH", "0.7/LH R1", ".35/RH", "1/RH", "1.5/LH R1", ".5/LH/RH", "SE-24", "HYD-6P", "1.88 TRP", ".5/RH", "0.5/RH", "0.7/LH", ".7/RH", "1/LH", "1/RH R1", "1.25/RH", "1.5/LH", "1.5/RH", "2.5/LH"] },
       { variant: "CONT. STAND", kind: "number", unit: "pcs" },
       { variant: "TROUGHING 50", kind: "number", unit: "m" },
       { variant: "TROUGHING 100", kind: "number", unit: "m" },
@@ -376,6 +380,8 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Cabin Items",
     phase: "Cabin & Electrics",
     gate: ALWAYS,
+    fullWidth: true,
+    customEditor: "cabin-items",
     leaves: [
       { variant: "Cabin Glass", kind: "number", unit: "pcs" },
       { variant: "Floor Tiles", kind: "number", unit: "pcs" },

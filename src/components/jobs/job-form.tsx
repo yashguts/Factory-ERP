@@ -20,6 +20,10 @@ import { CarLandingDoorsEditor } from "@/components/jobs/car-landing-doors-edito
 import { MainBracketEditor } from "@/components/jobs/main-bracket-editor";
 import { CounterBracketEditor } from "@/components/jobs/counter-bracket-editor";
 import { SafetyEditor } from "@/components/jobs/safety-editor";
+import { MachineEditor } from "@/components/jobs/machine-editor";
+import { GovernorEditor } from "@/components/jobs/governor-editor";
+import { FillerWeightEditor } from "@/components/jobs/filler-weight-editor";
+import { CabinItemsEditor } from "@/components/jobs/cabin-items-editor";
 import { createJobWithBom, updateJobWithBom } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import type { Job, JobStage } from "@/lib/supabase/types";
@@ -442,6 +446,34 @@ export function JobForm({ mode, job, existingBom }: Props) {
                 />
               ) : section.customEditor === "safety" ? (
                 <SafetyEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "machine" ? (
+                <MachineEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "governor" ? (
+                <GovernorEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "filler-weight" ? (
+                <FillerWeightEditor
+                  key={section.category}
+                  category={section.category}
+                  getBomValue={getBomValue}
+                  setBomValue={setBomValue}
+                />
+              ) : section.customEditor === "cabin-items" ? (
+                <CabinItemsEditor
                   key={section.category}
                   category={section.category}
                   getBomValue={getBomValue}
