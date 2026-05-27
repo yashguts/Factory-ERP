@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -49,6 +49,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
   const [cutoffDate, setCutoffDate] = useState(initialCutoffDate ?? "");
+  const dateRef = useRef<HTMLInputElement>(null);
 
   const handleDateChange = (date: string) => {
     setCutoffDate(date);
@@ -191,11 +192,13 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
       <div className="flex items-center gap-3 mb-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--card)]">
         <CalendarDays size={18} className="text-[var(--muted-foreground)] shrink-0" />
         <span className="text-sm font-medium whitespace-nowrap">Requirement Dispatch Date up to:</span>
-        <Input
+        <input
+          ref={dateRef}
           type="date"
           value={cutoffDate}
           onChange={(e) => handleDateChange(e.target.value)}
-          className="w-[180px]"
+          onClick={() => { try { dateRef.current?.showPicker(); } catch {} }}
+          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 [color-scheme:dark]"
         />
         {cutoffDate && (
           <Button variant="secondary" size="sm" onClick={clearDate}>
