@@ -84,11 +84,11 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   for (const line of allLines) {
     const existing = reqMap.get(line.item_id);
     if (existing) {
-      existing.total += Number(line.required_quantity);
+      existing.total += 1;
       existing.bomIds.add(line.job_bom_id);
     } else {
       reqMap.set(line.item_id, {
-        total: Number(line.required_quantity),
+        total: 1,
         bomIds: new Set([line.job_bom_id]),
       });
     }
