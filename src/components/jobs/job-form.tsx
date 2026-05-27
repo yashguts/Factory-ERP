@@ -68,7 +68,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
   );
 
   const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
-  const [requirementStage, setRequirementStage] = useState<JobStage>(job?.requirement_stage ?? "new");
+  const [requirementStage, setRequirementStage] = useState<JobStage | "">(job?.requirement_stage ?? "");
   const [requirementDispatchDate, setRequirementDispatchDate] = useState(job?.requirement_dispatch_date ?? "");
 
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
@@ -175,7 +175,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
         order_date: orderDate || undefined,
         expected_delivery: expectedDelivery || undefined,
         stage,
-        requirement_stage: requirementStage,
+        requirement_stage: requirementStage || undefined,
         requirement_dispatch_date: requirementDispatchDate || undefined,
       };
 
@@ -316,7 +316,8 @@ export function JobForm({ mode, job, existingBom }: Props) {
             </Select>
           </Field>
           <Field label="Requirement Stage">
-            <Select value={requirementStage} onChange={(e) => setRequirementStage(e.target.value as JobStage)}>
+            <Select value={requirementStage} onChange={(e) => setRequirementStage(e.target.value as JobStage | "")}>
+              <option value="">—</option>
               {STAGE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}

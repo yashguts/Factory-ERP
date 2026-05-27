@@ -15,19 +15,15 @@ import { shouldRenderSection } from "@/lib/bom/section-gating";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
-  draft: "Draft",
-  planned: "Planned",
-  in_progress: "In Progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  new: "New",
+  in_production: "In Production",
+  hold: "Hold",
 };
 
 const STATUS_COLORS: Record<JobStatus, string> = {
-  draft: "bg-gray-100 text-gray-800",
-  planned: "bg-blue-100 text-blue-800",
-  in_progress: "bg-amber-100 text-amber-800",
-  completed: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
+  new: "bg-gray-100 text-gray-800",
+  in_production: "bg-amber-100 text-amber-800",
+  hold: "bg-red-100 text-red-800",
 };
 
 const STAGE_LABELS: Record<JobStage, string> = {
@@ -312,7 +308,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
           value={job.planned_end ? new Date(job.planned_end).toLocaleDateString("en-IN") : null}
         />
         <MetaItem label="Stage" value={STAGE_LABELS[job.stage ?? "new"]} />
-        <MetaItem label="Req. Stage" value={STAGE_LABELS[job.requirement_stage ?? "new"]} />
+        <MetaItem label="Req. Stage" value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null} />
         <MetaItem
           label="Req. Dispatch Date"
           value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}

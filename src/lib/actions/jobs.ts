@@ -307,7 +307,7 @@ export async function updateJob(
     actual_end?: string;
     notes?: string;
     stage?: JobStage;
-    requirement_stage?: JobStage;
+    requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
   }
 ) {

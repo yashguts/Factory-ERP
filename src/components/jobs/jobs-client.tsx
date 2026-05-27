@@ -10,22 +10,19 @@ import {
 } from "@/components/ui/table";
 import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { updateJob } from "@/lib/actions/jobs";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
-  draft: "Draft",
-  planned: "Planned",
-  in_progress: "In Progress",
-  completed: "Completed",
-  cancelled: "Cancelled",
+  new: "New",
+  in_production: "In Production",
+  hold: "Hold",
 };
 
 const STATUS_COLORS: Record<JobStatus, string> = {
-  draft: "bg-gray-100 text-gray-800",
-  planned: "bg-blue-100 text-blue-800",
-  in_progress: "bg-amber-100 text-amber-800",
-  completed: "bg-green-100 text-green-800",
-  cancelled: "bg-red-100 text-red-800",
+  new: "bg-gray-100 text-gray-800",
+  in_production: "bg-amber-100 text-amber-800",
+  hold: "bg-red-100 text-red-800",
 };
 
 const STAGE_LABELS: Record<JobStage, string> = {
@@ -42,7 +39,7 @@ const STAGE_COLORS: Record<JobStage, string> = {
   full_dispatched: "bg-green-100 text-green-800",
 };
 
-type SortKey = "job_number" | "customer" | "progress" | "delivery" | "status" | "stage" | "req_stage" | "req_dispatch";
+type SortKey = "job_number" | "customer" | "status" | "stage" | "req_stage" | "req_dispatch";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
 
@@ -105,12 +102,6 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
         case "customer":
           cmp = (a.customer_name ?? "").localeCompare(b.customer_name ?? "");
           break;
-        case "progress":
-          cmp = (a.progress ?? 0) - (b.progress ?? 0);
-          break;
-        case "delivery":
-          cmp = (a.expected_delivery ?? "").localeCompare(b.expected_delivery ?? "");
-          break;
         case "status":
           cmp = a.status.localeCompare(b.status);
           break;
@@ -118,7 +109,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
           cmp = (a.stage ?? "new").localeCompare(b.stage ?? "new");
           break;
         case "req_stage":
-          cmp = (a.requirement_stage ?? "new").localeCompare(b.requirement_stage ?? "new");
+          cmp = (a.requirement_stage ?? "").localeCompare(b.requirement_stage ?? "");
           break;
         case "req_dispatch":
           cmp = (a.requirement_dispatch_date ?? "").localeCompare(b.requirement_dispatch_date ?? "");
@@ -142,6 +133,13 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
     }
   };
 
+  const handleInlineUpdate = (jobId: string, data: Record<string, any>) => {
+    startTransition(async () => {
+      await updateJob(jobId, data);
+      router.refresh();
+    });
+  };
+
   const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
     <TableHead
       className="cursor-pointer select-none hover:bg-[var(--muted)] transition-colors"
@@ -154,11 +152,6 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
     </TableHead>
   );
 
-  const formatProgress = (p: number) => {
-    const pct = Math.round((p ?? 0) * 100);
-    return pct;
-  };
-
   return (
     <div>
       {/* Header */}
@@ -167,7 +160,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
           <h1 className="text-2xl font-bold">Job Orders</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             {sorted.length} of {initialJobs.length} jobs
-            {isPending ? " — refreshing..." : ""}
+            {isPending ? " — saving..." : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -280,59 +273,76 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                 <SortHeader label="Stage" sortField="stage" />
                 <SortHeader label="Req. Stage" sortField="req_stage" />
                 <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
-                <SortHeader label="Delivery" sortField="delivery" />
                 <SortHeader label="Status" sortField="status" />
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginated.map((job) => {
-                const pct = formatProgress(job.progress);
-                return (
-                  <TableRow
-                    key={job.id}
-                    className="cursor-pointer hover:bg-[var(--muted)]"
-                    onClick={() => router.push(`/jobs/${job.id}`)}
-                  >
-                    <TableCell className="font-mono text-sm font-medium">{job.job_number}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{job.customer_name || "-"}</div>
-                      {job.brand && (
-                        <div className="text-xs text-[var(--muted-foreground)]">{job.brand}</div>
-                      )}
-                    </TableCell>
-                    <TableCell>
-                      {job.spec_string ? (
-                        <span className="font-mono text-xs">{job.spec_string}</span>
-                      ) : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${STAGE_COLORS[job.stage ?? "new"]}`}>
-                        {STAGE_LABELS[job.stage ?? "new"]}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${STAGE_COLORS[job.requirement_stage ?? "new"]}`}>
-                        {STAGE_LABELS[job.requirement_stage ?? "new"]}
-                      </span>
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {job.requirement_dispatch_date
-                        ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
-                        : "-"}
-                    </TableCell>
-                    <TableCell className="text-sm">
-                      {job.expected_delivery
-                        ? new Date(job.expected_delivery).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
-                        : "-"}
-                    </TableCell>
-                    <TableCell>
-                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[job.status]}`}>
-                        {STATUS_LABELS[job.status]}
-                      </span>
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
+              {paginated.map((job) => (
+                <TableRow
+                  key={job.id}
+                  className="cursor-pointer hover:bg-[var(--muted)]"
+                  onClick={() => router.push(`/jobs/${job.id}`)}
+                >
+                  <TableCell className="font-mono text-sm font-medium">{job.job_number}</TableCell>
+                  <TableCell>
+                    <div className="font-medium">{job.customer_name || "-"}</div>
+                    {job.brand && (
+                      <div className="text-xs text-[var(--muted-foreground)]">{job.brand}</div>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    {job.spec_string ? (
+                      <span className="font-mono text-xs">{job.spec_string}</span>
+                    ) : "-"}
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STAGE_COLORS[job.stage ?? "new"]}`}
+                      value={job.stage ?? "new"}
+                      onChange={(e) => handleInlineUpdate(job.id, { stage: e.target.value })}
+                      disabled={isPending}
+                    >
+                      {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
+                        <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${job.requirement_stage ? STAGE_COLORS[job.requirement_stage] : "bg-transparent text-[var(--muted-foreground)]"}`}
+                      value={job.requirement_stage ?? ""}
+                      onChange={(e) => handleInlineUpdate(job.id, { requirement_stage: e.target.value || null })}
+                      disabled={isPending}
+                    >
+                      <option value="">—</option>
+                      {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
+                        <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="date"
+                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer focus:ring-2 focus:ring-[var(--primary)] focus:outline-none"
+                      value={job.requirement_dispatch_date ?? ""}
+                      onChange={(e) => handleInlineUpdate(job.id, { requirement_dispatch_date: e.target.value || null })}
+                      disabled={isPending}
+                    />
+                  </TableCell>
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <select
+                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STATUS_COLORS[job.status]}`}
+                      value={job.status}
+                      onChange={(e) => handleInlineUpdate(job.id, { status: e.target.value })}
+                      disabled={isPending}
+                    >
+                      {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
+                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                      ))}
+                    </select>
+                  </TableCell>
+                </TableRow>
+              ))}
             </TableBody>
           </Table>
         </div>
