@@ -131,7 +131,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
       {isOpen && (
         <div
           ref={popoverRef}
-          className="fixed z-[200] w-68 rounded-lg border border-[var(--border)] bg-[var(--card)] shadow-xl"
+          className="fixed z-[200] w-68 rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-xl"
           style={{ top: popoverPos.top, left: popoverPos.left }}
           onClick={(e) => e.stopPropagation()}
         >

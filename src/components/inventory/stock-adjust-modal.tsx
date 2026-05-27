@@ -176,7 +176,7 @@ function ItemSearchSelect({
       {open && (
         <div
           ref={listRef}
-          className="fixed z-[200] max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-xl"
+          className="fixed z-[200] max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--background)] shadow-xl"
           style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
         >
           {filtered.length === 0 ? (
@@ -225,7 +225,7 @@ function ItemSearchSelect({
             ))
           )}
           {!query.trim() && items.length > 50 && (
-            <div className="px-3 py-2 text-xs text-[var(--muted-foreground)] border-t border-[var(--border)] bg-[var(--card)]">
+            <div className="px-3 py-2 text-xs text-[var(--muted-foreground)] border-t border-[var(--border)] bg-[var(--background)]">
               Type to search all {items.length} items...
             </div>
           )}

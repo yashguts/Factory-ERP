@@ -90,13 +90,48 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
     });
   }, [categories]);
 
+  // Build mapping: item_type → Set of parent category IDs that have items of that type
+  const typeToParentCatIds = useMemo(() => {
+    const catToParent: Record<string, string> = {};
+    for (const cat of categories) {
+      if (!cat.parent_id) catToParent[cat.id] = cat.id;
+    }
+    for (const cat of categories) {
+      if (cat.parent_id && catToParent[cat.parent_id] !== undefined) {
+        catToParent[cat.id] = cat.parent_id;
+      }
+    }
+    for (const cat of categories) {
+      if (cat.parent_id && catToParent[cat.id] === undefined && catToParent[cat.parent_id] !== undefined) {
+        catToParent[cat.id] = catToParent[cat.parent_id];
+      }
+    }
+    const map: Record<string, Set<string>> = {};
+    for (const item of initialItems) {
+      if (!item.category_id) continue;
+      const parentId = catToParent[item.category_id];
+      if (!parentId) continue;
+      if (!map[item.item_type]) map[item.item_type] = new Set();
+      map[item.item_type].add(parentId);
+    }
+    return map;
+  }, [initialItems, categories]);
+
+  // Filter category tree by selected type
+  const filteredCategoryTree = useMemo(() => {
+    if (typeFilter === "all") return categoryTree;
+    const allowedIds = typeToParentCatIds[typeFilter];
+    if (!allowedIds || allowedIds.size === 0) return [];
+    return categoryTree.filter((c) => allowedIds.has(c.id));
+  }, [typeFilter, typeToParentCatIds, categoryTree]);
+
   // Get sub-categories that belong to the selected parent
   const subCategoryOptions = useMemo(() => {
     if (categoryFilter === "all") return [];
-    const parent = categoryTree.find((c) => c.id === categoryFilter);
+    const parent = filteredCategoryTree.find((c) => c.id === categoryFilter);
     if (parent) return parent.subCategories;
     return [];
-  }, [categoryFilter, categoryTree]);
+  }, [categoryFilter, filteredCategoryTree]);
 
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>("all");
 
@@ -233,7 +268,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
         {/* Type Filter */}
         <Select
           value={typeFilter}
-          onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); resetPage(); }}
+          onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); setCategoryFilter("all"); setSubCategoryFilter("all"); resetPage(); }}
           className="w-[150px]"
         >
           <option value="all">All Types</option>
@@ -251,7 +286,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           className="w-[160px]"
         >
           <option value="all">All Categories</option>
-          {categoryTree.map((cat) => (
+          {filteredCategoryTree.map((cat) => (
             <option key={cat.id} value={cat.id}>{cat.name}</option>
           ))}
         </Select>
