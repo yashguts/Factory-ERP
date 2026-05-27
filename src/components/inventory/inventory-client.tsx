@@ -11,6 +11,7 @@ import {
 import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
+import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
 import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse } from "@/lib/supabase/types";
 
 interface ItemWithStock {
@@ -304,6 +305,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />
                 <TableHead>Status</TableHead>
+                <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -355,6 +357,13 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                           OK
                         </span>
                       )}
+                    </TableCell>
+                    <TableCell className="w-10 px-1" onClick={(e) => e.stopPropagation()}>
+                      <InlineStockAdjust
+                        item={item}
+                        warehouses={warehouses}
+                        onSuccess={refresh}
+                      />
                     </TableCell>
                   </TableRow>
                 );

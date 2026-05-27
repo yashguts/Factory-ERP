@@ -34,9 +34,18 @@ function ItemSearchSelect({
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(0);
+  const [dropdownPos, setDropdownPos] = useState({ top: 0, left: 0, width: 0 });
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Compute fixed dropdown position from wrapper bounds
+  useEffect(() => {
+    if (open && wrapperRef.current) {
+      const rect = wrapperRef.current.getBoundingClientRect();
+      setDropdownPos({ top: rect.bottom + 4, left: rect.left, width: rect.width });
+    }
+  }, [open]);
 
   const selectedItem = items.find((i) => i.id === value);
 
@@ -59,10 +68,10 @@ function ItemSearchSelect({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (
-        wrapperRef.current &&
-        !wrapperRef.current.contains(e.target as Node)
-      ) {
+      const target = e.target as Node;
+      const inWrapper = wrapperRef.current?.contains(target);
+      const inList = listRef.current?.contains(target);
+      if (!inWrapper && !inList) {
         setOpen(false);
       }
     }
@@ -101,6 +110,8 @@ function ItemSearchSelect({
         setOpen(false);
       }
     } else if (e.key === "Escape") {
+      e.stopPropagation();
+      e.nativeEvent.stopImmediatePropagation();
       setOpen(false);
     }
   };
@@ -149,7 +160,6 @@ function ItemSearchSelect({
       ) : (
         <Input
           ref={inputRef}
-          autoFocus
           placeholder="Search by name, code, or lookup key..."
           value={query}
           onChange={(e) => {
@@ -166,7 +176,8 @@ function ItemSearchSelect({
       {open && (
         <div
           ref={listRef}
-          className="absolute z-[100] mt-1 w-full max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-xl"
+          className="fixed z-[200] max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-xl"
+          style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
         >
           {filtered.length === 0 ? (
             <div className="px-3 py-3 text-sm text-[var(--muted-foreground)]">
