@@ -84,8 +84,6 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── RAIL CLIP (own phase) ────────────────
-  // Dedicated phase between Brackets and Buffer & Channels so this
-  // single section reads as its own beat in the form.
   {
     category: "RAIL CLIP",
     phase: "Rail Clip",
@@ -108,8 +106,8 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── DOOR SYSTEM ────────────────
-  // Each door sub-type gets its own section so the search is scoped tightly
-  // and quantities can be tracked per type.
+  // Header System lives inside Door System (between Door Post/Frame and
+  // Door Sill) — it's part of the door assembly, not its own phase.
   {
     category: "Car Door Panel",
     phase: "Door System",
@@ -127,6 +125,29 @@ export const BOM_SECTIONS: BomSection[] = [
     phase: "Door System",
     gate: ALWAYS,
     defaultItemCategories: ["Door Post/Frame"],
+  },
+  {
+    category: "Car Header System",
+    phase: "Door System",
+    gate: ALWAYS,
+    description:
+      "Car header (CO, MT variants) and car hanging brackets.",
+    defaultItemCategories: [
+      "Header Systems > Car Header System",
+      "Header Systems > Car Header System (Framater)",
+      "Header Systems > Manual Telescopic Car Header System",
+      "Header Systems > Car Header Hanging Bkt",
+    ],
+  },
+  {
+    category: "Landing Header System",
+    phase: "Door System",
+    gate: ALWAYS,
+    description: "Landing header (CO, MT variants).",
+    defaultItemCategories: [
+      "Header Systems > Landing Header System",
+      "Header Systems > Manual Telescopic Landing Header System",
+    ],
   },
   {
     category: "Door Sill",
@@ -147,50 +168,7 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Small Purchased Items > Gate Lock Items"],
   },
 
-  // ──────────────── HEADER SYSTEM ────────────────
-  {
-    category: "Header System",
-    phase: "Header System",
-    gate: ALWAYS,
-    fullWidth: true,
-    description:
-      "Car / landing header systems, hanging brackets, shoe channel.",
-    defaultItemCategories: ["Header Systems"],
-  },
-
-  // ──────────────── BUFFER & CHANNELS (continued) ────────────────
-  // Buffer Channel Main & Counter are defined above (right after Brackets/
-  // Rail Clip) so they render immediately below the bracket family. The
-  // rest of the phase's sections continue here.
-  {
-    category: "Buffer Spring",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    defaultItemCategories: ["Hardware > Buffer Spring"],
-  },
-  {
-    category: "Buffer Stand",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Buffer Stand"],
-  },
-  {
-    category: "Cabin Rubber Pad",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    defaultItemCategories: ["Small Purchased Items > Cabin Rubber Pad"],
-  },
-  {
-    category: "Filler Weight",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    fullWidth: true,
-    defaultItemCategories: ["Filler Weight"],
-  },
-
   // ──────────────── SAFETY & COUNTER FRAME ────────────────
-  // New phase that renders right after Door System. Groups safety gear,
-  // pulleys, counter-weight frame, machine beam and related items.
   {
     category: "Safety",
     phase: "Safety & Counter Frame",
@@ -270,8 +248,6 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── MISCELLANEOUS ITEMS ────────────────
-  // Switches, brackets, troughing — small parts that don't belong to a
-  // larger phase. Sits between Governor and Wire Rope/Belt.
   {
     category: "CONT. STAND",
     phase: "Miscellaneous Items",
@@ -324,7 +300,6 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── WIRE ROPE / BELT ────────────────
-  // Main hoist + governor ropes (or belts on belt-drive jobs).
   {
     category: "Wire Rope Main",
     phase: "Wire Rope/Belt",
@@ -347,7 +322,7 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── WIRE & HARDWARE ────────────────
-  // Rope hardware — clips, thimbles, I-bolts, misc bearings/clips.
+  // Rope hardware + stationary cams + buffer spring/stand.
   {
     category: "I-Bolt with Spring",
     phase: "Wire & Hardware",
@@ -371,73 +346,175 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Hardware > Bull Dog Clips"],
   },
   {
-    category: "Misc Hardware",
+    category: "D-SHACKLE",
     phase: "Wire & Hardware",
     gate: ALWAYS,
-    description: "Bearings, gathering clips, M.S bush, rag bolts, etc.",
-    defaultItemCategories: ["Hardware"],
+    defaultItemCategories: ['Hardware > "D" Shackle'],
+  },
+  {
+    category: "STA. CAM",
+    phase: "Wire & Hardware",
+    gate: ALWAYS,
+    description:
+      "Stationary cams — Home / STD / Drumbwater / Bracket Home variants.",
+    defaultItemCategories: [
+      "Small Manufactured Items > Stationary Cam Bkt Home",
+      "Small Manufactured Items > Stationary Cam Drumbwater",
+      "Small Manufactured Items > Stationary Cam Home",
+      "Small Manufactured Items > Stationary Cam STD",
+    ],
+  },
+  {
+    category: "Buffer Spring",
+    phase: "Wire & Hardware",
+    gate: ALWAYS,
+    defaultItemCategories: ["Hardware > Buffer Spring"],
+  },
+  {
+    category: "Buffer Stand",
+    phase: "Wire & Hardware",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Manufactured Items > Buffer Stand"],
   },
 
-  // ──────────────── CABIN & ELECTRICS ────────────────
-  // Each cabin fitting gets its own section so the search is scoped to
-  // the right sub-category and quantities are tracked per item type.
+  // ──────────────── FILLER WEIGHT (own phase) ────────────────
   {
-    category: "Cabin Glass",
-    phase: "Cabin & Electrics",
+    category: "Filler Weight",
+    phase: "Filler Weight",
+    gate: ALWAYS,
+    fullWidth: true,
+    defaultItemCategories: ["Filler Weight"],
+  },
+
+  // ──────────────── CABIN RUBBER PAD (own phase) ────────────────
+  {
+    category: "Cabin Rubber Pad",
+    phase: "Cabin Rubber Pad",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Purchased Items > Cabin Rubber Pad"],
+  },
+
+  // ──────────────── CABIN ADD-ON ITEMS ────────────────
+  // Everything that lives inside the cabin or is part of the cabin-side
+  // electrical fit-out. Replaces the old "Cabin & Electrics" phase.
+  {
+    category: "CABIN GLASS",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
     defaultItemCategories: ["Glass > Cabin Glass"],
   },
   {
-    category: "Floor Tiles",
-    phase: "Cabin & Electrics",
+    category: "FLOOR TILES",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
     defaultItemCategories: ["Small Purchased Items > Floor Tiles"],
   },
   {
-    category: "Fan / Ventilation",
-    phase: "Cabin & Electrics",
+    category: "CHEQUERED PLATE",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    description: "Chequered floor plate — no dedicated inventory category yet.",
+    defaultItemCategories: [],
+  },
+  {
+    category: "SAFETY/CAR GATE SWT.",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    description: "Safety / car-gate switch and its bracket.",
+    defaultItemCategories: [
+      "Small Manufactured Items > Car Gate Switch Bkt",
+      "Small Manufactured Items > Safety Switch Bkt",
+    ],
+  },
+  {
+    category: "HOME SAFETY SWITCH",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    description: "Home safety switch — pick from limit switch items.",
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "PVC CABLE HANGER",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Purchased Items > PVC Cable Hanger"],
+  },
+  {
+    category: "RET. CAM",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    description: "Retiring cam set and its bracket.",
+    defaultItemCategories: [
+      "Small Purchased Items > Retiring Cam Set",
+      "Small Manufactured Items > Returning Cam Bkt",
+    ],
+  },
+  {
+    category: "REED CHANNEL",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Manufactured Items > Read Channel/Switch Items"],
+  },
+  {
+    category: "FAN GRILL",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
     defaultItemCategories: ["Small Purchased Items > Fan Grill"],
   },
   {
-    category: "LOP Box",
-    phase: "Cabin & Electrics",
+    category: "FIREMAN SWITCH",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
-    defaultItemCategories: ["Miscallaneous > Lop Box"],
+    defaultItemCategories: ["Small Purchased Items > Fireman's Switch Box"],
   },
   {
-    category: "Cabin Handles",
-    phase: "Cabin & Electrics",
+    category: "OIL POT",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Purchased Items > S.S Handle"],
+    description: "Oil pot — pick from Oil/Mobil lubricants.",
+    defaultItemCategories: ["Small Purchased Items > Oil/Mobil"],
   },
   {
-    category: "Cabin Signage",
-    phase: "Cabin & Electrics",
+    category: "Mobil T-40",
+    phase: "Cabin Add-on Items",
     gate: ALWAYS,
-    description: "Danger plate, safety-tips plate, etc.",
-    defaultItemCategories: [
-      "Miscallaneous > Danger Plate",
-      "Miscallaneous > Safety Tips Plate",
-    ],
+    defaultItemCategories: ["Small Purchased Items > Oil/Mobil"],
+  },
+  {
+    category: "Grease 200grm",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Purchased Items > Oil/Mobil"],
+  },
+  {
+    category: "Safety Tips Plate",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Miscallaneous > Safety Tips Plate"],
+  },
+  {
+    category: "Danger Plate",
+    phase: "Cabin Add-on Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Miscallaneous > Danger Plate"],
   },
 ];
 
 export const PHASE_ORDER = [
   "Structural",
   "Brackets",
-  // Rail Clip + Buffer & Channels follow Brackets so the bracket family
-  // and immediately-adjacent parts read in manufacturing order.
   "Rail Clip",
   "Buffer & Channels",
+  // Header System now lives inside Door System (between Door Post/Frame
+  // and Door Sill); it's no longer a top-level phase.
   "Door System",
-  // Safety / pulleys / counter frame / machine beam grouped here.
   "Safety & Counter Frame",
   "Machine",
   "Governor",
   "Miscellaneous Items",
   "Wire Rope/Belt",
-  "Header System",
   "Wire & Hardware",
-  "Cabin & Electrics",
+  "Filler Weight",
+  "Cabin Rubber Pad",
+  "Cabin Add-on Items",
 ] as const;
