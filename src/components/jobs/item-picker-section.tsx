@@ -5,6 +5,7 @@ import {
   useRef,
   useCallback,
   useEffect,
+  useMemo,
 } from "react";
 import { Search, X, Plus, Loader2, Trash2 } from "lucide-react";
 import { searchItems } from "@/lib/actions/items";
@@ -68,8 +69,14 @@ export function ItemPickerSection({
 }: ItemPickerSectionProps) {
   const [showAll, setShowAll] = useState(false);
 
-  // Show one empty row so the user can start typing immediately.
-  const displayRows = items.length > 0 ? items : [emptyRow()];
+  // Seed exactly one empty row so the user can start typing immediately.
+  // CRITICAL: memoize so the seed's _key is stable across renders. If we
+  // built [emptyRow()] inline every render, the row's React key would
+  // change each time and the input would remount — which previously
+  // stole focus to the last-mounted empty section while the user was
+  // typing in Job Number.
+  const seedRow = useMemo(() => emptyRow(), []);
+  const displayRows = items.length > 0 ? items : [seedRow];
   const pickedCount = items.filter((i) => i.item_id).length;
 
   const updateRow = useCallback(
@@ -137,7 +144,7 @@ export function ItemPickerSection({
 
       {/* Rows */}
       <div className="space-y-1.5">
-        {displayRows.map((row, idx) => (
+        {displayRows.map((row) => (
           <ItemRow
             key={row._key}
             row={row}
@@ -153,7 +160,9 @@ export function ItemPickerSection({
                   ? undefined
                   : () => removeRow(row._key)
             }
-            autoFocus={idx === 0 && !row.item_id && items.length === 0}
+            // No autoFocus — the cursor should never steal away from
+            // whatever field the user is currently typing in. They click
+            // the search box they want.
           />
         ))}
       </div>
@@ -181,7 +190,6 @@ interface ItemRowProps {
   sectionCategory: string;
   onUpdate: (patch: Partial<PickedItem>) => void;
   onRemove?: () => void;
-  autoFocus?: boolean;
 }
 
 function ItemRow({
@@ -190,7 +198,6 @@ function ItemRow({
   sectionCategory,
   onUpdate,
   onRemove,
-  autoFocus,
 }: ItemRowProps) {
   // Display the friendlier name in the input once an item is picked.
   const initialDisplay = row.item_id
@@ -217,11 +224,6 @@ function ItemRow({
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [row.item_id, row.item_lookup, row.item_name]);
-
-  /* autofocus first empty row */
-  useEffect(() => {
-    if (autoFocus) inputRef.current?.focus();
-  }, [autoFocus]);
 
   /* debounced search */
   const doSearch = useCallback(
