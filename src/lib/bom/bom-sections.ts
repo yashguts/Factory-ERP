@@ -82,11 +82,23 @@ export const BOM_SECTIONS: BomSection[] = [
       "Rail Bracket > Rail Bracket Counter Home",
     ],
   },
+
+  // ──────────────── BUFFER & CHANNELS ────────────────
+  // Phase intentionally renders right after Brackets so Rail Clip sits
+  // immediately below the bracket family (manufacturing-order).
   {
     category: "RAIL CLIP",
-    phase: "Brackets",
+    phase: "Buffer & Channels",
     gate: ALWAYS,
     defaultItemCategories: ["Hardware > Rail Clip"],
+  },
+  {
+    category: "Buffer Channel",
+    phase: "Buffer & Channels",
+    gate: ALWAYS,
+    description:
+      "Add separate rows for Main and Counter buffer channels as needed.",
+    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
   },
 
   // ──────────────── DOOR SYSTEM ────────────────
@@ -140,19 +152,10 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Header Systems"],
   },
 
-  // ──────────────── BUFFER & CHANNELS ────────────────
-  {
-    category: "Buffer Channel Main",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
-  },
-  {
-    category: "Buffer Channel Counter",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
-  },
+  // ──────────────── BUFFER & CHANNELS (continued) ────────────────
+  // RAIL CLIP and Buffer Channel are defined above (right after Brackets)
+  // so they render immediately after the bracket family. The rest of the
+  // phase's sections continue here.
   {
     category: "Buffer Spring",
     phase: "Buffer & Channels",
@@ -293,9 +296,12 @@ export const BOM_SECTIONS: BomSection[] = [
 export const PHASE_ORDER = [
   "Structural",
   "Brackets",
+  // Buffer & Channels intentionally renders right after Brackets so
+  // RAIL CLIP and Buffer Channel sit immediately below the bracket
+  // family — matches the manufacturing flow.
+  "Buffer & Channels",
   "Door System",
   "Header System",
-  "Buffer & Channels",
   "Drive / Machine / Governor",
   "Wire & Hardware",
   "Cabin & Electrics",
