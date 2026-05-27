@@ -59,12 +59,6 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     defaultItemCategories: ["Hardware > Brick Dasfastner"],
   },
-  {
-    category: "RAIL CLIP",
-    phase: "Structural",
-    gate: ALWAYS,
-    defaultItemCategories: ["Hardware > Rail Clip"],
-  },
 
   // ──────────────── BRACKETS ────────────────
   {
@@ -87,6 +81,12 @@ export const BOM_SECTIONS: BomSection[] = [
       "Rail Bracket > Rail Bracket Counter",
       "Rail Bracket > Rail Bracket Counter Home",
     ],
+  },
+  {
+    category: "RAIL CLIP",
+    phase: "Brackets",
+    gate: ALWAYS,
+    defaultItemCategories: ["Hardware > Rail Clip"],
   },
 
   // ──────────────── DOOR SYSTEM ────────────────
