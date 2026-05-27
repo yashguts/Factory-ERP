@@ -27,16 +27,14 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 const STAGE_LABELS: Record<JobStage, string> = {
   new: "New",
-  first_phase_dispatched: "1st Phase",
-  second_phase_dispatched: "2nd Phase",
-  full_dispatched: "Full Dispatched",
+  first_phase: "First Phase",
+  full_material: "Full Material",
 };
 
 const STAGE_COLORS: Record<JobStage, string> = {
   new: "bg-gray-100 text-gray-800",
-  first_phase_dispatched: "bg-blue-100 text-blue-800",
-  second_phase_dispatched: "bg-purple-100 text-purple-800",
-  full_dispatched: "bg-green-100 text-green-800",
+  first_phase: "bg-blue-100 text-blue-800",
+  full_material: "bg-green-100 text-green-800",
 };
 
 type SortKey = "job_number" | "customer" | "status" | "stage" | "req_stage" | "req_dispatch";

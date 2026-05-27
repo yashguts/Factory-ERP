@@ -28,9 +28,8 @@ const STATUS_COLORS: Record<JobStatus, string> = {
 
 const STAGE_LABELS: Record<JobStage, string> = {
   new: "New",
-  first_phase_dispatched: "1st Phase Dispatched",
-  second_phase_dispatched: "2nd Phase Dispatched",
-  full_dispatched: "Full Dispatched",
+  first_phase: "First Phase",
+  full_material: "Full Material",
 };
 
 interface BomLineWithItem {

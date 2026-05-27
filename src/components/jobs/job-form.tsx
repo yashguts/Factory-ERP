@@ -25,9 +25,8 @@ import type { Job, JobStage } from "@/lib/supabase/types";
 
 const STAGE_OPTIONS: { value: JobStage; label: string }[] = [
   { value: "new", label: "New" },
-  { value: "first_phase_dispatched", label: "1st Phase Dispatched" },
-  { value: "second_phase_dispatched", label: "2nd Phase Dispatched" },
-  { value: "full_dispatched", label: "Full Dispatched" },
+  { value: "first_phase", label: "First Phase" },
+  { value: "full_material", label: "Full Material" },
 ];
 
 interface BomValue {

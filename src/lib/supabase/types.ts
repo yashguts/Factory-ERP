@@ -1,7 +1,7 @@
 export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock" | "door_panel";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
 export type JobStatus = "new" | "in_production" | "hold";
-export type JobStage = "new" | "first_phase_dispatched" | "second_phase_dispatched" | "full_dispatched";
+export type JobStage = "new" | "first_phase" | "full_material";
 export type UomCategory = "quantity" | "length" | "weight" | "area" | "volume";
 
 export interface UnitOfMeasurement {
