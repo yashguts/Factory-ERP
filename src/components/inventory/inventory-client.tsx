@@ -136,15 +136,32 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>("all");
 
   // Filter items
+  // Multi-token fuzzy search: split the query on whitespace and require
+  // every token to appear somewhere in name/lookup_key/code/description.
+  // Order-independent — "rope wire 12mm" matches "Wire Rope 12mm".
+  const searchTokens = useMemo(() => {
+    return search
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+  }, [search]);
+
   const filtered = useMemo(() => {
     return initialItems.filter((item) => {
-      if (search) {
-        const q = search.toLowerCase();
-        const matchesSearch =
-          (item.lookup_key || item.name).toLowerCase().includes(q) ||
-          item.code.toLowerCase().includes(q) ||
-          (item.description?.toLowerCase().includes(q) ?? false);
-        if (!matchesSearch) return false;
+      if (searchTokens.length > 0) {
+        const haystack = [
+          item.lookup_key,
+          item.name,
+          item.code,
+          item.description,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        for (const token of searchTokens) {
+          if (!haystack.includes(token)) return false;
+        }
       }
 
       if (typeFilter !== "all" && item.item_type !== typeFilter) return false;
@@ -171,7 +188,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
 
       return true;
     });
-  }, [initialItems, search, typeFilter, categoryFilter, subCategoryFilter, stockFilter, categoryTree]);
+  }, [initialItems, searchTokens, typeFilter, categoryFilter, subCategoryFilter, stockFilter, categoryTree]);
 
   // Sort items
   const sorted = useMemo(() => {

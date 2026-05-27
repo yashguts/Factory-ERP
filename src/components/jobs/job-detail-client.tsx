@@ -177,16 +177,24 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
   );
 
   const filteredBom = useMemo(() => {
-    if (!bomSearch) return itemBomLines;
-    const q = bomSearch.toLowerCase();
+    // Multi-token fuzzy match across code / name / category.
+    const tokens = bomSearch
+      .trim()
+      .toLowerCase()
+      .split(/\s+/)
+      .filter(Boolean);
+    if (tokens.length === 0) return itemBomLines;
     return itemBomLines.filter((line) => {
       const item = line.item;
       if (!item) return false;
-      return (
-        item.code.toLowerCase().includes(q) ||
-        item.name.toLowerCase().includes(q) ||
-        (item.category?.name?.toLowerCase().includes(q) ?? false)
-      );
+      const haystack = [item.code, item.name, item.category?.name]
+        .filter(Boolean)
+        .join(" ")
+        .toLowerCase();
+      for (const t of tokens) {
+        if (!haystack.includes(t)) return false;
+      }
+      return true;
     });
   }, [itemBomLines, bomSearch]);
 

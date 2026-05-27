@@ -79,15 +79,27 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
     return { totalRequired, totalShortfall, itemsWithShortfall, totalItems: initialData.length };
   }, [initialData]);
 
+  // Multi-token fuzzy search across code / name / category.
+  const searchTokens = useMemo(
+    () =>
+      search
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean),
+    [search],
+  );
+
   const filtered = useMemo(() => {
     return initialData.filter((row) => {
-      if (search) {
-        const q = search.toLowerCase();
-        const match =
-          row.item_code.toLowerCase().includes(q) ||
-          row.item_name.toLowerCase().includes(q) ||
-          (row.category_name?.toLowerCase().includes(q) ?? false);
-        if (!match) return false;
+      if (searchTokens.length > 0) {
+        const haystack = [row.item_code, row.item_name, row.category_name]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        for (const token of searchTokens) {
+          if (!haystack.includes(token)) return false;
+        }
       }
       if (typeFilter !== "all" && row.item_type !== typeFilter) return false;
       if (shortfallFilter === "shortfall" && row.shortfall <= 0) return false;
@@ -95,7 +107,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
       if (shortfallFilter === "zero" && row.shortfall !== 0) return false;
       return true;
     });
-  }, [initialData, search, typeFilter, shortfallFilter]);
+  }, [initialData, searchTokens, typeFilter, shortfallFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];

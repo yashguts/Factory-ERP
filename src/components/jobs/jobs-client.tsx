@@ -74,16 +74,34 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
     return Array.from(set).sort();
   }, [jobs]);
 
+  // Multi-token fuzzy search: every word must appear somewhere across
+  // job_number / customer / location / spec_string (order-independent).
+  const searchTokens = useMemo(
+    () =>
+      search
+        .trim()
+        .toLowerCase()
+        .split(/\s+/)
+        .filter(Boolean),
+    [search],
+  );
+
   const filtered = useMemo(() => {
     return jobs.filter((job) => {
-      if (search) {
-        const q = search.toLowerCase();
-        const match =
-          job.job_number.toLowerCase().includes(q) ||
-          (job.customer_name?.toLowerCase().includes(q) ?? false) ||
-          (job.location?.toLowerCase().includes(q) ?? false) ||
-          (job.spec_string?.toLowerCase().includes(q) ?? false);
-        if (!match) return false;
+      if (searchTokens.length > 0) {
+        const haystack = [
+          job.job_number,
+          job.customer_name,
+          job.location,
+          job.spec_string,
+          job.brand,
+        ]
+          .filter(Boolean)
+          .join(" ")
+          .toLowerCase();
+        for (const token of searchTokens) {
+          if (!haystack.includes(token)) return false;
+        }
       }
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
       if (stageFilter !== "all" && job.stage !== stageFilter) return false;
@@ -91,7 +109,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       return true;
     });
-  }, [jobs, search, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
+  }, [jobs, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
