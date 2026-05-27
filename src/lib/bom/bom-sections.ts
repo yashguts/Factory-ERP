@@ -84,8 +84,9 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── BUFFER & CHANNELS ────────────────
-  // Phase intentionally renders right after Brackets so Rail Clip sits
-  // immediately below the bracket family (manufacturing-order).
+  // Phase intentionally renders right after Brackets so Rail Clip and
+  // the Buffer Channel pair sit immediately below the bracket family
+  // (manufacturing-order).
   {
     category: "RAIL CLIP",
     phase: "Buffer & Channels",
@@ -93,11 +94,15 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Hardware > Rail Clip"],
   },
   {
-    category: "Buffer Channel",
+    category: "Buffer Channel Main",
     phase: "Buffer & Channels",
     gate: ALWAYS,
-    description:
-      "Add separate rows for Main and Counter buffer channels as needed.",
+    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
+  },
+  {
+    category: "Buffer Channel Counter",
+    phase: "Buffer & Channels",
+    gate: ALWAYS,
     defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
   },
 
