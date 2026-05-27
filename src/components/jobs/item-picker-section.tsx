@@ -242,6 +242,8 @@ function ItemRow({
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const [highlightIdx, setHighlightIdx] = useState(0);
+  /** Last search error (action stale after deploy, network blip, etc.) */
+  const [searchError, setSearchError] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -272,9 +274,21 @@ function ItemRow({
           if (seqRef.current === seq) {
             setResults(data);
             setHighlightIdx(0);
+            setSearchError(null);
           }
-        } catch {
-          /* swallow */
+        } catch (err) {
+          // Surface the failure instead of leaving the user with an
+          // empty dropdown forever. Most common cause: page has been
+          // open across a deploy and the server action hash is stale —
+          // a hard reload will fix it.
+          // eslint-disable-next-line no-console
+          console.error("[item-search] failed", err);
+          if (seqRef.current === seq) {
+            setResults([]);
+            setSearchError(
+              err instanceof Error ? err.message : "Search failed",
+            );
+          }
         } finally {
           if (seqRef.current === seq) setLoading(false);
         }
@@ -415,7 +429,30 @@ function ItemRow({
             ref={listRef}
             className="absolute z-50 mt-1 w-full min-w-[420px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-80 overflow-y-auto"
           >
-            {results.length === 0 ? (
+            {searchError ? (
+              <div className="px-3 py-3 text-xs">
+                <div className="flex items-start gap-1.5 text-red-700">
+                  <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+                  <div className="flex-1">
+                    <div className="font-medium">Search failed</div>
+                    <div className="text-[11px] opacity-80 mt-0.5">
+                      {searchError}
+                    </div>
+                    <div className="text-[11px] opacity-70 mt-1">
+                      This usually means the page has been open across a
+                      deploy. Reload to fix.
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => window.location.reload()}
+                      className="mt-1.5 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
+                    >
+                      Reload page →
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : results.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
                 {loading
                   ? "Searching..."

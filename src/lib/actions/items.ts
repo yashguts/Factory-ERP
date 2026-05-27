@@ -1,6 +1,6 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
 import {
   resolveCategoryPaths,
   expandCategoryDescendants,
@@ -37,7 +37,11 @@ export async function searchItems(
   categoryPaths?: string[],
   limit = 50,
 ): Promise<SearchableItem[]> {
-  const supabase = await createClient();
+  // Use the cache-friendly anon client (no cookies). The SSR client's
+  // cookie session can go stale on long-open tabs, which used to make
+  // searches silently fail. This is a public, RLS-light read, so
+  // dropping the cookie dependency is safe and more robust.
+  const supabase = createCacheClient();
 
   // Resolve paths → IDs → IDs+descendants
   let categoryIds: string[] | undefined;
