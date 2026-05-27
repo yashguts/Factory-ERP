@@ -51,6 +51,15 @@ function bomKey(category: string, variant: string) {
   return `${category}::${variant}`;
 }
 
+export interface ExistingItemLine {
+  category: string;
+  variant: string | null;
+  value_text: string | null;
+  required_quantity: number;
+  item_id: string | null;
+  item: { code: string; name: string; uom: { abbreviation: string } | null } | null;
+}
+
 interface Props {
   mode: "create" | "edit";
   job?: Job;
@@ -60,9 +69,10 @@ interface Props {
     value_text: string | null;
     required_quantity: number;
   }>;
+  existingItemLines?: ExistingItemLine[];
 }
 
-export function JobForm({ mode, job, existingBom }: Props) {
+export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
@@ -131,6 +141,19 @@ export function JobForm({ mode, job, existingBom }: Props) {
       shouldRenderSection(s, doorType || null, driveType || null),
     );
   }, [doorType, driveType]);
+
+  // Group existing item lines by category for reference display
+  const itemLinesByCategory = useMemo(() => {
+    const map = new Map<string, ExistingItemLine[]>();
+    if (!existingItemLines) return map;
+    for (const line of existingItemLines) {
+      if (!line.category) continue;
+      const existing = map.get(line.category) ?? [];
+      existing.push(line);
+      map.set(line.category, existing);
+    }
+    return map;
+  }, [existingItemLines]);
 
   const sectionsByPhase = useMemo(() => {
     const map = new Map<string, BomSection[]>();
@@ -532,72 +555,77 @@ export function JobForm({ mode, job, existingBom }: Props) {
               </Button>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {sections.map((section) =>
-                section.customEditor === "car-landing-doors" ? (
-                  <CarLandingDoorsEditor
+              {sections.map((section) => {
+                const refItems = itemLinesByCategory.get(section.category) ?? [];
+                const editor =
+                  section.customEditor === "car-landing-doors" ? (
+                    <CarLandingDoorsEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "main-bracket" ? (
+                    <MainBracketEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "counter-bracket" ? (
+                    <CounterBracketEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "safety" ? (
+                    <SafetyEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "machine" ? (
+                    <MachineEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "governor" ? (
+                    <GovernorEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "filler-weight" ? (
+                    <FillerWeightEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : section.customEditor === "cabin-items" ? (
+                    <CabinItemsEditor
+                      category={section.category}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  ) : (
+                    <SectionCard
+                      section={section}
+                      getBomValue={getBomValue}
+                      setBomValue={setBomValue}
+                    />
+                  );
+
+                return (
+                  <div
                     key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "main-bracket" ? (
-                  <MainBracketEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "counter-bracket" ? (
-                  <CounterBracketEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "safety" ? (
-                  <SafetyEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "machine" ? (
-                  <MachineEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "governor" ? (
-                  <GovernorEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "filler-weight" ? (
-                  <FillerWeightEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : section.customEditor === "cabin-items" ? (
-                  <CabinItemsEditor
-                    key={section.category}
-                    category={section.category}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ) : (
-                  <SectionCard
-                    key={section.category}
-                    section={section}
-                    getBomValue={getBomValue}
-                    setBomValue={setBomValue}
-                  />
-                ),
-              )}
+                    className={section.fullWidth ? "lg:col-span-2" : ""}
+                  >
+                    {editor}
+                    {refItems.length > 0 && (
+                      <ExistingItemsRef items={refItems} />
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
@@ -643,9 +671,7 @@ function SectionCard({
 
   return (
     <div
-      className={`rounded-lg border border-[var(--border)] bg-[var(--card)] p-4 ${
-        section.fullWidth ? "lg:col-span-2" : ""
-      }`}
+      className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
     >
       <div className="flex items-center justify-between mb-3">
         <h3 className="font-medium text-[var(--foreground)]">
@@ -751,6 +777,58 @@ function LeafInput({
         value={value.textVal ?? ""}
         onChange={(e) => onChange({ textVal: e.target.value || undefined })}
       />
+    </div>
+  );
+}
+
+/** Shows existing item-based BOM lines as reference below a section editor */
+function ExistingItemsRef({ items }: { items: ExistingItemLine[] }) {
+  const [open, setOpen] = useState(true);
+
+  return (
+    <div className="mt-2 rounded-md border border-dashed border-[var(--border)] bg-[var(--background)] text-xs">
+      <button
+        type="button"
+        className="w-full flex items-center justify-between px-3 py-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+        onClick={() => setOpen(!open)}
+      >
+        <span className="font-medium">
+          📋 Existing Items ({items.length})
+        </span>
+        <span className="text-[10px]">{open ? "▲ Hide" : "▼ Show"}</span>
+      </button>
+      {open && (
+        <div className="px-3 pb-2">
+          <table className="w-full text-left">
+            <thead>
+              <tr className="text-[var(--muted-foreground)] border-b border-[var(--border)]">
+                <th className="pb-1 pr-2 font-medium">Code</th>
+                <th className="pb-1 pr-2 font-medium">Item</th>
+                <th className="pb-1 pr-2 font-medium text-right">Qty</th>
+                <th className="pb-1 font-medium">Unit</th>
+              </tr>
+            </thead>
+            <tbody>
+              {items.map((line, i) => (
+                <tr key={i} className="border-b border-[var(--border)] last:border-0">
+                  <td className="py-1 pr-2 font-mono text-[var(--muted-foreground)]">
+                    {line.item?.code ?? "—"}
+                  </td>
+                  <td className="py-1 pr-2 text-[var(--foreground)]">
+                    {line.item?.name ?? line.variant ?? "—"}
+                  </td>
+                  <td className="py-1 pr-2 text-right font-mono text-[var(--foreground)]">
+                    {Number(line.required_quantity).toLocaleString()}
+                  </td>
+                  <td className="py-1 text-[var(--muted-foreground)]">
+                    {line.item?.uom?.abbreviation ?? ""}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

@@ -282,6 +282,62 @@ export async function getJobBomSections(jobId: string) {
   return data ?? [];
 }
 
+/** Fetch item-based BOM lines for edit-page reference display */
+export async function getJobBomItemLines(jobId: string) {
+  const supabase = await createClient();
+
+  const { data: header } = await supabase
+    .from("job_bom_headers")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .single();
+
+  if (!header) return [];
+
+  const { data, error } = await supabase
+    .from("job_bom_lines")
+    .select(`
+      category, variant, value_text, required_quantity, item_id,
+      item:items!job_bom_lines_item_id_fkey(code, name,
+        uom:units_of_measurement(abbreviation)
+      )
+    `)
+    .eq("job_bom_id", header.id)
+    .not("category", "is", null)
+    .order("sort_order");
+
+  if (error) throw error;
+
+  // PostgREST returns joined relations as arrays; flatten to single objects
+  return (data ?? []).map((row: any) => ({
+    category: row.category as string,
+    variant: row.variant as string | null,
+    value_text: row.value_text as string | null,
+    required_quantity: row.required_quantity as number,
+    item_id: row.item_id as string | null,
+    item: Array.isArray(row.item) && row.item.length > 0
+      ? {
+          code: row.item[0].code as string,
+          name: row.item[0].name as string,
+          uom: Array.isArray(row.item[0].uom) && row.item[0].uom.length > 0
+            ? { abbreviation: row.item[0].uom[0].abbreviation as string }
+            : null,
+        }
+      : row.item && typeof row.item === "object" && !Array.isArray(row.item)
+        ? {
+            code: row.item.code as string,
+            name: row.item.name as string,
+            uom: row.item.uom && typeof row.item.uom === "object" && !Array.isArray(row.item.uom)
+              ? { abbreviation: row.item.uom.abbreviation as string }
+              : Array.isArray(row.item.uom) && row.item.uom.length > 0
+                ? { abbreviation: row.item.uom[0].abbreviation as string }
+                : null,
+          }
+        : null,
+  }));
+}
+
 /** Save BOM lines for specific categories only (per-section save). */
 export async function saveBomSection(
   jobId: string,
