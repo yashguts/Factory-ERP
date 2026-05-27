@@ -92,6 +92,17 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
     return map;
   }, [items, categories]);
 
+  // Build mapping: item_type → Set of sub-category IDs that contain items of that type
+  const typeToSubCatIds = useMemo(() => {
+    const map: Record<string, Set<string>> = {};
+    for (const it of items) {
+      if (!it.category_id) continue;
+      if (!map[it.item_type]) map[it.item_type] = new Set();
+      map[it.item_type].add(it.category_id);
+    }
+    return map;
+  }, [items]);
+
   // Resolve initial parent + sub-category from item's category_id
   const resolveInitialCategories = () => {
     if (!item?.category_id) return { parentId: "", subId: "" };
@@ -116,18 +127,13 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
   const [parentCategoryId, setParentCategoryId] = useState(initial.parentId);
   const [subCategoryId, setSubCategoryId] = useState(initial.subId);
 
-  const subCategories = useMemo(
-    () => (parentCategoryId ? childrenByParent[parentCategoryId] ?? [] : []),
-    [parentCategoryId, childrenByParent]
-  );
-
   const resolvedCategoryId = subCategoryId || parentCategoryId || null;
 
   const [form, setForm] = useState({
     code: item?.code ?? "",
     name: item?.name ?? "",
     description: item?.description ?? "",
-    item_type: item?.item_type ?? ("raw_material" as ItemType),
+    item_type: item?.item_type ?? ("mechanical_finished_stock" as ItemType),
     uom_id: item?.uom_id ?? "",
     minimum_stock: Number(item?.minimum_stock ?? 0),
     reorder_point: Number(item?.reorder_point ?? 0),
@@ -138,9 +144,18 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
   // Filter parent categories by selected item type
   const filteredParentCategories = useMemo(() => {
     const allowedIds = typeToParentCatIds[form.item_type];
-    if (!allowedIds || allowedIds.size === 0) return parentCategories; // show all if no data
+    if (!allowedIds || allowedIds.size === 0) return []; // no categories for types with no items
     return parentCategories.filter((c) => allowedIds.has(c.id));
   }, [form.item_type, typeToParentCatIds, parentCategories]);
+
+  // Filter sub-categories by selected item type
+  const subCategories = useMemo(() => {
+    if (!parentCategoryId) return [];
+    const all = childrenByParent[parentCategoryId] ?? [];
+    const allowedSubIds = typeToSubCatIds[form.item_type];
+    if (!allowedSubIds || allowedSubIds.size === 0) return all;
+    return all.filter((c) => allowedSubIds.has(c.id));
+  }, [parentCategoryId, childrenByParent, form.item_type, typeToSubCatIds]);
 
   // When item type changes, reset category selections if they're no longer valid
   const handleTypeChange = (newType: ItemType) => {
