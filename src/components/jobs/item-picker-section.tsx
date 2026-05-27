@@ -405,18 +405,23 @@ function ItemRow({
                       : "hover:bg-[var(--muted)]",
                   )}
                 >
-                  {/* Line 1: primary label (lookup_key if present, else name) */}
+                  {/* Line 1: primary label (lookup_key if present, else name) + stock */}
                   <div className="flex items-start gap-2">
                     <span className="font-medium leading-snug break-words flex-1">
                       {item.lookup_key || item.name}
                     </span>
                     <span
                       className={cn(
-                        "text-[10px] shrink-0 mt-0.5",
-                        idx === highlightIdx ? "opacity-80" : "opacity-60",
+                        "text-[11px] font-mono shrink-0 mt-0.5 tabular-nums",
+                        idx === highlightIdx
+                          ? "opacity-90"
+                          : item.total_stock <= 0
+                            ? "text-red-500"
+                            : "text-[var(--muted-foreground)]",
                       )}
+                      title={`In stock: ${formatStock(item.total_stock)} ${item.uom_abbreviation}`.trim()}
                     >
-                      {item.uom_abbreviation}
+                      {formatStock(item.total_stock)}
                     </span>
                   </div>
                   {/* Line 2: code + (name if different from lookup) + category */}
@@ -478,4 +483,19 @@ function ItemRow({
       )}
     </div>
   );
+}
+
+/**
+ * Format inventory stock for the dropdown right column.
+ *  - Whole numbers render as e.g. "12" or "1,250"
+ *  - Fractional quantities (e.g. 5.5 m of rope) render with up to 2 decimals
+ */
+function formatStock(qty: number): string {
+  if (!Number.isFinite(qty)) return "0";
+  if (Number.isInteger(qty)) {
+    return qty.toLocaleString();
+  }
+  return Number(qty.toFixed(2)).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
 }

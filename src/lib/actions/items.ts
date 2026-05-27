@@ -14,6 +14,8 @@ export interface SearchableItem {
   lookup_key: string | null;
   category_name: string | null;
   uom_abbreviation: string;
+  /** Sum of inventory.quantity across all warehouses for this item. */
+  total_stock: number;
 }
 
 /**
@@ -53,7 +55,8 @@ export async function searchItems(
     .select(
       `id, code, name, lookup_key,
       category:item_categories!items_category_id_fkey(name),
-      uom:units_of_measurement(abbreviation)`,
+      uom:units_of_measurement(abbreviation),
+      inventory(quantity)`,
     )
     .eq("is_active", true);
 
@@ -82,17 +85,27 @@ export async function searchItems(
   const { data, error } = await q;
   if (error) throw error;
 
-  // Flatten PostgREST joined arrays into flat objects
-  return (data ?? []).map((row: any) => ({
-    id: row.id as string,
-    code: row.code as string,
-    name: row.name as string,
-    lookup_key: (row.lookup_key as string | null) ?? null,
-    category_name: Array.isArray(row.category)
-      ? (row.category[0]?.name ?? null)
-      : (row.category?.name ?? null),
-    uom_abbreviation: Array.isArray(row.uom)
-      ? (row.uom[0]?.abbreviation ?? "")
-      : (row.uom?.abbreviation ?? ""),
-  }));
+  // Flatten PostgREST joined arrays into flat objects, and sum inventory.
+  return (data ?? []).map((row: any) => {
+    const invRows: Array<{ quantity: number }> = Array.isArray(row.inventory)
+      ? row.inventory
+      : [];
+    const total_stock = invRows.reduce(
+      (sum, r) => sum + Number(r.quantity ?? 0),
+      0,
+    );
+    return {
+      id: row.id as string,
+      code: row.code as string,
+      name: row.name as string,
+      lookup_key: (row.lookup_key as string | null) ?? null,
+      category_name: Array.isArray(row.category)
+        ? (row.category[0]?.name ?? null)
+        : (row.category?.name ?? null),
+      uom_abbreviation: Array.isArray(row.uom)
+        ? (row.uom[0]?.abbreviation ?? "")
+        : (row.uom?.abbreviation ?? ""),
+      total_stock,
+    };
+  });
 }
