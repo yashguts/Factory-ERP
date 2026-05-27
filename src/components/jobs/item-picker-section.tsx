@@ -254,7 +254,7 @@ export function ItemPickerSection({
                   onClick={() => addItem(item)}
                   onMouseEnter={() => setHighlightIdx(idx)}
                   className={cn(
-                    "w-full text-left px-3 py-2 text-sm flex items-center gap-3",
+                    "w-full text-left px-3 py-2 text-sm flex items-center gap-3 cursor-pointer",
                     "border-b border-[var(--border)] last:border-0",
                     idx === highlightIdx
                       ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
@@ -333,7 +333,7 @@ export function ItemPickerSection({
                     <button
                       type="button"
                       onClick={() => removeItem(item._key)}
-                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-[var(--muted-foreground)] hover:text-red-600 transition-opacity"
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-100 text-[var(--muted-foreground)] hover:text-red-600 transition-opacity cursor-pointer"
                       title="Remove item"
                     >
                       <X className="h-3.5 w-3.5" />

@@ -145,7 +145,7 @@ function ItemSearchSelect({
           </span>
           <button
             type="button"
-            className="ml-2 flex-shrink-0 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none"
+            className="ml-2 flex-shrink-0 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none cursor-pointer"
             onClick={(e) => {
               e.stopPropagation();
               onChange("");

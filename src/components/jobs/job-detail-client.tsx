@@ -246,7 +246,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
       <div className="mb-6">
         <button
           onClick={() => router.push("/jobs")}
-          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3"
+          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3 cursor-pointer"
         >
           <ArrowLeft size={14} /> Back to Jobs
         </button>
@@ -351,7 +351,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
             {(hasSectionBom && hasItemBom) && (
               <div className="flex gap-1 mt-2">
                 <button
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  className={`px-3 py-1 text-sm rounded-md transition-colors cursor-pointer ${
                     viewTab === "sections"
                       ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                       : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -361,7 +361,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
                   By Section ({bomSectionLines.length})
                 </button>
                 <button
-                  className={`px-3 py-1 text-sm rounded-md transition-colors ${
+                  className={`px-3 py-1 text-sm rounded-md transition-colors cursor-pointer ${
                     viewTab === "items"
                       ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                       : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"

@@ -281,7 +281,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         <div className="flex items-center gap-3">
           <button
             onClick={() => router.back()}
-            className="p-2 rounded-md hover:bg-[var(--muted)]"
+            className="p-2 rounded-md hover:bg-[var(--muted)] cursor-pointer"
           >
             <ArrowLeft className="h-5 w-5" />
           </button>

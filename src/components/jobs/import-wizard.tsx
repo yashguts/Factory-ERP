@@ -253,7 +253,7 @@ export function ImportWizard() {
       <div className="mb-6">
         <button
           onClick={() => router.push("/jobs")}
-          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3"
+          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3 cursor-pointer"
         >
           <ArrowLeft size={14} /> Back to Jobs
         </button>
@@ -389,7 +389,7 @@ export function ImportWizard() {
                       {col.match_status === "unmatched" && (
                         <button
                           onClick={() => handleSkipColumn(col.column_index)}
-                          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+                          className="text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
                         >
                           Skip
                         </button>

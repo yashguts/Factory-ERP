@@ -122,7 +122,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
           e.stopPropagation();
           toggleOpen();
         }}
-        className="p-1 rounded hover:bg-[var(--muted)] transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+        className="p-1 rounded hover:bg-[var(--muted)] transition-colors text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
         title="Quick stock adjust"
       >
         <PackagePlus size={15} />
@@ -149,7 +149,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
             <div className="flex gap-1">
               <button
                 type="button"
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                   direction === "add"
                     ? "bg-green-600 text-white"
                     : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
@@ -160,7 +160,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
               </button>
               <button
                 type="button"
-                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                   direction === "remove"
                     ? "bg-red-600 text-white"
                     : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"

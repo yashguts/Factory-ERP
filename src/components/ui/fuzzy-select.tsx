@@ -165,7 +165,7 @@ export function FuzzySelect({
         disabled={disabled}
         onClick={handleOpen}
         className={cn(
-          "flex h-8 w-full items-center justify-between rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-sm",
+          "flex h-8 w-full items-center justify-between rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-sm cursor-pointer",
           "focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1",
           "disabled:opacity-50 disabled:cursor-not-allowed",
           !value && "text-[var(--muted-foreground)]",
@@ -180,7 +180,7 @@ export function FuzzySelect({
               role="button"
               tabIndex={-1}
               onClick={handleClear}
-              className="p-0.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)]"
+              className="p-0.5 rounded hover:bg-[var(--muted)] text-[var(--muted-foreground)] cursor-pointer"
             >
               <X className="h-3 w-3" />
             </span>

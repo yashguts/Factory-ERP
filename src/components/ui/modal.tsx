@@ -22,10 +22,10 @@ export function Modal({ title, onClose, children, className }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50" onClick={onClose} />
+      <div className="fixed inset-0 bg-black/50 cursor-pointer" onClick={onClose} />
       <div
         className={cn(
-          "relative z-10 bg-[var(--background)] rounded-lg border border-[var(--border)] shadow-xl w-full max-h-[90vh] overflow-y-auto",
+          "relative z-[60] bg-[var(--background)] rounded-lg border border-[var(--border)] shadow-xl w-full max-h-[90vh] overflow-y-auto cursor-default",
           className ?? "max-w-lg"
         )}
       >
@@ -33,7 +33,7 @@ export function Modal({ title, onClose, children, className }: ModalProps) {
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--muted)] transition-colors"
+            className="p-1 rounded hover:bg-[var(--muted)] transition-colors cursor-pointer"
           >
             <X size={18} />
           </button>

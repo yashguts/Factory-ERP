@@ -340,7 +340,7 @@ export function UnmatchedClient({ initialPatterns }: Props) {
                   {searchResults.map((item) => (
                     <button
                       key={item.id}
-                      className="w-full text-left px-4 py-3 hover:bg-[var(--muted)] transition-colors flex items-center gap-3 disabled:opacity-50"
+                      className="w-full text-left px-4 py-3 hover:bg-[var(--muted)] transition-colors flex items-center gap-3 cursor-pointer disabled:opacity-50"
                       onClick={() => handleMap(item)}
                       disabled={isMapping}
                     >
