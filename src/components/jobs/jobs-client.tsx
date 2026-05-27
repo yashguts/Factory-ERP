@@ -10,7 +10,7 @@ import {
 } from "@/components/ui/table";
 import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
 import Link from "next/link";
-import type { Job, JobStatus } from "@/lib/supabase/types";
+import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   draft: "Draft",
@@ -28,7 +28,21 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   cancelled: "bg-red-100 text-red-800",
 };
 
-type SortKey = "job_number" | "customer" | "progress" | "delivery" | "status";
+const STAGE_LABELS: Record<JobStage, string> = {
+  new: "New",
+  first_phase_dispatched: "1st Phase",
+  second_phase_dispatched: "2nd Phase",
+  full_dispatched: "Full Dispatched",
+};
+
+const STAGE_COLORS: Record<JobStage, string> = {
+  new: "bg-gray-100 text-gray-800",
+  first_phase_dispatched: "bg-blue-100 text-blue-800",
+  second_phase_dispatched: "bg-purple-100 text-purple-800",
+  full_dispatched: "bg-green-100 text-green-800",
+};
+
+type SortKey = "job_number" | "customer" | "progress" | "delivery" | "status" | "stage" | "req_stage" | "req_dispatch";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
 
@@ -42,6 +56,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
+  const [stageFilter, setStageFilter] = useState<JobStage | "all">("all");
   const [doorTypeFilter, setDoorTypeFilter] = useState<string>("all");
   const [brandFilter, setBrandFilter] = useState<string>("all");
   const [sortKey, setSortKey] = useState<SortKey>("job_number");
@@ -72,11 +87,12 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
         if (!match) return false;
       }
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
+      if (stageFilter !== "all" && job.stage !== stageFilter) return false;
       if (doorTypeFilter !== "all" && job.door_type !== doorTypeFilter) return false;
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       return true;
     });
-  }, [initialJobs, search, statusFilter, doorTypeFilter, brandFilter]);
+  }, [initialJobs, search, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -97,6 +113,15 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
           break;
         case "status":
           cmp = a.status.localeCompare(b.status);
+          break;
+        case "stage":
+          cmp = (a.stage ?? "new").localeCompare(b.stage ?? "new");
+          break;
+        case "req_stage":
+          cmp = (a.requirement_stage ?? "new").localeCompare(b.requirement_stage ?? "new");
+          break;
+        case "req_dispatch":
+          cmp = (a.requirement_dispatch_date ?? "").localeCompare(b.requirement_dispatch_date ?? "");
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
@@ -196,6 +221,17 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
           ))}
         </Select>
 
+        <Select
+          value={stageFilter}
+          onChange={(e) => { setStageFilter(e.target.value as JobStage | "all"); resetPage(); }}
+          className="w-[150px]"
+        >
+          <option value="all">All Stages</option>
+          {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
+            <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+          ))}
+        </Select>
+
         {doorTypes.length > 0 && (
           <Select
             value={doorTypeFilter}
@@ -241,8 +277,9 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
-                <TableHead>Location</TableHead>
-                <SortHeader label="Progress" sortField="progress" />
+                <SortHeader label="Stage" sortField="stage" />
+                <SortHeader label="Req. Stage" sortField="req_stage" />
+                <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
                 <SortHeader label="Delivery" sortField="delivery" />
                 <SortHeader label="Status" sortField="status" />
               </TableRow>
@@ -268,20 +305,20 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                         <span className="font-mono text-xs">{job.spec_string}</span>
                       ) : "-"}
                     </TableCell>
-                    <TableCell className="text-sm">{job.location || "-"}</TableCell>
                     <TableCell>
-                      <div className="flex items-center gap-2">
-                        <div className="w-16 h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-                          <div
-                            className="h-full rounded-full transition-all"
-                            style={{
-                              width: `${pct}%`,
-                              backgroundColor: pct === 100 ? "var(--success, #22c55e)" : "var(--primary)",
-                            }}
-                          />
-                        </div>
-                        <span className="text-xs text-[var(--muted-foreground)] w-8">{pct}%</span>
-                      </div>
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${STAGE_COLORS[job.stage ?? "new"]}`}>
+                        {STAGE_LABELS[job.stage ?? "new"]}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${STAGE_COLORS[job.requirement_stage ?? "new"]}`}>
+                        {STAGE_LABELS[job.requirement_stage ?? "new"]}
+                      </span>
+                    </TableCell>
+                    <TableCell className="text-sm">
+                      {job.requirement_dispatch_date
+                        ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "2-digit" })
+                        : "-"}
                     </TableCell>
                     <TableCell className="text-sm">
                       {job.expected_delivery

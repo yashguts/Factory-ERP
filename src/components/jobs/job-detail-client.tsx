@@ -12,7 +12,7 @@ import { ArrowLeft, Search, ArrowUpDown, Pencil } from "lucide-react";
 import { updateJob } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
-import type { Job, JobStatus } from "@/lib/supabase/types";
+import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   draft: "Draft",
@@ -28,6 +28,13 @@ const STATUS_COLORS: Record<JobStatus, string> = {
   in_progress: "bg-amber-100 text-amber-800",
   completed: "bg-green-100 text-green-800",
   cancelled: "bg-red-100 text-red-800",
+};
+
+const STAGE_LABELS: Record<JobStage, string> = {
+  new: "New",
+  first_phase_dispatched: "1st Phase Dispatched",
+  second_phase_dispatched: "2nd Phase Dispatched",
+  full_dispatched: "Full Dispatched",
 };
 
 interface BomLineWithItem {
@@ -303,6 +310,12 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
         <MetaItem
           label="Planned End"
           value={job.planned_end ? new Date(job.planned_end).toLocaleDateString("en-IN") : null}
+        />
+        <MetaItem label="Stage" value={STAGE_LABELS[job.stage ?? "new"]} />
+        <MetaItem label="Req. Stage" value={STAGE_LABELS[job.requirement_stage ?? "new"]} />
+        <MetaItem
+          label="Req. Dispatch Date"
+          value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}
         />
       </div>
 

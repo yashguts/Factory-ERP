@@ -21,7 +21,14 @@ import { MainBracketEditor } from "@/components/jobs/main-bracket-editor";
 import { CounterBracketEditor } from "@/components/jobs/counter-bracket-editor";
 import { createJobWithBom, updateJobWithBom } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
-import type { Job } from "@/lib/supabase/types";
+import type { Job, JobStage } from "@/lib/supabase/types";
+
+const STAGE_OPTIONS: { value: JobStage; label: string }[] = [
+  { value: "new", label: "New" },
+  { value: "first_phase_dispatched", label: "1st Phase Dispatched" },
+  { value: "second_phase_dispatched", label: "2nd Phase Dispatched" },
+  { value: "full_dispatched", label: "Full Dispatched" },
+];
 
 interface BomValue {
   numVal?: number;
@@ -59,6 +66,10 @@ export function JobForm({ mode, job, existingBom }: Props) {
   const [expectedDelivery, setExpectedDelivery] = useState(
     job?.expected_delivery ?? "",
   );
+
+  const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
+  const [requirementStage, setRequirementStage] = useState<JobStage>(job?.requirement_stage ?? "new");
+  const [requirementDispatchDate, setRequirementDispatchDate] = useState(job?.requirement_dispatch_date ?? "");
 
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
   const [doorType, setDoorType] = useState(job?.door_type ?? "");
@@ -163,6 +174,9 @@ export function JobForm({ mode, job, existingBom }: Props) {
         remark: remark || undefined,
         order_date: orderDate || undefined,
         expected_delivery: expectedDelivery || undefined,
+        stage,
+        requirement_stage: requirementStage,
+        requirement_dispatch_date: requirementDispatchDate || undefined,
       };
 
       try {
@@ -292,6 +306,27 @@ export function JobForm({ mode, job, existingBom }: Props) {
               value={remark}
               onChange={(e) => setRemark(e.target.value)}
               placeholder="Notes"
+            />
+          </Field>
+          <Field label="Stage">
+            <Select value={stage} onChange={(e) => setStage(e.target.value as JobStage)}>
+              {STAGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Requirement Stage">
+            <Select value={requirementStage} onChange={(e) => setRequirementStage(e.target.value as JobStage)}>
+              {STAGE_OPTIONS.map((o) => (
+                <option key={o.value} value={o.value}>{o.label}</option>
+              ))}
+            </Select>
+          </Field>
+          <Field label="Req. Dispatch Date">
+            <Input
+              type="date"
+              value={requirementDispatchDate}
+              onChange={(e) => setRequirementDispatchDate(e.target.value)}
             />
           </Field>
         </div>

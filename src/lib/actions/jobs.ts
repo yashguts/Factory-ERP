@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import type { JobStatus } from "@/lib/supabase/types";
+import type { JobStatus, JobStage } from "@/lib/supabase/types";
 
 export interface BomLineInput {
   category: string;
@@ -92,6 +92,9 @@ export async function createJob(data: {
   remark?: string;
   planned_start?: string;
   planned_end?: string;
+  stage?: JobStage;
+  requirement_stage?: JobStage;
+  requirement_dispatch_date?: string;
 }) {
   const supabase = await createClient();
   const { data: job, error } = await supabase
@@ -121,6 +124,9 @@ export async function createJobWithBom(
     remark?: string;
     order_date?: string;
     expected_delivery?: string;
+    stage?: JobStage;
+    requirement_stage?: JobStage;
+    requirement_dispatch_date?: string;
   },
   bomLines: BomLineInput[],
 ) {
@@ -186,6 +192,9 @@ export async function updateJobWithBom(
     remark?: string;
     order_date?: string;
     expected_delivery?: string;
+    stage?: JobStage;
+    requirement_stage?: JobStage;
+    requirement_dispatch_date?: string;
   },
   bomLines: BomLineInput[],
 ) {
@@ -297,6 +306,9 @@ export async function updateJob(
     actual_start?: string;
     actual_end?: string;
     notes?: string;
+    stage?: JobStage;
+    requirement_stage?: JobStage;
+    requirement_dispatch_date?: string | null;
   }
 ) {
   const supabase = await createClient();

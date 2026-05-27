@@ -1,6 +1,7 @@
 export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock" | "door_panel";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
 export type JobStatus = "draft" | "planned" | "in_progress" | "completed" | "cancelled";
+export type JobStage = "new" | "first_phase_dispatched" | "second_phase_dispatched" | "full_dispatched";
 export type UomCategory = "quantity" | "length" | "weight" | "area" | "volume";
 
 export interface UnitOfMeasurement {
@@ -110,6 +111,9 @@ export interface Job {
   drive_type: string | null;
   capacity: string | null;
   remark: string | null;
+  stage: JobStage;
+  requirement_stage: JobStage;
+  requirement_dispatch_date: string | null;
   created_at: string;
   updated_at: string;
 }
