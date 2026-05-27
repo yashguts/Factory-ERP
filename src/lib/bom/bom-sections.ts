@@ -253,27 +253,101 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Machine Beam"],
   },
 
-  // ──────────────── DRIVE / MACHINE / GOVERNOR ────────────────
+  // ──────────────── MACHINE (own phase) ────────────────
   {
     category: "Machine",
-    phase: "Drive / Machine / Governor",
+    phase: "Machine",
     gate: ALWAYS,
     defaultItemCategories: ["Large Purchased Items > Machine Unit"],
   },
+
+  // ──────────────── GOVERNOR (own phase) ────────────────
   {
     category: "Governor",
-    phase: "Drive / Machine / Governor",
+    phase: "Governor",
     gate: ALWAYS,
     defaultItemCategories: ["Small Purchased Items > Speed Governor"],
   },
 
-  // ──────────────── WIRE & HARDWARE ────────────────
+  // ──────────────── MISCELLANEOUS ITEMS ────────────────
+  // Switches, brackets, troughing — small parts that don't belong to a
+  // larger phase. Sits between Governor and Wire Rope/Belt.
   {
-    category: "Wire Rope",
-    phase: "Wire & Hardware",
+    category: "CONT. STAND",
+    phase: "Miscellaneous Items",
     gate: ALWAYS,
-    defaultItemCategories: ["Large Purchased Items > Wire Rope"],
+    description: "Controller stand / controller bracket.",
+    defaultItemCategories: ["Small Manufactured Items > Controller Bracket"],
   },
+  {
+    category: "TROUGHING 50",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Manufactured Items > Troughing"],
+  },
+  {
+    category: "TROUGHING 100",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Manufactured Items > Troughing"],
+  },
+  {
+    category: "LIMIT SWITCH",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "LIMIT SWITCH BRACKET",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    description:
+      "Limit-switch mounting brackets. Same parent category as the switches themselves — pick the bracket items.",
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "MAGNET WITH BRACKET",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    description: "Magnet brackets, trays, and holders.",
+    defaultItemCategories: [
+      "Small Manufactured Items > Magnet Bracket",
+      "Small Manufactured Items > Magnet Trey",
+      "Small Purchased Items > Magnet Holder",
+    ],
+  },
+  {
+    category: "PIT SWITCH",
+    phase: "Miscellaneous Items",
+    gate: ALWAYS,
+    defaultItemCategories: ["Miscallaneous > Pit Switch Box"],
+  },
+
+  // ──────────────── WIRE ROPE / BELT ────────────────
+  // Main hoist + governor ropes (or belts on belt-drive jobs).
+  {
+    category: "Wire Rope Main",
+    phase: "Wire Rope/Belt",
+    gate: ALWAYS,
+    description: "Main hoist rope or drive belt.",
+    defaultItemCategories: [
+      "Large Purchased Items > Wire Rope",
+      "Large Purchased Items > Belt",
+    ],
+  },
+  {
+    category: "Wire Rope Governor",
+    phase: "Wire Rope/Belt",
+    gate: ALWAYS,
+    description: "Governor rope.",
+    defaultItemCategories: [
+      "Large Purchased Items > Wire Rope",
+      "Large Purchased Items > Belt",
+    ],
+  },
+
+  // ──────────────── WIRE & HARDWARE ────────────────
+  // Rope hardware — clips, thimbles, I-bolts, misc bearings/clips.
   {
     category: "I-Bolt with Spring",
     phase: "Wire & Hardware",
@@ -332,12 +406,6 @@ export const BOM_SECTIONS: BomSection[] = [
     defaultItemCategories: ["Miscallaneous > Lop Box"],
   },
   {
-    category: "Limit Switch Items",
-    phase: "Cabin & Electrics",
-    gate: ALWAYS,
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
-  },
-  {
     category: "Cabin Handles",
     phase: "Cabin & Electrics",
     gate: ALWAYS,
@@ -365,8 +433,11 @@ export const PHASE_ORDER = [
   "Door System",
   // Safety / pulleys / counter frame / machine beam grouped here.
   "Safety & Counter Frame",
+  "Machine",
+  "Governor",
+  "Miscellaneous Items",
+  "Wire Rope/Belt",
   "Header System",
-  "Drive / Machine / Governor",
   "Wire & Hardware",
   "Cabin & Electrics",
 ] as const;
