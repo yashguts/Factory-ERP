@@ -82,7 +82,7 @@ export const BOM_SECTIONS: BomSection[] = [
   {
     category: "COUNTER BRACKET",
     phase: "Brackets",
-    gate: { kind: "driveType", drives: ["MR", "HYD"] },
+    gate: ALWAYS,
     defaultItemCategories: [
       "Rail Bracket > Rail Bracket Counter",
       "Rail Bracket > Rail Bracket Counter Home",
