@@ -422,48 +422,44 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
   // ── Render ────────────────────────────────────────────────────────
   return (
-    <div className="space-y-6">
-      {/* Header */}
+    <div className="space-y-4 max-w-5xl mx-auto">
+      {/* Header — compact */}
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => router.back()}
-            className="p-2 rounded-md hover:bg-[var(--muted)] cursor-pointer"
+            className="p-1.5 rounded-md hover:bg-[var(--muted)] cursor-pointer"
           >
-            <ArrowLeft className="h-5 w-5" />
+            <ArrowLeft className="h-4 w-4" />
           </button>
-          <h1 className="text-2xl font-bold">
+          <h1 className="text-lg font-bold truncate">
             {mode === "create" ? "New Job" : `Edit ${job?.job_number}`}
           </h1>
-          {savedJobId && mode === "create" && (
-            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
-              Job Created
-            </span>
-          )}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className="text-sm text-[var(--muted-foreground)]">
-            {totalPickedItems} BOM item{totalPickedItems !== 1 ? "s" : ""}
-          </span>
           {savedJobId && (
             <span
-              className={`text-xs px-2 py-1 rounded-full font-medium ${
+              className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
                 hasUnsavedChanges
                   ? "bg-amber-100 text-amber-800"
                   : "bg-green-100 text-green-700"
               }`}
             >
-              {hasUnsavedChanges ? "Unsaved changes" : "All saved"}
+              {hasUnsavedChanges ? "Unsaved" : "Saved"}
             </span>
           )}
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <span className="text-xs text-[var(--muted-foreground)]">
+            {totalPickedItems} item{totalPickedItems !== 1 ? "s" : ""}
+          </span>
           <Button
+            size="sm"
             onClick={handleSaveAll}
             disabled={isPending || !jobNumber.trim()}
           >
             {isPending && !savingPhase ? (
-              <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
             ) : (
-              <Save className="h-4 w-4 mr-2" />
+              <Save className="h-3.5 w-3.5 mr-1.5" />
             )}
             Save All &amp; Finish
           </Button>
@@ -471,9 +467,11 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       </div>
 
       {/* ── Job Details ── */}
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold">Job Details</h2>
+      <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4">
+        <div className="flex items-center justify-between mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Job Details
+          </h2>
           <Button
             size="sm"
             variant={jobSaved ? "secondary" : "primary"}
@@ -481,16 +479,16 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             disabled={isPending || !jobNumber.trim()}
           >
             {isPending && !savingPhase ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
             ) : jobSaved ? (
-              <Check className="h-3.5 w-3.5 mr-1.5 text-green-600" />
+              <Check className="h-3 w-3 mr-1 text-green-600" />
             ) : (
-              <Save className="h-3.5 w-3.5 mr-1.5" />
+              <Save className="h-3 w-3 mr-1" />
             )}
-            {jobSaved ? "Saved" : "Save Job"}
+            {jobSaved ? "Saved" : "Save Details"}
           </Button>
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
           <Field label="Job Number *">
             <Input
               value={jobNumber}
@@ -620,12 +618,16 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       </div>
 
       {/* ── Elevator Spec ── */}
-      <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="text-lg font-semibold mb-4">Elevator Specification</h2>
-        <p className="text-sm text-[var(--muted-foreground)] mb-4">
-          Changing these values controls which BOM sections appear below.
-        </p>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4">
+        <div className="flex items-baseline justify-between mb-3">
+          <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+            Elevator Specification
+          </h2>
+          <p className="text-[11px] text-[var(--muted-foreground)]">
+            Controls which BOM sections appear below.
+          </p>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <Field label="Floors (Stops)">
             <Select
               value={floors}
@@ -701,7 +703,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           </Field>
         </div>
         {buildSpecString() && (
-          <p className="mt-3 text-sm font-mono text-[var(--muted-foreground)]">
+          <p className="mt-2 text-[11px] font-mono text-[var(--muted-foreground)]">
             Spec: {buildSpecString()}
           </p>
         )}
@@ -712,19 +714,24 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         const isSaving = savingPhase === phase;
         const isSaved = savedPhases[phase] === true;
         const phaseItemCount = sections.reduce(
-          (n, s) => n + (pickerState[s.category] ?? []).length,
+          (n, s) =>
+            n + (pickerState[s.category] ?? []).filter((r) => r.item_id).length,
           0,
         );
 
         return (
-          <div key={phase}>
-            <div className="flex items-center justify-between mb-3">
+          <div
+            key={phase}
+            className="rounded-md border border-[var(--border)] bg-[var(--card)]"
+          >
+            {/* Phase header — sticky-ish, compact */}
+            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-semibold text-[var(--foreground)]">
+                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--foreground)]">
                   {phase}
                 </h2>
                 {phaseItemCount > 0 && (
-                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]">
+                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)]">
                     {phaseItemCount}
                   </span>
                 )}
@@ -736,39 +743,36 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
                 disabled={isPending || !jobNumber.trim()}
               >
                 {isSaving ? (
-                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : isSaved ? (
-                  <Check className="h-3.5 w-3.5 mr-1.5 text-green-600" />
+                  <Check className="h-3 w-3 mr-1 text-green-600" />
                 ) : (
-                  <Save className="h-3.5 w-3.5 mr-1.5" />
+                  <Save className="h-3 w-3 mr-1" />
                 )}
-                {isSaved ? "Saved" : "Save Section"}
+                {isSaved ? "Saved" : "Save Phase"}
               </Button>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            {/* Sections — single column, no inner cards, thin dividers */}
+            <div className="px-4">
               {sections.map((section) => {
                 const isAdHoc = phase === AD_HOC_PHASE;
                 return (
-                  <div
+                  <ItemPickerSection
                     key={section.category}
-                    className={section.fullWidth ? "lg:col-span-2" : ""}
-                  >
-                    <ItemPickerSection
-                      category={section.category}
-                      description={section.description}
-                      defaultItemCategories={section.defaultItemCategories}
-                      items={pickerState[section.category] ?? []}
-                      onItemsChange={(items) =>
-                        setPickerItems(section.category, items)
-                      }
-                      onRemoveSection={
-                        isAdHoc
-                          ? () => removeAdHocSection(section.category)
-                          : undefined
-                      }
-                    />
-                  </div>
+                    category={section.category}
+                    description={section.description}
+                    defaultItemCategories={section.defaultItemCategories}
+                    items={pickerState[section.category] ?? []}
+                    onItemsChange={(items) =>
+                      setPickerItems(section.category, items)
+                    }
+                    onRemoveSection={
+                      isAdHoc
+                        ? () => removeAdHocSection(section.category)
+                        : undefined
+                    }
+                  />
                 );
               })}
             </div>
@@ -778,12 +782,13 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
       {/* +Add Section — opens an inventory category picker so the user can
           add any sub-category as an ad-hoc section. */}
-      <div className="flex justify-center pt-2">
+      <div className="flex justify-center">
         <Button
+          size="sm"
           variant="secondary"
           onClick={() => setPickerModalOpen(true)}
         >
-          <Plus className="h-4 w-4 mr-2" />
+          <Plus className="h-3.5 w-3.5 mr-1.5" />
           Add Section From Inventory
         </Button>
       </div>
@@ -800,8 +805,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       )}
 
       {/* Bottom actions */}
-      <div className="flex justify-end gap-3 pb-8">
+      <div className="flex justify-end gap-2 pb-8 pt-2">
         <Button
+          size="sm"
           variant="secondary"
           onClick={() => {
             if (savedJobId) {
@@ -814,13 +820,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           {savedJobId ? "Done" : "Cancel"}
         </Button>
         <Button
+          size="sm"
           onClick={handleSaveAll}
           disabled={isPending || !jobNumber.trim()}
         >
           {isPending && !savingPhase ? (
-            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+            <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
           ) : (
-            <Save className="h-4 w-4 mr-2" />
+            <Save className="h-3.5 w-3.5 mr-1.5" />
           )}
           Save All &amp; Finish
         </Button>
@@ -841,8 +848,8 @@ function Field({
   children: React.ReactNode;
 }) {
   return (
-    <div>
-      <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+    <div className="[&_input]:h-8 [&_input]:text-sm [&_select]:h-8 [&_select]:text-sm [&_select]:py-1">
+      <label className="block text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)] mb-1">
         {label}
       </label>
       {children}

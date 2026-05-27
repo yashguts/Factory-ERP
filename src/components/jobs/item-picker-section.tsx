@@ -21,6 +21,8 @@ export interface PickedItem {
   item_id: string | null;
   item_code: string;
   item_name: string;
+  /** Optional friendlier label (item.lookup_key) for picked items. */
+  item_lookup?: string | null;
   uom: string;
   category_name: string | null;
   required_quantity: number;
@@ -66,13 +68,12 @@ export function ItemPickerSection({
 }: ItemPickerSectionProps) {
   const [showAll, setShowAll] = useState(false);
 
-  // Ensure at least one row is always visible so the user can start picking
-  // without needing to click "+ Add Item".
+  // Show one empty row so the user can start typing immediately.
   const displayRows = items.length > 0 ? items : [emptyRow()];
+  const pickedCount = items.filter((i) => i.item_id).length;
 
   const updateRow = useCallback(
     (key: string, patch: Partial<PickedItem>) => {
-      // If the section had no rows, seed onItemsChange with the new row
       const base = items.length > 0 ? items : [displayRows[0]];
       onItemsChange(
         base.map((it) => (it._key === key ? { ...it, ...patch } : it)),
@@ -82,7 +83,7 @@ export function ItemPickerSection({
   );
 
   const addRow = useCallback(() => {
-    onItemsChange([...items, emptyRow()]);
+    onItemsChange([...(items.length > 0 ? items : []), emptyRow()]);
   }, [items, onItemsChange]);
 
   const removeRow = useCallback(
@@ -92,30 +93,32 @@ export function ItemPickerSection({
     [items, onItemsChange],
   );
 
-  /* ---------------------------------------------------------------- */
-  /*  Render                                                          */
-  /* ---------------------------------------------------------------- */
-
   return (
-    <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-1">
-        <div className="flex items-center gap-2">
-          <h3 className="font-medium text-[var(--foreground)]">{category}</h3>
-          {items.filter((i) => i.item_id).length > 0 && (
-            <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-              {items.filter((i) => i.item_id).length} item
-              {items.filter((i) => i.item_id).length !== 1 ? "s" : ""}
+    <section className="py-3 border-b border-[var(--border)] last:border-b-0">
+      {/* Section header — compact label row */}
+      <div className="flex items-baseline justify-between gap-3 mb-2">
+        <div className="flex items-baseline gap-2 min-w-0">
+          <h3 className="font-medium text-sm text-[var(--foreground)] truncate">
+            {category}
+          </h3>
+          {pickedCount > 0 && (
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 shrink-0">
+              {pickedCount}
+            </span>
+          )}
+          {description && (
+            <span className="text-xs text-[var(--muted-foreground)] truncate">
+              · {description}
             </span>
           )}
         </div>
-        <div className="flex items-center gap-2">
-          <label className="flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] whitespace-nowrap cursor-pointer select-none">
+        <div className="flex items-center gap-3 shrink-0">
+          <label className="flex items-center gap-1 text-[11px] text-[var(--muted-foreground)] cursor-pointer select-none">
             <input
               type="checkbox"
               checked={showAll}
               onChange={(e) => setShowAll(e.target.checked)}
-              className="rounded border-[var(--border)] cursor-pointer"
+              className="h-3 w-3 rounded border-[var(--border)] cursor-pointer"
             />
             All categories
           </label>
@@ -131,14 +134,9 @@ export function ItemPickerSection({
           )}
         </div>
       </div>
-      {description && (
-        <p className="text-xs text-[var(--muted-foreground)] mb-3">
-          {description}
-        </p>
-      )}
 
       {/* Rows */}
-      <div className="space-y-2">
+      <div className="space-y-1.5">
         {displayRows.map((row, idx) => (
           <ItemRow
             key={row._key}
@@ -152,7 +150,7 @@ export function ItemPickerSection({
               displayRows.length > 1
                 ? () => removeRow(row._key)
                 : items.length === 0
-                  ? undefined // don't allow removing the seeded empty row
+                  ? undefined
                   : () => removeRow(row._key)
             }
             autoFocus={idx === 0 && !row.item_id && items.length === 0}
@@ -164,12 +162,12 @@ export function ItemPickerSection({
       <button
         type="button"
         onClick={addRow}
-        className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-[var(--primary)] hover:underline cursor-pointer"
+        className="mt-2 inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
       >
-        <Plus className="h-3.5 w-3.5" />
+        <Plus className="h-3 w-3" />
         Add Item
       </button>
-    </div>
+    </section>
   );
 }
 
@@ -194,9 +192,11 @@ function ItemRow({
   onRemove,
   autoFocus,
 }: ItemRowProps) {
-  const [search, setSearch] = useState(
-    row.item_id ? `${row.item_code} — ${row.item_name}` : "",
-  );
+  // Display the friendlier name in the input once an item is picked.
+  const initialDisplay = row.item_id
+    ? row.item_lookup || row.item_name
+    : "";
+  const [search, setSearch] = useState(initialDisplay);
   const [results, setResults] = useState<SearchableItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
@@ -211,12 +211,12 @@ function ItemRow({
   /* keep search text in sync if the parent resets the row */
   useEffect(() => {
     if (row.item_id) {
-      setSearch(`${row.item_code} — ${row.item_name}`);
-    } else if (!row.item_id && !open) {
+      setSearch(row.item_lookup || row.item_name);
+    } else if (!open) {
       setSearch("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [row.item_id, row.item_code, row.item_name]);
+  }, [row.item_id, row.item_lookup, row.item_name]);
 
   /* autofocus first empty row */
   useEffect(() => {
@@ -249,7 +249,7 @@ function ItemRow({
 
   /* re-run search when query or scope changes (while open) */
   useEffect(() => {
-    if (open) doSearch(search.startsWith(row.item_code) ? "" : search);
+    if (open) doSearch(search);
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current);
     };
@@ -286,11 +286,12 @@ function ItemRow({
         item_id: item.id,
         item_code: item.code,
         item_name: item.name,
+        item_lookup: item.lookup_key,
         uom: item.uom_abbreviation,
         category_name: item.category_name,
         required_quantity: row.required_quantity || 1,
       });
-      setSearch(`${item.code} — ${item.name}`);
+      setSearch(item.lookup_key || item.name);
       setOpen(false);
     },
     [onUpdate, row.required_quantity],
@@ -301,6 +302,7 @@ function ItemRow({
       item_id: null,
       item_code: "",
       item_name: "",
+      item_lookup: null,
       uom: "",
       category_name: null,
     });
@@ -338,11 +340,11 @@ function ItemRow({
           onChange={(e) => {
             setSearch(e.target.value);
             if (hasItem) {
-              // user is typing over a picked item → clear it
               onUpdate({
                 item_id: null,
                 item_code: "",
                 item_name: "",
+                item_lookup: null,
                 uom: "",
                 category_name: null,
               });
@@ -351,9 +353,9 @@ function ItemRow({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKey}
-          placeholder={`Search items in ${sectionCategory}...`}
+          placeholder={`Search ${sectionCategory}...`}
           className={cn(
-            "w-full h-8 pl-8 pr-8 text-sm rounded-md border bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1",
+            "w-full h-8 pl-8 pr-7 text-sm rounded-md border bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1",
             hasItem ? "border-blue-300" : "border-[var(--border)]",
           )}
         />
@@ -368,14 +370,14 @@ function ItemRow({
           </button>
         )}
         {loading && !hasItem && (
-          <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-[var(--muted-foreground)]" />
+          <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-[var(--muted-foreground)]" />
         )}
 
         {/* Dropdown */}
         {open && !hasItem && (
           <div
             ref={listRef}
-            className="absolute z-50 mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-64 overflow-y-auto"
+            className="absolute z-50 mt-1 w-full min-w-[420px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-80 overflow-y-auto"
           >
             {results.length === 0 ? (
               <div className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
@@ -394,25 +396,44 @@ function ItemRow({
                   onClick={() => pickItem(item)}
                   onMouseEnter={() => setHighlightIdx(idx)}
                   className={cn(
-                    "w-full text-left px-3 py-2 text-sm flex items-center gap-3 cursor-pointer",
+                    "w-full text-left px-3 py-2 text-sm cursor-pointer",
                     "border-b border-[var(--border)] last:border-0",
                     idx === highlightIdx
                       ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                       : "hover:bg-[var(--muted)]",
                   )}
                 >
-                  <span className="font-mono text-[11px] opacity-70 w-24 shrink-0 truncate">
-                    {item.code}
-                  </span>
-                  <span className="flex-1 truncate">{item.name}</span>
-                  {item.category_name && (
-                    <span className="text-[10px] opacity-50 shrink-0 hidden sm:inline">
-                      {item.category_name}
+                  {/* Line 1: primary label (lookup_key if present, else name) */}
+                  <div className="flex items-start gap-2">
+                    <span className="font-medium leading-snug break-words flex-1">
+                      {item.lookup_key || item.name}
                     </span>
-                  )}
-                  <span className="text-xs opacity-60 shrink-0 w-8 text-right">
-                    {item.uom_abbreviation}
-                  </span>
+                    <span
+                      className={cn(
+                        "text-[10px] shrink-0 mt-0.5",
+                        idx === highlightIdx ? "opacity-80" : "opacity-60",
+                      )}
+                    >
+                      {item.uom_abbreviation}
+                    </span>
+                  </div>
+                  {/* Line 2: code + (name if different from lookup) + category */}
+                  <div
+                    className={cn(
+                      "mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]",
+                      idx === highlightIdx
+                        ? "text-[var(--primary-foreground)] opacity-75"
+                        : "text-[var(--muted-foreground)]",
+                    )}
+                  >
+                    <span className="font-mono">{item.code}</span>
+                    {item.lookup_key && item.lookup_key !== item.name && (
+                      <span className="break-words">{item.name}</span>
+                    )}
+                    {item.category_name && (
+                      <span className="italic">{item.category_name}</span>
+                    )}
+                  </div>
                 </button>
               ))
             )}
@@ -437,8 +458,8 @@ function ItemRow({
         className="w-20 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 disabled:opacity-50"
       />
 
-      {/* Unit display */}
-      <span className="w-10 text-xs text-[var(--muted-foreground)] mt-2 text-center shrink-0">
+      {/* Unit */}
+      <span className="w-8 text-[11px] text-[var(--muted-foreground)] mt-2 text-center shrink-0">
         {row.uom || "—"}
       </span>
 

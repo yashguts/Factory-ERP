@@ -10,6 +10,8 @@ export interface SearchableItem {
   id: string;
   code: string;
   name: string;
+  /** Optional human-friendly key. Often more useful to show than `name`. */
+  lookup_key: string | null;
   category_name: string | null;
   uom_abbreviation: string;
 }
@@ -49,7 +51,7 @@ export async function searchItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name,
+      `id, code, name, lookup_key,
       category:item_categories!items_category_id_fkey(name),
       uom:units_of_measurement(abbreviation)`,
     )
@@ -59,7 +61,7 @@ export async function searchItems(
     q = q.in("category_id", categoryIds);
   }
 
-  // Multi-token AND search on name
+  // Multi-token AND search. Each token must appear in name OR lookup_key OR code.
   if (query.trim()) {
     const tokens = query
       .trim()
@@ -67,7 +69,11 @@ export async function searchItems(
       .split(/\s+/)
       .filter(Boolean);
     for (const token of tokens) {
-      q = q.ilike("name", `%${token}%`);
+      // ilike with OR across the three text columns
+      const safe = token.replace(/[%,]/g, "");
+      q = q.or(
+        `name.ilike.%${safe}%,lookup_key.ilike.%${safe}%,code.ilike.%${safe}%`,
+      );
     }
   }
 
@@ -81,6 +87,7 @@ export async function searchItems(
     id: row.id as string,
     code: row.code as string,
     name: row.name as string,
+    lookup_key: (row.lookup_key as string | null) ?? null,
     category_name: Array.isArray(row.category)
       ? (row.category[0]?.name ?? null)
       : (row.category?.name ?? null),
