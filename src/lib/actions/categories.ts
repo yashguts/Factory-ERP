@@ -70,6 +70,45 @@ export async function resolveCategoryPaths(
 }
 
 /**
+ * Check which of the given category PATH strings resolve to a real
+ * category in the DB. Returns the subset that resolved. Used by the
+ * job form to flag BOM sections whose mappings are broken.
+ */
+export async function checkCategoryPaths(
+  paths: string[],
+): Promise<{ resolved: string[] }> {
+  if (paths.length === 0) return { resolved: [] };
+  const all = await getAllCategories();
+  const byParent = new Map<string | null, CategoryNode[]>();
+  for (const cat of all) {
+    const arr = byParent.get(cat.parent_id) ?? [];
+    arr.push(cat);
+    byParent.set(cat.parent_id, arr);
+  }
+
+  const resolved: string[] = [];
+  for (const path of paths) {
+    const segments = path.split(">").map((s) => s.trim()).filter(Boolean);
+    if (segments.length === 0) continue;
+    let parentId: string | null = null;
+    let ok = true;
+    for (const seg of segments) {
+      const siblings: CategoryNode[] = byParent.get(parentId) ?? [];
+      const found: CategoryNode | undefined = siblings.find(
+        (c: CategoryNode) => c.name.toLowerCase() === seg.toLowerCase(),
+      );
+      if (!found) {
+        ok = false;
+        break;
+      }
+      parentId = found.id;
+    }
+    if (ok) resolved.push(path);
+  }
+  return { resolved };
+}
+
+/**
  * Given a list of category IDs, return the full set including all descendants.
  * Used to scope search to a parent + every sub-category beneath it.
  */

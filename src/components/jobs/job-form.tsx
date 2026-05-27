@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback, useTransition, useMemo } from "react";
+import { useState, useCallback, useTransition, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,6 +25,7 @@ import {
   saveBomSection,
 } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
+import { checkCategoryPaths } from "@/lib/actions/categories";
 import type { Job, JobStage } from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ */
@@ -143,6 +144,36 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
   const [pickerState, setPickerState] =
     useState<PickerState>(initialPickerState);
+
+  // ── Mapping diagnostics ───────────────────────────────────────────
+  // Resolve every hardcoded section's defaultItemCategories against the
+  // live category tree on mount. Any section whose paths don't resolve
+  // surfaces a "no mapping" warning inline so the user can spot stale
+  // bindings instead of seeing a silently-empty section.
+  const [resolvedPaths, setResolvedPaths] = useState<Set<string> | null>(null);
+  useEffect(() => {
+    const allPaths = Array.from(
+      new Set(
+        BOM_SECTIONS.flatMap((s) => s.defaultItemCategories ?? []),
+      ),
+    );
+    if (allPaths.length === 0) {
+      setResolvedPaths(new Set());
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const { resolved } = await checkCategoryPaths(allPaths);
+        if (!cancelled) setResolvedPaths(new Set(resolved));
+      } catch {
+        if (!cancelled) setResolvedPaths(new Set()); // fail open — show all as unmapped rather than crash
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── Ad-hoc sections (user-added via +Add Section) ─────────────────
   // Each ad-hoc section binds to one inventory category path. Stored on
@@ -757,6 +788,16 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             <div className="px-4">
               {sections.map((section) => {
                 const isAdHoc = phase === AD_HOC_PHASE;
+                // Determine mapping status. Ad-hoc sections were picked
+                // from the live tree so they always resolve. Hardcoded
+                // sections rely on resolvedPaths (loaded async). Until
+                // it loads, assume mapped to avoid a flash of warnings.
+                const paths = section.defaultItemCategories ?? [];
+                const isUnmapped =
+                  !isAdHoc &&
+                  resolvedPaths !== null &&
+                  paths.length > 0 &&
+                  !paths.some((p) => resolvedPaths.has(p));
                 return (
                   <ItemPickerSection
                     key={section.category}
@@ -772,6 +813,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
                         ? () => removeAdHocSection(section.category)
                         : undefined
                     }
+                    isUnmapped={isUnmapped}
                   />
                 );
               })}

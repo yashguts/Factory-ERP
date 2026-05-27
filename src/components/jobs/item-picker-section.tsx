@@ -7,7 +7,7 @@ import {
   useEffect,
   useMemo,
 } from "react";
-import { Search, X, Plus, Loader2, Trash2 } from "lucide-react";
+import { Search, X, Plus, Loader2, Trash2, AlertTriangle } from "lucide-react";
 import { searchItems } from "@/lib/actions/items";
 import type { SearchableItem } from "@/lib/actions/items";
 import { cn } from "@/lib/utils";
@@ -41,6 +41,12 @@ interface ItemPickerSectionProps {
   onItemsChange: (items: PickedItem[]) => void;
   /** Optional remove button for ad-hoc sections. */
   onRemoveSection?: () => void;
+  /**
+   * True when none of the section's defaultItemCategories resolve to a
+   * real category in the inventory. Triggers an inline warning and forces
+   * "All categories" mode so the user can still pick something useful.
+   */
+  isUnmapped?: boolean;
 }
 
 const makeKey = () => Math.random().toString(36).slice(2);
@@ -66,8 +72,14 @@ export function ItemPickerSection({
   items,
   onItemsChange,
   onRemoveSection,
+  isUnmapped,
 }: ItemPickerSectionProps) {
-  const [showAll, setShowAll] = useState(false);
+  // If the bound categories don't resolve, force "All categories" so the
+  // search box is at least usable. User can still uncheck if they want.
+  const [showAll, setShowAll] = useState(!!isUnmapped);
+  useEffect(() => {
+    if (isUnmapped) setShowAll(true);
+  }, [isUnmapped]);
 
   // Seed exactly one empty row so the user can start typing immediately.
   // CRITICAL: memoize so the seed's _key is stable across renders. If we
@@ -113,7 +125,7 @@ export function ItemPickerSection({
               {pickedCount}
             </span>
           )}
-          {description && (
+          {description && !isUnmapped && (
             <span className="text-xs text-[var(--muted-foreground)] truncate">
               · {description}
             </span>
@@ -141,6 +153,28 @@ export function ItemPickerSection({
           )}
         </div>
       </div>
+
+      {/* Mapping warning — appears when the bound category paths can't
+          be resolved against the live inventory taxonomy. */}
+      {isUnmapped && (
+        <div className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+          <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
+          <span>
+            No inventory category mapped for this section
+            {defaultItemCategories && defaultItemCategories.length > 0 && (
+              <>
+                {" "}
+                (looked up{" "}
+                <span className="font-mono">
+                  {defaultItemCategories.join(", ")}
+                </span>
+                ).
+              </>
+            )}{" "}
+            Search is browsing all categories — pick any item.
+          </span>
+        </div>
+      )}
 
       {/* Rows */}
       <div className="space-y-1.5">
