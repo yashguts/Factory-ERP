@@ -98,40 +98,61 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
 
   const itemIds = Array.from(reqMap.keys());
 
-  let allItems: any[] = [];
-  for (let i = 0; i < itemIds.length; i += 200) {
-    const batch = itemIds.slice(i, i + 200);
-    const { data, error } = await supabase
-      .from("items")
-      .select(`
-        id, code, name, item_type,
-        category:item_categories!items_category_id_fkey(name),
-        uom:units_of_measurement(abbreviation),
-        inventory(quantity)
-      `)
-      .in("id", batch);
-    if (error) throw error;
-    allItems = allItems.concat(data ?? []);
-  }
-
-  // Count jobs per bom_header_id
-  let headerToJob = new Map<string, string>();
+  // Collect all BOM header IDs we need to resolve
   const allBomIds = new Set<string>();
   for (const entry of reqMap.values()) {
     for (const bid of entry.bomIds) allBomIds.add(bid);
   }
   const bomIdArr = Array.from(allBomIds);
-  for (let i = 0; i < bomIdArr.length; i += 200) {
-    const batch = bomIdArr.slice(i, i + 200);
-    const { data, error } = await supabase
-      .from("job_bom_headers")
-      .select("id, job_id")
-      .in("id", batch);
-    if (error) throw error;
-    for (const h of data ?? []) {
-      headerToJob.set(h.id, h.job_id);
-    }
-  }
+
+  // Fetch items AND header-to-job mapping IN PARALLEL (both are batched)
+  const [allItems, headerToJob] = await Promise.all([
+    // Items with inventory stock
+    (async () => {
+      const batches = [];
+      for (let i = 0; i < itemIds.length; i += 200) {
+        batches.push(
+          supabase
+            .from("items")
+            .select(`
+              id, code, name, item_type,
+              category:item_categories!items_category_id_fkey(name),
+              uom:units_of_measurement(abbreviation),
+              inventory(quantity)
+            `)
+            .in("id", itemIds.slice(i, i + 200)),
+        );
+      }
+      const results = await Promise.all(batches);
+      const items: any[] = [];
+      for (const r of results) {
+        if (r.error) throw r.error;
+        items.push(...(r.data ?? []));
+      }
+      return items;
+    })(),
+    // BOM header → job mapping
+    (async () => {
+      const map = new Map<string, string>();
+      const batches = [];
+      for (let i = 0; i < bomIdArr.length; i += 200) {
+        batches.push(
+          supabase
+            .from("job_bom_headers")
+            .select("id, job_id")
+            .in("id", bomIdArr.slice(i, i + 200)),
+        );
+      }
+      const results = await Promise.all(batches);
+      for (const r of results) {
+        if (r.error) throw r.error;
+        for (const h of r.data ?? []) {
+          map.set(h.id, h.job_id);
+        }
+      }
+      return map;
+    })(),
+  ]);
 
   const rows: MrpRow[] = allItems.map((item) => {
     const req = reqMap.get(item.id)!;

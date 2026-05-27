@@ -5,7 +5,7 @@ import type { JobStatus, JobStage } from "@/lib/supabase/types";
 
 export interface BomLineInput {
   category: string;
-  variant: string;
+  variant?: string | null;
   value_text?: string | null;
   required_quantity?: number;
   item_id?: string | null;
@@ -37,20 +37,20 @@ export async function getJobs() {
 export async function getJobDetail(jobId: string) {
   const supabase = await createClient();
 
-  const { data: job, error: jobErr } = await supabase
-    .from("jobs")
-    .select("*")
-    .eq("id", jobId)
-    .single();
+  // Parallel: fetch job metadata + BOM header at the same time
+  const [jobResult, headerResult] = await Promise.all([
+    supabase.from("jobs").select("*").eq("id", jobId).single(),
+    supabase
+      .from("job_bom_headers")
+      .select("id")
+      .eq("job_id", jobId)
+      .limit(1)
+      .single(),
+  ]);
 
-  if (jobErr) throw jobErr;
-
-  const { data: bomHeader } = await supabase
-    .from("job_bom_headers")
-    .select("id")
-    .eq("job_id", jobId)
-    .limit(1)
-    .single();
+  if (jobResult.error) throw jobResult.error;
+  const job = jobResult.data;
+  const bomHeader = headerResult.data;
 
   let bomLines: any[] = [];
   if (bomHeader) {
@@ -216,12 +216,11 @@ export async function updateJobWithBom(
 
   if (existing) {
     headerId = existing.id;
-    // Delete old form-created lines — keep Excel-imported lines (which have source_col_index set)
+    // Delete ALL existing lines — picker is the source of truth
     await supabase
       .from("job_bom_lines")
       .delete()
-      .eq("job_bom_id", headerId)
-      .is("source_col_index", null);
+      .eq("job_bom_id", headerId);
   } else {
     const { data: header, error: hdrErr } = await supabase
       .from("job_bom_headers")
@@ -367,22 +366,20 @@ export async function saveBomSection(
     headerId = header.id;
   }
 
-  // Delete old form-created lines for these categories only
-  for (const cat of categories) {
-    await supabase
-      .from("job_bom_lines")
-      .delete()
-      .eq("job_bom_id", headerId)
-      .eq("category", cat)
-      .is("source_col_index", null);
-  }
+  // Delete ALL existing lines for these categories in one call
+  await supabase
+    .from("job_bom_lines")
+    .delete()
+    .eq("job_bom_id", headerId)
+    .in("category", categories);
 
   // Insert new lines
   const nonEmpty = bomLines.filter(
     (l) =>
       categories.includes(l.category) &&
       ((l.required_quantity != null && l.required_quantity !== 0) ||
-        (l.value_text != null && l.value_text !== "")),
+        (l.value_text != null && l.value_text !== "") ||
+        l.item_id != null),
   );
 
   if (nonEmpty.length > 0) {

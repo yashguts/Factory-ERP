@@ -1,4 +1,4 @@
-import { getJobDetail, getJobBomSections, getJobBomItemLines } from "@/lib/actions/jobs";
+import { getJobDetail, getJobBomItemLines } from "@/lib/actions/jobs";
 import { JobForm } from "@/components/jobs/job-form";
 
 interface Props {
@@ -7,9 +7,8 @@ interface Props {
 
 export default async function EditJobPage({ params }: Props) {
   const { id } = await params;
-  const [{ job }, bomSections, itemLines] = await Promise.all([
+  const [{ job }, itemLines] = await Promise.all([
     getJobDetail(id),
-    getJobBomSections(id),
     getJobBomItemLines(id),
   ]);
 
@@ -17,7 +16,6 @@ export default async function EditJobPage({ params }: Props) {
     <JobForm
       mode="edit"
       job={job}
-      existingBom={bomSections}
       existingItemLines={itemLines}
     />
   );

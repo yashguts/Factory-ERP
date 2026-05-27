@@ -81,8 +81,8 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
   const [sortDir, setSortDir] = useState<SortDir>("asc");
 
   const hasItemBom = bomLines.some((l) => l.item_id != null);
-  const hasSectionBom = bomSectionLines.length > 0;
-  const [viewTab, setViewTab] = useState<ViewTab>(hasSectionBom ? "sections" : "items");
+  const hasSectionBom = bomSectionLines.length > 0 || bomLines.some((l) => l.category != null);
+  const [viewTab, setViewTab] = useState<ViewTab>("sections");
 
   const pct = Math.round((job.progress ?? 0) * 100);
 
@@ -93,18 +93,45 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
     });
   };
 
-  // Section-based BOM grouped by phase → category
+  // Section-based BOM: group all bom lines (item-based + legacy variant) by category → phase
   const sectionData = useMemo(() => {
-    const lookup = new Map<string, BomSectionLine>();
-    for (const l of bomSectionLines) {
-      lookup.set(`${l.category}::${l.variant}`, l);
+    // Build a map of category → display lines from ALL sources
+    const catLines = new Map<string, Array<{ label: string; value: string }>>();
+
+    // 1) Item-based BOM lines (new picker format + Excel imports)
+    for (const line of bomLines) {
+      if (!line.item_id || !line.item) continue;
+      const cat = line.category ?? "Uncategorized";
+      const arr = catLines.get(cat) ?? [];
+      arr.push({
+        label: `${line.item.code} — ${line.item.name}`,
+        value: `${Number(line.required_quantity).toLocaleString()} ${line.item.uom?.abbreviation ?? ""}`.trim(),
+      });
+      catLines.set(cat, arr);
     }
 
+    // 2) Legacy variant-based lines (no item_id)
+    for (const l of bomSectionLines) {
+      if (!l.category) continue;
+      // skip if this category already has item-based lines (avoid mixing)
+      if (catLines.has(l.category)) continue;
+      const arr = catLines.get(l.category) ?? [];
+      const display = l.value_text
+        ? l.value_text
+        : l.required_quantity
+          ? Number(l.required_quantity).toLocaleString()
+          : "";
+      if (!display) continue;
+      arr.push({ label: l.variant, value: display });
+      catLines.set(l.category, arr);
+    }
+
+    // Group by phase using BOM_SECTIONS ordering
     const phases: Array<{
       phase: string;
       sections: Array<{
         category: string;
-        lines: Array<{ variant: string; value: string }>;
+        lines: Array<{ label: string; value: string }>;
       }>;
     }> = [];
 
@@ -112,41 +139,36 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
       const sections = BOM_SECTIONS.filter(
         (s) =>
           s.phase === phase &&
-          shouldRenderSection(s, job.door_type, job.drive_type),
+          shouldRenderSection(s, job.door_type, job.drive_type) &&
+          catLines.has(s.category) &&
+          (catLines.get(s.category)?.length ?? 0) > 0,
       );
 
-      const filledSections = sections
-        .map((sec) => {
-          const lines = sec.leaves
-            .map((leaf) => {
-              const line = lookup.get(`${sec.category}::${leaf.variant}`);
-              if (!line) return null;
-              const display =
-                leaf.kind === "number"
-                  ? line.required_quantity
-                    ? `${Number(line.required_quantity).toLocaleString()}${leaf.unit ? ` ${leaf.unit}` : ""}`
-                    : ""
-                  : line.value_text ?? "";
-              if (!display) return null;
-              return { variant: leaf.variant, value: display };
-            })
-            .filter(Boolean) as Array<{ variant: string; value: string }>;
-
-          if (lines.length === 0) return null;
-          return { category: sec.category, lines };
-        })
-        .filter(Boolean) as Array<{
-        category: string;
-        lines: Array<{ variant: string; value: string }>;
-      }>;
-
-      if (filledSections.length > 0) {
-        phases.push({ phase, sections: filledSections });
+      if (sections.length > 0) {
+        phases.push({
+          phase,
+          sections: sections.map((s) => ({
+            category: s.category,
+            lines: catLines.get(s.category) ?? [],
+          })),
+        });
       }
     }
 
+    // Also include categories not in BOM_SECTIONS (e.g. custom categories)
+    const knownCats = new Set(BOM_SECTIONS.map((s) => s.category));
+    const extraCats = Array.from(catLines.entries()).filter(
+      ([cat, lines]) => !knownCats.has(cat) && lines.length > 0,
+    );
+    if (extraCats.length > 0) {
+      phases.push({
+        phase: "Other",
+        sections: extraCats.map(([cat, lines]) => ({ category: cat, lines })),
+      });
+    }
+
     return phases;
-  }, [bomSectionLines, job.door_type, job.drive_type]);
+  }, [bomLines, bomSectionLines, job.door_type, job.drive_type]);
 
   // Item-based BOM filtering/sorting
   const itemBomLines = useMemo(
@@ -380,11 +402,11 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
                         className="border border-[var(--border)] rounded-lg p-4"
                       >
                         <h4 className="font-medium text-sm mb-2">{sec.category}</h4>
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1">
-                          {sec.lines.map((line) => (
-                            <div key={line.variant} className="flex justify-between text-sm py-0.5">
+                        <div className="grid grid-cols-1 gap-y-1">
+                          {sec.lines.map((line, li) => (
+                            <div key={li} className="flex justify-between text-sm py-0.5">
                               <span className="text-[var(--muted-foreground)] truncate mr-2">
-                                {line.variant}
+                                {line.label}
                               </span>
                               <span className="font-medium whitespace-nowrap">
                                 {line.value}

@@ -7,8 +7,13 @@ interface Props {
 
 export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
-  const { job, bomLines, bomHeaderId } = await getJobDetail(id);
-  const bomSections = await getJobBomSections(id);
+
+  // Parallel fetch — don't wait for job detail before fetching BOM sections
+  const [{ job, bomLines, bomHeaderId }, bomSections] = await Promise.all([
+    getJobDetail(id),
+    getJobBomSections(id),
+  ]);
+
   return (
     <JobDetailClient
       job={job}

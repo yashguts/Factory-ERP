@@ -48,7 +48,11 @@ interface Props {
 
 export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
   const router = useRouter();
-  const [isPending, startTransition] = useTransition();
+  const [, startTransition] = useTransition();
+  // Optimistic local copy so inline edits are instant
+  const [jobs, setJobs] = useState(initialJobs);
+  // Track which individual row is saving (doesn't block other rows)
+  const [savingJobId, setSavingJobId] = useState<string | null>(null);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
   const [stageFilter, setStageFilter] = useState<JobStage | "all">("all");
@@ -60,18 +64,18 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
 
   const doorTypes = useMemo(() => {
     const set = new Set<string>();
-    initialJobs.forEach((j) => { if (j.door_type) set.add(j.door_type); });
+    jobs.forEach((j) => { if (j.door_type) set.add(j.door_type); });
     return Array.from(set).sort();
-  }, [initialJobs]);
+  }, [jobs]);
 
   const brands = useMemo(() => {
     const set = new Set<string>();
-    initialJobs.forEach((j) => { if (j.brand) set.add(j.brand); });
+    jobs.forEach((j) => { if (j.brand) set.add(j.brand); });
     return Array.from(set).sort();
-  }, [initialJobs]);
+  }, [jobs]);
 
   const filtered = useMemo(() => {
-    return initialJobs.filter((job) => {
+    return jobs.filter((job) => {
       if (search) {
         const q = search.toLowerCase();
         const match =
@@ -87,7 +91,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       return true;
     });
-  }, [initialJobs, search, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
+  }, [jobs, search, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -132,9 +136,21 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
   };
 
   const handleInlineUpdate = (jobId: string, data: Record<string, any>) => {
+    // Optimistic: update local state instantly so UI never blocks
+    setJobs((prev) =>
+      prev.map((j) => (j.id === jobId ? { ...j, ...data } : j)),
+    );
+    setSavingJobId(jobId);
+    // Fire-and-forget server save; refresh in background
     startTransition(async () => {
-      await updateJob(jobId, data);
-      router.refresh();
+      try {
+        await updateJob(jobId, data);
+      } catch {
+        // Revert on error — reload from server
+        router.refresh();
+      } finally {
+        setSavingJobId(null);
+      }
     });
   };
 
@@ -157,8 +173,8 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
         <div>
           <h1 className="text-2xl font-bold">Job Orders</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {sorted.length} of {initialJobs.length} jobs
-            {isPending ? " — saving..." : ""}
+            {sorted.length} of {jobs.length} jobs
+            {savingJobId ? " — saving..." : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -298,7 +314,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                       className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STAGE_COLORS[job.stage ?? "new"]}`}
                       value={job.stage ?? "new"}
                       onChange={(e) => handleInlineUpdate(job.id, { stage: e.target.value })}
-                      disabled={isPending}
+                      disabled={savingJobId === job.id}
                     >
                       {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
                         <option key={s} value={s}>{STAGE_LABELS[s]}</option>
@@ -310,7 +326,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                       className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${job.requirement_stage ? STAGE_COLORS[job.requirement_stage] : "bg-transparent text-[var(--muted-foreground)]"}`}
                       value={job.requirement_stage ?? ""}
                       onChange={(e) => handleInlineUpdate(job.id, { requirement_stage: e.target.value || null })}
-                      disabled={isPending}
+                      disabled={savingJobId === job.id}
                     >
                       <option value="">—</option>
                       {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
@@ -324,7 +340,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                       className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer focus:ring-2 focus:ring-[var(--primary)] focus:outline-none"
                       value={job.requirement_dispatch_date ?? ""}
                       onChange={(e) => handleInlineUpdate(job.id, { requirement_dispatch_date: e.target.value || null })}
-                      disabled={isPending}
+                      disabled={savingJobId === job.id}
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -332,7 +348,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                       className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STATUS_COLORS[job.status]}`}
                       value={job.status}
                       onChange={(e) => handleInlineUpdate(job.id, { status: e.target.value })}
-                      disabled={isPending}
+                      disabled={savingJobId === job.id}
                     >
                       {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
                         <option key={s} value={s}>{STATUS_LABELS[s]}</option>

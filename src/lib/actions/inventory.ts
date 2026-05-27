@@ -138,29 +138,28 @@ export async function recordTransaction(data: {
 }) {
   const supabase = await createClient();
 
-  const { error: txnError } = await supabase
-    .from("inventory_transactions")
-    .insert(data);
-
-  if (txnError) throw txnError;
-
   const isOutbound = ["production_out", "scrap"].includes(data.transaction_type);
   const isAdjustment = data.transaction_type === "adjustment";
-  // Adjustments use the raw quantity (positive or negative). Others force direction.
   const delta = isAdjustment ? data.quantity : isOutbound ? -Math.abs(data.quantity) : Math.abs(data.quantity);
 
-  const { data: existing } = await supabase
-    .from("inventory")
-    .select("id, quantity")
-    .eq("item_id", data.item_id)
-    .eq("warehouse_id", data.warehouse_id)
-    .single();
+  // Insert transaction record AND check existing inventory in parallel
+  const [txnResult, existingResult] = await Promise.all([
+    supabase.from("inventory_transactions").insert(data),
+    supabase
+      .from("inventory")
+      .select("id, quantity")
+      .eq("item_id", data.item_id)
+      .eq("warehouse_id", data.warehouse_id)
+      .single(),
+  ]);
 
-  if (existing) {
+  if (txnResult.error) throw txnResult.error;
+
+  if (existingResult.data) {
     const { error } = await supabase
       .from("inventory")
-      .update({ quantity: Number(existing.quantity) + delta })
-      .eq("id", existing.id);
+      .update({ quantity: Number(existingResult.data.quantity) + delta })
+      .eq("id", existingResult.data.id);
     if (error) throw error;
   } else {
     const { error } = await supabase

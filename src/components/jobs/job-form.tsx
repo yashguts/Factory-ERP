@@ -5,11 +5,9 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { FuzzySelect } from "@/components/ui/fuzzy-select";
-import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 import { ArrowLeft, Save, Loader2, Check } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
-import type { BomSection, BomLeaf } from "@/lib/bom/bom-sections";
+import type { BomSection } from "@/lib/bom/bom-sections";
 import {
   shouldRenderSection,
   DOOR_TYPES,
@@ -18,23 +16,19 @@ import {
   CAPACITY_PASS,
   CAPACITY_KG,
 } from "@/lib/bom/section-gating";
-import { CarLandingDoorsEditor } from "@/components/jobs/car-landing-doors-editor";
-import { MainBracketEditor } from "@/components/jobs/main-bracket-editor";
-import { CounterBracketEditor } from "@/components/jobs/counter-bracket-editor";
-import { SafetyEditor } from "@/components/jobs/safety-editor";
-import { MachineEditor } from "@/components/jobs/machine-editor";
-import { GovernorEditor } from "@/components/jobs/governor-editor";
-import { FillerWeightEditor } from "@/components/jobs/filler-weight-editor";
-import { CabinItemsEditor } from "@/components/jobs/cabin-items-editor";
+import { ItemPickerSection } from "@/components/jobs/item-picker-section";
+import type { PickedItem } from "@/components/jobs/item-picker-section";
 import {
   createJob,
   updateJob,
   saveBomSection,
-  createJobWithBom,
-  updateJobWithBom,
 } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import type { Job, JobStage } from "@/lib/supabase/types";
+
+/* ------------------------------------------------------------------ */
+/*  Types                                                             */
+/* ------------------------------------------------------------------ */
 
 const STAGE_OPTIONS: { value: JobStage; label: string }[] = [
   { value: "new", label: "New" },
@@ -42,51 +36,55 @@ const STAGE_OPTIONS: { value: JobStage; label: string }[] = [
   { value: "full_material", label: "Full Material" },
 ];
 
-interface BomValue {
-  numVal?: number;
-  textVal?: string;
-}
-
-type BomState = Record<string, BomValue>;
-
-function bomKey(category: string, variant: string) {
-  return `${category}::${variant}`;
-}
-
+/** Flat line returned by getJobBomItemLines (server). */
 export interface ExistingItemLine {
   category: string;
   variant: string | null;
   value_text: string | null;
   required_quantity: number;
   item_id: string | null;
-  item: { code: string; name: string; uom: { abbreviation: string } | null } | null;
+  item: {
+    code: string;
+    name: string;
+    uom: { abbreviation: string } | null;
+  } | null;
 }
+
+/** State keyed by section category → array of picked items. */
+type PickerState = Record<string, PickedItem[]>;
+
+/* ------------------------------------------------------------------ */
+/*  Props                                                             */
+/* ------------------------------------------------------------------ */
 
 interface Props {
   mode: "create" | "edit";
   job?: Job;
-  existingBom?: Array<{
-    category: string;
-    variant: string;
-    value_text: string | null;
-    required_quantity: number;
-  }>;
+  /** All BOM lines (item-based) for this job. Used to seed the picker. */
   existingItemLines?: ExistingItemLine[];
 }
 
-export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
+/* ------------------------------------------------------------------ */
+/*  Component                                                         */
+/* ------------------------------------------------------------------ */
+
+export function JobForm({ mode, job, existingItemLines }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Track saved job ID — in create mode starts null, gets set on first save
-  const [savedJobId, setSavedJobId] = useState<string | null>(job?.id ?? null);
-  // Track which phases have been saved (for visual feedback)
+  // ── Job tracking ──────────────────────────────────────────────────
+  const [savedJobId, setSavedJobId] = useState<string | null>(
+    job?.id ?? null,
+  );
   const [savedPhases, setSavedPhases] = useState<Record<string, boolean>>({});
   const [savingPhase, setSavingPhase] = useState<string | null>(null);
   const [jobSaved, setJobSaved] = useState(mode === "edit");
 
+  // ── Job metadata ──────────────────────────────────────────────────
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
-  const [customerName, setCustomerName] = useState(job?.customer_name ?? "");
+  const [customerName, setCustomerName] = useState(
+    job?.customer_name ?? "",
+  );
   const [location, setLocation] = useState(job?.location ?? "");
   const [doorFinish, setDoorFinish] = useState(job?.door_finish ?? "");
   const [brand, setBrand] = useState(job?.brand ?? "");
@@ -95,77 +93,79 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
   const [expectedDelivery, setExpectedDelivery] = useState(
     job?.expected_delivery ?? "",
   );
-
   const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
-  const [requirementStage, setRequirementStage] = useState<JobStage | "">(job?.requirement_stage ?? "");
-  const [requirementDispatchDate, setRequirementDispatchDate] = useState(job?.requirement_dispatch_date ?? "");
+  const [requirementStage, setRequirementStage] = useState<JobStage | "">(
+    job?.requirement_stage ?? "",
+  );
+  const [requirementDispatchDate, setRequirementDispatchDate] = useState(
+    job?.requirement_dispatch_date ?? "",
+  );
 
+  // ── Elevator spec (controls which BOM sections are visible) ──────
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
   const [doorType, setDoorType] = useState(job?.door_type ?? "");
   const [driveType, setDriveType] = useState(job?.drive_type ?? "");
   const [capacity, setCapacity] = useState(job?.capacity ?? "");
 
-  const initialBom = useMemo(() => {
-    const state: BomState = {};
-    if (existingBom) {
-      for (const line of existingBom) {
-        const key = bomKey(line.category, line.variant);
-        state[key] = {
-          numVal: line.required_quantity || undefined,
-          textVal: line.value_text ?? undefined,
-        };
-      }
+  // ── Picker state ──────────────────────────────────────────────────
+  const initialPickerState = useMemo((): PickerState => {
+    const state: PickerState = {};
+    if (!existingItemLines) return state;
+    for (const line of existingItemLines) {
+      if (!line.item_id || !line.item) continue; // skip variant-only lines
+      const arr = state[line.category] ?? [];
+      arr.push({
+        _key: Math.random().toString(36).slice(2),
+        item_id: line.item_id,
+        item_code: line.item.code,
+        item_name: line.item.name,
+        uom: line.item.uom?.abbreviation ?? "",
+        category_name: null,
+        required_quantity: line.required_quantity,
+      });
+      state[line.category] = arr;
     }
     return state;
-  }, [existingBom]);
+  }, [existingItemLines]);
 
-  const [bomState, setBomState] = useState<BomState>(initialBom);
+  const [pickerState, setPickerState] =
+    useState<PickerState>(initialPickerState);
 
-  const setBomValue = useCallback(
-    (category: string, variant: string, val: BomValue) => {
-      setBomState((prev) => ({
-        ...prev,
-        [bomKey(category, variant)]: val,
-      }));
+  const setPickerItems = useCallback(
+    (category: string, items: PickedItem[]) => {
+      setPickerState((prev) => ({ ...prev, [category]: items }));
     },
     [],
   );
 
-  const getBomValue = useCallback(
-    (category: string, variant: string): BomValue => {
-      return bomState[bomKey(category, variant)] ?? {};
-    },
-    [bomState],
+  // ── Visible sections & grouping ──────────────────────────────────
+  const visibleSections = useMemo(
+    () =>
+      BOM_SECTIONS.filter((s) =>
+        shouldRenderSection(s, doorType || null, driveType || null),
+      ),
+    [doorType, driveType],
   );
-
-  const visibleSections = useMemo(() => {
-    return BOM_SECTIONS.filter((s) =>
-      shouldRenderSection(s, doorType || null, driveType || null),
-    );
-  }, [doorType, driveType]);
-
-  // Group existing item lines by category for reference display
-  const itemLinesByCategory = useMemo(() => {
-    const map = new Map<string, ExistingItemLine[]>();
-    if (!existingItemLines) return map;
-    for (const line of existingItemLines) {
-      if (!line.category) continue;
-      const existing = map.get(line.category) ?? [];
-      existing.push(line);
-      map.set(line.category, existing);
-    }
-    return map;
-  }, [existingItemLines]);
 
   const sectionsByPhase = useMemo(() => {
     const map = new Map<string, BomSection[]>();
     for (const phase of PHASE_ORDER) {
-      const sections = visibleSections.filter((s) => s.phase === phase);
-      if (sections.length > 0) map.set(phase, sections);
+      const secs = visibleSections.filter((s) => s.phase === phase);
+      if (secs.length > 0) map.set(phase, secs);
     }
     return map;
   }, [visibleSections]);
 
+  // ── Counts ────────────────────────────────────────────────────────
+  const totalPickedItems = useMemo(() => {
+    let n = 0;
+    for (const section of visibleSections) {
+      n += (pickerState[section.category] ?? []).length;
+    }
+    return n;
+  }, [pickerState, visibleSections]);
+
+  // ── Helpers ───────────────────────────────────────────────────────
   function buildSpecString() {
     const parts = [];
     if (floors) parts.push(`G+${floors}`);
@@ -196,30 +196,24 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
     };
   }
 
-  /** Collect BOM lines for specific sections only */
-  function collectBomLinesForSections(sections: BomSection[]): BomLineInput[] {
+  /** Convert picker state for given sections into BomLineInput[]. */
+  function collectBomLines(sections: BomSection[]): BomLineInput[] {
     const lines: BomLineInput[] = [];
     for (const section of sections) {
-      for (const leaf of section.leaves) {
-        const val = getBomValue(section.category, leaf.variant);
-        if (
-          (val.numVal != null && val.numVal !== 0) ||
-          (val.textVal != null && val.textVal !== "")
-        ) {
-          lines.push({
-            category: section.category,
-            variant: leaf.variant,
-            value_text: leaf.kind !== "number" ? (val.textVal ?? null) : null,
-            required_quantity:
-              leaf.kind === "number" ? (val.numVal ?? 0) : 0,
-          });
-        }
+      const picked = pickerState[section.category] ?? [];
+      for (const item of picked) {
+        lines.push({
+          category: section.category,
+          variant: null,
+          item_id: item.item_id,
+          required_quantity: item.required_quantity || 0,
+        });
       }
     }
     return lines;
   }
 
-  /** Ensure the job exists (create if needed), return job ID */
+  /** Ensure the job record exists; returns its ID. */
   async function ensureJob(): Promise<string> {
     if (savedJobId) return savedJobId;
     if (!jobNumber.trim()) throw new Error("Job Number is required");
@@ -229,7 +223,7 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
     return created.id;
   }
 
-  /** Save Job Details (metadata + spec) */
+  // ── Save handlers ─────────────────────────────────────────────────
   function handleSaveJobDetails() {
     if (!jobNumber.trim()) return;
     startTransition(async () => {
@@ -247,14 +241,13 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
     });
   }
 
-  /** Save a specific BOM phase */
   function handleSavePhase(phase: string, sections: BomSection[]) {
     startTransition(async () => {
       setSavingPhase(phase);
       try {
         const jobId = await ensureJob();
         const categories = sections.map((s) => s.category);
-        const lines = collectBomLinesForSections(sections);
+        const lines = collectBomLines(sections);
         await saveBomSection(jobId, categories, lines);
         setSavedPhases((prev) => ({ ...prev, [phase]: true }));
       } catch (err: any) {
@@ -265,50 +258,22 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
     });
   }
 
-  /** Save everything at once (legacy full save) */
   function handleSaveAll() {
     if (!jobNumber.trim()) return;
     startTransition(async () => {
-      const allLines = collectBomLinesForSections(visibleSections);
-      const jobData = buildJobData();
       try {
-        if (mode === "create" && !savedJobId) {
-          const created = await createJobWithBom(jobData, allLines);
-          router.push(`/jobs/${created.id}`);
-        } else {
-          const id = savedJobId ?? job?.id;
-          if (id) {
-            await updateJobWithBom(id, jobData, allLines);
-            router.push(`/jobs/${id}`);
-          }
-        }
+        const jobId = await ensureJob();
+        const categories = visibleSections.map((s) => s.category);
+        const lines = collectBomLines(visibleSections);
+        await saveBomSection(jobId, categories, lines);
+        router.push(`/jobs/${jobId}`);
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
       }
     });
   }
 
-  const filledCount = useMemo(() => {
-    let count = 0;
-    for (const section of visibleSections) {
-      for (const leaf of section.leaves) {
-        const val = getBomValue(section.category, leaf.variant);
-        if (
-          (val.numVal != null && val.numVal !== 0) ||
-          (val.textVal != null && val.textVal !== "")
-        )
-          count++;
-      }
-    }
-    return count;
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [bomState, visibleSections]);
-
-  const totalLeaves = useMemo(
-    () => visibleSections.reduce((s, sec) => s + sec.leaves.length, 0),
-    [visibleSections],
-  );
-
+  // ── Render ────────────────────────────────────────────────────────
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -331,20 +296,23 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-[var(--muted-foreground)]">
-            {filledCount}/{totalLeaves} BOM fields
+            {totalPickedItems} BOM item{totalPickedItems !== 1 ? "s" : ""}
           </span>
-          <Button onClick={handleSaveAll} disabled={isPending || !jobNumber.trim()}>
+          <Button
+            onClick={handleSaveAll}
+            disabled={isPending || !jobNumber.trim()}
+          >
             {isPending && !savingPhase ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-2" />
             )}
-            Save All & Finish
+            Save All &amp; Finish
           </Button>
         </div>
       </div>
 
-      {/* Job Metadata */}
+      {/* ── Job Details ── */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-lg font-semibold">Job Details</h2>
@@ -368,7 +336,10 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
           <Field label="Job Number *">
             <Input
               value={jobNumber}
-              onChange={(e) => { setJobNumber(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setJobNumber(e.target.value);
+                setJobSaved(false);
+              }}
               placeholder="e.g. 1234 or LT-001"
               disabled={mode === "edit" || !!savedJobId}
             />
@@ -376,28 +347,40 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
           <Field label="Customer Name">
             <Input
               value={customerName}
-              onChange={(e) => { setCustomerName(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setCustomerName(e.target.value);
+                setJobSaved(false);
+              }}
               placeholder="Customer"
             />
           </Field>
           <Field label="Location">
             <Input
               value={location}
-              onChange={(e) => { setLocation(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setLocation(e.target.value);
+                setJobSaved(false);
+              }}
               placeholder="Site location"
             />
           </Field>
           <Field label="Door Finish">
             <Input
               value={doorFinish}
-              onChange={(e) => { setDoorFinish(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setDoorFinish(e.target.value);
+                setJobSaved(false);
+              }}
               placeholder="e.g. SS Hairline"
             />
           </Field>
           <Field label="Brand">
             <Select
               value={brand}
-              onChange={(e) => { setBrand(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setBrand(e.target.value);
+                setJobSaved(false);
+              }}
             >
               <option value="">Select brand</option>
               <option value="Ricardo">Ricardo</option>
@@ -408,35 +391,60 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
             <Input
               type="date"
               value={orderDate}
-              onChange={(e) => { setOrderDate(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setOrderDate(e.target.value);
+                setJobSaved(false);
+              }}
             />
           </Field>
           <Field label="Expected Delivery">
             <Input
               type="date"
               value={expectedDelivery}
-              onChange={(e) => { setExpectedDelivery(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setExpectedDelivery(e.target.value);
+                setJobSaved(false);
+              }}
             />
           </Field>
           <Field label="Remark">
             <Input
               value={remark}
-              onChange={(e) => { setRemark(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setRemark(e.target.value);
+                setJobSaved(false);
+              }}
               placeholder="Notes"
             />
           </Field>
           <Field label="Stage">
-            <Select value={stage} onChange={(e) => { setStage(e.target.value as JobStage); setJobSaved(false); }}>
+            <Select
+              value={stage}
+              onChange={(e) => {
+                setStage(e.target.value as JobStage);
+                setJobSaved(false);
+              }}
+            >
               {STAGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </Select>
           </Field>
           <Field label="Requirement Stage">
-            <Select value={requirementStage} onChange={(e) => { setRequirementStage(e.target.value as JobStage | ""); setJobSaved(false); }}>
-              <option value="">—</option>
+            <Select
+              value={requirementStage}
+              onChange={(e) => {
+                setRequirementStage(e.target.value as JobStage | "");
+                setJobSaved(false);
+              }}
+            >
+              <option value="">---</option>
               {STAGE_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </Select>
           </Field>
@@ -444,13 +452,16 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
             <Input
               type="date"
               value={requirementDispatchDate}
-              onChange={(e) => { setRequirementDispatchDate(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setRequirementDispatchDate(e.target.value);
+                setJobSaved(false);
+              }}
             />
           </Field>
         </div>
       </div>
 
-      {/* Elevator Spec */}
+      {/* ── Elevator Spec ── */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
         <h2 className="text-lg font-semibold mb-4">Elevator Specification</h2>
         <p className="text-sm text-[var(--muted-foreground)] mb-4">
@@ -476,7 +487,10 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
           <Field label="Door Type">
             <Select
               value={doorType}
-              onChange={(e) => { setDoorType(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setDoorType(e.target.value);
+                setJobSaved(false);
+              }}
             >
               <option value="">Select</option>
               {DOOR_TYPES.map((d) => (
@@ -489,7 +503,10 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
           <Field label="Drive Type">
             <Select
               value={driveType}
-              onChange={(e) => { setDriveType(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setDriveType(e.target.value);
+                setJobSaved(false);
+              }}
             >
               <option value="">Select</option>
               {DRIVE_TYPES.map((d) => (
@@ -502,7 +519,10 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
           <Field label="Capacity">
             <Select
               value={capacity}
-              onChange={(e) => { setCapacity(e.target.value); setJobSaved(false); }}
+              onChange={(e) => {
+                setCapacity(e.target.value);
+                setJobSaved(false);
+              }}
             >
               <option value="">Select</option>
               <optgroup label="Passengers">
@@ -529,17 +549,28 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
         )}
       </div>
 
-      {/* BOM Sections by Phase */}
+      {/* ── BOM Sections by Phase ── */}
       {Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
         const isSaving = savingPhase === phase;
         const isSaved = savedPhases[phase] === true;
+        const phaseItemCount = sections.reduce(
+          (n, s) => n + (pickerState[s.category] ?? []).length,
+          0,
+        );
 
         return (
           <div key={phase}>
             <div className="flex items-center justify-between mb-3">
-              <h2 className="text-lg font-semibold text-[var(--foreground)]">
-                {phase}
-              </h2>
+              <div className="flex items-center gap-2">
+                <h2 className="text-lg font-semibold text-[var(--foreground)]">
+                  {phase}
+                </h2>
+                {phaseItemCount > 0 && (
+                  <span className="text-xs px-1.5 py-0.5 rounded-full bg-[var(--muted)] text-[var(--muted-foreground)]">
+                    {phaseItemCount}
+                  </span>
+                )}
+              </div>
               <Button
                 size="sm"
                 variant={isSaved ? "secondary" : "primary"}
@@ -556,278 +587,62 @@ export function JobForm({ mode, job, existingBom, existingItemLines }: Props) {
                 {isSaved ? "Saved" : "Save Section"}
               </Button>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {sections.map((section) => {
-                const refItems = itemLinesByCategory.get(section.category) ?? [];
-                const editor =
-                  section.customEditor === "car-landing-doors" ? (
-                    <CarLandingDoorsEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "main-bracket" ? (
-                    <MainBracketEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "counter-bracket" ? (
-                    <CounterBracketEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "safety" ? (
-                    <SafetyEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "machine" ? (
-                    <MachineEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "governor" ? (
-                    <GovernorEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "filler-weight" ? (
-                    <FillerWeightEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : section.customEditor === "cabin-items" ? (
-                    <CabinItemsEditor
-                      category={section.category}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  ) : (
-                    <SectionCard
-                      section={section}
-                      getBomValue={getBomValue}
-                      setBomValue={setBomValue}
-                    />
-                  );
 
-                return (
-                  <div
-                    key={section.category}
-                    className={section.fullWidth ? "lg:col-span-2" : ""}
-                  >
-                    {editor}
-                    {refItems.length > 0 && (
-                      <ExistingItemsRef items={refItems} />
-                    )}
-                  </div>
-                );
-              })}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {sections.map((section) => (
+                <div
+                  key={section.category}
+                  className={section.fullWidth ? "lg:col-span-2" : ""}
+                >
+                  <ItemPickerSection
+                    category={section.category}
+                    description={section.description}
+                    defaultItemCategories={section.defaultItemCategories}
+                    items={pickerState[section.category] ?? []}
+                    onItemsChange={(items) =>
+                      setPickerItems(section.category, items)
+                    }
+                  />
+                </div>
+              ))}
             </div>
           </div>
         );
       })}
 
-      {/* Bottom save */}
+      {/* Bottom actions */}
       <div className="flex justify-end gap-3 pb-8">
-        <Button variant="secondary" onClick={() => {
-          if (savedJobId) {
-            router.push(`/jobs/${savedJobId}`);
-          } else {
-            router.back();
-          }
-        }}>
+        <Button
+          variant="secondary"
+          onClick={() => {
+            if (savedJobId) {
+              router.push(`/jobs/${savedJobId}`);
+            } else {
+              router.back();
+            }
+          }}
+        >
           {savedJobId ? "Done" : "Cancel"}
         </Button>
-        <Button onClick={handleSaveAll} disabled={isPending || !jobNumber.trim()}>
+        <Button
+          onClick={handleSaveAll}
+          disabled={isPending || !jobNumber.trim()}
+        >
           {isPending && !savingPhase ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (
             <Save className="h-4 w-4 mr-2" />
           )}
-          Save All & Finish
+          Save All &amp; Finish
         </Button>
       </div>
     </div>
   );
 }
 
-function SectionCard({
-  section,
-  getBomValue,
-  setBomValue,
-}: {
-  section: BomSection;
-  getBomValue: (cat: string, variant: string) => BomValue;
-  setBomValue: (cat: string, variant: string, val: BomValue) => void;
-}) {
-  const filledLeaves = section.leaves.filter((l) => {
-    const v = getBomValue(section.category, l.variant);
-    return (v.numVal != null && v.numVal !== 0) || (v.textVal && v.textVal !== "");
-  }).length;
-
-  return (
-    <div
-      className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4"
-    >
-      <div className="flex items-center justify-between mb-3">
-        <h3 className="font-medium text-[var(--foreground)]">
-          {section.category}
-        </h3>
-        {filledLeaves > 0 && (
-          <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-700">
-            {filledLeaves}/{section.leaves.length}
-          </span>
-        )}
-      </div>
-      {section.description && (
-        <p className="text-xs text-[var(--muted-foreground)] mb-3">
-          {section.description}
-        </p>
-      )}
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        {section.leaves.map((leaf) => (
-          <LeafInput
-            key={leaf.variant}
-            leaf={leaf}
-            category={section.category}
-            value={getBomValue(section.category, leaf.variant)}
-            onChange={(val) =>
-              setBomValue(section.category, leaf.variant, val)
-            }
-          />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function LeafInput({
-  leaf,
-  category,
-  value,
-  onChange,
-}: {
-  leaf: BomLeaf;
-  category: string;
-  value: BomValue;
-  onChange: (val: BomValue) => void;
-}) {
-  if (leaf.kind === "number") {
-    return (
-      <div>
-        <label className="block text-xs text-[var(--muted-foreground)] mb-1 truncate" title={leaf.variant}>
-          {leaf.variant}
-          {leaf.unit && (
-            <span className="text-[10px] ml-1 opacity-60">({leaf.unit})</span>
-          )}
-        </label>
-        <Input
-          type="number"
-          min={0}
-          step="any"
-          className="h-8 text-sm"
-          value={value.numVal ?? ""}
-          onChange={(e) =>
-            onChange({
-              numVal: e.target.value ? Number(e.target.value) : undefined,
-            })
-          }
-        />
-      </div>
-    );
-  }
-
-  if (leaf.kind === "select" && leaf.options) {
-    const fuzzyOpts: FuzzySelectOption[] = leaf.options.map((o) => ({ value: o }));
-    return (
-      <div>
-        <label className="block text-xs text-[var(--muted-foreground)] mb-1 truncate" title={leaf.variant}>
-          {leaf.variant}
-        </label>
-        <FuzzySelect
-          options={fuzzyOpts}
-          value={value.textVal ?? ""}
-          onChange={(v) => onChange({ textVal: v || undefined })}
-        />
-      </div>
-    );
-  }
-
-  return (
-    <div>
-      <label className="block text-xs text-[var(--muted-foreground)] mb-1 truncate" title={leaf.variant}>
-        {leaf.variant}
-        {leaf.unit && (
-          <span className="text-[10px] ml-1 opacity-60">({leaf.unit})</span>
-        )}
-      </label>
-      <Input
-        type="text"
-        className="h-8 text-sm"
-        value={value.textVal ?? ""}
-        onChange={(e) => onChange({ textVal: e.target.value || undefined })}
-      />
-    </div>
-  );
-}
-
-/** Shows existing item-based BOM lines as reference below a section editor */
-function ExistingItemsRef({ items }: { items: ExistingItemLine[] }) {
-  const [open, setOpen] = useState(true);
-
-  return (
-    <div className="mt-2 rounded-md border border-dashed border-[var(--border)] bg-[var(--background)] text-xs">
-      <button
-        type="button"
-        className="w-full flex items-center justify-between px-3 py-1.5 text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
-        onClick={() => setOpen(!open)}
-      >
-        <span className="font-medium">
-          📋 Existing Items ({items.length})
-        </span>
-        <span className="text-[10px]">{open ? "▲ Hide" : "▼ Show"}</span>
-      </button>
-      {open && (
-        <div className="px-3 pb-2">
-          <table className="w-full text-left">
-            <thead>
-              <tr className="text-[var(--muted-foreground)] border-b border-[var(--border)]">
-                <th className="pb-1 pr-2 font-medium">Code</th>
-                <th className="pb-1 pr-2 font-medium">Item</th>
-                <th className="pb-1 pr-2 font-medium text-right">Qty</th>
-                <th className="pb-1 font-medium">Unit</th>
-              </tr>
-            </thead>
-            <tbody>
-              {items.map((line, i) => (
-                <tr key={i} className="border-b border-[var(--border)] last:border-0">
-                  <td className="py-1 pr-2 font-mono text-[var(--muted-foreground)]">
-                    {line.item?.code ?? "—"}
-                  </td>
-                  <td className="py-1 pr-2 text-[var(--foreground)]">
-                    {line.item?.name ?? line.variant ?? "—"}
-                  </td>
-                  <td className="py-1 pr-2 text-right font-mono text-[var(--foreground)]">
-                    {Number(line.required_quantity).toLocaleString()}
-                  </td>
-                  <td className="py-1 text-[var(--muted-foreground)]">
-                    {line.item?.uom?.abbreviation ?? ""}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-    </div>
-  );
-}
+/* ------------------------------------------------------------------ */
+/*  Sub-components                                                    */
+/* ------------------------------------------------------------------ */
 
 function Field({
   label,
