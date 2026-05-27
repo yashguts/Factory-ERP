@@ -76,7 +76,16 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [savedJobId, setSavedJobId] = useState<string | null>(
     job?.id ?? null,
   );
-  const [savedPhases, setSavedPhases] = useState<Record<string, boolean>>({});
+  // In edit mode, treat every phase as already-saved on mount — data is
+  // in DB. Picker / spec changes will mark phases dirty as the user edits.
+  const [savedPhases, setSavedPhases] = useState<Record<string, boolean>>(
+    () => {
+      if (mode !== "edit") return {};
+      const map: Record<string, boolean> = {};
+      for (const phase of PHASE_ORDER) map[phase] = true;
+      return map;
+    },
+  );
   const [savingPhase, setSavingPhase] = useState<string | null>(null);
   const [jobSaved, setJobSaved] = useState(mode === "edit");
 
@@ -149,6 +158,17 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     [],
   );
 
+  /**
+   * Wrap a spec-field setter so that changing floors/door/drive/capacity
+   * also clears all "Saved" phase badges. These fields control which
+   * sections render, so any previously-saved phase may no longer reflect
+   * what's in DB.
+   */
+  function markSpecChanged() {
+    setJobSaved(false);
+    setSavedPhases({});
+  }
+
   // ── Visible sections & grouping ──────────────────────────────────
   const visibleSections = useMemo(
     () =>
@@ -176,34 +196,54 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     return n;
   }, [pickerState, visibleSections]);
 
+  // ── Save-state derivation ─────────────────────────────────────────
+  // The form has unsaved work if: job metadata is dirty (jobSaved=false),
+  // OR there's no saved record yet, OR any visible phase isn't in
+  // savedPhases. The user can glance at the header to know if their work
+  // is committed.
+  const allPhasesSaved = useMemo(() => {
+    for (const phase of sectionsByPhase.keys()) {
+      if (!savedPhases[phase]) return false;
+    }
+    return true;
+  }, [sectionsByPhase, savedPhases]);
+
+  const hasUnsavedChanges =
+    !jobSaved ||
+    !savedJobId ||
+    (totalPickedItems > 0 && !allPhasesSaved);
+
   // ── Helpers ───────────────────────────────────────────────────────
-  function buildSpecString() {
+  function buildSpecString(): string | null {
     const parts = [];
     if (floors) parts.push(`G+${floors}`);
     if (doorType) parts.push(doorType);
     if (driveType) parts.push(driveType);
     if (capacity) parts.push(capacity);
-    return parts.join("/") || undefined;
+    return parts.join("/") || null;
   }
 
   function buildJobData() {
+    // Use null (not undefined) for cleared fields so Supabase actually
+    // overwrites the column. undefined would be silently dropped from the
+    // update payload, leaving stale DB values.
     return {
       job_number: jobNumber.trim(),
-      customer_name: customerName || undefined,
+      customer_name: customerName || null,
       spec_string: buildSpecString(),
-      door_finish: doorFinish || undefined,
-      location: location || undefined,
-      brand: brand || undefined,
-      floors: floors || undefined,
-      door_type: doorType || undefined,
-      drive_type: driveType || undefined,
-      capacity: capacity || undefined,
-      remark: remark || undefined,
-      order_date: orderDate || undefined,
-      expected_delivery: expectedDelivery || undefined,
+      door_finish: doorFinish || null,
+      location: location || null,
+      brand: brand || null,
+      floors: floors || null,
+      door_type: doorType || null,
+      drive_type: driveType || null,
+      capacity: capacity || null,
+      remark: remark || null,
+      order_date: orderDate || null,
+      expected_delivery: expectedDelivery || null,
       stage,
-      requirement_stage: requirementStage || undefined,
-      requirement_dispatch_date: requirementDispatchDate || undefined,
+      requirement_stage: requirementStage || null,
+      requirement_dispatch_date: requirementDispatchDate || null,
     };
   }
 
@@ -224,10 +264,19 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     return lines;
   }
 
-  /** Ensure the job record exists; returns its ID. */
+  /**
+   * Ensure the job record exists AND its metadata matches the current form.
+   * Returns the job ID. Calling this before any BOM save guarantees that
+   * metadata changes (customer name, door type, capacity, …) are persisted
+   * along with the BOM — the three save buttons share one source of truth.
+   */
   async function ensureJob(): Promise<string> {
-    if (savedJobId) return savedJobId;
     if (!jobNumber.trim()) throw new Error("Job Number is required");
+    if (savedJobId) {
+      await updateJob(savedJobId, buildJobData());
+      setJobSaved(true);
+      return savedJobId;
+    }
     const created = await createJob(buildJobData());
     setSavedJobId(created.id);
     setJobSaved(true);
@@ -313,6 +362,17 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <span className="text-sm text-[var(--muted-foreground)]">
             {totalPickedItems} BOM item{totalPickedItems !== 1 ? "s" : ""}
           </span>
+          {savedJobId && (
+            <span
+              className={`text-xs px-2 py-1 rounded-full font-medium ${
+                hasUnsavedChanges
+                  ? "bg-amber-100 text-amber-800"
+                  : "bg-green-100 text-green-700"
+              }`}
+            >
+              {hasUnsavedChanges ? "Unsaved changes" : "All saved"}
+            </span>
+          )}
           <Button
             onClick={handleSaveAll}
             disabled={isPending || !jobNumber.trim()}
@@ -488,7 +548,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               value={floors}
               onChange={(e) => {
                 setFloors(e.target.value ? Number(e.target.value) : "");
-                setJobSaved(false);
+                markSpecChanged();
               }}
             >
               <option value="">Select</option>
@@ -504,7 +564,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               value={doorType}
               onChange={(e) => {
                 setDoorType(e.target.value);
-                setJobSaved(false);
+                markSpecChanged();
               }}
             >
               <option value="">Select</option>
@@ -520,7 +580,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               value={driveType}
               onChange={(e) => {
                 setDriveType(e.target.value);
-                setJobSaved(false);
+                markSpecChanged();
               }}
             >
               <option value="">Select</option>
@@ -536,7 +596,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               value={capacity}
               onChange={(e) => {
                 setCapacity(e.target.value);
-                setJobSaved(false);
+                markSpecChanged();
               }}
             >
               <option value="">Select</option>

@@ -82,26 +82,26 @@ export async function getJobDetail(jobId: string) {
 
 export async function createJob(data: {
   job_number: string;
-  customer_name?: string;
-  description?: string;
+  customer_name?: string | null;
+  description?: string | null;
   status?: JobStatus;
-  spec_string?: string;
-  door_finish?: string;
-  location?: string;
-  progress?: number;
-  order_date?: string;
-  expected_delivery?: string;
-  brand?: string;
-  floors?: number;
-  door_type?: string;
-  drive_type?: string;
-  capacity?: string;
-  remark?: string;
-  planned_start?: string;
-  planned_end?: string;
+  spec_string?: string | null;
+  door_finish?: string | null;
+  location?: string | null;
+  progress?: number | null;
+  order_date?: string | null;
+  expected_delivery?: string | null;
+  brand?: string | null;
+  floors?: number | null;
+  door_type?: string | null;
+  drive_type?: string | null;
+  capacity?: string | null;
+  remark?: string | null;
+  planned_start?: string | null;
+  planned_end?: string | null;
   stage?: JobStage;
-  requirement_stage?: JobStage;
-  requirement_dispatch_date?: string;
+  requirement_stage?: JobStage | null;
+  requirement_dispatch_date?: string | null;
 }) {
   const supabase = await createClient();
   const { data: job, error } = await supabase
@@ -118,23 +118,23 @@ export async function createJob(data: {
 export async function createJobWithBom(
   jobData: {
     job_number: string;
-    customer_name?: string;
-    description?: string;
+    customer_name?: string | null;
+    description?: string | null;
     status?: JobStatus;
-    spec_string?: string;
-    door_finish?: string;
-    location?: string;
-    brand?: string;
-    floors?: number;
-    door_type?: string;
-    drive_type?: string;
-    capacity?: string;
-    remark?: string;
-    order_date?: string;
-    expected_delivery?: string;
+    spec_string?: string | null;
+    door_finish?: string | null;
+    location?: string | null;
+    brand?: string | null;
+    floors?: number | null;
+    door_type?: string | null;
+    drive_type?: string | null;
+    capacity?: string | null;
+    remark?: string | null;
+    order_date?: string | null;
+    expected_delivery?: string | null;
     stage?: JobStage;
-    requirement_stage?: JobStage;
-    requirement_dispatch_date?: string;
+    requirement_stage?: JobStage | null;
+    requirement_dispatch_date?: string | null;
   },
   bomLines: BomLineInput[],
 ) {
@@ -188,23 +188,23 @@ export async function createJobWithBom(
 export async function updateJobWithBom(
   jobId: string,
   jobData: {
-    customer_name?: string;
-    description?: string;
+    customer_name?: string | null;
+    description?: string | null;
     status?: JobStatus;
-    spec_string?: string;
-    door_finish?: string;
-    location?: string;
-    brand?: string;
-    floors?: number;
-    door_type?: string;
-    drive_type?: string;
-    capacity?: string;
-    remark?: string;
-    order_date?: string;
-    expected_delivery?: string;
+    spec_string?: string | null;
+    door_finish?: string | null;
+    location?: string | null;
+    brand?: string | null;
+    floors?: number | null;
+    door_type?: string | null;
+    drive_type?: string | null;
+    capacity?: string | null;
+    remark?: string | null;
+    order_date?: string | null;
+    expected_delivery?: string | null;
     stage?: JobStage;
-    requirement_stage?: JobStage;
-    requirement_dispatch_date?: string;
+    requirement_stage?: JobStage | null;
+    requirement_dispatch_date?: string | null;
   },
   bomLines: BomLineInput[],
 ) {
@@ -351,7 +351,16 @@ export async function getJobBomItemLines(jobId: string) {
   });
 }
 
-/** Save BOM lines for specific categories only (per-section save). */
+/**
+ * Save BOM lines for the given categories only (per-section save).
+ *
+ * IMPORTANT: this DELETES every existing job_bom_lines row whose
+ * `category` is in `categories`, then inserts the provided lines.
+ * The picker is treated as the source of truth for those sections —
+ * if `bomLines` is empty, those sections are wiped. If you need to
+ * preserve unmapped/legacy rows, exclude their categories from the
+ * `categories` argument or use a different code path.
+ */
 export async function saveBomSection(
   jobId: string,
   categories: string[],
@@ -426,26 +435,26 @@ export async function updateJob(
   id: string,
   data: {
     job_number?: string;
-    customer_name?: string;
-    description?: string;
+    customer_name?: string | null;
+    description?: string | null;
     status?: JobStatus;
-    spec_string?: string;
-    door_finish?: string;
-    location?: string;
-    progress?: number;
-    order_date?: string;
-    expected_delivery?: string;
-    brand?: string;
-    floors?: number;
-    door_type?: string;
-    drive_type?: string;
-    capacity?: string;
-    remark?: string;
-    planned_start?: string;
-    planned_end?: string;
-    actual_start?: string;
-    actual_end?: string;
-    notes?: string;
+    spec_string?: string | null;
+    door_finish?: string | null;
+    location?: string | null;
+    progress?: number | null;
+    order_date?: string | null;
+    expected_delivery?: string | null;
+    brand?: string | null;
+    floors?: number | null;
+    door_type?: string | null;
+    drive_type?: string | null;
+    capacity?: string | null;
+    remark?: string | null;
+    planned_start?: string | null;
+    planned_end?: string | null;
+    actual_start?: string | null;
+    actual_end?: string | null;
+    notes?: string | null;
     stage?: JobStage;
     requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
