@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { revalidateTag } from "next/cache";
 import type { ImportPreviewRow, ImportResult } from "@/lib/import/types";
 
 export async function validateImportData(rows: ImportPreviewRow[]): Promise<ImportPreviewRow[]> {
@@ -131,5 +132,7 @@ export async function executeImport(
     }
   }
 
+  revalidateTag("items");
+  revalidateTag("inventory-stock");
   return result;
 }

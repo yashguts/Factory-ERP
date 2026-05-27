@@ -1,6 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { revalidateTag } from "next/cache";
 import type { ColumnMatchResult, JobImportResult, ParsedJobRow } from "@/lib/import/types";
 
 export async function resolveColumnMapping(
@@ -279,5 +280,7 @@ export async function executeJobImport(
     }
   }
 
+  revalidateTag("jobs");
+  revalidateTag("bom-lines");
   return result;
 }

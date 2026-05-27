@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+import { unstable_cache, revalidateTag } from "next/cache";
 import type { ItemType, TransactionType } from "@/lib/supabase/types";
 
 export async function getItems() {
@@ -18,8 +20,8 @@ export async function getItems() {
   return data;
 }
 
-export async function getItemsWithStock() {
-  const supabase = await createClient();
+const _getItemsWithStockUncached = async () => {
+  const supabase = createCacheClient();
 
   const PAGE = 1000;
   let allItems: any[] = [];
@@ -65,7 +67,13 @@ export async function getItemsWithStock() {
       0
     ),
   }));
-}
+};
+
+export const getItemsWithStock = unstable_cache(
+  _getItemsWithStockUncached,
+  ["items-with-stock"],
+  { revalidate: 60, tags: ["items", "inventory-stock"] },
+);
 
 export async function createItem(data: {
   code: string;
@@ -98,6 +106,7 @@ export async function createItem(data: {
     .single();
 
   if (error) throw error;
+  revalidateTag("items");
   return item;
 }
 
@@ -126,6 +135,7 @@ export async function updateItem(
     .single();
 
   if (error) throw error;
+  revalidateTag("items");
   return item;
 }
 
@@ -171,38 +181,52 @@ export async function recordTransaction(data: {
       });
     if (error) throw error;
   }
+
+  revalidateTag("inventory-stock");
 }
 
-export async function getCategories() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("item_categories")
-    .select("*")
-    .order("name");
-  if (error) throw error;
-  return data ?? [];
-}
+export const getCategories = unstable_cache(
+  async () => {
+    const supabase = createCacheClient();
+    const { data, error } = await supabase
+      .from("item_categories")
+      .select("*")
+      .order("name");
+    if (error) throw error;
+    return data ?? [];
+  },
+  ["categories"],
+  { revalidate: 300, tags: ["categories"] },
+);
 
-export async function getUnits() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("units_of_measurement")
-    .select("*")
-    .order("name");
-  if (error) throw error;
-  return data ?? [];
-}
+export const getUnits = unstable_cache(
+  async () => {
+    const supabase = createCacheClient();
+    const { data, error } = await supabase
+      .from("units_of_measurement")
+      .select("*")
+      .order("name");
+    if (error) throw error;
+    return data ?? [];
+  },
+  ["units"],
+  { revalidate: 300, tags: ["units"] },
+);
 
-export async function getWarehouses() {
-  const supabase = await createClient();
-  const { data, error } = await supabase
-    .from("warehouses")
-    .select("*")
-    .eq("is_active", true)
-    .order("name");
-  if (error) throw error;
-  return data ?? [];
-}
+export const getWarehouses = unstable_cache(
+  async () => {
+    const supabase = createCacheClient();
+    const { data, error } = await supabase
+      .from("warehouses")
+      .select("*")
+      .eq("is_active", true)
+      .order("name");
+    if (error) throw error;
+    return data ?? [];
+  },
+  ["warehouses"],
+  { revalidate: 300, tags: ["warehouses"] },
+);
 
 export async function getRecentTransactions(limit = 20) {
   const supabase = await createClient();

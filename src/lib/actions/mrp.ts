@@ -1,6 +1,7 @@
 "use server";
 
-import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+import { unstable_cache } from "next/cache";
 
 export interface MrpRow {
   item_id: string;
@@ -16,7 +17,16 @@ export interface MrpRow {
 }
 
 export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
-  const supabase = await createClient();
+  const key = cutoffDate ?? "__all__";
+  return unstable_cache(
+    _getMrpDataUncached,
+    ["mrp-data", key],
+    { revalidate: 60, tags: ["jobs", "bom-lines", "items", "inventory-stock"] },
+  )(cutoffDate);
+}
+
+async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
+  const supabase = createCacheClient();
 
   let jobIdsFilter: string[] | null = null;
 

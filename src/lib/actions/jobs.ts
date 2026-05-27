@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+import { unstable_cache, revalidateTag } from "next/cache";
 import type { JobStatus, JobStage } from "@/lib/supabase/types";
 
 export interface BomLineInput {
@@ -11,8 +13,8 @@ export interface BomLineInput {
   item_id?: string | null;
 }
 
-export async function getJobs() {
-  const supabase = await createClient();
+const _getJobsUncached = async () => {
+  const supabase = createCacheClient();
 
   const PAGE = 1000;
   let allJobs: any[] = [];
@@ -32,7 +34,12 @@ export async function getJobs() {
   }
 
   return allJobs;
-}
+};
+
+export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
+  revalidate: 60,
+  tags: ["jobs"],
+});
 
 export async function getJobDetail(jobId: string) {
   const supabase = await createClient();
@@ -104,6 +111,7 @@ export async function createJob(data: {
     .single();
 
   if (error) throw error;
+  revalidateTag("jobs");
   return job;
 }
 
@@ -172,6 +180,8 @@ export async function createJobWithBom(
     }
   }
 
+  revalidateTag("jobs");
+  revalidateTag("bom-lines");
   return job;
 }
 
@@ -256,6 +266,9 @@ export async function updateJobWithBom(
       if (lineErr) throw lineErr;
     }
   }
+
+  revalidateTag("jobs");
+  revalidateTag("bom-lines");
 }
 
 export async function getJobBomSections(jobId: string) {
@@ -401,6 +414,8 @@ export async function saveBomSection(
       if (lineErr) throw lineErr;
     }
   }
+
+  revalidateTag("bom-lines");
 }
 
 export async function updateJob(
@@ -441,5 +456,6 @@ export async function updateJob(
     .single();
 
   if (error) throw error;
+  revalidateTag("jobs");
   return job;
 }

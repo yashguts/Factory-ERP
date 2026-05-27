@@ -1,6 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+import { unstable_cache, revalidateTag } from "next/cache";
 
 export interface UnmatchedPattern {
   category: string;
@@ -86,16 +88,20 @@ export async function getUnmatchedBomSummary(): Promise<UnmatchedPattern[]> {
 }
 
 /** Get total count of unmatched BOM lines */
-export async function getUnmatchedCount(): Promise<number> {
-  const supabase = await createClient();
-  const { count, error } = await supabase
-    .from("job_bom_lines")
-    .select("id", { count: "exact", head: true })
-    .is("item_id", null);
+export const getUnmatchedCount = unstable_cache(
+  async (): Promise<number> => {
+    const supabase = createCacheClient();
+    const { count, error } = await supabase
+      .from("job_bom_lines")
+      .select("id", { count: "exact", head: true })
+      .is("item_id", null);
 
-  if (error) throw error;
-  return count ?? 0;
-}
+    if (error) throw error;
+    return count ?? 0;
+  },
+  ["unmatched-count"],
+  { revalidate: 60, tags: ["bom-lines"] },
+);
 
 /** Search inventory items by name/code/lookup_key */
 export async function searchItemsForMapping(query: string): Promise<ItemOption[]> {
@@ -169,6 +175,7 @@ export async function bulkMapBomLines(
     updated += ids.length;
   }
 
+  revalidateTag("bom-lines");
   return { updated };
 }
 
@@ -209,5 +216,6 @@ export async function createItemAndMap(
   if (itemErr) throw itemErr;
 
   const { updated } = await bulkMapBomLines(category, variant, valueText, item.id);
+  revalidateTag("items");
   return { itemId: item.id, updated };
 }
