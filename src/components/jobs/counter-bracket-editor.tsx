@@ -54,7 +54,7 @@ export function CounterBracketEditor({
         COUNTER BRACKET
       </h3>
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
-        Counter bracket types (1–4). Only shown for MR drives.
+        Counter bracket types (1–4). Shown for MR and Hydraulic drives.
       </p>
 
       <div className="space-y-3">

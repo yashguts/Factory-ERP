@@ -16,6 +16,12 @@ export function shouldRenderSection(
       d.endsWith("-") ? driveType.startsWith(d) : driveType === d,
     );
   }
+  if (section.gate.kind === "driveTypeExclude") {
+    if (!driveType) return true;
+    return !section.gate.drives.some((d) =>
+      d.endsWith("-") ? driveType.startsWith(d) : driveType === d,
+    );
+  }
   return true;
 }
 

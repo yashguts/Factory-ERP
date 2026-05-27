@@ -10,7 +10,8 @@ export interface BomLeaf {
 export type SectionGate =
   | { kind: "always" }
   | { kind: "doorType"; doors: string[] }
-  | { kind: "driveType"; drives: string[] };
+  | { kind: "driveType"; drives: string[] }
+  | { kind: "driveTypeExclude"; drives: string[] };
 
 export interface BomSection {
   category: string;
@@ -74,7 +75,7 @@ export const BOM_SECTIONS: BomSection[] = [
     phase: "Brackets",
     description:
       "Pick how many bracket types this job uses (1-4), then specify each one.",
-    gate: ALWAYS,
+    gate: { kind: "driveTypeExclude", drives: ["HYD"] },
     fullWidth: true,
     customEditor: "main-bracket",
     leaves: [
@@ -96,8 +97,8 @@ export const BOM_SECTIONS: BomSection[] = [
   {
     category: "COUNTER BRACKET",
     phase: "Brackets",
-    description: "Counter bracket types (1-4). Only shown for MR drives.",
-    gate: { kind: "driveType", drives: ["MR"] },
+    description: "Counter bracket types (1-4). Shown for MR and Hydraulic drives.",
+    gate: { kind: "driveType", drives: ["MR", "HYD"] },
     customEditor: "counter-bracket",
     leaves: [
       { variant: "Number of Types", kind: "select", options: ["1", "2", "3", "4"] },
