@@ -44,6 +44,7 @@ const TYPE_LABELS: Record<ItemType, string> = {
   sub_assembly: "Sub Assembly",
   finished_good: "Finished Good",
   mechanical_finished_stock: "Mech. Finished Stock",
+  door_panel: "Door Panel",
 };
 
 const TYPE_COLORS: Record<ItemType, string> = {
@@ -51,6 +52,7 @@ const TYPE_COLORS: Record<ItemType, string> = {
   sub_assembly: "bg-purple-100 text-purple-800",
   finished_good: "bg-green-100 text-green-800",
   mechanical_finished_stock: "bg-amber-100 text-amber-800",
+  door_panel: "bg-pink-100 text-pink-800",
 };
 
 type SortKey = "code" | "name" | "stock" | "category" | "cost";
@@ -238,6 +240,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           <option value="sub_assembly">Sub Assembly</option>
           <option value="finished_good">Finished Good</option>
           <option value="mechanical_finished_stock">Mech. Finished Stock</option>
+          <option value="door_panel">Door Panel</option>
         </Select>
 
         {/* Category Filter */}

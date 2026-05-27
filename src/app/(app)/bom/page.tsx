@@ -77,6 +77,7 @@ const TYPE_COLORS: Record<ItemType, string> = {
   sub_assembly: "bg-purple-100 text-purple-800",
   finished_good: "bg-green-100 text-green-800",
   mechanical_finished_stock: "bg-amber-100 text-amber-800",
+  door_panel: "bg-pink-100 text-pink-800",
 };
 
 export default function BomPage() {

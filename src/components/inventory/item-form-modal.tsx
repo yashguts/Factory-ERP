@@ -207,6 +207,7 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
               <option value="sub_assembly">Sub Assembly</option>
               <option value="finished_good">Finished Good</option>
               <option value="mechanical_finished_stock">Mechanical Finished Stock</option>
+              <option value="door_panel">Door Panel</option>
             </Select>
           </div>
         </div>
