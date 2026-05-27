@@ -83,16 +83,17 @@ export const BOM_SECTIONS: BomSection[] = [
     ],
   },
 
-  // ──────────────── BUFFER & CHANNELS ────────────────
-  // Phase intentionally renders right after Brackets so Rail Clip and
-  // the Buffer Channel pair sit immediately below the bracket family
-  // (manufacturing-order).
+  // ──────────────── RAIL CLIP (own phase) ────────────────
+  // Dedicated phase between Brackets and Buffer & Channels so this
+  // single section reads as its own beat in the form.
   {
     category: "RAIL CLIP",
-    phase: "Buffer & Channels",
+    phase: "Rail Clip",
     gate: ALWAYS,
     defaultItemCategories: ["Hardware > Rail Clip"],
   },
+
+  // ──────────────── BUFFER & CHANNELS ────────────────
   {
     category: "Buffer Channel Main",
     phase: "Buffer & Channels",
@@ -158,23 +159,14 @@ export const BOM_SECTIONS: BomSection[] = [
   },
 
   // ──────────────── BUFFER & CHANNELS (continued) ────────────────
-  // RAIL CLIP and Buffer Channel are defined above (right after Brackets)
-  // so they render immediately after the bracket family. The rest of the
-  // phase's sections continue here.
+  // Buffer Channel Main & Counter are defined above (right after Brackets/
+  // Rail Clip) so they render immediately below the bracket family. The
+  // rest of the phase's sections continue here.
   {
     category: "Buffer Spring",
     phase: "Buffer & Channels",
     gate: ALWAYS,
     defaultItemCategories: ["Hardware > Buffer Spring"],
-  },
-  {
-    category: "Safety",
-    phase: "Buffer & Channels",
-    gate: ALWAYS,
-    fullWidth: true,
-    description:
-      "Safety gear, frames, guide shoes — everything under Safety Frame.",
-    defaultItemCategories: ["Safety Frame"],
   },
   {
     category: "Buffer Stand",
@@ -194,6 +186,71 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     fullWidth: true,
     defaultItemCategories: ["Filler Weight"],
+  },
+
+  // ──────────────── SAFETY & COUNTER FRAME ────────────────
+  // New phase that renders right after Door System. Groups safety gear,
+  // pulleys, counter-weight frame, machine beam and related items.
+  {
+    category: "Safety",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    fullWidth: true,
+    description:
+      "Safety gear, frames, guide shoes — everything under Safety Frame.",
+    defaultItemCategories: ["Safety Frame"],
+  },
+  {
+    category: "Pulley Main",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    description:
+      "Main sheave / drive pulley. Search any item in the Pulley Items category tree.",
+    defaultItemCategories: ["Pulley Items"],
+  },
+  {
+    category: "Pulley Counter",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    description:
+      "Counter-weight pulley. Search any item in the Pulley Items category tree.",
+    defaultItemCategories: ["Pulley Items"],
+  },
+  {
+    category: "Pulley Diverter",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    description:
+      "Diverter pulley. Search any item in the Pulley Items category tree.",
+    defaultItemCategories: ["Pulley Items"],
+  },
+  {
+    category: "Counter Frame",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    fullWidth: true,
+    description: "Counter Weight Frame and its variants.",
+    defaultItemCategories: ["Counter Weight Frame"],
+  },
+  {
+    category: "Counter Guard Net",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    defaultItemCategories: ["Small Manufactured Items > Counter Guard Net"],
+  },
+  {
+    category: "Pit Ladder",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    defaultItemCategories: ["Miscallaneous > Pit Ladder"],
+  },
+  {
+    category: "Machine Beam",
+    phase: "Safety & Counter Frame",
+    gate: ALWAYS,
+    fullWidth: true,
+    description: "Machine Beam, brackets, pulley arrangement, hitch plates.",
+    defaultItemCategories: ["Machine Beam"],
   },
 
   // ──────────────── DRIVE / MACHINE / GOVERNOR ────────────────
@@ -301,11 +358,13 @@ export const BOM_SECTIONS: BomSection[] = [
 export const PHASE_ORDER = [
   "Structural",
   "Brackets",
-  // Buffer & Channels intentionally renders right after Brackets so
-  // RAIL CLIP and Buffer Channel sit immediately below the bracket
-  // family — matches the manufacturing flow.
+  // Rail Clip + Buffer & Channels follow Brackets so the bracket family
+  // and immediately-adjacent parts read in manufacturing order.
+  "Rail Clip",
   "Buffer & Channels",
   "Door System",
+  // Safety / pulleys / counter frame / machine beam grouped here.
+  "Safety & Counter Frame",
   "Header System",
   "Drive / Machine / Governor",
   "Wire & Hardware",
