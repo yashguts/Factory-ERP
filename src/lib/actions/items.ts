@@ -1,6 +1,10 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
+import {
+  resolveCategoryPaths,
+  expandCategoryDescendants,
+} from "@/lib/actions/categories";
 
 export interface SearchableItem {
   id: string;
@@ -11,30 +15,35 @@ export interface SearchableItem {
 }
 
 /**
- * Search inventory items with multi-token fuzzy matching.
+ * Search inventory items with multi-token fuzzy matching, optionally scoped
+ * to a set of category PATHS (e.g. "Large Purchased Items > Guide Rail").
+ *
+ * When `categoryPaths` is provided, the search:
+ *  1. Resolves each path to a category ID.
+ *  2. Expands each ID to include all descendant sub-categories.
+ *  3. Filters items whose `category_id` is in that expanded set.
+ *
+ * So passing `["Filler Weight"]` returns items in `Filler Weight > Filler
+ * Weight` AND `Filler Weight > Filler Weight Locking Bracket`.
+ *
  * Each word in `query` must appear in the item name (AND logic).
- * Optionally filter by item_categories.name values.
  */
 export async function searchItems(
   query: string,
-  categoryNames?: string[],
+  categoryPaths?: string[],
   limit = 50,
 ): Promise<SearchableItem[]> {
   const supabase = await createClient();
 
-  // Resolve category names to IDs if filtering
+  // Resolve paths → IDs → IDs+descendants
   let categoryIds: string[] | undefined;
-  if (categoryNames && categoryNames.length > 0) {
-    const { data: cats } = await supabase
-      .from("item_categories")
-      .select("id")
-      .in("name", categoryNames);
-    if (cats && cats.length > 0) {
-      categoryIds = cats.map((c) => c.id);
-    } else {
-      // No matching categories — return empty
+  if (categoryPaths && categoryPaths.length > 0) {
+    const rootIds = await resolveCategoryPaths(categoryPaths);
+    if (rootIds.length === 0) {
+      // No paths matched — return empty rather than search globally
       return [];
     }
+    categoryIds = await expandCategoryDescendants(rootIds);
   }
 
   let q = supabase
@@ -46,7 +55,7 @@ export async function searchItems(
     )
     .eq("is_active", true);
 
-  if (categoryIds) {
+  if (categoryIds && categoryIds.length > 0) {
     q = q.in("category_id", categoryIds);
   }
 

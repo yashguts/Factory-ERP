@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { ArrowLeft, Save, Loader2, Check } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Check, Plus } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import {
@@ -18,6 +18,7 @@ import {
 } from "@/lib/bom/section-gating";
 import { ItemPickerSection } from "@/components/jobs/item-picker-section";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
+import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   createJob,
   updateJob,
@@ -52,6 +53,9 @@ export interface ExistingItemLine {
 
 /** State keyed by section category → array of picked items. */
 type PickerState = Record<string, PickedItem[]>;
+
+/** Phase label for user-added ad-hoc sections. */
+const AD_HOC_PHASE = "Additional Items";
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -140,20 +144,82 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [pickerState, setPickerState] =
     useState<PickerState>(initialPickerState);
 
+  // ── Ad-hoc sections (user-added via +Add Section) ─────────────────
+  // Each ad-hoc section binds to one inventory category path. Stored on
+  // the job by its `category` field — which is the leaf category name.
+  // We seed any existing BOM categories that don't match a hardcoded
+  // section, so they show up as ad-hoc sections when the user edits.
+  type AdHocSection = {
+    category: string; // display label + job_bom_lines.category value
+    categoryPath: string; // full path for search scoping
+  };
+  const [adHocSections, setAdHocSections] = useState<AdHocSection[]>(() => {
+    if (!existingItemLines) return [];
+    const knownCategories = new Set(BOM_SECTIONS.map((s) => s.category));
+    const seen = new Set<string>();
+    const out: AdHocSection[] = [];
+    for (const line of existingItemLines) {
+      if (!line.category || seen.has(line.category)) continue;
+      if (knownCategories.has(line.category)) continue;
+      seen.add(line.category);
+      // We don't know the original path; the leaf name is a reasonable
+      // default for scoping the search.
+      out.push({ category: line.category, categoryPath: line.category });
+    }
+    return out;
+  });
+
+  const [pickerModalOpen, setPickerModalOpen] = useState(false);
+
+  const addAdHocSection = useCallback(
+    (sel: { path: string; displayName: string }) => {
+      setAdHocSections((prev) => {
+        // Use the leaf name as the display label; ensure uniqueness vs
+        // hardcoded + existing ad-hoc.
+        const usedLabels = new Set<string>([
+          ...BOM_SECTIONS.map((s) => s.category),
+          ...prev.map((s) => s.category),
+        ]);
+        let label = sel.displayName;
+        let n = 2;
+        while (usedLabels.has(label)) {
+          label = `${sel.displayName} (${n++})`;
+        }
+        return [
+          ...prev,
+          { category: label, categoryPath: sel.path },
+        ];
+      });
+      setPickerModalOpen(false);
+    },
+    [],
+  );
+
+  const removeAdHocSection = useCallback((category: string) => {
+    setAdHocSections((prev) => prev.filter((s) => s.category !== category));
+    setPickerState((prev) => {
+      if (!(category in prev)) return prev;
+      const next = { ...prev };
+      delete next[category];
+      return next;
+    });
+  }, []);
+
   const setPickerItems = useCallback(
     (category: string, items: PickedItem[]) => {
-      setPickerState((prev) => ({ ...prev, [category]: items }));
+      setPickerState((prevState) => ({ ...prevState, [category]: items }));
       // Clear "Saved" badge for any phase containing this category — picker
-      // state diverged from what was last saved.
-      const phase = BOM_SECTIONS.find((s) => s.category === category)?.phase;
-      if (phase) {
-        setSavedPhases((prev) => {
-          if (!prev[phase]) return prev;
-          const next = { ...prev };
-          delete next[phase];
-          return next;
-        });
-      }
+      // state diverged from what was last saved. (Ad-hoc sections live in
+      // a dedicated phase, so handle that too.)
+      const phase =
+        BOM_SECTIONS.find((s) => s.category === category)?.phase ??
+        AD_HOC_PHASE;
+      setSavedPhases((prevPhases) => {
+        if (!prevPhases[phase]) return prevPhases;
+        const next = { ...prevPhases };
+        delete next[phase];
+        return next;
+      });
     },
     [],
   );
@@ -170,28 +236,43 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   }
 
   // ── Visible sections & grouping ──────────────────────────────────
-  const visibleSections = useMemo(
-    () =>
-      BOM_SECTIONS.filter((s) =>
-        shouldRenderSection(s, doorType || null, driveType || null),
-      ),
-    [doorType, driveType],
-  );
+  // Hardcoded sections (filtered by gates) plus ad-hoc user-added ones,
+  // each promoted to a synthetic BomSection so the renderer can treat
+  // them uniformly.
+  const visibleSections = useMemo<BomSection[]>(() => {
+    const hardcoded = BOM_SECTIONS.filter((s) =>
+      shouldRenderSection(s, doorType || null, driveType || null),
+    );
+    const adHoc: BomSection[] = adHocSections.map((s) => ({
+      category: s.category,
+      phase: AD_HOC_PHASE,
+      gate: { kind: "always" },
+      defaultItemCategories: [s.categoryPath],
+    }));
+    return [...hardcoded, ...adHoc];
+  }, [doorType, driveType, adHocSections]);
 
   const sectionsByPhase = useMemo(() => {
     const map = new Map<string, BomSection[]>();
+    // Standard phases in order
     for (const phase of PHASE_ORDER) {
       const secs = visibleSections.filter((s) => s.phase === phase);
       if (secs.length > 0) map.set(phase, secs);
     }
+    // Ad-hoc phase always last
+    const adHoc = visibleSections.filter((s) => s.phase === AD_HOC_PHASE);
+    if (adHoc.length > 0) map.set(AD_HOC_PHASE, adHoc);
     return map;
   }, [visibleSections]);
 
   // ── Counts ────────────────────────────────────────────────────────
+  // Only count rows that have an actual item picked. Empty placeholder
+  // rows (from the new N-row picker UI) don't count.
   const totalPickedItems = useMemo(() => {
     let n = 0;
     for (const section of visibleSections) {
-      n += (pickerState[section.category] ?? []).length;
+      const rows = pickerState[section.category] ?? [];
+      n += rows.filter((r) => r.item_id).length;
     }
     return n;
   }, [pickerState, visibleSections]);
@@ -253,6 +334,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     for (const section of sections) {
       const picked = pickerState[section.category] ?? [];
       for (const item of picked) {
+        // Skip empty placeholder rows — only persist rows with an item.
+        if (!item.item_id) continue;
         lines.push({
           category: section.category,
           variant: null,
@@ -664,26 +747,57 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             </div>
 
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              {sections.map((section) => (
-                <div
-                  key={section.category}
-                  className={section.fullWidth ? "lg:col-span-2" : ""}
-                >
-                  <ItemPickerSection
-                    category={section.category}
-                    description={section.description}
-                    defaultItemCategories={section.defaultItemCategories}
-                    items={pickerState[section.category] ?? []}
-                    onItemsChange={(items) =>
-                      setPickerItems(section.category, items)
-                    }
-                  />
-                </div>
-              ))}
+              {sections.map((section) => {
+                const isAdHoc = phase === AD_HOC_PHASE;
+                return (
+                  <div
+                    key={section.category}
+                    className={section.fullWidth ? "lg:col-span-2" : ""}
+                  >
+                    <ItemPickerSection
+                      category={section.category}
+                      description={section.description}
+                      defaultItemCategories={section.defaultItemCategories}
+                      items={pickerState[section.category] ?? []}
+                      onItemsChange={(items) =>
+                        setPickerItems(section.category, items)
+                      }
+                      onRemoveSection={
+                        isAdHoc
+                          ? () => removeAdHocSection(section.category)
+                          : undefined
+                      }
+                    />
+                  </div>
+                );
+              })}
             </div>
           </div>
         );
       })}
+
+      {/* +Add Section — opens an inventory category picker so the user can
+          add any sub-category as an ad-hoc section. */}
+      <div className="flex justify-center pt-2">
+        <Button
+          variant="secondary"
+          onClick={() => setPickerModalOpen(true)}
+        >
+          <Plus className="h-4 w-4 mr-2" />
+          Add Section From Inventory
+        </Button>
+      </div>
+
+      {pickerModalOpen && (
+        <CategoryPickerModal
+          existingPaths={[
+            ...BOM_SECTIONS.flatMap((s) => s.defaultItemCategories ?? []),
+            ...adHocSections.map((s) => s.categoryPath),
+          ]}
+          onPick={addAdHocSection}
+          onClose={() => setPickerModalOpen(false)}
+        />
+      )}
 
       {/* Bottom actions */}
       <div className="flex justify-end gap-3 pb-8">
