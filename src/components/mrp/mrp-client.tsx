@@ -11,6 +11,7 @@ import {
 import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown, CalendarDays } from "lucide-react";
 import type { MrpRow } from "@/lib/actions/mrp";
 import type { ItemType } from "@/lib/supabase/types";
+import { MrpJobsPopover } from "@/components/mrp/mrp-jobs-popover";
 
 const TYPE_LABELS: Record<string, string> = {
   raw_material: "Raw Material",
@@ -320,7 +321,20 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
                       )}
                     </TableCell>
                     <TableCell className="text-right text-sm">
-                      {row.job_count}
+                      {row.total_required > 0 ? (
+                        <MrpJobsPopover
+                          itemId={row.item_id}
+                          itemName={row.item_name}
+                          uom={row.uom_abbreviation}
+                          cutoffDate={cutoffDate || undefined}
+                        >
+                          <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
+                            {row.job_count}
+                          </span>
+                        </MrpJobsPopover>
+                      ) : (
+                        row.job_count
+                      )}
                     </TableCell>
                   </TableRow>
                 );

@@ -325,7 +325,7 @@ export async function getJobBomItemLines(jobId: string) {
 
   // PostgREST may return a belongsTo relation as either an object or a
   // single-element array depending on the planner. Normalize both shapes.
-  const flatten = <T,>(rel: any): T | null => {
+  const flatten = <T,>(rel: unknown): T | null => {
     if (!rel) return null;
     if (Array.isArray(rel)) return (rel[0] ?? null) as T | null;
     return rel as T;
