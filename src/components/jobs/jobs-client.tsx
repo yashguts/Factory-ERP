@@ -8,7 +8,8 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus } from "lucide-react";
+import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
+import Link from "next/link";
 import type { Job, JobStatus } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -33,9 +34,10 @@ const PAGE_SIZE = 50;
 
 interface Props {
   initialJobs: Job[];
+  unmatchedCount?: number;
 }
 
-export function JobsClient({ initialJobs }: Props) {
+export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
@@ -154,6 +156,22 @@ export function JobsClient({ initialJobs }: Props) {
           </Button>
         </div>
       </div>
+
+      {/* Unmatched BOM banner */}
+      {unmatchedCount > 0 && (
+        <Link
+          href="/jobs/unmatched"
+          className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+        >
+          <AlertTriangle size={18} className="shrink-0" />
+          <span className="text-sm">
+            <strong>{unmatchedCount}</strong> BOM lines are not mapped to inventory items.
+          </span>
+          <span className="ml-auto text-sm font-medium underline underline-offset-2">
+            Resolve
+          </span>
+        </Link>
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">

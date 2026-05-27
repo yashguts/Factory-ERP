@@ -27,12 +27,19 @@ export const DOOR_TYPES: ReadonlyArray<{ value: string; label: string }> = [
   { value: "AFF", label: "Auto Four-Fold" },
   { value: "BYPART", label: "Biparted" },
   { value: "SWS", label: "Swing-Sensor" },
+  { value: "DUMB", label: "Dumbwaiter" },
 ];
 
 export const DRIVE_TYPES: ReadonlyArray<{ value: string; label: string }> = [
   { value: "MR", label: "MR" },
   { value: "MRL", label: "MRL" },
   { value: "HOME", label: "Home" },
+  { value: "V3F", label: "V3F" },
+  { value: "MV3F", label: "MV3F" },
+  { value: "BELT", label: "Belt" },
+  { value: "HYD", label: "Hydraulic" },
+  { value: "ROPE", label: "Rope" },
+  { value: "CANTI", label: "Cantilever" },
 ];
 
 export const STOPS_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1);
