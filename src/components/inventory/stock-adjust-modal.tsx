@@ -8,8 +8,15 @@ import { Select } from "@/components/ui/select";
 import { recordTransaction } from "@/lib/actions/inventory";
 import type { TransactionType, Warehouse } from "@/lib/supabase/types";
 
+interface SearchableItem {
+  id: string;
+  code: string;
+  name: string;
+  lookup_key?: string | null;
+}
+
 interface StockAdjustModalProps {
-  items: { id: string; code: string; name: string }[];
+  items: SearchableItem[];
   warehouses: Warehouse[];
   onClose: () => void;
   onSaved: () => void;
@@ -20,7 +27,7 @@ function ItemSearchSelect({
   value,
   onChange,
 }: {
-  items: { id: string; code: string; name: string }[];
+  items: SearchableItem[];
   value: string;
   onChange: (id: string) => void;
 }) {
@@ -29,6 +36,7 @@ function ItemSearchSelect({
   const [highlightIdx, setHighlightIdx] = useState(0);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
 
   const selectedItem = items.find((i) => i.id === value);
 
@@ -38,7 +46,9 @@ function ItemSearchSelect({
     return items
       .filter(
         (i) =>
-          i.name.toLowerCase().includes(q) || i.code.toLowerCase().includes(q)
+          i.name.toLowerCase().includes(q) ||
+          i.code.toLowerCase().includes(q) ||
+          (i.lookup_key && i.lookup_key.toLowerCase().includes(q))
       )
       .slice(0, 50);
   }, [query, items]);
@@ -49,7 +59,10 @@ function ItemSearchSelect({
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
-      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+      if (
+        wrapperRef.current &&
+        !wrapperRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     }
@@ -60,7 +73,9 @@ function ItemSearchSelect({
   // Scroll highlighted item into view
   useEffect(() => {
     if (!listRef.current) return;
-    const el = listRef.current.children[highlightIdx] as HTMLElement | undefined;
+    const el = listRef.current.children[highlightIdx] as
+      | HTMLElement
+      | undefined;
     el?.scrollIntoView({ block: "nearest" });
   }, [highlightIdx]);
 
@@ -90,30 +105,42 @@ function ItemSearchSelect({
     }
   };
 
+  const openAndFocus = () => {
+    setQuery("");
+    setOpen(true);
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
   return (
     <div ref={wrapperRef} className="relative">
       {/* Display selected item or search input */}
       {value && !open ? (
         <div
           className="flex items-center justify-between h-9 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer"
-          onClick={() => {
-            setQuery("");
-            setOpen(true);
-          }}
+          onClick={openAndFocus}
         >
-          <span className="truncate">
-            <span className="text-[var(--muted-foreground)]">{selectedItem?.code}</span>
+          <span className="truncate text-[var(--foreground)]">
+            <span className="text-[var(--muted-foreground)]">
+              {selectedItem?.code}
+            </span>
             {" — "}
             {selectedItem?.name}
+            {selectedItem?.lookup_key &&
+              selectedItem.lookup_key !== selectedItem.name && (
+                <span className="text-[var(--muted-foreground)] text-xs ml-1">
+                  ({selectedItem.lookup_key})
+                </span>
+              )}
           </span>
           <button
             type="button"
-            className="ml-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            className="ml-2 flex-shrink-0 text-[var(--muted-foreground)] hover:text-[var(--foreground)] text-lg leading-none"
             onClick={(e) => {
               e.stopPropagation();
               onChange("");
               setQuery("");
               setOpen(true);
+              setTimeout(() => inputRef.current?.focus(), 0);
             }}
           >
             &times;
@@ -121,8 +148,9 @@ function ItemSearchSelect({
         </div>
       ) : (
         <Input
+          ref={inputRef}
           autoFocus
-          placeholder="Search by name or code..."
+          placeholder="Search by name, code, or lookup key..."
           value={query}
           onChange={(e) => {
             setQuery(e.target.value);
@@ -138,20 +166,20 @@ function ItemSearchSelect({
       {open && (
         <div
           ref={listRef}
-          className="absolute z-50 mt-1 w-full max-h-56 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg"
+          className="absolute z-[100] mt-1 w-full max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-xl"
         >
           {filtered.length === 0 ? (
-            <div className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+            <div className="px-3 py-3 text-sm text-[var(--muted-foreground)]">
               No items found
             </div>
           ) : (
             filtered.map((item, idx) => (
               <div
                 key={item.id}
-                className={`px-3 py-2 text-sm cursor-pointer ${
+                className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
                   idx === highlightIdx
-                    ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
-                    : "hover:bg-[var(--accent)]/50"
+                    ? "bg-blue-600 text-white"
+                    : "text-[var(--foreground)] hover:bg-[var(--muted)]"
                 }`}
                 onMouseEnter={() => setHighlightIdx(idx)}
                 onClick={() => {
@@ -160,14 +188,33 @@ function ItemSearchSelect({
                   setOpen(false);
                 }}
               >
-                <span className="text-[var(--muted-foreground)]">{item.code}</span>
+                <span
+                  className={
+                    idx === highlightIdx
+                      ? "text-blue-200"
+                      : "text-[var(--muted-foreground)]"
+                  }
+                >
+                  {item.code}
+                </span>
                 {" — "}
                 {item.name}
+                {item.lookup_key && item.lookup_key !== item.name && (
+                  <span
+                    className={`text-xs ml-1 ${
+                      idx === highlightIdx
+                        ? "text-blue-200"
+                        : "text-[var(--muted-foreground)]"
+                    }`}
+                  >
+                    ({item.lookup_key})
+                  </span>
+                )}
               </div>
             ))
           )}
           {!query.trim() && items.length > 50 && (
-            <div className="px-3 py-1.5 text-xs text-[var(--muted-foreground)] border-t border-[var(--border)]">
+            <div className="px-3 py-2 text-xs text-[var(--muted-foreground)] border-t border-[var(--border)] bg-[var(--card)]">
               Type to search all {items.length} items...
             </div>
           )}
@@ -177,7 +224,12 @@ function ItemSearchSelect({
   );
 }
 
-export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockAdjustModalProps) {
+export function StockAdjustModal({
+  items,
+  warehouses,
+  onClose,
+  onSaved,
+}: StockAdjustModalProps) {
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -210,7 +262,9 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
         onSaved();
         onClose();
       } catch (err) {
-        setError(err instanceof Error ? err.message : "Failed to record transaction");
+        setError(
+          err instanceof Error ? err.message : "Failed to record transaction"
+        );
       }
     });
   };
@@ -219,13 +273,15 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
     <Modal title="Stock Adjustment" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="p-3 text-sm bg-red-50 text-red-700 rounded-md border border-red-200">
+          <div className="p-3 text-sm bg-red-500/10 text-red-400 rounded-md border border-red-500/20">
             {error}
           </div>
         )}
 
         <div>
-          <label className="block text-sm font-medium mb-1">Item</label>
+          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Item
+          </label>
           <ItemSearchSelect
             items={items}
             value={form.item_id}
@@ -234,24 +290,37 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Warehouse</label>
+          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Warehouse
+          </label>
           <Select
             value={form.warehouse_id}
-            onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}
+            onChange={(e) =>
+              setForm({ ...form, warehouse_id: e.target.value })
+            }
             required
           >
             <option value="">Select warehouse</option>
             {warehouses.map((wh) => (
-              <option key={wh.id} value={wh.id}>{wh.name}</option>
+              <option key={wh.id} value={wh.id}>
+                {wh.name}
+              </option>
             ))}
           </Select>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Transaction Type</label>
+          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Transaction Type
+          </label>
           <Select
             value={form.transaction_type}
-            onChange={(e) => setForm({ ...form, transaction_type: e.target.value as TransactionType })}
+            onChange={(e) =>
+              setForm({
+                ...form,
+                transaction_type: e.target.value as TransactionType,
+              })
+            }
           >
             <option value="purchase_in">Purchase In</option>
             <option value="production_in">Production In</option>
@@ -263,11 +332,15 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Quantity</label>
+          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Quantity
+          </label>
           <Input
             type="number"
             value={form.quantity || ""}
-            onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+            onChange={(e) =>
+              setForm({ ...form, quantity: Number(e.target.value) })
+            }
             required
             min={0.001}
             step="0.001"
@@ -275,7 +348,9 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">Notes</label>
+          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+            Notes
+          </label>
           <Input
             value={form.notes}
             onChange={(e) => setForm({ ...form, notes: e.target.value })}
