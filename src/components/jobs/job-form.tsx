@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { ArrowLeft, Save, Loader2 } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Check } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection, BomLeaf } from "@/lib/bom/bom-sections";
 import {
@@ -24,7 +24,13 @@ import { MachineEditor } from "@/components/jobs/machine-editor";
 import { GovernorEditor } from "@/components/jobs/governor-editor";
 import { FillerWeightEditor } from "@/components/jobs/filler-weight-editor";
 import { CabinItemsEditor } from "@/components/jobs/cabin-items-editor";
-import { createJobWithBom, updateJobWithBom } from "@/lib/actions/jobs";
+import {
+  createJob,
+  updateJob,
+  saveBomSection,
+  createJobWithBom,
+  updateJobWithBom,
+} from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import type { Job, JobStage } from "@/lib/supabase/types";
 
@@ -59,6 +65,13 @@ interface Props {
 export function JobForm({ mode, job, existingBom }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+
+  // Track saved job ID — in create mode starts null, gets set on first save
+  const [savedJobId, setSavedJobId] = useState<string | null>(job?.id ?? null);
+  // Track which phases have been saved (for visual feedback)
+  const [savedPhases, setSavedPhases] = useState<Record<string, boolean>>({});
+  const [savingPhase, setSavingPhase] = useState<string | null>(null);
+  const [jobSaved, setJobSaved] = useState(mode === "edit");
 
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
   const [customerName, setCustomerName] = useState(job?.customer_name ?? "");
@@ -128,9 +141,40 @@ export function JobForm({ mode, job, existingBom }: Props) {
     return map;
   }, [visibleSections]);
 
-  function collectBomLines(): BomLineInput[] {
+  function buildSpecString() {
+    const parts = [];
+    if (floors) parts.push(`G+${floors}`);
+    if (doorType) parts.push(doorType);
+    if (driveType) parts.push(driveType);
+    if (capacity) parts.push(capacity);
+    return parts.join("/") || undefined;
+  }
+
+  function buildJobData() {
+    return {
+      job_number: jobNumber.trim(),
+      customer_name: customerName || undefined,
+      spec_string: buildSpecString(),
+      door_finish: doorFinish || undefined,
+      location: location || undefined,
+      brand: brand || undefined,
+      floors: floors || undefined,
+      door_type: doorType || undefined,
+      drive_type: driveType || undefined,
+      capacity: capacity || undefined,
+      remark: remark || undefined,
+      order_date: orderDate || undefined,
+      expected_delivery: expectedDelivery || undefined,
+      stage,
+      requirement_stage: requirementStage || undefined,
+      requirement_dispatch_date: requirementDispatchDate || undefined,
+    };
+  }
+
+  /** Collect BOM lines for specific sections only */
+  function collectBomLinesForSections(sections: BomSection[]): BomLineInput[] {
     const lines: BomLineInput[] = [];
-    for (const section of visibleSections) {
+    for (const section of sections) {
       for (const leaf of section.leaves) {
         const val = getBomValue(section.category, leaf.variant);
         if (
@@ -150,46 +194,68 @@ export function JobForm({ mode, job, existingBom }: Props) {
     return lines;
   }
 
-  function buildSpecString() {
-    const parts = [];
-    if (floors) parts.push(`G+${floors}`);
-    if (doorType) parts.push(doorType);
-    if (driveType) parts.push(driveType);
-    if (capacity) parts.push(capacity);
-    return parts.join("/") || undefined;
+  /** Ensure the job exists (create if needed), return job ID */
+  async function ensureJob(): Promise<string> {
+    if (savedJobId) return savedJobId;
+    if (!jobNumber.trim()) throw new Error("Job Number is required");
+    const created = await createJob(buildJobData());
+    setSavedJobId(created.id);
+    setJobSaved(true);
+    return created.id;
   }
 
-  function handleSave() {
+  /** Save Job Details (metadata + spec) */
+  function handleSaveJobDetails() {
     if (!jobNumber.trim()) return;
-
     startTransition(async () => {
-      const bomLines = collectBomLines();
-      const jobData = {
-        job_number: jobNumber.trim(),
-        customer_name: customerName || undefined,
-        spec_string: buildSpecString(),
-        door_finish: doorFinish || undefined,
-        location: location || undefined,
-        brand: brand || undefined,
-        floors: floors || undefined,
-        door_type: doorType || undefined,
-        drive_type: driveType || undefined,
-        capacity: capacity || undefined,
-        remark: remark || undefined,
-        order_date: orderDate || undefined,
-        expected_delivery: expectedDelivery || undefined,
-        stage,
-        requirement_stage: requirementStage || undefined,
-        requirement_dispatch_date: requirementDispatchDate || undefined,
-      };
-
       try {
-        if (mode === "create") {
-          const created = await createJobWithBom(jobData, bomLines);
+        if (savedJobId) {
+          await updateJob(savedJobId, buildJobData());
+        } else {
+          const created = await createJob(buildJobData());
+          setSavedJobId(created.id);
+        }
+        setJobSaved(true);
+      } catch (err: any) {
+        alert(`Error: ${err.message ?? err}`);
+      }
+    });
+  }
+
+  /** Save a specific BOM phase */
+  function handleSavePhase(phase: string, sections: BomSection[]) {
+    startTransition(async () => {
+      setSavingPhase(phase);
+      try {
+        const jobId = await ensureJob();
+        const categories = sections.map((s) => s.category);
+        const lines = collectBomLinesForSections(sections);
+        await saveBomSection(jobId, categories, lines);
+        setSavedPhases((prev) => ({ ...prev, [phase]: true }));
+      } catch (err: any) {
+        alert(`Error: ${err.message ?? err}`);
+      } finally {
+        setSavingPhase(null);
+      }
+    });
+  }
+
+  /** Save everything at once (legacy full save) */
+  function handleSaveAll() {
+    if (!jobNumber.trim()) return;
+    startTransition(async () => {
+      const allLines = collectBomLinesForSections(visibleSections);
+      const jobData = buildJobData();
+      try {
+        if (mode === "create" && !savedJobId) {
+          const created = await createJobWithBom(jobData, allLines);
           router.push(`/jobs/${created.id}`);
-        } else if (job) {
-          await updateJobWithBom(job.id, jobData, bomLines);
-          router.push(`/jobs/${job.id}`);
+        } else {
+          const id = savedJobId ?? job?.id;
+          if (id) {
+            await updateJobWithBom(id, jobData, allLines);
+            router.push(`/jobs/${id}`);
+          }
         }
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
@@ -232,59 +298,81 @@ export function JobForm({ mode, job, existingBom }: Props) {
           <h1 className="text-2xl font-bold">
             {mode === "create" ? "New Job" : `Edit ${job?.job_number}`}
           </h1>
+          {savedJobId && mode === "create" && (
+            <span className="text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
+              Job Created
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-3">
           <span className="text-sm text-[var(--muted-foreground)]">
             {filledCount}/{totalLeaves} BOM fields
           </span>
-          <Button onClick={handleSave} disabled={isPending || !jobNumber.trim()}>
-            {isPending ? (
+          <Button onClick={handleSaveAll} disabled={isPending || !jobNumber.trim()}>
+            {isPending && !savingPhase ? (
               <Loader2 className="h-4 w-4 mr-2 animate-spin" />
             ) : (
               <Save className="h-4 w-4 mr-2" />
             )}
-            {mode === "create" ? "Create Job" : "Save Changes"}
+            Save All & Finish
           </Button>
         </div>
       </div>
 
       {/* Job Metadata */}
       <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-6">
-        <h2 className="text-lg font-semibold mb-4">Job Details</h2>
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-lg font-semibold">Job Details</h2>
+          <Button
+            size="sm"
+            variant={jobSaved ? "secondary" : "primary"}
+            onClick={handleSaveJobDetails}
+            disabled={isPending || !jobNumber.trim()}
+          >
+            {isPending && !savingPhase ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : jobSaved ? (
+              <Check className="h-3.5 w-3.5 mr-1.5 text-green-600" />
+            ) : (
+              <Save className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {jobSaved ? "Saved" : "Save Job"}
+          </Button>
+        </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <Field label="Job Number *">
             <Input
               value={jobNumber}
-              onChange={(e) => setJobNumber(e.target.value)}
+              onChange={(e) => { setJobNumber(e.target.value); setJobSaved(false); }}
               placeholder="e.g. 1234 or LT-001"
-              disabled={mode === "edit"}
+              disabled={mode === "edit" || !!savedJobId}
             />
           </Field>
           <Field label="Customer Name">
             <Input
               value={customerName}
-              onChange={(e) => setCustomerName(e.target.value)}
+              onChange={(e) => { setCustomerName(e.target.value); setJobSaved(false); }}
               placeholder="Customer"
             />
           </Field>
           <Field label="Location">
             <Input
               value={location}
-              onChange={(e) => setLocation(e.target.value)}
+              onChange={(e) => { setLocation(e.target.value); setJobSaved(false); }}
               placeholder="Site location"
             />
           </Field>
           <Field label="Door Finish">
             <Input
               value={doorFinish}
-              onChange={(e) => setDoorFinish(e.target.value)}
+              onChange={(e) => { setDoorFinish(e.target.value); setJobSaved(false); }}
               placeholder="e.g. SS Hairline"
             />
           </Field>
           <Field label="Brand">
             <Select
               value={brand}
-              onChange={(e) => setBrand(e.target.value)}
+              onChange={(e) => { setBrand(e.target.value); setJobSaved(false); }}
             >
               <option value="">Select brand</option>
               <option value="Ricardo">Ricardo</option>
@@ -295,32 +383,32 @@ export function JobForm({ mode, job, existingBom }: Props) {
             <Input
               type="date"
               value={orderDate}
-              onChange={(e) => setOrderDate(e.target.value)}
+              onChange={(e) => { setOrderDate(e.target.value); setJobSaved(false); }}
             />
           </Field>
           <Field label="Expected Delivery">
             <Input
               type="date"
               value={expectedDelivery}
-              onChange={(e) => setExpectedDelivery(e.target.value)}
+              onChange={(e) => { setExpectedDelivery(e.target.value); setJobSaved(false); }}
             />
           </Field>
           <Field label="Remark">
             <Input
               value={remark}
-              onChange={(e) => setRemark(e.target.value)}
+              onChange={(e) => { setRemark(e.target.value); setJobSaved(false); }}
               placeholder="Notes"
             />
           </Field>
           <Field label="Stage">
-            <Select value={stage} onChange={(e) => setStage(e.target.value as JobStage)}>
+            <Select value={stage} onChange={(e) => { setStage(e.target.value as JobStage); setJobSaved(false); }}>
               {STAGE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </Select>
           </Field>
           <Field label="Requirement Stage">
-            <Select value={requirementStage} onChange={(e) => setRequirementStage(e.target.value as JobStage | "")}>
+            <Select value={requirementStage} onChange={(e) => { setRequirementStage(e.target.value as JobStage | ""); setJobSaved(false); }}>
               <option value="">—</option>
               {STAGE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
@@ -331,7 +419,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
             <Input
               type="date"
               value={requirementDispatchDate}
-              onChange={(e) => setRequirementDispatchDate(e.target.value)}
+              onChange={(e) => { setRequirementDispatchDate(e.target.value); setJobSaved(false); }}
             />
           </Field>
         </div>
@@ -347,9 +435,10 @@ export function JobForm({ mode, job, existingBom }: Props) {
           <Field label="Floors (Stops)">
             <Select
               value={floors}
-              onChange={(e) =>
-                setFloors(e.target.value ? Number(e.target.value) : "")
-              }
+              onChange={(e) => {
+                setFloors(e.target.value ? Number(e.target.value) : "");
+                setJobSaved(false);
+              }}
             >
               <option value="">Select</option>
               {STOPS_OPTIONS.map((n) => (
@@ -362,7 +451,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
           <Field label="Door Type">
             <Select
               value={doorType}
-              onChange={(e) => setDoorType(e.target.value)}
+              onChange={(e) => { setDoorType(e.target.value); setJobSaved(false); }}
             >
               <option value="">Select</option>
               {DOOR_TYPES.map((d) => (
@@ -375,7 +464,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
           <Field label="Drive Type">
             <Select
               value={driveType}
-              onChange={(e) => setDriveType(e.target.value)}
+              onChange={(e) => { setDriveType(e.target.value); setJobSaved(false); }}
             >
               <option value="">Select</option>
               {DRIVE_TYPES.map((d) => (
@@ -388,7 +477,7 @@ export function JobForm({ mode, job, existingBom }: Props) {
           <Field label="Capacity">
             <Select
               value={capacity}
-              onChange={(e) => setCapacity(e.target.value)}
+              onChange={(e) => { setCapacity(e.target.value); setJobSaved(false); }}
             >
               <option value="">Select</option>
               <optgroup label="Passengers">
@@ -416,94 +505,122 @@ export function JobForm({ mode, job, existingBom }: Props) {
       </div>
 
       {/* BOM Sections by Phase */}
-      {Array.from(sectionsByPhase.entries()).map(([phase, sections]) => (
-        <div key={phase}>
-          <h2 className="text-lg font-semibold mb-3 text-[var(--foreground)]">
-            {phase}
-          </h2>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {sections.map((section) =>
-              section.customEditor === "car-landing-doors" ? (
-                <CarLandingDoorsEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "main-bracket" ? (
-                <MainBracketEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "counter-bracket" ? (
-                <CounterBracketEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "safety" ? (
-                <SafetyEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "machine" ? (
-                <MachineEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "governor" ? (
-                <GovernorEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "filler-weight" ? (
-                <FillerWeightEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : section.customEditor === "cabin-items" ? (
-                <CabinItemsEditor
-                  key={section.category}
-                  category={section.category}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ) : (
-                <SectionCard
-                  key={section.category}
-                  section={section}
-                  getBomValue={getBomValue}
-                  setBomValue={setBomValue}
-                />
-              ),
-            )}
+      {Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
+        const isSaving = savingPhase === phase;
+        const isSaved = savedPhases[phase] === true;
+
+        return (
+          <div key={phase}>
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-lg font-semibold text-[var(--foreground)]">
+                {phase}
+              </h2>
+              <Button
+                size="sm"
+                variant={isSaved ? "secondary" : "primary"}
+                onClick={() => handleSavePhase(phase, sections)}
+                disabled={isPending || !jobNumber.trim()}
+              >
+                {isSaving ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : isSaved ? (
+                  <Check className="h-3.5 w-3.5 mr-1.5 text-green-600" />
+                ) : (
+                  <Save className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {isSaved ? "Saved" : "Save Section"}
+              </Button>
+            </div>
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+              {sections.map((section) =>
+                section.customEditor === "car-landing-doors" ? (
+                  <CarLandingDoorsEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "main-bracket" ? (
+                  <MainBracketEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "counter-bracket" ? (
+                  <CounterBracketEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "safety" ? (
+                  <SafetyEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "machine" ? (
+                  <MachineEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "governor" ? (
+                  <GovernorEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "filler-weight" ? (
+                  <FillerWeightEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : section.customEditor === "cabin-items" ? (
+                  <CabinItemsEditor
+                    key={section.category}
+                    category={section.category}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ) : (
+                  <SectionCard
+                    key={section.category}
+                    section={section}
+                    getBomValue={getBomValue}
+                    setBomValue={setBomValue}
+                  />
+                ),
+              )}
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
 
       {/* Bottom save */}
       <div className="flex justify-end gap-3 pb-8">
-        <Button variant="secondary" onClick={() => router.back()}>
-          Cancel
+        <Button variant="secondary" onClick={() => {
+          if (savedJobId) {
+            router.push(`/jobs/${savedJobId}`);
+          } else {
+            router.back();
+          }
+        }}>
+          {savedJobId ? "Done" : "Cancel"}
         </Button>
-        <Button onClick={handleSave} disabled={isPending || !jobNumber.trim()}>
-          {isPending ? (
+        <Button onClick={handleSaveAll} disabled={isPending || !jobNumber.trim()}>
+          {isPending && !savingPhase ? (
             <Loader2 className="h-4 w-4 mr-2 animate-spin" />
           ) : (
             <Save className="h-4 w-4 mr-2" />
           )}
-          {mode === "create" ? "Create Job" : "Save Changes"}
+          Save All & Finish
         </Button>
       </div>
     </div>

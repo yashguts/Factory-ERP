@@ -282,6 +282,74 @@ export async function getJobBomSections(jobId: string) {
   return data ?? [];
 }
 
+/** Save BOM lines for specific categories only (per-section save). */
+export async function saveBomSection(
+  jobId: string,
+  categories: string[],
+  bomLines: BomLineInput[],
+) {
+  const supabase = await createClient();
+
+  // Ensure BOM header exists
+  let headerId: string;
+  const { data: existing } = await supabase
+    .from("job_bom_headers")
+    .select("id")
+    .eq("job_id", jobId)
+    .limit(1)
+    .single();
+
+  if (existing) {
+    headerId = existing.id;
+  } else {
+    const { data: header, error: hdrErr } = await supabase
+      .from("job_bom_headers")
+      .insert({ job_id: jobId, quantity: 1 })
+      .select("id")
+      .single();
+    if (hdrErr) throw hdrErr;
+    headerId = header.id;
+  }
+
+  // Delete old form-created lines for these categories only
+  for (const cat of categories) {
+    await supabase
+      .from("job_bom_lines")
+      .delete()
+      .eq("job_bom_id", headerId)
+      .eq("category", cat)
+      .is("source_col_index", null);
+  }
+
+  // Insert new lines
+  const nonEmpty = bomLines.filter(
+    (l) =>
+      categories.includes(l.category) &&
+      ((l.required_quantity != null && l.required_quantity !== 0) ||
+        (l.value_text != null && l.value_text !== "")),
+  );
+
+  if (nonEmpty.length > 0) {
+    const rows = nonEmpty.map((l, i) => ({
+      job_bom_id: headerId,
+      category: l.category,
+      variant: l.variant,
+      value_text: l.value_text ?? null,
+      required_quantity: l.required_quantity ?? 0,
+      item_id: l.item_id ?? null,
+      sort_order: i,
+    }));
+
+    const BATCH = 200;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error: lineErr } = await supabase
+        .from("job_bom_lines")
+        .insert(rows.slice(i, i + BATCH));
+      if (lineErr) throw lineErr;
+    }
+  }
+}
+
 export async function updateJob(
   id: string,
   data: {
