@@ -1,6 +1,8 @@
 "use client";
 
-import { Select } from "@/components/ui/select";
+import { useMemo } from "react";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 
 interface BomValue {
   numVal?: number;
@@ -58,12 +60,6 @@ const MACHINE_HP = [
   "Machine Unit 20 HP/610mm/6g/13mm/1440rpm (V3F)",
 ] as const;
 
-export const ALL_MACHINE_OPTIONS = [
-  ...MACHINE_TRACTION,
-  ...MACHINE_BELT,
-  ...MACHINE_HP,
-];
-
 interface MachineEditorProps {
   category: string;
   getBomValue: (cat: string, variant: string) => BomValue;
@@ -81,6 +77,15 @@ export function MachineEditor({
 
   const filled = value !== "";
 
+  const options: FuzzySelectOption[] = useMemo(
+    () => [
+      ...MACHINE_TRACTION.map((o) => ({ value: o, group: "Traction" })),
+      ...MACHINE_BELT.map((o) => ({ value: o, group: "Belt" })),
+      ...MACHINE_HP.map((o) => ({ value: o, group: "HP / Geared" })),
+    ],
+    [],
+  );
+
   return (
     <div className="rounded-lg border border-[var(--border)] bg-[var(--card)] p-4">
       <div className="flex items-center justify-between mb-3">
@@ -95,33 +100,12 @@ export function MachineEditor({
         <label className="block text-xs text-[var(--muted-foreground)] mb-1">
           Machine Unit
         </label>
-        <Select
+        <FuzzySelect
+          options={options}
           value={value}
-          onChange={(e) => setValue(e.target.value)}
-          className="h-8 text-sm"
-        >
-          <option value="">-- Select Machine --</option>
-          <optgroup label="Traction">
-            {MACHINE_TRACTION.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </optgroup>
-          <optgroup label="Belt">
-            {MACHINE_BELT.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </optgroup>
-          <optgroup label="HP / Geared">
-            {MACHINE_HP.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </optgroup>
-        </Select>
-        {value && (
-          <p className="mt-1.5 text-xs text-[var(--muted-foreground)]">
-            Selected: <span className="font-medium text-[var(--foreground)]">{value}</span>
-          </p>
-        )}
+          onChange={setValue}
+          placeholder="-- Select Machine --"
+        />
       </div>
     </div>
   );

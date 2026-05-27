@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 
 interface BomValue {
   numVal?: number;
@@ -46,6 +48,10 @@ const MB_2_1_OPTIONS = [
 
 const MB_4_1_OPTIONS = ["1050/65", "1550/65", "2450/65"] as const;
 
+function toOpts(arr: readonly string[]): FuzzySelectOption[] {
+  return arr.map((v) => ({ value: v }));
+}
+
 interface SafetyEditorProps {
   category: string;
   getBomValue: (cat: string, variant: string) => BomValue;
@@ -67,6 +73,15 @@ export function SafetyEditor({
     setBomValue(category, variant, {
       numVal: value ? Number(value) : undefined,
     });
+
+  const safetyTypeOpts = useMemo(() => toOpts(SAFETY_TYPE_OPTIONS), []);
+  const pulleySpecOpts = useMemo(() => toOpts(PULLEY_SPEC_OPTIONS), []);
+  const counterFrameRBOpts = useMemo(() => toOpts(COUNTER_FRAME_ROPE_BELT_OPTIONS), []);
+  const counterFrameTypeOpts = useMemo(() => toOpts(COUNTER_FRAME_TYPE_OPTIONS), []);
+  const counterGuardNetOpts = useMemo(() => toOpts(COUNTER_GUARD_NET_TYPE_OPTIONS), []);
+  const mbHomeOpts = useMemo(() => toOpts(MB_HOME_OPTIONS), []);
+  const mb21Opts = useMemo(() => toOpts(MB_2_1_OPTIONS), []);
+  const mb41Opts = useMemo(() => toOpts(MB_4_1_OPTIONS), []);
 
   const filledCount = [
     "Type", "DBG",
@@ -100,236 +115,98 @@ export function SafetyEditor({
         {/* Type & DBG */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-              Type
-            </label>
-            <Select
-              value={getText("Type")}
-              onChange={(e) => setText("Type", e.target.value)}
-              className="h-8 text-sm"
-            >
-              <option value="">--</option>
-              {SAFETY_TYPE_OPTIONS.map((o) => (
-                <option key={o} value={o}>{o}</option>
-              ))}
-            </Select>
+            <label className="block text-xs text-[var(--muted-foreground)] mb-1">Type</label>
+            <FuzzySelect options={safetyTypeOpts} value={getText("Type")} onChange={(v) => setText("Type", v)} />
           </div>
           <div>
-            <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-              DBG
-            </label>
-            <Input
-              type="text"
-              value={getText("DBG")}
-              onChange={(e) => setText("DBG", e.target.value)}
-              className="h-8 text-sm"
-            />
+            <label className="block text-xs text-[var(--muted-foreground)] mb-1">DBG</label>
+            <Input type="text" value={getText("DBG")} onChange={(e) => setText("DBG", e.target.value)} className="h-8 text-sm" />
           </div>
         </div>
 
         {/* Pulley Sub-section */}
         <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
-            Pulley
-          </h5>
+          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">Pulley</h5>
           <div className="space-y-3">
             {(["Main", "Counter", "Diverter"] as const).map((prefix) => (
               <div key={prefix} className="grid grid-cols-[100px_1fr_120px] sm:grid-cols-[120px_1fr_150px] gap-3 items-end">
-                <label className="text-xs font-medium text-[var(--foreground)] self-center">
-                  {prefix}
-                </label>
+                <label className="text-xs font-medium text-[var(--foreground)] self-center">{prefix}</label>
                 <div>
-                  <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                    Specifications
-                  </label>
-                  <Select
+                  <label className="block text-xs text-[var(--muted-foreground)] mb-1">Specifications</label>
+                  <FuzzySelect
+                    options={pulleySpecOpts}
                     value={getText(`${prefix} Pulley Specifications`)}
-                    onChange={(e) => setText(`${prefix} Pulley Specifications`, e.target.value)}
-                    className="h-8 text-sm"
-                  >
-                    <option value="">--</option>
-                    {PULLEY_SPEC_OPTIONS.map((o) => (
-                      <option key={o} value={o}>{o}</option>
-                    ))}
-                  </Select>
+                    onChange={(v) => setText(`${prefix} Pulley Specifications`, v)}
+                    placeholder="-- Select --"
+                  />
                 </div>
                 <div>
-                  <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                    Qty (pcs)
-                  </label>
-                  <Input
-                    type="number"
-                    min={0}
-                    inputMode="numeric"
-                    value={getNum(`${prefix} Pulley Quantity`) ?? ""}
-                    onChange={(e) => setNum(`${prefix} Pulley Quantity`, e.target.value)}
-                    className="h-8 text-sm"
-                  />
+                  <label className="block text-xs text-[var(--muted-foreground)] mb-1">Qty (pcs)</label>
+                  <Input type="number" min={0} inputMode="numeric" value={getNum(`${prefix} Pulley Quantity`) ?? ""} onChange={(e) => setNum(`${prefix} Pulley Quantity`, e.target.value)} className="h-8 text-sm" />
                 </div>
               </div>
             ))}
           </div>
         </div>
 
-        {/* Counter Frame Sub-section */}
+        {/* Counter Frame */}
         <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
-            Counter Frame
-          </h5>
+          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">Counter Frame</h5>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Rope / Belt
-              </label>
-              <Select
-                value={getText("Counter Frame Rope/Belt")}
-                onChange={(e) => setText("Counter Frame Rope/Belt", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {COUNTER_FRAME_ROPE_BELT_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Rope / Belt</label>
+              <FuzzySelect options={counterFrameRBOpts} value={getText("Counter Frame Rope/Belt")} onChange={(v) => setText("Counter Frame Rope/Belt", v)} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Type
-              </label>
-              <Select
-                value={getText("Counter Frame Type")}
-                onChange={(e) => setText("Counter Frame Type", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {COUNTER_FRAME_TYPE_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Type</label>
+              <FuzzySelect options={counterFrameTypeOpts} value={getText("Counter Frame Type")} onChange={(v) => setText("Counter Frame Type", v)} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Qty (pcs)
-              </label>
-              <Input
-                type="number"
-                min={0}
-                inputMode="numeric"
-                value={getNum("Counter Frame Quantity") ?? ""}
-                onChange={(e) => setNum("Counter Frame Quantity", e.target.value)}
-                className="h-8 text-sm"
-              />
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Qty (pcs)</label>
+              <Input type="number" min={0} inputMode="numeric" value={getNum("Counter Frame Quantity") ?? ""} onChange={(e) => setNum("Counter Frame Quantity", e.target.value)} className="h-8 text-sm" />
             </div>
           </div>
         </div>
 
-        {/* Counter Guard Net Sub-section */}
+        {/* Counter Guard Net */}
         <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
-            Counter Guard Net
-          </h5>
+          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">Counter Guard Net</h5>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Type
-              </label>
-              <Select
-                value={getText("Counter Guard Net Type")}
-                onChange={(e) => setText("Counter Guard Net Type", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {COUNTER_GUARD_NET_TYPE_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Type</label>
+              <FuzzySelect options={counterGuardNetOpts} value={getText("Counter Guard Net Type")} onChange={(v) => setText("Counter Guard Net Type", v)} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Qty (pcs)
-              </label>
-              <Input
-                type="number"
-                min={0}
-                inputMode="numeric"
-                value={getNum("Counter Guard Net Quantity") ?? ""}
-                onChange={(e) => setNum("Counter Guard Net Quantity", e.target.value)}
-                className="h-8 text-sm"
-              />
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Qty (pcs)</label>
+              <Input type="number" min={0} inputMode="numeric" value={getNum("Counter Guard Net Quantity") ?? ""} onChange={(e) => setNum("Counter Guard Net Quantity", e.target.value)} className="h-8 text-sm" />
             </div>
           </div>
         </div>
 
         {/* Pit Ladder */}
         <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
-            Pit Ladder
-          </h5>
+          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">Pit Ladder</h5>
           <div className="w-40">
-            <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-              Qty (pcs)
-            </label>
-            <Input
-              type="number"
-              min={0}
-              inputMode="numeric"
-              value={getNum("Pit Ladder Quantity") ?? ""}
-              onChange={(e) => setNum("Pit Ladder Quantity", e.target.value)}
-              className="h-8 text-sm"
-            />
+            <label className="block text-xs text-[var(--muted-foreground)] mb-1">Qty (pcs)</label>
+            <Input type="number" min={0} inputMode="numeric" value={getNum("Pit Ladder Quantity") ?? ""} onChange={(e) => setNum("Pit Ladder Quantity", e.target.value)} className="h-8 text-sm" />
           </div>
         </div>
 
-        {/* Machine Beam Sub-section */}
+        {/* Machine Beam */}
         <div className="rounded-md border border-[var(--border)] bg-[var(--background)] p-3">
-          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">
-            Machine Beam
-          </h5>
+          <h5 className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-wide mb-3">Machine Beam</h5>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                Home
-              </label>
-              <Select
-                value={getText("Machine Beam Home")}
-                onChange={(e) => setText("Machine Beam Home", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {MB_HOME_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">Home</label>
+              <FuzzySelect options={mbHomeOpts} value={getText("Machine Beam Home")} onChange={(v) => setText("Machine Beam Home", v)} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                2:1
-              </label>
-              <Select
-                value={getText("Machine Beam 2:1")}
-                onChange={(e) => setText("Machine Beam 2:1", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {MB_2_1_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">2:1</label>
+              <FuzzySelect options={mb21Opts} value={getText("Machine Beam 2:1")} onChange={(v) => setText("Machine Beam 2:1", v)} />
             </div>
             <div>
-              <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-                4:1
-              </label>
-              <Select
-                value={getText("Machine Beam 4:1")}
-                onChange={(e) => setText("Machine Beam 4:1", e.target.value)}
-                className="h-8 text-sm"
-              >
-                <option value="">--</option>
-                {MB_4_1_OPTIONS.map((o) => (
-                  <option key={o} value={o}>{o}</option>
-                ))}
-              </Select>
+              <label className="block text-xs text-[var(--muted-foreground)] mb-1">4:1</label>
+              <FuzzySelect options={mb41Opts} value={getText("Machine Beam 4:1")} onChange={(v) => setText("Machine Beam 4:1", v)} />
             </div>
           </div>
         </div>

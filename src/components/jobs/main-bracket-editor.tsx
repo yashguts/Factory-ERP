@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 import { cn } from "@/lib/utils";
 
 interface BomValue {
@@ -79,6 +82,21 @@ export function MainBracketEditor({
     });
   };
 
+  const typeOpts: FuzzySelectOption[] = useMemo(
+    () => TYPE_OPTIONS.map((o) => ({ value: o })),
+    [],
+  );
+
+  const comboOpts: FuzzySelectOption[] = useMemo(
+    () => [
+      ...COMBO_GROUPS.flatMap((g) =>
+        g.options.map((o) => ({ value: o, group: g.family })),
+      ),
+      ...COMBO_STANDALONE.map((o) => ({ value: o })),
+    ],
+    [],
+  );
+
   const countRaw = get("Number of Types");
   const count = Math.min(MAX_TYPES, Math.max(1, Number(countRaw) || 1));
 
@@ -92,7 +110,7 @@ export function MainBracketEditor({
       </p>
 
       <div className="space-y-3">
-        {/* Number of Types selector */}
+        {/* Number of Types selector — keep native since it's only 4 options */}
         <div>
           <label className="block text-xs text-[var(--muted-foreground)] mb-1">
             Number of Main Bracket Types
@@ -130,18 +148,11 @@ export function MainBracketEditor({
                   <label className="block text-xs text-[var(--muted-foreground)] mb-1">
                     Type
                   </label>
-                  <Select
+                  <FuzzySelect
+                    options={typeOpts}
                     value={typeVal}
-                    onChange={(e) => set(`Type ${n}`, e.target.value)}
-                    className="h-8 text-sm"
-                  >
-                    <option value="">—</option>
-                    {TYPE_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={(v) => set(`Type ${n}`, v)}
+                  />
                 </div>
 
                 {/* Combination sub-dropdown */}
@@ -154,28 +165,12 @@ export function MainBracketEditor({
                   <label className="block text-xs text-[var(--muted-foreground)] mb-1">
                     Combination Bracket Type
                   </label>
-                  <select
-                    disabled={!isCombo}
+                  <FuzzySelect
+                    options={comboOpts}
                     value={get(`Combination ${n}`)}
-                    onChange={(e) => set(`Combination ${n}`, e.target.value)}
-                    className="w-full h-8 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] px-2"
-                  >
-                    <option value="">—</option>
-                    {COMBO_GROUPS.map((group) => (
-                      <optgroup key={group.family} label={group.family}>
-                        {group.options.map((o) => (
-                          <option key={o} value={o}>
-                            {o}
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                    {COMBO_STANDALONE.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </select>
+                    onChange={(v) => set(`Combination ${n}`, v)}
+                    disabled={!isCombo}
+                  />
                 </div>
 
                 {/* Quantity */}

@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 import { ArrowLeft, Save, Loader2, Check } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection, BomLeaf } from "@/lib/bom/bom-sections";
@@ -742,23 +744,17 @@ function LeafInput({
   }
 
   if (leaf.kind === "select" && leaf.options) {
+    const fuzzyOpts: FuzzySelectOption[] = leaf.options.map((o) => ({ value: o }));
     return (
       <div>
         <label className="block text-xs text-[var(--muted-foreground)] mb-1 truncate" title={leaf.variant}>
           {leaf.variant}
         </label>
-        <Select
-          className="h-8 text-sm"
+        <FuzzySelect
+          options={fuzzyOpts}
           value={value.textVal ?? ""}
-          onChange={(e) => onChange({ textVal: e.target.value || undefined })}
-        >
-          <option value="">--</option>
-          {leaf.options.map((opt) => (
-            <option key={opt} value={opt}>
-              {opt}
-            </option>
-          ))}
-        </Select>
+          onChange={(v) => onChange({ textVal: v || undefined })}
+        />
       </div>
     );
   }

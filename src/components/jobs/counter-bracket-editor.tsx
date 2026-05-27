@@ -1,7 +1,10 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 
 interface BomValue {
   numVal?: number;
@@ -45,6 +48,11 @@ export function CounterBracketEditor({
     });
   };
 
+  const typeOpts: FuzzySelectOption[] = useMemo(
+    () => TYPE_OPTIONS.map((o) => ({ value: o })),
+    [],
+  );
+
   const countRaw = get("Number of Types");
   const count = Math.min(MAX_TYPES, Math.max(1, Number(countRaw) || 1));
 
@@ -58,7 +66,7 @@ export function CounterBracketEditor({
       </p>
 
       <div className="space-y-3">
-        {/* Number of Types selector */}
+        {/* Number of Types — native since only 4 options */}
         <div>
           <label className="block text-xs text-[var(--muted-foreground)] mb-1">
             Number of Counter Bracket Types
@@ -94,18 +102,11 @@ export function CounterBracketEditor({
                   <label className="block text-xs text-[var(--muted-foreground)] mb-1">
                     Type
                   </label>
-                  <Select
+                  <FuzzySelect
+                    options={typeOpts}
                     value={get(`Type ${n}`)}
-                    onChange={(e) => set(`Type ${n}`, e.target.value)}
-                    className="h-8 text-sm"
-                  >
-                    <option value="">—</option>
-                    {TYPE_OPTIONS.map((o) => (
-                      <option key={o} value={o}>
-                        {o}
-                      </option>
-                    ))}
-                  </Select>
+                    onChange={(v) => set(`Type ${n}`, v)}
+                  />
                 </div>
 
                 {/* Quantity */}

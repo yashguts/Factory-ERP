@@ -1,7 +1,9 @@
 "use client";
 
+import { useMemo } from "react";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
+import { FuzzySelect } from "@/components/ui/fuzzy-select";
+import type { FuzzySelectOption } from "@/components/ui/fuzzy-select";
 
 interface BomValue {
   numVal?: number;
@@ -48,6 +50,11 @@ export function GovernorEditor({
       numVal: value ? Number(value) : undefined,
     });
 
+  const govTypeOpts: FuzzySelectOption[] = useMemo(
+    () => GOVERNOR_TYPE_OPTIONS.map((v) => ({ value: v })),
+    [],
+  );
+
   const allVariants = ["Type", ...COMPONENT_LEAVES.map((l) => l.variant)];
   const filledCount = allVariants.filter((v) => {
     const val = getBomValue(category, v);
@@ -68,19 +75,12 @@ export function GovernorEditor({
       <div className="space-y-3">
         {/* Governor Type */}
         <div>
-          <label className="block text-xs text-[var(--muted-foreground)] mb-1">
-            Type
-          </label>
-          <Select
+          <label className="block text-xs text-[var(--muted-foreground)] mb-1">Type</label>
+          <FuzzySelect
+            options={govTypeOpts}
             value={getText("Type")}
-            onChange={(e) => setText("Type", e.target.value)}
-            className="h-8 text-sm"
-          >
-            <option value="">--</option>
-            {GOVERNOR_TYPE_OPTIONS.map((o) => (
-              <option key={o} value={o}>{o}</option>
-            ))}
-          </Select>
+            onChange={(v) => setText("Type", v)}
+          />
         </div>
 
         {/* Component fields */}
