@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useMemo, useRef, useEffect } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -13,6 +13,168 @@ interface StockAdjustModalProps {
   warehouses: Warehouse[];
   onClose: () => void;
   onSaved: () => void;
+}
+
+function ItemSearchSelect({
+  items,
+  value,
+  onChange,
+}: {
+  items: { id: string; code: string; name: string }[];
+  value: string;
+  onChange: (id: string) => void;
+}) {
+  const [query, setQuery] = useState("");
+  const [open, setOpen] = useState(false);
+  const [highlightIdx, setHighlightIdx] = useState(0);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+
+  const selectedItem = items.find((i) => i.id === value);
+
+  const filtered = useMemo(() => {
+    if (!query.trim()) return items.slice(0, 50);
+    const q = query.toLowerCase();
+    return items
+      .filter(
+        (i) =>
+          i.name.toLowerCase().includes(q) || i.code.toLowerCase().includes(q)
+      )
+      .slice(0, 50);
+  }, [query, items]);
+
+  useEffect(() => {
+    setHighlightIdx(0);
+  }, [filtered]);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Scroll highlighted item into view
+  useEffect(() => {
+    if (!listRef.current) return;
+    const el = listRef.current.children[highlightIdx] as HTMLElement | undefined;
+    el?.scrollIntoView({ block: "nearest" });
+  }, [highlightIdx]);
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (!open) {
+      if (e.key === "ArrowDown" || e.key === "Enter") {
+        setOpen(true);
+        e.preventDefault();
+      }
+      return;
+    }
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHighlightIdx((i) => Math.min(i + 1, filtered.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHighlightIdx((i) => Math.max(i - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (filtered[highlightIdx]) {
+        onChange(filtered[highlightIdx].id);
+        setQuery("");
+        setOpen(false);
+      }
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div ref={wrapperRef} className="relative">
+      {/* Display selected item or search input */}
+      {value && !open ? (
+        <div
+          className="flex items-center justify-between h-9 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer"
+          onClick={() => {
+            setQuery("");
+            setOpen(true);
+          }}
+        >
+          <span className="truncate">
+            <span className="text-[var(--muted-foreground)]">{selectedItem?.code}</span>
+            {" — "}
+            {selectedItem?.name}
+          </span>
+          <button
+            type="button"
+            className="ml-2 text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+            onClick={(e) => {
+              e.stopPropagation();
+              onChange("");
+              setQuery("");
+              setOpen(true);
+            }}
+          >
+            &times;
+          </button>
+        </div>
+      ) : (
+        <Input
+          autoFocus
+          placeholder="Search by name or code..."
+          value={query}
+          onChange={(e) => {
+            setQuery(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          onKeyDown={handleKeyDown}
+          className="h-9"
+        />
+      )}
+
+      {/* Dropdown */}
+      {open && (
+        <div
+          ref={listRef}
+          className="absolute z-50 mt-1 w-full max-h-56 overflow-auto rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg"
+        >
+          {filtered.length === 0 ? (
+            <div className="px-3 py-2 text-sm text-[var(--muted-foreground)]">
+              No items found
+            </div>
+          ) : (
+            filtered.map((item, idx) => (
+              <div
+                key={item.id}
+                className={`px-3 py-2 text-sm cursor-pointer ${
+                  idx === highlightIdx
+                    ? "bg-[var(--accent)] text-[var(--accent-foreground)]"
+                    : "hover:bg-[var(--accent)]/50"
+                }`}
+                onMouseEnter={() => setHighlightIdx(idx)}
+                onClick={() => {
+                  onChange(item.id);
+                  setQuery("");
+                  setOpen(false);
+                }}
+              >
+                <span className="text-[var(--muted-foreground)]">{item.code}</span>
+                {" — "}
+                {item.name}
+              </div>
+            ))
+          )}
+          {!query.trim() && items.length > 50 && (
+            <div className="px-3 py-1.5 text-xs text-[var(--muted-foreground)] border-t border-[var(--border)]">
+              Type to search all {items.length} items...
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockAdjustModalProps) {
@@ -64,18 +226,11 @@ export function StockAdjustModal({ items, warehouses, onClose, onSaved }: StockA
 
         <div>
           <label className="block text-sm font-medium mb-1">Item</label>
-          <Select
+          <ItemSearchSelect
+            items={items}
             value={form.item_id}
-            onChange={(e) => setForm({ ...form, item_id: e.target.value })}
-            required
-          >
-            <option value="">Select item</option>
-            {items.map((item) => (
-              <option key={item.id} value={item.id}>
-                {item.code} — {item.name}
-              </option>
-            ))}
-          </Select>
+            onChange={(id) => setForm({ ...form, item_id: id })}
+          />
         </div>
 
         <div>
