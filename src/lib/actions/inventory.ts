@@ -146,7 +146,7 @@ export async function createItem(data: {
     .single();
 
   if (error) {
-    return { ok: false, error: translateItemError(error, data.code) };
+    return { ok: false, error: translateItemError(error, data.code, data.name) };
   }
   revalidateTag("items");
   return { ok: true, id: item.id as string };
@@ -161,6 +161,7 @@ export async function createItem(data: {
 function translateItemError(
   error: { code?: string; message: string },
   attemptedCode?: string,
+  attemptedName?: string,
 ): string {
   if (error.code === "23505") {
     // unique_violation
@@ -168,6 +169,11 @@ function translateItemError(
       return attemptedCode
         ? `Item code "${attemptedCode}" already exists. Pick a different code.`
         : "An item with this code already exists.";
+    }
+    if (error.message.includes("items_active_name_unique_idx")) {
+      return attemptedName
+        ? `Another active item already uses the name "${attemptedName}". Item names must be unique (case-insensitive).`
+        : "Another active item already uses this name. Item names must be unique (case-insensitive).";
     }
     return "A unique constraint was violated. " + error.message;
   }
@@ -252,7 +258,7 @@ export async function updateItem(
     .single();
 
   if (error) {
-    return { ok: false, error: translateItemError(error, data.code) };
+    return { ok: false, error: translateItemError(error, data.code, data.name) };
   }
   revalidateTag("items");
   return { ok: true, id: item.id as string };
