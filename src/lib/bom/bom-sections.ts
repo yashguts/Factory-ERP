@@ -66,10 +66,12 @@ export const BOM_SECTIONS: BomSection[] = [
     phase: "Brackets",
     gate: { kind: "driveTypeExclude", drives: ["HYD"] },
     fullWidth: true,
-    description: "Includes Rail Bracket Main, Combination Main, Rail Clip Combination.",
+    description:
+      "Rail Bracket Main + Combination (Main / Home) + Rail Clip Combination.",
     defaultItemCategories: [
       "Rail Bracket > Rail Bracket Main",
       "Rail Bracket > Rail Bracket Combination Main",
+      "Rail Bracket > Rail Bracket Combination Home",
       "Rail Bracket > Rail Clip Combination",
     ],
   },
