@@ -24,7 +24,7 @@ import {
 } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import { checkCategoryPaths } from "@/lib/actions/categories";
-import type { Job, JobStage } from "@/lib/supabase/types";
+import type { Job, JobStage, StructureIncluded } from "@/lib/supabase/types";
 
 /** Flat line returned by getJobBomItemLines (server). */
 export interface ExistingItemLine {
@@ -104,6 +104,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
   const [driveType, setDriveType] = useState(job?.drive_type ?? "");
   const [capacity, setCapacity] = useState(job?.capacity ?? "");
+  const [structureIncluded, setStructureIncluded] = useState<StructureIncluded>(
+    job?.structure_included ?? "NA",
+  );
 
   // ── Split view + GAD drawing ──────────────────────────────────────
   // When ON, BOM form goes to the left half and the drawing panel to
@@ -441,6 +444,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       floors: floors || null,
       drive_type: driveType || null,
       capacity: capacity || null,
+      structure_included: structureIncluded,
       stage,
       requirement_stage: requirementStage || null,
       requirement_dispatch_date: requirementDispatchDate || null,
@@ -690,9 +694,11 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         floors={floors}
         driveType={driveType}
         capacity={capacity}
+        structureIncluded={structureIncluded}
         setFloors={setFloors}
         setDriveType={setDriveType}
         setCapacity={setCapacity}
+        setStructureIncluded={setStructureIncluded}
         onSpecChanged={markSpecChanged}
         specPreview={buildSpecString()}
       />

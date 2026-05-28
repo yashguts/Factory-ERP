@@ -10,7 +10,11 @@ import {
   CAPACITY_PASS,
   CAPACITY_KG,
 } from "@/lib/bom/section-gating";
-import type { JobStage } from "@/lib/supabase/types";
+import {
+  STRUCTURE_INCLUDED_OPTIONS,
+  type JobStage,
+  type StructureIncluded,
+} from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ */
 /*  Shared types                                                      */
@@ -203,9 +207,11 @@ interface ElevatorSpecPanelProps {
   floors: number | "";
   driveType: string;
   capacity: string;
+  structureIncluded: StructureIncluded;
   setFloors: (v: number | "") => void;
   setDriveType: (v: string) => void;
   setCapacity: (v: string) => void;
+  setStructureIncluded: (v: StructureIncluded) => void;
   onSpecChanged: () => void;
   specPreview: string | null;
 }
@@ -214,9 +220,11 @@ export function ElevatorSpecPanel({
   floors,
   driveType,
   capacity,
+  structureIncluded,
   setFloors,
   setDriveType,
   setCapacity,
+  setStructureIncluded,
   onSpecChanged,
   specPreview,
 }: ElevatorSpecPanelProps) {
@@ -230,7 +238,7 @@ export function ElevatorSpecPanel({
           Controls which BOM sections appear below.
         </p>
       </div>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Field label="Floors (Stops) *">
           <Select
             value={floors}
@@ -286,6 +294,21 @@ export function ElevatorSpecPanel({
                 </option>
               ))}
             </optgroup>
+          </Select>
+        </Field>
+        <Field label="Structure Included">
+          <Select
+            value={structureIncluded}
+            onChange={(e) => {
+              setStructureIncluded(e.target.value as StructureIncluded);
+              onSpecChanged();
+            }}
+          >
+            {STRUCTURE_INCLUDED_OPTIONS.map((o) => (
+              <option key={o} value={o}>
+                {o}
+              </option>
+            ))}
           </Select>
         </Field>
       </div>

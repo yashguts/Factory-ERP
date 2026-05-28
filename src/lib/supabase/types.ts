@@ -119,9 +119,18 @@ export interface Job {
   gad_drawing_url: string | null;
   gad_drawing_filename: string | null;
   gad_drawing_uploaded_at: string | null;
+  /** Whether the elevator structure is part of this job. */
+  structure_included: StructureIncluded;
   created_at: string;
   updated_at: string;
 }
+
+export type StructureIncluded = "NA" | "Factory-made" | "Site-fabricated";
+export const STRUCTURE_INCLUDED_OPTIONS: StructureIncluded[] = [
+  "NA",
+  "Factory-made",
+  "Site-fabricated",
+];
 
 export interface JobBomHeader {
   id: string;

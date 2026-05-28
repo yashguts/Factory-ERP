@@ -346,6 +346,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
         <MetaItem label="Door Type" value={job.door_type} />
         <MetaItem label="Drive Type" value={job.drive_type} />
         <MetaItem label="Capacity" value={job.capacity} />
+        <MetaItem label="Structure" value={job.structure_included} />
         <MetaItem label="Door Finish" value={job.door_finish} />
         <MetaItem label="Location" value={job.location} />
         <MetaItem label="Brand" value={job.brand} />

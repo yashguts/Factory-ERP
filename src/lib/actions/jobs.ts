@@ -102,6 +102,7 @@ export async function createJob(data: {
   stage?: JobStage;
   requirement_stage?: JobStage | null;
   requirement_dispatch_date?: string | null;
+  structure_included?: "NA" | "Factory-made" | "Site-fabricated";
 }) {
   const supabase = await createClient();
   const { data: job, error } = await supabase
@@ -135,6 +136,7 @@ export async function createJobWithBom(
     stage?: JobStage;
     requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
+    structure_included?: "NA" | "Factory-made" | "Site-fabricated";
   },
   bomLines: BomLineInput[],
 ) {
@@ -205,6 +207,7 @@ export async function updateJobWithBom(
     stage?: JobStage;
     requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
+    structure_included?: "NA" | "Factory-made" | "Site-fabricated";
   },
   bomLines: BomLineInput[],
 ) {
@@ -543,6 +546,7 @@ export async function updateJob(
     stage?: JobStage;
     requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
+    structure_included?: "NA" | "Factory-made" | "Site-fabricated";
   }
 ) {
   const supabase = await createClient();
