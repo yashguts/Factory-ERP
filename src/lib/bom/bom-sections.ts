@@ -420,11 +420,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "SAFETY/CAR GATE SWT.",
     phase: "Cabin Add-on Items",
     gate: ALWAYS,
-    description: "Safety / car-gate switch and its bracket.",
-    defaultItemCategories: [
-      "Small Manufactured Items > Car Gate Switch Bkt",
-      "Small Manufactured Items > Safety Switch Bkt",
-    ],
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
   },
   {
     category: "HOME SAFETY SWITCH",
