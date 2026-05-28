@@ -297,6 +297,91 @@ export async function getJobBomSections(jobId: string) {
 }
 
 /** Fetch item-based BOM lines for edit-page reference display */
+/**
+ * Returns a job's "templatable" content: its elevator spec (floors,
+ * drive type, capacity) plus every item-based BOM line. Used by the
+ * "Import from existing job" flow on the new-job page so the user can
+ * clone the spec + BOM and only override what differs.
+ *
+ * Deliberately does NOT return Job Details (number, customer, dates,
+ * stage, etc.) — those are always re-entered for the new job.
+ */
+export async function getJobTemplate(jobId: string) {
+  const supabase = createCacheClient();
+
+  const [jobResult, headerResult] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select("floors, drive_type, capacity")
+      .eq("id", jobId)
+      .single(),
+    supabase
+      .from("job_bom_headers")
+      .select("id")
+      .eq("job_id", jobId)
+      .limit(1)
+      .single(),
+  ]);
+
+  if (jobResult.error) throw jobResult.error;
+  const spec = {
+    floors: (jobResult.data.floors as number | null) ?? null,
+    drive_type: (jobResult.data.drive_type as string | null) ?? null,
+    capacity: (jobResult.data.capacity as string | null) ?? null,
+  };
+
+  if (!headerResult.data) return { spec, bomLines: [] };
+
+  const { data, error } = await supabase
+    .from("job_bom_lines")
+    .select(`
+      category, variant, value_text, required_quantity, item_id,
+      item:items!job_bom_lines_item_id_fkey(code, name, lookup_key,
+        uom:units_of_measurement(abbreviation)
+      )
+    `)
+    .eq("job_bom_id", headerResult.data.id)
+    .not("category", "is", null)
+    .not("item_id", "is", null)
+    .order("sort_order");
+  if (error) throw error;
+
+  const flatten = <T,>(rel: unknown): T | null => {
+    if (!rel) return null;
+    if (Array.isArray(rel)) return (rel[0] ?? null) as T | null;
+    return rel as T;
+  };
+
+  const bomLines = (data ?? []).map((row: any) => {
+    const itemRow = flatten<{
+      code: string;
+      name: string;
+      lookup_key: string | null;
+      uom: unknown;
+    }>(row.item);
+    const uomRow = itemRow
+      ? flatten<{ abbreviation: string }>(itemRow.uom)
+      : null;
+    return {
+      category: row.category as string,
+      variant: row.variant as string | null,
+      value_text: row.value_text as string | null,
+      required_quantity: row.required_quantity as number,
+      item_id: row.item_id as string | null,
+      item: itemRow
+        ? {
+            code: itemRow.code,
+            name: itemRow.name,
+            lookup_key: itemRow.lookup_key ?? null,
+            uom: uomRow ? { abbreviation: uomRow.abbreviation } : null,
+          }
+        : null,
+    };
+  });
+
+  return { spec, bomLines };
+}
+
 export async function getJobBomItemLines(jobId: string) {
   const supabase = await createClient();
 

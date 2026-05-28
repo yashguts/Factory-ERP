@@ -3,13 +3,14 @@
 import { useState, useCallback, useTransition, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Loader2, Plus, Check } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, Check, Copy } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
 import { ItemPickerSection } from "@/components/jobs/item-picker-section";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
+import { JobTemplatePickerModal } from "@/components/jobs/job-template-picker-modal";
 import {
   JobDetailsPanel,
   ElevatorSpecPanel,
@@ -18,6 +19,7 @@ import {
   createJob,
   updateJob,
   saveBomSection,
+  getJobTemplate,
 } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
 import { checkCategoryPaths } from "@/lib/actions/categories";
@@ -245,6 +247,76 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       return next;
     });
   }, []);
+
+  // ── Import-from-existing-job (template) ───────────────────────────
+  // Lets a user clone the spec + BOM of an existing job into this form.
+  // Only meaningful in create mode — hidden in edit mode.
+  const [templateModalOpen, setTemplateModalOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+
+  const handlePickTemplate = useCallback(
+    async (jobId: string, jobNumber: string) => {
+      setImporting(true);
+      try {
+        const { spec, bomLines } = await getJobTemplate(jobId);
+
+        // Spec fields
+        if (spec.floors != null) setFloors(spec.floors);
+        if (spec.drive_type) setDriveType(spec.drive_type);
+        if (spec.capacity) setCapacity(spec.capacity);
+
+        // Build a fresh picker state + collect any ad-hoc sections that
+        // appear in the source job's BOM but aren't in BOM_SECTIONS.
+        const knownCategories = new Set(BOM_SECTIONS.map((s) => s.category));
+        const nextPicker: PickerState = {};
+        const adHocByCategory = new Map<string, string>(); // label -> leaf path
+        for (const line of bomLines) {
+          if (!line.item_id || !line.item) continue;
+          if (!knownCategories.has(line.category)) {
+            adHocByCategory.set(line.category, line.category);
+          }
+          const arr = nextPicker[line.category] ?? [];
+          arr.push({
+            _key: Math.random().toString(36).slice(2),
+            item_id: line.item_id,
+            item_code: line.item.code,
+            item_name: line.item.name,
+            item_lookup: line.item.lookup_key ?? null,
+            uom: line.item.uom?.abbreviation ?? "",
+            category_name: null,
+            required_quantity: line.required_quantity,
+          });
+          nextPicker[line.category] = arr;
+        }
+
+        setPickerState(nextPicker);
+        setAdHocSections(
+          Array.from(adHocByCategory.entries()).map(([label, path]) => ({
+            category: label,
+            categoryPath: path,
+          })),
+        );
+
+        // Imported data is dirty until the user saves it.
+        setJobSaved(false);
+        setSavedPhases({});
+        setTemplateModalOpen(false);
+
+        // Light user feedback. Could be a toast later.
+        alert(
+          `Imported spec and ${bomLines.length} BOM item${
+            bomLines.length === 1 ? "" : "s"
+          } from ${jobNumber}. Review and adjust as needed, then save.`,
+        );
+      } catch (err: unknown) {
+        const msg = err instanceof Error ? err.message : "Import failed";
+        alert(`Could not import from job ${jobNumber}: ${msg}`);
+      } finally {
+        setImporting(false);
+      }
+    },
+    [],
+  );
 
   const setPickerItems = useCallback(
     (category: string, items: PickedItem[]) => {
@@ -502,6 +574,22 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <span className="text-xs text-[var(--muted-foreground)]">
             {totalPickedItems} item{totalPickedItems !== 1 ? "s" : ""}
           </span>
+          {mode === "create" && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => setTemplateModalOpen(true)}
+              disabled={isPending || importing}
+              title="Copy spec + BOM from an existing job"
+            >
+              {importing ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Copy className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Import from Job
+            </Button>
+          )}
           <Button
             size="sm"
             onClick={handleSaveAll}
@@ -516,6 +604,13 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           </Button>
         </div>
       </div>
+
+      {templateModalOpen && (
+        <JobTemplatePickerModal
+          onPick={handlePickTemplate}
+          onClose={() => setTemplateModalOpen(false)}
+        />
+      )}
 
       {/* ── Job Details ── */}
       <JobDetailsPanel
