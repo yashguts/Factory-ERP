@@ -14,6 +14,7 @@ interface ItemRef {
 }
 
 interface ItemFormModalProps {
+  /** Existing item being edited. When null, the modal is in create mode. */
   item?: {
     id: string;
     code: string;
@@ -29,6 +30,29 @@ interface ItemFormModalProps {
     procurement_type?: "make" | "trade" | null;
     suppliers?: string[];
   } | null;
+  /**
+   * When set, the modal opens in create mode but pre-filled from this
+   * source. The code field is auto-filled with the next available
+   * number in the source's series (see `nextCodeInSeries`). The user
+   * just changes the name / spec and saves.
+   */
+  cloneSource?: {
+    id: string;
+    code: string;
+    name: string;
+    description: string | null;
+    item_type: ItemType;
+    category_id: string | null;
+    uom_id: string;
+    minimum_stock: number;
+    reorder_point: number;
+    lead_time_days: number;
+    cost_price: number;
+    procurement_type?: "make" | "trade" | null;
+    suppliers?: string[];
+  } | null;
+  /** Pre-computed next code in series (caller derives via nextCodeInSeries). */
+  suggestedCode?: string | null;
   categories: (ItemCategory & {
     procurement_type?: "make" | "trade" | null;
   })[];
@@ -40,8 +64,22 @@ interface ItemFormModalProps {
 
 type ProcOverride = "" | "make" | "trade";
 
-export function ItemFormModal({ item, categories, units, items, onClose, onSaved }: ItemFormModalProps) {
+export function ItemFormModal({
+  item,
+  cloneSource,
+  suggestedCode,
+  categories,
+  units,
+  items,
+  onClose,
+  onSaved,
+}: ItemFormModalProps) {
   const isEditing = !!item;
+  const isCloning = !item && !!cloneSource;
+  // When cloning, treat the source's values as defaults — the form
+  // behaves like a fresh create form, but pre-filled. The user only
+  // edits what's different.
+  const seed = item ?? cloneSource ?? null;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -111,9 +149,9 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
 
   // Resolve initial parent + sub-category from item's category_id
   const resolveInitialCategories = () => {
-    if (!item?.category_id) return { parentId: "", subId: "" };
+    if (!seed?.category_id) return { parentId: "", subId: "" };
 
-    const cat = categories.find((c) => c.id === item.category_id);
+    const cat = categories.find((c) => c.id === seed.category_id);
     if (!cat) return { parentId: "", subId: "" };
 
     if (cat.parent_id === null) return { parentId: cat.id, subId: "" };
@@ -136,20 +174,22 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
   const resolvedCategoryId = subCategoryId || parentCategoryId || null;
 
   const [form, setForm] = useState({
-    code: item?.code ?? "",
-    name: item?.name ?? "",
-    description: item?.description ?? "",
-    item_type: item?.item_type ?? ("mechanical_finished_stock" as ItemType),
-    uom_id: item?.uom_id ?? "",
-    minimum_stock: Number(item?.minimum_stock ?? 0),
-    reorder_point: Number(item?.reorder_point ?? 0),
-    lead_time_days: Number(item?.lead_time_days ?? 0),
-    cost_price: Number(item?.cost_price ?? 0),
+    // When cloning, the code starts at the auto-suggested next-in-series;
+    // when editing, the existing code; when creating fresh, blank.
+    code: isCloning ? (suggestedCode ?? "") : (seed?.code ?? ""),
+    name: seed?.name ?? "",
+    description: seed?.description ?? "",
+    item_type: seed?.item_type ?? ("mechanical_finished_stock" as ItemType),
+    uom_id: seed?.uom_id ?? "",
+    minimum_stock: Number(seed?.minimum_stock ?? 0),
+    reorder_point: Number(seed?.reorder_point ?? 0),
+    lead_time_days: Number(seed?.lead_time_days ?? 0),
+    cost_price: Number(seed?.cost_price ?? 0),
   });
 
-  // Make/Trade — the per-item override. "" means "inherit from category".
+  // Make/Trade per-item override. "" means "inherit from category".
   const [procOverride, setProcOverride] = useState<ProcOverride>(
-    item?.procurement_type ?? "",
+    seed?.procurement_type ?? "",
   );
 
   // What the category itself says about Make/Trade — used to label the
@@ -166,7 +206,7 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
 
   // Suppliers — fixed 5 slots so the layout is stable; empty strings are
   // dropped before save by normalizeSuppliers on the server.
-  const initialSuppliers = item?.suppliers ?? [];
+  const initialSuppliers = seed?.suppliers ?? [];
   const [suppliers, setSuppliers] = useState<string[]>(() => {
     const arr = [...initialSuppliers];
     while (arr.length < 5) arr.push("");
@@ -247,7 +287,17 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
   };
 
   return (
-    <Modal title={isEditing ? "Edit Item" : "Add New Item"} onClose={onClose} className="max-w-2xl">
+    <Modal
+      title={
+        isEditing
+          ? "Edit Item"
+          : isCloning
+            ? `Clone Item — based on ${cloneSource?.code}`
+            : "Add New Item"
+      }
+      onClose={onClose}
+      className="max-w-2xl"
+    >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
           <div className="p-3 text-sm bg-red-50 text-red-700 rounded-md border border-red-200">
@@ -255,9 +305,26 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
           </div>
         )}
 
+        {isCloning && cloneSource && (
+          <div className="p-2.5 text-xs bg-blue-50 text-blue-900 rounded-md border border-blue-200">
+            Cloning from{" "}
+            <span className="font-mono font-medium">{cloneSource.code}</span> —{" "}
+            <span className="font-medium">{cloneSource.name}</span>.
+            Category, UOM, Make/Trade and suppliers carried over. Code
+            auto-suggested as next in series.
+          </div>
+        )}
+
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-sm font-medium mb-1">Item Code</label>
+            <label className="block text-sm font-medium mb-1">
+              Item Code
+              {isCloning && (
+                <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                  (auto-suggested — editable)
+                </span>
+              )}
+            </label>
             <Input
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}

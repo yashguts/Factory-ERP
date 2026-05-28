@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,10 +8,11 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
+import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse } from "@/lib/supabase/types";
 
 interface ItemWithStock {
@@ -84,6 +85,24 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
   const [showItemForm, setShowItemForm] = useState(false);
   const [showStockAdjust, setShowStockAdjust] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ItemWithStock | null>(null);
+  // When set, the form opens in "clone" mode pre-filled from this source.
+  const [cloneSource, setCloneSource] = useState<ItemWithStock | null>(null);
+
+  // All existing codes — recomputed only when the items list changes,
+  // so the "next code in series" lookup is O(N) once per render cycle.
+  const allCodes = useMemo(
+    () => initialItems.map((i) => i.code),
+    [initialItems],
+  );
+
+  const handleClone = useCallback(
+    (item: ItemWithStock) => {
+      setSelectedItem(null); // make sure we're not in edit mode
+      setCloneSource(item);
+      setShowItemForm(true);
+    },
+    [],
+  );
 
   // Build category tree for filter (supports 3 levels: parent → child → grandchild)
   const categoryTree = useMemo(() => {
@@ -272,7 +291,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           <Button variant="secondary" onClick={() => setShowStockAdjust(true)}>
             Stock Adjustment
           </Button>
-          <Button onClick={() => { setSelectedItem(null); setShowItemForm(true); }}>
+          <Button onClick={() => { setSelectedItem(null); setCloneSource(null); setShowItemForm(true); }}>
             <Plus size={16} className="mr-2" />
             Add Item
           </Button>
@@ -368,6 +387,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />
                 <TableHead>Status</TableHead>
+                <TableHead className="w-8"></TableHead>
                 <TableHead className="w-10"></TableHead>
               </TableRow>
             </TableHeader>
@@ -450,6 +470,16 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                         </span>
                       )}
                     </TableCell>
+                    <TableCell className="w-8 px-1" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => handleClone(item)}
+                        title="Clone this item — pre-fills a new item with the same category, UOM, Make/Trade and suppliers"
+                        className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                      >
+                        <Copy className="h-3.5 w-3.5" />
+                      </button>
+                    </TableCell>
                     <TableCell className="w-10 px-1" onClick={(e) => e.stopPropagation()}>
                       <InlineStockAdjust
                         item={item}
@@ -499,11 +529,21 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
       {showItemForm && (
         <ItemFormModal
           item={selectedItem}
+          cloneSource={cloneSource}
+          suggestedCode={
+            cloneSource ? nextCodeInSeries(cloneSource.code, allCodes) : null
+          }
           categories={categories}
           units={units}
           items={initialItems}
-          onClose={() => setShowItemForm(false)}
-          onSaved={refresh}
+          onClose={() => {
+            setShowItemForm(false);
+            setCloneSource(null);
+          }}
+          onSaved={() => {
+            refresh();
+            setCloneSource(null);
+          }}
         />
       )}
       {showStockAdjust && (
