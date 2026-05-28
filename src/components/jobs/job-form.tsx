@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition, useMemo, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Loader2, Plus, Check, Copy } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, Check, Copy, Columns2, PanelRightClose } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
@@ -11,6 +11,7 @@ import { ItemPickerSection } from "@/components/jobs/item-picker-section";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import { JobTemplatePickerModal } from "@/components/jobs/job-template-picker-modal";
+import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import {
   JobDetailsPanel,
   ElevatorSpecPanel,
@@ -103,6 +104,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
   const [driveType, setDriveType] = useState(job?.drive_type ?? "");
   const [capacity, setCapacity] = useState(job?.capacity ?? "");
+
+  // ── Split view + GAD drawing ──────────────────────────────────────
+  // When ON, BOM form goes to the left half and the drawing panel to
+  // the right. Each pane has its own scroll container so they're
+  // independent. Auto-enabled when a drawing already exists on edit.
+  const [splitView, setSplitView] = useState<boolean>(
+    !!job?.gad_drawing_url,
+  );
 
   // ── Picker state ──────────────────────────────────────────────────
   const initialPickerState = useMemo((): PickerState => {
@@ -544,10 +553,19 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   }
 
   // ── Render ────────────────────────────────────────────────────────
+  // In split view the page becomes a 2-column grid:
+  //   left:  the form (scrollable on its own)
+  //   right: the GAD drawing panel (scrollable on its own)
+  // Each column is bounded by a calc-height so each scrolls
+  // independently rather than the whole page scrolling.
+  const SPLIT_HEIGHT = "h-[calc(100vh-160px)]";
   return (
-    <div className="space-y-4 max-w-5xl mx-auto">
-      {/* Header — compact */}
-      <div className="flex items-center justify-between">
+    <div className={splitView ? "flex flex-col" : "space-y-4 max-w-5xl mx-auto"}>
+      {/* Header — compact. Centred when in single mode; full-width
+          when in split mode so action buttons stay on screen. */}
+      <div
+        className={`flex items-center justify-between ${splitView ? "mb-3" : ""}`}
+      >
         <div className="flex items-center gap-2 min-w-0">
           <button
             onClick={() => router.back()}
@@ -592,6 +610,19 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           )}
           <Button
             size="sm"
+            variant="secondary"
+            onClick={() => setSplitView((v) => !v)}
+            title={splitView ? "Hide drawing pane" : "Show drawing pane (split view)"}
+          >
+            {splitView ? (
+              <PanelRightClose className="h-3.5 w-3.5 mr-1.5" />
+            ) : (
+              <Columns2 className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            {splitView ? "Hide Drawing" : "Drawing"}
+          </Button>
+          <Button
+            size="sm"
             onClick={handleSaveAll}
             disabled={isPending || !isFormValid}
           >
@@ -611,6 +642,24 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           onClose={() => setTemplateModalOpen(false)}
         />
       )}
+
+      {/* In split view we render a 2-column grid: form on the left
+          (scrollable), GAD drawing on the right (scrollable). In
+          single view we fall back to the original stacked layout. */}
+      <div
+        className={
+          splitView
+            ? `grid grid-cols-2 gap-3 ${SPLIT_HEIGHT} min-h-0`
+            : "contents"
+        }
+      >
+        <div
+          className={
+            splitView
+              ? "overflow-y-auto pr-2 space-y-4"
+              : "contents"
+          }
+        >
 
       {/* ── Job Details ── */}
       <JobDetailsPanel
@@ -789,6 +838,43 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           )}
           Save All &amp; Finish
         </Button>
+      </div>
+
+        </div>
+
+        {/* Right pane: GAD drawing — only mounted in split view so the
+            iframe doesn't load until the user actually opens it. */}
+        {splitView && (
+          <div className={SPLIT_HEIGHT}>
+            <GadDrawingPanel
+              jobId={savedJobId}
+              initialUrl={job?.gad_drawing_url ?? null}
+              initialFilename={job?.gad_drawing_filename ?? null}
+              initialUploadedAt={job?.gad_drawing_uploaded_at ?? null}
+              ensureJobId={async () => {
+                if (!isFormValid) {
+                  alert(
+                    `Please fill required fields before uploading a drawing:\n\n• ${missingFields.join(
+                      "\n• ",
+                    )}`,
+                  );
+                  return null;
+                }
+                try {
+                  return await ensureJob();
+                } catch (err: unknown) {
+                  alert(
+                    `Could not save the job before upload: ${
+                      err instanceof Error ? err.message : err
+                    }`,
+                  );
+                  return null;
+                }
+              }}
+              onClose={() => setSplitView(false)}
+            />
+          </div>
+        )}
       </div>
     </div>
   );

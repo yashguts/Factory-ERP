@@ -8,10 +8,11 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { ArrowLeft, Search, ArrowUpDown, Pencil } from "lucide-react";
+import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose } from "lucide-react";
 import { updateJob } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
+import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -83,6 +84,10 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
   const hasItemBom = bomLines.some((l) => l.item_id != null);
   const hasSectionBom = bomSectionLines.length > 0 || bomLines.some((l) => l.category != null);
   const [viewTab, setViewTab] = useState<ViewTab>("sections");
+
+  // Split-screen with the GAD drawing on the right. Auto-on if a
+  // drawing is already attached so the user sees it immediately.
+  const [splitView, setSplitView] = useState<boolean>(!!job.gad_drawing_url);
 
   const pct = Math.round((job.progress ?? 0) * 100);
 
@@ -274,6 +279,19 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
             <Button
               variant="secondary"
               size="sm"
+              onClick={() => setSplitView((v) => !v)}
+              title={splitView ? "Hide drawing pane" : "Show drawing pane (split view)"}
+            >
+              {splitView ? (
+                <PanelRightClose className="h-4 w-4 mr-1" />
+              ) : (
+                <Columns2 className="h-4 w-4 mr-1" />
+              )}
+              {splitView ? "Hide Drawing" : "Drawing"}
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
               onClick={() => router.push(`/jobs/${job.id}/edit`)}
             >
               <Pencil className="h-4 w-4 mr-1" />
@@ -292,6 +310,17 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
           </div>
         </div>
       </div>
+
+      {/* Split layout: when on, the detail body scrolls on the left and
+          the GAD drawing on the right (each independently). */}
+      <div
+        className={
+          splitView
+            ? "grid grid-cols-2 gap-3 h-[calc(100vh-200px)] min-h-0"
+            : "contents"
+        }
+      >
+        <div className={splitView ? "overflow-y-auto pr-2" : "contents"}>
 
       {/* Progress Bar */}
       <div className="mb-6 p-4 border border-[var(--border)] rounded-lg">
@@ -490,6 +519,21 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
               </p>
             </div>
           )
+        )}
+      </div>
+
+        </div>
+
+        {splitView && (
+          <div className="h-[calc(100vh-200px)]">
+            <GadDrawingPanel
+              jobId={job.id}
+              initialUrl={job.gad_drawing_url}
+              initialFilename={job.gad_drawing_filename}
+              initialUploadedAt={job.gad_drawing_uploaded_at}
+              onClose={() => setSplitView(false)}
+            />
+          </div>
         )}
       </div>
     </div>

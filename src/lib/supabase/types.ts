@@ -114,6 +114,9 @@ export interface Job {
   stage: JobStage;
   requirement_stage: JobStage | null;
   requirement_dispatch_date: string | null;
+  gad_drawing_url: string | null;
+  gad_drawing_filename: string | null;
+  gad_drawing_uploaded_at: string | null;
   created_at: string;
   updated_at: string;
 }
