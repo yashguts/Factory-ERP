@@ -26,13 +26,19 @@ interface ItemFormModalProps {
     reorder_point: number;
     lead_time_days: number;
     cost_price: number;
+    procurement_type?: "make" | "trade" | null;
+    suppliers?: string[];
   } | null;
-  categories: ItemCategory[];
+  categories: (ItemCategory & {
+    procurement_type?: "make" | "trade" | null;
+  })[];
   units: UnitOfMeasurement[];
   items: ItemRef[];
   onClose: () => void;
   onSaved: () => void;
 }
+
+type ProcOverride = "" | "make" | "trade";
 
 export function ItemFormModal({ item, categories, units, items, onClose, onSaved }: ItemFormModalProps) {
   const isEditing = !!item;
@@ -141,6 +147,34 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
     cost_price: Number(item?.cost_price ?? 0),
   });
 
+  // Make/Trade — the per-item override. "" means "inherit from category".
+  const [procOverride, setProcOverride] = useState<ProcOverride>(
+    item?.procurement_type ?? "",
+  );
+
+  // What the category itself says about Make/Trade — used to label the
+  // "Inherit" option in the dropdown and to compute the effective type
+  // when the user hasn't set a per-item override.
+  const categoryProcurement = useMemo(() => {
+    if (!resolvedCategoryId) return null;
+    const cat = categories.find((c) => c.id === resolvedCategoryId);
+    return cat?.procurement_type ?? null;
+  }, [resolvedCategoryId, categories]);
+
+  const effectiveProcurement: "make" | "trade" | null =
+    procOverride === "" ? categoryProcurement : procOverride;
+
+  // Suppliers — fixed 5 slots so the layout is stable; empty strings are
+  // dropped before save by normalizeSuppliers on the server.
+  const initialSuppliers = item?.suppliers ?? [];
+  const [suppliers, setSuppliers] = useState<string[]>(() => {
+    const arr = [...initialSuppliers];
+    while (arr.length < 5) arr.push("");
+    return arr.slice(0, 5);
+  });
+  const setSupplierAt = (idx: number, value: string) =>
+    setSuppliers((prev) => prev.map((s, i) => (i === idx ? value : s)));
+
   // Filter parent categories by selected item type
   const filteredParentCategories = useMemo(() => {
     const allowedIds = typeToParentCatIds[form.item_type];
@@ -173,9 +207,21 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
 
     startTransition(async () => {
       try {
+        // For Make items the supplier list is hidden in the UI and
+        // intentionally cleared on save so we don't leave stale data
+        // behind if an item flipped from Trade→Make.
+        const cleanedSuppliers =
+          effectiveProcurement === "trade"
+            ? suppliers.map((s) => s.trim()).filter(Boolean)
+            : [];
+
         const payload = {
           ...form,
           category_id: resolvedCategoryId,
+          procurement_type: (procOverride === ""
+            ? null
+            : procOverride) as "make" | "trade" | null,
+          suppliers: cleanedSuppliers,
         };
         if (isEditing && item) {
           await updateItem(item.id, payload);
@@ -335,6 +381,79 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
               min={0}
               step="0.01"
             />
+          </div>
+        </div>
+
+        {/* Make / Trade classification */}
+        <div className="border-t border-[var(--border)] pt-4">
+          <div className="grid grid-cols-3 gap-4 items-start">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Make / Trade
+              </label>
+              <Select
+                value={procOverride}
+                onChange={(e) =>
+                  setProcOverride(e.target.value as ProcOverride)
+                }
+              >
+                <option value="">
+                  Inherit from category
+                  {categoryProcurement
+                    ? ` (${categoryProcurement === "make" ? "Make" : "Trade"})`
+                    : " (not set)"}
+                </option>
+                <option value="make">Make (manufactured in-house)</option>
+                <option value="trade">Trade (purchased from supplier)</option>
+              </Select>
+              {effectiveProcurement && (
+                <p className="text-[11px] mt-1 text-[var(--muted-foreground)]">
+                  Effective:{" "}
+                  <span
+                    className={`font-medium ${
+                      effectiveProcurement === "make"
+                        ? "text-blue-700"
+                        : "text-amber-700"
+                    }`}
+                  >
+                    {effectiveProcurement === "make" ? "Make" : "Trade"}
+                  </span>
+                  {procOverride === "" && categoryProcurement
+                    ? " (inherited)"
+                    : procOverride !== ""
+                      ? " (override)"
+                      : ""}
+                </p>
+              )}
+            </div>
+            <div className="col-span-2">
+              {effectiveProcurement === "trade" ? (
+                <>
+                  <label className="block text-sm font-medium mb-1">
+                    Suppliers
+                    <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                      (up to 5)
+                    </span>
+                  </label>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {suppliers.map((s, i) => (
+                      <Input
+                        key={i}
+                        value={s}
+                        onChange={(e) => setSupplierAt(i, e.target.value)}
+                        placeholder={`Supplier ${i + 1}`}
+                      />
+                    ))}
+                  </div>
+                </>
+              ) : (
+                <p className="text-xs text-[var(--muted-foreground)] mt-7">
+                  Supplier list is hidden because this item is{" "}
+                  {effectiveProcurement === "make" ? "Make" : "unclassified"}.
+                  Switch to Trade to enter suppliers.
+                </p>
+              )}
+            </div>
           </div>
         </div>
 

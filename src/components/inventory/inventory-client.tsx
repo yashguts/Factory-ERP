@@ -28,14 +28,24 @@ interface ItemWithStock {
   lead_time_days: number;
   cost_price: number;
   is_active: boolean;
-  category: { id: string; name: string } | null;
+  procurement_type: "make" | "trade" | null;
+  category_procurement_type: "make" | "trade" | null;
+  effective_procurement_type: "make" | "trade" | null;
+  suppliers: string[];
+  category: {
+    id: string;
+    name: string;
+    procurement_type?: "make" | "trade" | null;
+  } | null;
   uom: { id: string; abbreviation: string } | null;
   total_stock: number;
 }
 
 interface Props {
   initialItems: ItemWithStock[];
-  categories: ItemCategory[];
+  categories: (ItemCategory & {
+    procurement_type?: "make" | "trade" | null;
+  })[];
   units: UnitOfMeasurement[];
   warehouses: Warehouse[];
 }
@@ -353,6 +363,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                 <SortHeader label="Code" sortField="code" />
                 <SortHeader label="Name" sortField="name" />
                 <TableHead>Type</TableHead>
+                <TableHead>M/T</TableHead>
                 <SortHeader label="Category" sortField="category" />
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />
@@ -382,6 +393,35 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                       <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[item.item_type]}`}>
                         {TYPE_LABELS[item.item_type]}
                       </span>
+                    </TableCell>
+                    <TableCell>
+                      {item.effective_procurement_type === "make" ? (
+                        <span
+                          className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700"
+                          title={
+                            item.procurement_type
+                              ? "Make (per-item override)"
+                              : "Make (inherited from category)"
+                          }
+                        >
+                          M
+                        </span>
+                      ) : item.effective_procurement_type === "trade" ? (
+                        <span
+                          className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800"
+                          title={
+                            item.procurement_type
+                              ? "Trade (per-item override)"
+                              : "Trade (inherited from category)"
+                          }
+                        >
+                          T
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[var(--muted-foreground)]">
+                          —
+                        </span>
+                      )}
                     </TableCell>
                     <TableCell className="text-sm">{item.category?.name ?? "-"}</TableCell>
                     <TableCell className="text-right font-medium">

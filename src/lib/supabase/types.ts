@@ -18,6 +18,8 @@ export interface ItemCategory {
   parent_id: string | null;
   description: string | null;
   created_at: string;
+  /** Default Make/Trade classification for items in this (sub-)category. */
+  procurement_type: "make" | "trade" | null;
 }
 
 export interface Item {
