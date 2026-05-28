@@ -96,6 +96,17 @@ export const getItemsWithStock = unstable_cache(
   { revalidate: 60, tags: ["items", "inventory-stock"] },
 );
 
+/**
+ * Result shape for create/update operations. Returning a discriminated
+ * union (rather than throwing) lets the form surface real error messages
+ * to the user — Next.js strips thrown-error messages in production
+ * server actions for security, so genuine validation feedback like
+ * "code already exists" needs to come back as data, not an exception.
+ */
+export type ItemSaveResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string };
+
 export async function createItem(data: {
   code: string;
   name: string;
@@ -111,7 +122,7 @@ export async function createItem(data: {
   procurement_type?: "make" | "trade" | null;
   /** Up to 5 supplier names (only meaningful for Trade items). */
   suppliers?: string[];
-}) {
+}): Promise<ItemSaveResult> {
   const supabase = await createClient();
   const { data: item, error } = await supabase
     .from("items")
@@ -131,12 +142,47 @@ export async function createItem(data: {
       procurement_type: data.procurement_type ?? null,
       suppliers: normalizeSuppliers(data.suppliers),
     })
-    .select()
+    .select("id")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    return { ok: false, error: translateItemError(error, data.code) };
+  }
   revalidateTag("items");
-  return item;
+  return { ok: true, id: item.id as string };
+}
+
+/**
+ * Convert raw Supabase errors into messages the user can act on.
+ * Anything we don't recognise falls back to the original `error.message`
+ * (which itself is safe to surface — these are PG validation errors,
+ * not internal stack traces).
+ */
+function translateItemError(
+  error: { code?: string; message: string },
+  attemptedCode?: string,
+): string {
+  if (error.code === "23505") {
+    // unique_violation
+    if (error.message.includes("items_code_key")) {
+      return attemptedCode
+        ? `Item code "${attemptedCode}" already exists. Pick a different code.`
+        : "An item with this code already exists.";
+    }
+    return "A unique constraint was violated. " + error.message;
+  }
+  if (error.code === "23503") {
+    // foreign_key_violation
+    return "Referenced category or unit was not found. Try reselecting them.";
+  }
+  if (error.code === "23514") {
+    // check_violation
+    if (error.message.includes("items_suppliers_max_five")) {
+      return "At most 5 suppliers are allowed per item.";
+    }
+    return "A value failed validation: " + error.message;
+  }
+  return error.message;
 }
 
 /**
@@ -182,7 +228,7 @@ export async function updateItem(
     /** Up to 5 supplier names. Pass `[]` to clear all. Omit to leave unchanged. */
     suppliers?: string[];
   },
-) {
+): Promise<ItemSaveResult> {
   const supabase = await createClient();
 
   // The codebase treats items.name as the single source of truth for the
@@ -202,12 +248,14 @@ export async function updateItem(
     .from("items")
     .update(payload)
     .eq("id", id)
-    .select()
+    .select("id")
     .single();
 
-  if (error) throw error;
+  if (error) {
+    return { ok: false, error: translateItemError(error, data.code) };
+  }
   revalidateTag("items");
-  return item;
+  return { ok: true, id: item.id as string };
 }
 
 export async function recordTransaction(data: {

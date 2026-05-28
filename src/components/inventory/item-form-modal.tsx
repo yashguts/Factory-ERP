@@ -223,13 +223,20 @@ export function ItemFormModal({ item, categories, units, items, onClose, onSaved
             : procOverride) as "make" | "trade" | null,
           suppliers: cleanedSuppliers,
         };
-        if (isEditing && item) {
-          await updateItem(item.id, payload);
-        } else {
-          await createItem({
-            ...payload,
-            category_id: payload.category_id || undefined,
-          });
+        const result =
+          isEditing && item
+            ? await updateItem(item.id, payload)
+            : await createItem({
+                ...payload,
+                category_id: payload.category_id || undefined,
+              });
+        if (!result.ok) {
+          // Server-action returned an expected validation error
+          // (duplicate code, bad FK, etc). Surface the real message
+          // instead of letting Next.js's generic production-error
+          // wrapper take over.
+          setError(result.error);
+          return;
         }
         onSaved();
         onClose();
