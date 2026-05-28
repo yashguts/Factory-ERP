@@ -32,6 +32,7 @@ const TYPE_COLORS: Record<string, string> = {
 type SortKey = "code" | "name" | "category" | "required" | "stock" | "shortfall" | "jobs";
 type SortDir = "asc" | "desc";
 type ShortfallFilter = "all" | "shortfall" | "excess" | "zero";
+type ProcurementTab = "all" | "trade" | "make";
 
 const PAGE_SIZE = 50;
 
@@ -46,6 +47,9 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>("all");
+  // Top-level Make/Trade split. Defaults to "trade" since procurement is
+  // usually the actionable bottleneck — flip to "make" or "all" any time.
+  const [procurementTab, setProcurementTab] = useState<ProcurementTab>("trade");
   const [sortKey, setSortKey] = useState<SortKey>("shortfall");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
@@ -68,17 +72,36 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
     });
   };
 
+  // Rows restricted to the active Make/Trade tab. All downstream filters
+  // (search, type, shortfall) and the summary card totals are computed
+  // off this slice so the page is self-consistent within a tab.
+  const tabRows = useMemo(() => {
+    if (procurementTab === "all") return initialData;
+    return initialData.filter((r) => r.procurement_type === procurementTab);
+  }, [initialData, procurementTab]);
+
+  /** Counts per tab — drives the badge numbers on the tab buttons. */
+  const tabCounts = useMemo(() => {
+    let trade = 0;
+    let make = 0;
+    for (const r of initialData) {
+      if (r.procurement_type === "trade") trade++;
+      else if (r.procurement_type === "make") make++;
+    }
+    return { all: initialData.length, trade, make };
+  }, [initialData]);
+
   const totals = useMemo(() => {
     let totalRequired = 0;
     let totalShortfall = 0;
     let itemsWithShortfall = 0;
-    for (const row of initialData) {
+    for (const row of tabRows) {
       totalRequired += row.total_required;
       totalShortfall += row.shortfall;
       if (row.shortfall > 0) itemsWithShortfall++;
     }
-    return { totalRequired, totalShortfall, itemsWithShortfall, totalItems: initialData.length };
-  }, [initialData]);
+    return { totalRequired, totalShortfall, itemsWithShortfall, totalItems: tabRows.length };
+  }, [tabRows]);
 
   // Multi-token fuzzy search across code / name / category.
   const searchTokens = useMemo(
@@ -92,7 +115,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   );
 
   const filtered = useMemo(() => {
-    return initialData.filter((row) => {
+    return tabRows.filter((row) => {
       if (searchTokens.length > 0) {
         const haystack = [row.item_code, row.item_name, row.category_name]
           .filter(Boolean)
@@ -108,7 +131,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
       if (shortfallFilter === "zero" && row.shortfall !== 0) return false;
       return true;
     });
-  }, [initialData, searchTokens, typeFilter, shortfallFilter]);
+  }, [tabRows, searchTokens, typeFilter, shortfallFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -170,15 +193,51 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
+      <div className="flex items-center justify-between mb-4">
         <div>
           <h1 className="text-2xl font-bold">MRP - Material Requirements</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {sorted.length} of {initialData.length} items
+            {sorted.length} of {tabRows.length} items in this tab
             {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
             {isPending ? " — refreshing..." : ""}
           </p>
         </div>
+      </div>
+
+      {/* Procurement Type Tabs — split MRP into procurement vs production
+          planning views. Switching tabs scopes the table, summary cards
+          and all downstream filters. */}
+      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
+        {([
+          { key: "trade", label: "Trade · To Procure", count: tabCounts.trade },
+          { key: "make",  label: "Make · To Manufacture", count: tabCounts.make },
+          { key: "all",   label: "All", count: tabCounts.all },
+        ] as const).map((t) => {
+          const active = procurementTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => { setProcurementTab(t.key); resetPage(); }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${
+                active
+                  ? "border-[var(--primary)] text-[var(--primary)]"
+                  : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {t.label}
+              <span
+                className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded-full ${
+                  active
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                    : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+                }`}
+              >
+                {t.count.toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Summary Cards */}

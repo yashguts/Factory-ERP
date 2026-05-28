@@ -14,6 +14,13 @@ export interface MrpRow {
   total_stock: number;
   shortfall: number;
   job_count: number;
+  /**
+   * Effective procurement type. items.procurement_type takes precedence;
+   * falls back to the (sub-)category's procurement_type. NULL only when
+   * neither is set (shouldn't happen with current data but guarded for
+   * future categories that haven't been classified yet).
+   */
+  procurement_type: "make" | "trade" | null;
 }
 
 export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
@@ -129,8 +136,8 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
           supabase
             .from("items")
             .select(`
-              id, code, name, item_type,
-              category:item_categories!items_category_id_fkey(name),
+              id, code, name, item_type, procurement_type,
+              category:item_categories!items_category_id_fkey(name, procurement_type),
               uom:units_of_measurement(abbreviation),
               inventory(quantity)
             `)
@@ -180,6 +187,15 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
       if (jid) jobIds.add(jid);
     }
 
+    // Effective procurement type: item-level override wins, else
+    // inherit from the (sub-)category. Null if neither is set.
+    const procurement_type: "make" | "trade" | null =
+      (item.procurement_type as "make" | "trade" | null) ??
+      ((item.category?.procurement_type ?? null) as
+        | "make"
+        | "trade"
+        | null);
+
     return {
       item_id: item.id,
       item_code: item.code,
@@ -191,6 +207,7 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
       total_stock: totalStock,
       shortfall: Math.max(0, req.total - totalStock),
       job_count: jobIds.size,
+      procurement_type,
     };
   });
 
