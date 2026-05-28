@@ -200,7 +200,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           cmp = a.code.localeCompare(b.code);
           break;
         case "name":
-          cmp = (a.lookup_key || a.name).localeCompare(b.lookup_key || b.name);
+          cmp = a.name.localeCompare(b.name);
           break;
         case "stock":
           cmp = a.total_stock - b.total_stock;
@@ -371,7 +371,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
                   >
                     <TableCell className="font-mono text-xs">{item.code}</TableCell>
                     <TableCell>
-                      <div className="font-medium">{item.lookup_key || item.name}</div>
+                      <div className="font-medium">{item.name}</div>
                       {item.description && (
                         <div className="text-xs text-[var(--muted-foreground)] truncate max-w-[300px]">
                           {item.description}

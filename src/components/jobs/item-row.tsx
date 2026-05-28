@@ -32,10 +32,10 @@ export function ItemRow({
   onUpdate,
   onRemove,
 }: ItemRowProps) {
-  // Display the friendlier label in the input once an item is picked.
-  const initialDisplay = row.item_id
-    ? row.item_lookup || row.item_name
-    : "";
+  // Display the item name once it's picked. (lookup_key was historically
+  // a longer label; now items.name carries the same value and is the
+  // canonical display — see item-edit form's auto-sync.)
+  const initialDisplay = row.item_id ? row.item_name : "";
   const [search, setSearch] = useState(initialDisplay);
   const [results, setResults] = useState<SearchableItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,7 +53,7 @@ export function ItemRow({
   /* keep search text in sync if the parent resets the row */
   useEffect(() => {
     if (row.item_id) {
-      setSearch(row.item_lookup || row.item_name);
+      setSearch(row.item_name);
     } else if (!open) {
       setSearch("");
     }
@@ -140,7 +140,7 @@ export function ItemRow({
         category_name: item.category_name,
         required_quantity: row.required_quantity || 1,
       });
-      setSearch(item.lookup_key || item.name);
+      setSearch(item.name);
       setOpen(false);
     },
     [onUpdate, row.required_quantity],
@@ -278,7 +278,7 @@ export function ItemRow({
                   {/* Line 1: primary label (lookup_key if present, else name) + stock */}
                   <div className="flex items-start gap-2">
                     <span className="font-medium leading-snug break-words flex-1">
-                      {item.lookup_key || item.name}
+                      {item.name}
                     </span>
                     <span
                       className={cn(
@@ -294,7 +294,7 @@ export function ItemRow({
                       {formatStock(item.total_stock)}
                     </span>
                   </div>
-                  {/* Line 2: code + (name if different from lookup) + category */}
+                  {/* Line 2: code + category */}
                   <div
                     className={cn(
                       "mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[11px]",
@@ -304,9 +304,6 @@ export function ItemRow({
                     )}
                   >
                     <span className="font-mono">{item.code}</span>
-                    {item.lookup_key && item.lookup_key !== item.name && (
-                      <span className="break-words">{item.name}</span>
-                    )}
                     {item.category_name && (
                       <span className="italic">{item.category_name}</span>
                     )}

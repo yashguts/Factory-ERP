@@ -136,12 +136,6 @@ function ItemSearchSelect({
             </span>
             {" — "}
             {selectedItem?.name}
-            {selectedItem?.lookup_key &&
-              selectedItem.lookup_key !== selectedItem.name && (
-                <span className="text-[var(--muted-foreground)] text-xs ml-1">
-                  ({selectedItem.lookup_key})
-                </span>
-              )}
           </span>
           <button
             type="button"
@@ -210,17 +204,6 @@ function ItemSearchSelect({
                 </span>
                 {" — "}
                 {item.name}
-                {item.lookup_key && item.lookup_key !== item.name && (
-                  <span
-                    className={`text-xs ml-1 ${
-                      idx === highlightIdx
-                        ? "text-blue-200"
-                        : "text-[var(--muted-foreground)]"
-                    }`}
-                  >
-                    ({item.lookup_key})
-                  </span>
-                )}
               </div>
             ))
           )}

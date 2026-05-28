@@ -352,11 +352,6 @@ export function UnmatchedClient({ initialPatterns }: Props) {
                           {item.category_name && <span>{item.category_name}</span>}
                           <span className="capitalize">{item.item_type.replace(/_/g, " ")}</span>
                         </div>
-                        {item.lookup_key && item.lookup_key !== item.name && (
-                          <div className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">
-                            Lookup: {item.lookup_key}
-                          </div>
-                        )}
                       </div>
                       {isMapping ? (
                         <Loader2 size={16} className="animate-spin shrink-0" />

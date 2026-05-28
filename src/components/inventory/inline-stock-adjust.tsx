@@ -141,7 +141,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
               <span className="font-mono">{item.code}</span>
               {" — "}
               <span className="font-medium text-[var(--foreground)]">
-                {item.lookup_key || item.name}
+                {item.name}
               </span>
             </div>
 

@@ -127,9 +127,21 @@ export async function updateItem(
   }
 ) {
   const supabase = await createClient();
+
+  // The codebase treats items.name as the single source of truth for the
+  // display label. `lookup_key` is legacy data that the search fallback
+  // still reads from, so we keep it in lock-step with `name` whenever
+  // the user edits the name — that way edited names show immediately
+  // and the search index doesn't drift.
+  const payload = { ...data };
+  if (typeof data.name === "string") {
+    (payload as typeof data & { lookup_key?: string | null }).lookup_key =
+      data.name;
+  }
+
   const { data: item, error } = await supabase
     .from("items")
-    .update(data)
+    .update(payload)
     .eq("id", id)
     .select()
     .single();
