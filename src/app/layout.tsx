@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import { StaleDeployGuard } from "@/components/layout/stale-deploy-guard";
 
 export const metadata: Metadata = {
   title: "Factory ERP - Elevator Manufacturing",
@@ -13,7 +14,10 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body className="antialiased">{children}</body>
+      <body className="antialiased">
+        {children}
+        <StaleDeployGuard />
+      </body>
     </html>
   );
 }
