@@ -8,8 +8,8 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose } from "lucide-react";
-import { updateJob } from "@/lib/actions/jobs";
+import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2 } from "lucide-react";
+import { updateJob, deleteJob } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
@@ -95,6 +95,31 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
     startTransition(async () => {
       await updateJob(job.id, { status: newStatus });
       router.refresh();
+    });
+  };
+
+  const handleDelete = () => {
+    // Two-step destructive guard: must type the exact job number.
+    const typed = window.prompt(
+      `Permanently delete job "${job.job_number}"?\n\n` +
+        "This removes the job, all its BOM lines and the GAD drawing. " +
+        "The action cannot be undone.\n\n" +
+        `Type "${job.job_number}" to confirm:`,
+    );
+    if (typed === null) return; // cancelled
+    if (typed.trim() !== job.job_number) {
+      alert(
+        "Job number did not match. Delete cancelled.",
+      );
+      return;
+    }
+    startTransition(async () => {
+      const result = await deleteJob(job.id);
+      if (!result.ok) {
+        alert(`Could not delete job: ${result.error}`);
+        return;
+      }
+      router.push("/jobs");
     });
   };
 
@@ -296,6 +321,20 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
             >
               <Pencil className="h-4 w-4 mr-1" />
               Edit BOM
+            </Button>
+            <Button
+              variant="destructive"
+              size="sm"
+              onClick={handleDelete}
+              disabled={isPending}
+              title="Delete this job permanently"
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4 mr-1" />
+              )}
+              Delete
             </Button>
             <Select
               value={job.status}

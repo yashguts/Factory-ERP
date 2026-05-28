@@ -563,3 +563,45 @@ export async function updateJob(
   revalidatePath(`/jobs/${id}/edit`);
   return job;
 }
+
+/**
+ * Permanently delete a job and everything attached to it:
+ *   - job_bom_headers + job_bom_lines (DB cascades these)
+ *   - the GAD drawing in Supabase Storage, if any
+ *
+ * No soft-delete; the row goes away. Returns a small result the
+ * client can act on (e.g. show an error or redirect).
+ */
+export async function deleteJob(
+  jobId: string,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!jobId) return { ok: false, error: "Missing jobId" };
+
+  const supabase = await createClient();
+
+  // 1. Best-effort: pull the drawing URL so we can clean storage too.
+  const { data: row } = await supabase
+    .from("jobs")
+    .select("gad_drawing_url")
+    .eq("id", jobId)
+    .single();
+  const url = (row?.gad_drawing_url as string | null) ?? null;
+  if (url) {
+    const marker = "/object/public/gad-drawings/";
+    const idx = url.indexOf(marker);
+    if (idx >= 0) {
+      const path = decodeURIComponent(url.slice(idx + marker.length));
+      await supabase.storage.from("gad-drawings").remove([path]);
+    }
+  }
+
+  // 2. Delete the job row. CASCADE handles job_bom_headers and
+  //    job_bom_lines via the existing FKs.
+  const { error } = await supabase.from("jobs").delete().eq("id", jobId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidateTag("jobs");
+  revalidateTag("bom-lines");
+  revalidatePath("/jobs");
+  return { ok: true };
+}
