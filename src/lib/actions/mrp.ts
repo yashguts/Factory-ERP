@@ -90,15 +90,19 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
     offset += PAGE;
   }
 
+  // total = sum of required_quantity across all BOM lines for the item
+  // (previously this just counted lines, which under-reported requirements
+  // whenever a job needed more than 1 of something).
   const reqMap = new Map<string, { total: number; bomIds: Set<string> }>();
   for (const line of allLines) {
+    const qty = Number(line.required_quantity) || 0;
     const existing = reqMap.get(line.item_id);
     if (existing) {
-      existing.total += 1;
+      existing.total += qty;
       existing.bomIds.add(line.job_bom_id);
     } else {
       reqMap.set(line.item_id, {
-        total: 1,
+        total: qty,
         bomIds: new Set([line.job_bom_id]),
       });
     }
