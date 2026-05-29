@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -12,8 +12,6 @@ import {
   Pencil,
   Loader2,
   Check,
-  ChevronRight,
-  ChevronDown,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -79,7 +77,6 @@ export function ProgramsClient({
   const [cloneSource, setCloneSource] = useState<OperationDetail | null>(null);
   const [editSource, setEditSource] = useState<OperationDetail | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
 
   const [auditedMap, setAuditedMap] = useState<Record<string, boolean>>(() => {
     const m: Record<string, boolean> = {};
@@ -91,10 +88,6 @@ export function ProgramsClient({
     [auditedMap],
   );
 
-  const familyCount = useMemo(
-    () => new Set(initialOperations.map((o) => o.family_key || o.name)).size,
-    [initialOperations],
-  );
   const allCodes = useMemo(
     () => initialOperations.map((o) => o.code).filter((c): c is string => !!c),
     [initialOperations],
@@ -126,29 +119,11 @@ export function ProgramsClient({
     });
   }, [initialOperations, search, machineFilter, labelFilter, auditFilter, auditedMap]);
 
-  // Group filtered rows into families (preserves name order).
-  const families = useMemo(() => {
-    const m = new Map<string, OperationListRow[]>();
-    for (const op of filtered) {
-      const k = op.family_key || op.name;
-      const arr = m.get(k);
-      if (arr) arr.push(op);
-      else m.set(k, [op]);
-    }
-    return [...m.entries()].map(([key, variants]) => ({ key, variants }));
-  }, [filtered]);
-
   const toggleAudit = async (id: string, next: boolean) => {
     setAuditedMap((m) => ({ ...m, [id]: next }));
     const res = await setOperationAudited(id, next);
     if (!res.ok) setAuditedMap((m) => ({ ...m, [id]: !next }));
   };
-  const toggleExpand = (key: string) =>
-    setExpanded((s) => {
-      const n = new Set(s);
-      n.has(key) ? n.delete(key) : n.add(key);
-      return n;
-    });
 
   const open = async (id: string, mode: "edit" | "clone") => {
     setBusyId(id);
@@ -165,7 +140,7 @@ export function ProgramsClient({
   const closeModal = () => { setShowCreate(false); setCloneSource(null); setEditSource(null); };
   const modalOpen = showCreate || !!cloneSource || !!editSource;
 
-  function row(op: OperationListRow, indent: boolean) {
+  function row(op: OperationListRow) {
     const audited = auditedMap[op.id] ?? false;
     return (
       <TableRow
@@ -177,13 +152,7 @@ export function ProgramsClient({
           {audited && <span className="inline-block h-2 w-2 rounded-full bg-green-500" title="Audited" />}
         </TableCell>
         <TableCell className="font-mono text-xs text-[var(--muted-foreground)]">{op.code ?? "—"}</TableCell>
-        <TableCell className={cn("font-medium", indent && "pl-6")}>
-          {indent && op.material_label ? (
-            <span className="text-[var(--muted-foreground)]">{op.material_label}</span>
-          ) : (
-            op.name
-          )}
-        </TableCell>
+        <TableCell className="font-medium">{op.name}</TableCell>
         <TableCell><span className={machineChip(op.machine)}>{OPERATION_MACHINE_LABELS[op.machine] ?? op.machine}</span></TableCell>
         <TableCell className="text-xs text-[var(--muted-foreground)]">{op.program_label ?? "—"}</TableCell>
         <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">
@@ -226,11 +195,8 @@ export function ProgramsClient({
             Programs
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            Standard Programs · {familyCount} programs
-            {initialOperations.length !== familyCount && (
-              <> ({initialOperations.length} incl. material variants)</>
-            )}{" "}
-            · <span className="text-green-700 font-medium">{auditedCount} audited</span> / {initialOperations.length - auditedCount} pending
+            {initialOperations.length} programs
+            {" · "}<span className="text-green-700 font-medium">{auditedCount} audited</span> / {initialOperations.length - auditedCount} pending
           </p>
         </div>
         <Button onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>
@@ -276,38 +242,14 @@ export function ProgramsClient({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {families.length === 0 ? (
+            {filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="text-center py-12 text-[var(--muted-foreground)] text-sm">
                   {initialOperations.length === 0 ? "No programs yet." : "No programs match your filters."}
                 </TableCell>
               </TableRow>
             ) : (
-              families.map(({ key, variants }) => {
-                if (variants.length === 1) return row(variants[0], false);
-                const isOpen = expanded.has(key);
-                const auditedIn = variants.filter((v) => auditedMap[v.id]).length;
-                return (
-                  <Fragment key={key}>
-                    <TableRow className="bg-[var(--muted)]/40 cursor-pointer" onClick={() => toggleExpand(key)}>
-                      <TableCell className="w-10 text-center text-[var(--muted-foreground)]">
-                        {isOpen ? <ChevronDown className="h-4 w-4 inline" /> : <ChevronRight className="h-4 w-4 inline" />}
-                      </TableCell>
-                      <TableCell colSpan={2} className="font-semibold">
-                        {key}
-                        <span className="ml-2 text-[11px] font-normal px-1.5 py-0.5 rounded-full bg-[var(--background)] border border-[var(--border)] text-[var(--muted-foreground)]">
-                          {variants.length} variants
-                        </span>
-                      </TableCell>
-                      <TableCell><span className={machineChip(variants[0].machine)}>{OPERATION_MACHINE_LABELS[variants[0].machine]}</span></TableCell>
-                      <TableCell className="text-xs text-[var(--muted-foreground)]">{variants[0].program_label ?? "—"}</TableCell>
-                      <TableCell colSpan={2} />
-                      <TableCell className="text-right text-[11px] text-[var(--muted-foreground)] tabular-nums">{auditedIn}/{variants.length}</TableCell>
-                    </TableRow>
-                    {isOpen && variants.map((v) => row(v, true))}
-                  </Fragment>
-                );
-              })
+              filtered.map((op) => row(op))
             )}
           </TableBody>
         </Table>
