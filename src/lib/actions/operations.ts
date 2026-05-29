@@ -23,6 +23,8 @@ export interface OperationListRow {
   machine: OperationMachine;
   family_key: string | null;
   material_label: string | null;
+  program_label: string | null;
+  audited_at: string | null;
   input_count: number;
   output_count: number;
   is_active: boolean;
@@ -104,7 +106,7 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
   const { data, error } = await supabase
     .from("operations")
     .select(
-      `id, code, name, machine, family_key, material_label, is_active,
+      `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
        operation_inputs(count),
        operation_outputs(count)`,
     )
@@ -119,6 +121,8 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     machine: row.machine as OperationMachine,
     family_key: (row.family_key as string | null) ?? null,
     material_label: (row.material_label as string | null) ?? null,
+    program_label: (row.program_label as string | null) ?? null,
+    audited_at: (row.audited_at as string | null) ?? null,
     input_count: countOf(row.operation_inputs),
     output_count: countOf(row.operation_outputs),
     is_active: row.is_active as boolean,
@@ -318,6 +322,22 @@ export async function updateOperation(
 
   revalidateOperations(id);
   return { ok: true, id };
+}
+
+/** Mark a program as audited (reviewed) or clear it. */
+export async function setOperationAudited(
+  id: string,
+  audited: boolean,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!id) return { ok: false, error: "Missing operation id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("operations")
+    .update({ audited_at: audited ? new Date().toISOString() : null })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidateOperations(id);
+  return { ok: true };
 }
 
 export type DeleteOperationResult =

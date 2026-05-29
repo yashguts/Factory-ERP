@@ -324,6 +324,11 @@ export interface Operation {
   material_label: string | null;
   /** null = manually entered; a tag (e.g. "cnc_std_v1") marks bulk-imported rows. */
   import_source: string | null;
+  /** Program-set grouping, e.g. "Standard Programs". */
+  program_label: string | null;
+  /** Set when the program has been reviewed/signed off; null = pending. */
+  audited_at: string | null;
+  audited_by: string | null;
   created_at: string;
   updated_at: string;
 }
