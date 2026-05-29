@@ -2,7 +2,15 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Search, Cog, ArrowDownToLine, ArrowUpFromLine } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Cog,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Copy,
+  Loader2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -14,7 +22,12 @@ import {
 } from "@/components/ui/table";
 import { cn } from "@/lib/utils";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
-import type { OperationListRow } from "@/lib/actions/operations";
+import {
+  getOperationDetail,
+  type OperationListRow,
+  type OperationDetail,
+} from "@/lib/actions/operations";
+import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import {
   OPERATION_MACHINE_LABELS,
   OPERATION_MACHINES,
@@ -43,6 +56,30 @@ export function ProgramsClient({
   const [search, setSearch] = useState("");
   const [machineFilter, setMachineFilter] = useState<MachineFilter>("all");
   const [showCreate, setShowCreate] = useState(false);
+  // Clone: the full source operation (fetched on demand) + the row being fetched.
+  const [cloneSource, setCloneSource] = useState<OperationDetail | null>(null);
+  const [cloningId, setCloningId] = useState<string | null>(null);
+
+  const allCodes = useMemo(
+    () =>
+      initialOperations
+        .map((o) => o.code)
+        .filter((c): c is string => !!c),
+    [initialOperations],
+  );
+
+  const handleClone = async (id: string) => {
+    setCloningId(id);
+    try {
+      const detail = await getOperationDetail(id);
+      if (detail) {
+        setCloneSource(detail);
+        setShowCreate(true);
+      }
+    } finally {
+      setCloningId(null);
+    }
+  };
 
   const counts = useMemo(() => {
     const map: Record<string, number> = {};
@@ -79,7 +116,12 @@ export function ProgramsClient({
               : `${initialOperations.length} programs`}
           </p>
         </div>
-        <Button onClick={() => setShowCreate(true)}>
+        <Button
+          onClick={() => {
+            setCloneSource(null);
+            setShowCreate(true);
+          }}
+        >
           <Plus className="h-4 w-4 mr-1.5" />
           Add Program
         </Button>
@@ -125,12 +167,13 @@ export function ProgramsClient({
               <TableHead className="w-[130px]">Type</TableHead>
               <TableHead className="w-[100px] text-right">Inputs</TableHead>
               <TableHead className="w-[100px] text-right">Outputs</TableHead>
+              <TableHead className="w-10" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={5} className="text-center py-12">
+                <TableCell colSpan={6} className="text-center py-12">
                   <div className="text-[var(--muted-foreground)]">
                     {initialOperations.length === 0 ? (
                       <>
@@ -182,6 +225,24 @@ export function ProgramsClient({
                       {op.output_count}
                     </span>
                   </TableCell>
+                  <TableCell
+                    className="w-10 px-1"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <button
+                      type="button"
+                      onClick={() => handleClone(op.id)}
+                      disabled={cloningId === op.id}
+                      title="Clone this program — pre-fills a new program with the same type, inputs and outputs"
+                      className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50"
+                    >
+                      {cloningId === op.id ? (
+                        <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <Copy className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  </TableCell>
                 </TableRow>
               ))
             )}
@@ -191,12 +252,22 @@ export function ProgramsClient({
 
       {showCreate && (
         <ProgramFormModal
+          cloneSource={cloneSource}
+          suggestedCode={
+            cloneSource
+              ? nextCodeInSeries(cloneSource.code ?? "", allCodes)
+              : null
+          }
           categories={categories}
           units={units}
           itemRefs={itemRefs}
-          onClose={() => setShowCreate(false)}
+          onClose={() => {
+            setShowCreate(false);
+            setCloneSource(null);
+          }}
           onSaved={(id) => {
             setShowCreate(false);
+            setCloneSource(null);
             router.push(`/programs/${id}`);
           }}
         />

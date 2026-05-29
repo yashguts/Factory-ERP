@@ -8,6 +8,7 @@ import {
   Pencil,
   Trash2,
   Loader2,
+  Copy,
   ArrowDownToLine,
   ArrowUpFromLine,
 } from "lucide-react";
@@ -45,6 +46,7 @@ export function ProgramDetailClient({
 }: Props) {
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
+  const [showClone, setShowClone] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const handleDelete = () => {
@@ -101,6 +103,10 @@ export function ProgramDetailClient({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Button variant="secondary" onClick={() => setShowClone(true)}>
+              <Copy className="h-3.5 w-3.5 mr-1.5" />
+              Clone
+            </Button>
             <Button variant="secondary" onClick={() => setShowEdit(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
               Edit
@@ -168,6 +174,20 @@ export function ProgramDetailClient({
           onSaved={() => {
             setShowEdit(false);
             router.refresh();
+          }}
+        />
+      )}
+
+      {showClone && (
+        <ProgramFormModal
+          cloneSource={operation}
+          categories={categories}
+          units={units}
+          itemRefs={itemRefs}
+          onClose={() => setShowClone(false)}
+          onSaved={(id) => {
+            setShowClone(false);
+            router.push(`/programs/${id}`);
           }}
         />
       )}

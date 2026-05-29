@@ -29,6 +29,14 @@ import {
 interface Props {
   /** Existing operation when editing; omit/undefined for create. */
   operation?: OperationDetail | null;
+  /**
+   * Source operation to clone into a NEW program. Pre-fills the form from it
+   * but saves via createOperation (the source is never touched). Ignored when
+   * `operation` is set.
+   */
+  cloneSource?: OperationDetail | null;
+  /** Pre-computed code suggestion for clone mode (often null → auto-derived). */
+  suggestedCode?: string | null;
   categories: ItemCategory[];
   units: UnitOfMeasurement[];
   itemRefs: { item_type: ItemType; category_id: string | null }[];
@@ -63,6 +71,8 @@ const rowsToLines = (rows: PickedItem[]): OperationLineInput[] =>
 
 export function ProgramFormModal({
   operation,
+  cloneSource,
+  suggestedCode,
   categories,
   units,
   itemRefs,
@@ -70,19 +80,25 @@ export function ProgramFormModal({
   onSaved,
 }: Props) {
   const isEditing = !!operation;
+  const isCloning = !operation && !!cloneSource;
+  // When cloning, treat the source's values as defaults — the form behaves
+  // like a fresh create form, just pre-filled. Saving calls createOperation.
+  const source = operation ?? cloneSource ?? null;
 
-  const [name, setName] = useState(operation?.name ?? "");
-  const [code, setCode] = useState(operation?.code ?? "");
-  const [machine, setMachine] = useState<OperationMachine>(
-    operation?.machine ?? "cnc_cutting",
+  const [name, setName] = useState(source?.name ?? "");
+  const [code, setCode] = useState(
+    operation?.code ?? (isCloning ? (suggestedCode ?? "") : ""),
   );
-  const [description, setDescription] = useState(operation?.description ?? "");
-  const [notes, setNotes] = useState(operation?.notes ?? "");
+  const [machine, setMachine] = useState<OperationMachine>(
+    source?.machine ?? "cnc_cutting",
+  );
+  const [description, setDescription] = useState(source?.description ?? "");
+  const [notes, setNotes] = useState(source?.notes ?? "");
   const [inputs, setInputs] = useState<PickedItem[]>(() =>
-    linesToRows(operation?.inputs),
+    linesToRows(source?.inputs),
   );
   const [outputs, setOutputs] = useState<PickedItem[]>(() =>
-    linesToRows(operation?.outputs),
+    linesToRows(source?.outputs),
   );
 
   const [error, setError] = useState<string | null>(null);
@@ -194,7 +210,13 @@ export function ProgramFormModal({
 
   return (
     <Modal
-      title={isEditing ? "Edit Program" : "Add Program"}
+      title={
+        isEditing
+          ? "Edit Program"
+          : isCloning
+            ? `Clone Program — based on ${cloneSource?.code ?? cloneSource?.name}`
+            : "Add Program"
+      }
       onClose={onClose}
       className="max-w-3xl"
     >
@@ -202,6 +224,17 @@ export function ProgramFormModal({
         {error && (
           <div className="p-3 text-sm bg-red-50 text-red-700 rounded-md border border-red-200">
             {error}
+          </div>
+        )}
+
+        {isCloning && cloneSource && (
+          <div className="p-2.5 text-xs bg-blue-50 text-blue-900 rounded-md border border-blue-200">
+            Cloning from{" "}
+            <span className="font-medium">
+              {cloneSource.code ?? cloneSource.name}
+            </span>
+            . Type, inputs and outputs are carried over — give it a new name; the
+            code auto-generates if left blank, and the sketch starts fresh.
           </div>
         )}
 
