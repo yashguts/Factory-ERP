@@ -1,12 +1,17 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useTransition, useEffect } from "react";
+import Link from "next/link";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Trash2, Loader2 } from "lucide-react";
+import { Trash2, Loader2, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
 import { createItem, updateItem, deleteItem } from "@/lib/actions/inventory";
+import {
+  getOperationsForItem,
+  type ItemOperationsResult,
+} from "@/lib/actions/operations";
 import type { ItemType, ItemCategory, UnitOfMeasurement } from "@/lib/supabase/types";
 
 interface ItemRef {
@@ -59,6 +64,21 @@ interface ItemFormModalProps {
   })[];
   units: UnitOfMeasurement[];
   items: ItemRef[];
+  /**
+   * Create-mode seed values (e.g. when opened inline from another form to
+   * add a placeholder item). Ignored when editing/cloning.
+   */
+  createDefaults?: { name?: string; item_type?: ItemType };
+  /**
+   * Called after a successful CREATE with the new item's essentials, so the
+   * caller can drop it straight into a picker. Not called on edit.
+   */
+  onCreated?: (item: {
+    id: string;
+    code: string;
+    name: string;
+    uom: string;
+  }) => void;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -72,6 +92,8 @@ export function ItemFormModal({
   categories,
   units,
   items,
+  createDefaults,
+  onCreated,
   onClose,
   onSaved,
 }: ItemFormModalProps) {
@@ -86,6 +108,24 @@ export function ItemFormModal({
   // Optional free-text reason recorded in the inventory change log so the
   // Daily Changes page can show *why* an edit was made (not stored on items).
   const [note, setNote] = useState("");
+
+  // Programs that produce/consume this item (edit mode only). Lets the user
+  // jump from an item to the CNC program behind it.
+  const [itemOps, setItemOps] = useState<ItemOperationsResult | null>(null);
+  useEffect(() => {
+    if (!item?.id) return;
+    let active = true;
+    getOperationsForItem(item.id)
+      .then((res) => {
+        if (active) setItemOps(res);
+      })
+      .catch(() => {
+        /* non-critical widget — ignore failures */
+      });
+    return () => {
+      active = false;
+    };
+  }, [item?.id]);
 
   // Build category hierarchy
   const parentCategories = useMemo(
@@ -181,9 +221,12 @@ export function ItemFormModal({
     // When cloning, the code starts at the auto-suggested next-in-series;
     // when editing, the existing code; when creating fresh, blank.
     code: isCloning ? (suggestedCode ?? "") : (seed?.code ?? ""),
-    name: seed?.name ?? "",
+    name: seed?.name ?? createDefaults?.name ?? "",
     description: seed?.description ?? "",
-    item_type: seed?.item_type ?? ("mechanical_finished_stock" as ItemType),
+    item_type:
+      seed?.item_type ??
+      createDefaults?.item_type ??
+      ("mechanical_finished_stock" as ItemType),
     uom_id: seed?.uom_id ?? "",
     minimum_stock: Number(seed?.minimum_stock ?? 0),
     reorder_point: Number(seed?.reorder_point ?? 0),
@@ -315,6 +358,18 @@ export function ItemFormModal({
           setError(result.error);
           return;
         }
+        // On a fresh create, hand the new item back so an inline caller can
+        // drop it straight into a picker (e.g. an operation's outputs).
+        if (!isEditing && onCreated) {
+          const uomAbbr =
+            units.find((u) => u.id === form.uom_id)?.abbreviation ?? "";
+          onCreated({
+            id: result.id,
+            code: form.code,
+            name: form.name,
+            uom: uomAbbr,
+          });
+        }
         onSaved();
         onClose();
       } catch (err) {
@@ -351,6 +406,59 @@ export function ItemFormModal({
             auto-suggested as next in series.
           </div>
         )}
+
+        {/* Programs that produce / consume this item (edit mode). */}
+        {itemOps &&
+          (itemOps.produces.length > 0 || itemOps.consumes.length > 0) && (
+            <div className="rounded-md border border-[var(--border)] bg-[var(--muted)]/30 p-3 space-y-2">
+              {itemOps.produces.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 mb-1">
+                    <ArrowUpFromLine className="h-3.5 w-3.5" />
+                    Produced by
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {itemOps.produces.map((op) => (
+                      <Link
+                        key={`out-${op.id}`}
+                        href={`/programs/${op.id}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] cursor-pointer"
+                        title={op.code ?? op.name}
+                      >
+                        <span className="font-medium">{op.name}</span>
+                        <span className="text-[var(--muted-foreground)]">
+                          ×{op.qty_per_run}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {itemOps.consumes.length > 0 && (
+                <div>
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--muted-foreground)] mb-1">
+                    <ArrowDownToLine className="h-3.5 w-3.5" />
+                    Consumed by
+                  </div>
+                  <div className="flex flex-wrap gap-1.5">
+                    {itemOps.consumes.map((op) => (
+                      <Link
+                        key={`in-${op.id}`}
+                        href={`/programs/${op.id}`}
+                        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] cursor-pointer"
+                        title={op.code ?? op.name}
+                      >
+                        <span className="font-medium">{op.name}</span>
+                        <span className="text-[var(--muted-foreground)]">
+                          ×{op.qty_per_run}
+                        </span>
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
         <div className="grid grid-cols-2 gap-4">
           <div>

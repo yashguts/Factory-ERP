@@ -259,6 +259,83 @@ export const ITEM_FIELD_LABELS: Record<string, string> = {
   is_active: "Active",
 };
 
+// --- Operations catalog (production-visibility Phase 0) -------------------
+
+/**
+ * The machine / station an operation runs on. Phase 0 only uses
+ * `cnc_cutting` (the laser + punch nesting programs, where all the
+ * co-production lives). The remaining values exist in the DB constraint
+ * for later phases (bending, powder coat, manual fab) but aren't surfaced
+ * in the UI yet.
+ */
+export type OperationMachine =
+  | "cnc_cutting"
+  | "cnc_punch"
+  | "cnc_laser"
+  | "cnc_bending"
+  | "powder_coat"
+  | "manual_cut"
+  | "manual_weld"
+  | "manual_fit"
+  | "assembly_fit";
+
+/** Human labels for each machine value, used across the Programs UI. */
+export const OPERATION_MACHINE_LABELS: Record<OperationMachine, string> = {
+  cnc_cutting: "CNC Cutting",
+  cnc_punch: "CNC Punch",
+  cnc_laser: "CNC Laser",
+  cnc_bending: "CNC Bending",
+  powder_coat: "Powder Coat",
+  manual_cut: "Manual Cut",
+  manual_weld: "Manual Weld",
+  manual_fit: "Manual Fit",
+  assembly_fit: "Assembly Fit",
+};
+
+/**
+ * Machine values offered in the Programs UI right now. Phase 0 = CNC
+ * Cutting only; widen this list as later phases add their stations.
+ */
+export const OPERATION_MACHINES: OperationMachine[] = ["cnc_cutting"];
+
+/** A program/recipe: one run produces many parts (the nest). */
+export interface Operation {
+  id: string;
+  name: string;
+  code: string | null;
+  machine: OperationMachine;
+  description: string | null;
+  sketch_url: string | null;
+  sketch_filename: string | null;
+  sketch_uploaded_at: string | null;
+  notes: string | null;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A raw material consumed per run of an operation. */
+export interface OperationInput {
+  id: string;
+  operation_id: string;
+  item_id: string;
+  qty_per_run: number;
+  notes: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
+/** A part produced per run of an operation. Same shape as OperationInput. */
+export interface OperationOutput {
+  id: string;
+  operation_id: string;
+  item_id: string;
+  qty_per_run: number;
+  notes: string | null;
+  sort_order: number;
+  created_at: string;
+}
+
 // Supabase Database type definition
 export interface Database {
   public: {
@@ -327,6 +404,21 @@ export interface Database {
         Row: ItemChangeLog;
         Insert: Omit<ItemChangeLog, "id" | "created_at">;
         Update: Partial<Omit<ItemChangeLog, "id" | "created_at">>;
+      };
+      operations: {
+        Row: Operation;
+        Insert: Omit<Operation, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<Operation, "id" | "created_at" | "updated_at">>;
+      };
+      operation_inputs: {
+        Row: OperationInput;
+        Insert: Omit<OperationInput, "id" | "created_at">;
+        Update: Partial<Omit<OperationInput, "id" | "created_at">>;
+      };
+      operation_outputs: {
+        Row: OperationOutput;
+        Insert: Omit<OperationOutput, "id" | "created_at">;
+        Update: Partial<Omit<OperationOutput, "id" | "created_at">>;
       };
     };
     Enums: {

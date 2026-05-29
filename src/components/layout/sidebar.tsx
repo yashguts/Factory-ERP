@@ -11,6 +11,7 @@ import {
   Home,
   Settings,
   History,
+  Cog,
 } from "lucide-react";
 
 const navItems = [
@@ -18,6 +19,7 @@ const navItems = [
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/inventory/changes", label: "Daily Changes", icon: History },
   { href: "/bom", label: "Bill of Materials", icon: Layers },
+  { href: "/programs", label: "Programs", icon: Cog },
   { href: "/jobs", label: "Job Orders", icon: ClipboardList },
   { href: "/mrp", label: "MRP", icon: Calculator },
   { href: "/settings", label: "Settings", icon: Settings },
