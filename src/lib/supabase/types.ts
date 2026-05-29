@@ -171,6 +171,94 @@ export interface TargetColumnMap {
   updated_at: string;
 }
 
+// --- Inventory change log -------------------------------------------------
+
+export type ItemChangeAction = "create" | "update" | "delete";
+
+/**
+ * One field's before/after within an item change-log entry.
+ * `old`/`new` hold the raw stored values; `label`, `old_display` and
+ * `new_display` are filled in at read time for human-friendly rendering
+ * (e.g. resolving a category_id to its name).
+ */
+export interface FieldChange {
+  field: string;
+  old: unknown;
+  new: unknown;
+  label?: string;
+  old_display?: string | null;
+  new_display?: string | null;
+}
+
+/** A row of `item_change_log` (audit of item create/update/delete). */
+export interface ItemChangeLog {
+  id: string;
+  item_id: string | null;
+  item_code: string | null;
+  item_name: string | null;
+  action: ItemChangeAction;
+  changes: FieldChange[];
+  note: string | null;
+  created_at: string;
+  created_by: string | null;
+  reverted_at: string | null;
+  revert_of: string | null;
+}
+
+/** Unified daily-summary row: an item edit. */
+export interface ItemChangeRow {
+  kind: "item";
+  id: string;
+  created_at: string;
+  item_id: string | null;
+  item_code: string | null;
+  item_name: string | null;
+  action: ItemChangeAction;
+  changes: FieldChange[];
+  note: string | null;
+  reverted_at: string | null;
+  revert_of: string | null;
+  /** True when a one-click undo can be offered for this entry. */
+  can_undo: boolean;
+}
+
+/** Unified daily-summary row: a stock movement (from inventory_transactions). */
+export interface StockChangeRow {
+  kind: "stock";
+  id: string;
+  created_at: string;
+  item_id: string | null;
+  item_code: string | null;
+  item_name: string | null;
+  transaction_type: TransactionType;
+  /** Signed delta as applied to stock (negative = outbound). */
+  quantity: number;
+  warehouse_id: string | null;
+  warehouse_name: string | null;
+  note: string | null;
+  /** True when a reversing adjustment can be posted. */
+  can_undo: boolean;
+}
+
+export type InventoryChangeRow = ItemChangeRow | StockChangeRow;
+
+/** Human labels for the tracked item fields, used by the daily-changes UI. */
+export const ITEM_FIELD_LABELS: Record<string, string> = {
+  code: "Code",
+  name: "Name",
+  description: "Description",
+  item_type: "Type",
+  category_id: "Category",
+  uom_id: "Unit",
+  minimum_stock: "Minimum Stock",
+  reorder_point: "Reorder Point",
+  lead_time_days: "Lead Time (days)",
+  cost_price: "Cost Price",
+  procurement_type: "Make/Trade",
+  suppliers: "Suppliers",
+  is_active: "Active",
+};
+
 // Supabase Database type definition
 export interface Database {
   public: {
@@ -234,6 +322,11 @@ export interface Database {
         Row: TargetColumnMap;
         Insert: Omit<TargetColumnMap, "id" | "created_at" | "updated_at">;
         Update: Partial<Omit<TargetColumnMap, "id" | "created_at" | "updated_at">>;
+      };
+      item_change_log: {
+        Row: ItemChangeLog;
+        Insert: Omit<ItemChangeLog, "id" | "created_at">;
+        Update: Partial<Omit<ItemChangeLog, "id" | "created_at">>;
       };
     };
     Enums: {

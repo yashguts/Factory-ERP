@@ -1,14 +1,15 @@
 "use client";
 
-import { useState, useMemo, useTransition, useCallback } from "react";
+import { useState, useMemo, useTransition, useCallback, useEffect } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy } from "lucide-react";
+import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
@@ -49,6 +50,8 @@ interface Props {
   })[];
   units: UnitOfMeasurement[];
   warehouses: Warehouse[];
+  /** When set (via `/inventory?edit=<id>`), auto-open that item's edit modal. */
+  initialEditItemId?: string | null;
 }
 
 const TYPE_LABELS: Record<ItemType, string> = {
@@ -72,7 +75,7 @@ type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 50;
 
-export function InventoryClient({ initialItems, categories, units, warehouses }: Props) {
+export function InventoryClient({ initialItems, categories, units, warehouses, initialEditItemId }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
@@ -103,6 +106,24 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
     },
     [],
   );
+
+  // Deep-link from the Daily Changes page: `/inventory?edit=<id>` opens the
+  // matching item's edit modal, then strips the param so a refresh/back
+  // doesn't reopen it. Soft-deleted items aren't in the active list, so the
+  // modal simply won't open for those (undo the delete first).
+  useEffect(() => {
+    if (!initialEditItemId) return;
+    const target = initialItems.find((i) => i.id === initialEditItemId);
+    if (target) {
+      setSelectedItem(target);
+      setCloneSource(null);
+      setShowItemForm(true);
+    }
+    if (typeof window !== "undefined") {
+      window.history.replaceState(null, "", "/inventory");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialEditItemId]);
 
   // Build category tree for filter (supports 3 levels: parent → child → grandchild)
   const categoryTree = useMemo(() => {
@@ -288,6 +309,12 @@ export function InventoryClient({ initialItems, categories, units, warehouses }:
           </p>
         </div>
         <div className="flex gap-2">
+          <Link href="/inventory/changes">
+            <Button variant="secondary" title="See what changed on a given day">
+              <History size={16} className="mr-2" />
+              Daily Changes
+            </Button>
+          </Link>
           <Button variant="secondary" onClick={() => setShowStockAdjust(true)}>
             Stock Adjustment
           </Button>

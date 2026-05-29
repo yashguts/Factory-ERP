@@ -10,11 +10,13 @@ import {
   Calculator,
   Home,
   Settings,
+  History,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Home },
   { href: "/inventory", label: "Inventory", icon: Package },
+  { href: "/inventory/changes", label: "Daily Changes", icon: History },
   { href: "/bom", label: "Bill of Materials", icon: Layers },
   { href: "/jobs", label: "Job Orders", icon: ClipboardList },
   { href: "/mrp", label: "MRP", icon: Calculator },
@@ -23,6 +25,17 @@ const navItems = [
 
 export function Sidebar() {
   const pathname = usePathname();
+
+  // Pick the single most-specific matching nav href so nested routes (e.g.
+  // /inventory/changes) don't light up their parent ("Inventory") as well.
+  const activeHref = navItems
+    .map((i) => i.href)
+    .filter((href) =>
+      href === "/"
+        ? pathname === "/"
+        : pathname === href || pathname.startsWith(href + "/"),
+    )
+    .sort((a, b) => b.length - a.length)[0];
 
   return (
     <aside className="w-64 border-r border-[var(--border)] h-screen sticky top-0 flex flex-col">
@@ -34,10 +47,7 @@ export function Sidebar() {
       <nav className="flex-1 p-3 space-y-1">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const isActive =
-            item.href === "/"
-              ? pathname === "/"
-              : pathname.startsWith(item.href);
+          const isActive = item.href === activeHref;
 
           return (
             <Link

@@ -1,8 +1,13 @@
 import { getItemsWithStock, getCategories, getUnits, getWarehouses } from "@/lib/actions/inventory";
 import { InventoryClient } from "@/components/inventory/inventory-client";
 
-export default async function InventoryPage() {
-  const [items, categories, units, warehouses] = await Promise.all([
+interface Props {
+  searchParams: Promise<{ edit?: string }>;
+}
+
+export default async function InventoryPage({ searchParams }: Props) {
+  const [params, items, categories, units, warehouses] = await Promise.all([
+    searchParams,
     getItemsWithStock(),
     getCategories(),
     getUnits(),
@@ -15,6 +20,7 @@ export default async function InventoryPage() {
       categories={categories}
       units={units}
       warehouses={warehouses}
+      initialEditItemId={params.edit ?? null}
     />
   );
 }

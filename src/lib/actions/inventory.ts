@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import type { ItemType, TransactionType } from "@/lib/supabase/types";
+import type { ItemType, TransactionType, FieldChange } from "@/lib/supabase/types";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -122,6 +122,8 @@ export async function createItem(data: {
   procurement_type?: "make" | "trade" | null;
   /** Up to 5 supplier names (only meaningful for Trade items). */
   suppliers?: string[];
+  /** Optional reason recorded in the change log (not stored on items). */
+  note?: string;
 }): Promise<ItemSaveResult> {
   const supabase = await createClient();
   const { data: item, error } = await supabase
@@ -148,6 +150,34 @@ export async function createItem(data: {
   if (error) {
     return { ok: false, error: translateItemError(error, data.code, data.name) };
   }
+
+  // Log the creation as a snapshot of the meaningful starting values.
+  // (is_active is always true on create — omit it as noise.)
+  const createChanges: FieldChange[] = TRACKED_ITEM_FIELDS.filter(
+    (field) => field !== "is_active",
+  )
+    .map((field) => {
+      const value =
+        field === "suppliers"
+          ? normalizeSuppliers(data.suppliers)
+          : (data as Record<string, unknown>)[field];
+      return { field, old: null, new: value ?? null };
+    })
+    .filter(
+      (c) =>
+        c.new !== null &&
+        c.new !== "" &&
+        !(Array.isArray(c.new) && c.new.length === 0),
+    );
+  await logItemChange(supabase, {
+    item_id: item.id as string,
+    item_code: data.code,
+    item_name: data.name,
+    action: "create",
+    changes: createChanges,
+    note: data.note,
+  });
+
   revalidateTag("items");
   return { ok: true, id: item.id as string };
 }
@@ -191,6 +221,102 @@ function translateItemError(
   return error.message;
 }
 
+/* ------------------------------------------------------------------ *
+ * Item change logging
+ *
+ * Every create/update/delete on an item writes a row to
+ * `item_change_log` so Inventory → Daily Changes can show what was
+ * edited on a given date and offer one-click undo. Log writes are
+ * best-effort: a logging failure must never block the user's real edit.
+ * ------------------------------------------------------------------ */
+
+/** Item columns we track for the change log + before/after diffing. */
+const TRACKED_ITEM_FIELDS = [
+  "code",
+  "name",
+  "description",
+  "item_type",
+  "category_id",
+  "uom_id",
+  "minimum_stock",
+  "reorder_point",
+  "lead_time_days",
+  "cost_price",
+  "procurement_type",
+  "suppliers",
+  "is_active",
+] as const;
+
+type TrackedField = (typeof TRACKED_ITEM_FIELDS)[number];
+
+const NUMERIC_ITEM_FIELDS = new Set<TrackedField>([
+  "minimum_stock",
+  "reorder_point",
+  "lead_time_days",
+  "cost_price",
+]);
+
+/** Normalise a value so semantically-equal old/new don't register as a change. */
+function normalizeForCompare(field: TrackedField, value: unknown): unknown {
+  if (value === undefined) return null;
+  if (NUMERIC_ITEM_FIELDS.has(field)) {
+    return value === null || value === "" ? null : Number(value);
+  }
+  if (field === "suppliers") {
+    return JSON.stringify(
+      normalizeSuppliers(value as string[] | null | undefined),
+    );
+  }
+  if (field === "description" || field === "category_id") {
+    // Treat empty string and null as the same "unset" value.
+    return value === "" || value === null ? null : value;
+  }
+  return value;
+}
+
+function fieldChanged(
+  field: TrackedField,
+  oldVal: unknown,
+  newVal: unknown,
+): boolean {
+  return (
+    normalizeForCompare(field, oldVal) !== normalizeForCompare(field, newVal)
+  );
+}
+
+/**
+ * Insert a change-log row. Swallows all errors (best-effort) so a logging
+ * problem can't break the create/update/delete the user actually asked
+ * for. Shares the caller's request-scoped Supabase client.
+ */
+async function logItemChange(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  row: {
+    item_id: string | null;
+    item_code: string | null;
+    item_name: string | null;
+    action: "create" | "update" | "delete";
+    changes: FieldChange[];
+    note?: string | null;
+    revert_of?: string | null;
+  },
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("item_change_log").insert({
+      item_id: row.item_id,
+      item_code: row.item_code,
+      item_name: row.item_name,
+      action: row.action,
+      changes: row.changes,
+      note: row.note ?? null,
+      revert_of: row.revert_of ?? null,
+    });
+    if (error) console.error("[item_change_log] insert failed:", error.message);
+  } catch (e) {
+    console.error("[item_change_log] insert threw:", e);
+  }
+}
+
 /**
  * Delete an item — smart between hard and soft delete.
  *
@@ -209,9 +335,20 @@ export type DeleteItemResult =
   | { ok: true; action: "hard_deleted" | "soft_deleted" }
   | { ok: false; error: string };
 
-export async function deleteItem(itemId: string): Promise<DeleteItemResult> {
+export async function deleteItem(
+  itemId: string,
+  note?: string,
+): Promise<DeleteItemResult> {
   if (!itemId) return { ok: false, error: "Missing itemId" };
   const supabase = await createClient();
+
+  // Snapshot the code/name first so the change-log entry stays readable
+  // even after a hard delete removes the row.
+  const { data: snapshot } = await supabase
+    .from("items")
+    .select("code, name")
+    .eq("id", itemId)
+    .single();
 
   // Count references in every child table in parallel.
   const refQueries = await Promise.all([
@@ -253,6 +390,20 @@ export async function deleteItem(itemId: string): Promise<DeleteItemResult> {
       .update({ is_active: false })
       .eq("id", itemId);
     if (error) return { ok: false, error: error.message };
+
+    // item_id is preserved (the row still exists), so this delete is
+    // undoable by flipping is_active back to true.
+    await logItemChange(supabase, {
+      item_id: itemId,
+      item_code: snapshot?.code ?? null,
+      item_name: snapshot?.name ?? null,
+      action: "delete",
+      changes: [{ field: "is_active", old: true, new: false }],
+      note:
+        note ??
+        "Soft delete — item is referenced elsewhere, so it was hidden from active lists.",
+    });
+
     revalidateTag("items");
     revalidateTag("inventory-stock");
     return { ok: true, action: "soft_deleted" };
@@ -268,6 +419,17 @@ export async function deleteItem(itemId: string): Promise<DeleteItemResult> {
 
   const { error } = await supabase.from("items").delete().eq("id", itemId);
   if (error) return { ok: false, error: error.message };
+
+  // The row is gone, so we log with item_id=null (inserting the old id
+  // would violate the FK). A null item_id also signals "not undoable".
+  await logItemChange(supabase, {
+    item_id: null,
+    item_code: snapshot?.code ?? null,
+    item_name: snapshot?.name ?? null,
+    action: "delete",
+    changes: [],
+    note: note ?? "Permanently deleted (item had no references).",
+  });
 
   revalidateTag("items");
   revalidateTag("inventory-stock");
@@ -316,22 +478,38 @@ export async function updateItem(
     procurement_type?: "make" | "trade" | null;
     /** Up to 5 supplier names. Pass `[]` to clear all. Omit to leave unchanged. */
     suppliers?: string[];
+    /** Optional reason recorded in the change log (not stored on items). */
+    note?: string;
   },
 ): Promise<ItemSaveResult> {
   const supabase = await createClient();
+
+  // `note` is change-log metadata, not a column on items — keep it out of
+  // the update payload (otherwise the write fails with an unknown column).
+  const { note, ...fields } = data;
 
   // The codebase treats items.name as the single source of truth for the
   // display label. `lookup_key` is legacy data that the search fallback
   // still reads from, so we keep it in lock-step with `name` whenever
   // the user edits the name — that way edited names show immediately
   // and the search index doesn't drift.
-  const payload: Record<string, unknown> = { ...data };
-  if (typeof data.name === "string") {
-    payload.lookup_key = data.name;
+  const payload: Record<string, unknown> = { ...fields };
+  if (typeof fields.name === "string") {
+    payload.lookup_key = fields.name;
   }
-  if (data.suppliers !== undefined) {
-    payload.suppliers = normalizeSuppliers(data.suppliers);
+  if (fields.suppliers !== undefined) {
+    payload.suppliers = normalizeSuppliers(fields.suppliers);
   }
+
+  // Capture the before-image so we can log a precise field-level diff.
+  // Best-effort: if this read fails we still perform the update.
+  const { data: before } = await supabase
+    .from("items")
+    .select(
+      "code, name, description, item_type, category_id, uom_id, minimum_stock, reorder_point, lead_time_days, cost_price, procurement_type, suppliers, is_active",
+    )
+    .eq("id", id)
+    .single();
 
   const { data: item, error } = await supabase
     .from("items")
@@ -341,8 +519,39 @@ export async function updateItem(
     .single();
 
   if (error) {
-    return { ok: false, error: translateItemError(error, data.code, data.name) };
+    return {
+      ok: false,
+      error: translateItemError(error, fields.code, fields.name),
+    };
   }
+
+  // Record exactly which tracked fields changed (only those in this update).
+  if (before) {
+    const changes: FieldChange[] = [];
+    for (const field of TRACKED_ITEM_FIELDS) {
+      const newRaw = (fields as Record<string, unknown>)[field];
+      if (newRaw === undefined) continue; // not part of this update
+      const oldRaw = (before as Record<string, unknown>)[field];
+      if (fieldChanged(field, oldRaw, newRaw)) {
+        const normalizedNew =
+          field === "suppliers"
+            ? normalizeSuppliers(newRaw as string[])
+            : newRaw;
+        changes.push({ field, old: oldRaw ?? null, new: normalizedNew ?? null });
+      }
+    }
+    if (changes.length > 0 || note) {
+      await logItemChange(supabase, {
+        item_id: id,
+        item_code: (fields.code as string) ?? before.code ?? null,
+        item_name: (fields.name as string) ?? before.name ?? null,
+        action: "update",
+        changes,
+        note,
+      });
+    }
+  }
+
   revalidateTag("items");
   return { ok: true, id: item.id as string };
 }
@@ -353,6 +562,9 @@ export async function recordTransaction(data: {
   transaction_type: TransactionType;
   quantity: number;
   notes?: string;
+  /** Optional provenance — used by the change-log "undo" to tag reversals. */
+  reference_type?: string;
+  reference_id?: string;
 }) {
   const supabase = await createClient();
 

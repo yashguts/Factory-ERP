@@ -83,6 +83,9 @@ export function ItemFormModal({
   const seed = item ?? cloneSource ?? null;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  // Optional free-text reason recorded in the inventory change log so the
+  // Daily Changes page can show *why* an edit was made (not stored on items).
+  const [note, setNote] = useState("");
 
   // Build category hierarchy
   const parentCategories = useMemo(
@@ -258,7 +261,7 @@ export function ItemFormModal({
     }
     startTransition(async () => {
       setError(null);
-      const result = await deleteItem(item.id);
+      const result = await deleteItem(item.id, note.trim() || undefined);
       if (!result.ok) {
         setError(result.error);
         return;
@@ -295,6 +298,7 @@ export function ItemFormModal({
             ? null
             : procOverride) as "make" | "trade" | null,
           suppliers: cleanedSuppliers,
+          note: note.trim() || undefined,
         };
         const result =
           isEditing && item
@@ -562,6 +566,26 @@ export function ItemFormModal({
               )}
             </div>
           </div>
+        </div>
+
+        {/* Optional audit note — recorded against this change so the
+            Daily Changes page shows why it was made. */}
+        <div className="border-t border-[var(--border)] pt-4">
+          <label className="block text-sm font-medium mb-1">
+            Reason for change
+            <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+              (optional — shown in Daily Changes)
+            </span>
+          </label>
+          <Input
+            value={note}
+            onChange={(e) => setNote(e.target.value)}
+            placeholder={
+              isEditing
+                ? "e.g., corrected cost price from supplier invoice"
+                : "e.g., new item added per purchase order"
+            }
+          />
         </div>
 
         <div className="flex items-center justify-between gap-2 pt-4 border-t border-[var(--border)]">
