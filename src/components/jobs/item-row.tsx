@@ -202,7 +202,11 @@ export function ItemRow({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKey}
-          placeholder={`Search ${sectionCategory}...`}
+          placeholder={
+            row.label && !hasItem
+              ? `Fill: ${row.label}`
+              : `Search ${sectionCategory}...`
+          }
           className={cn(
             "w-full h-8 pl-8 pr-7 text-sm rounded-md border bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1",
             hasItem ? "border-blue-300" : "border-[var(--border)]",

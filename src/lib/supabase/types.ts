@@ -318,26 +318,37 @@ export interface Operation {
   sketch_uploaded_at: string | null;
   notes: string | null;
   is_active: boolean;
+  /** Groups material/finish variants of the same base program. */
+  family_key: string | null;
+  /** e.g. "MS", "SS", "SS Rose Gold" — the variant's material/finish. */
+  material_label: string | null;
+  /** null = manually entered; a tag (e.g. "cnc_std_v1") marks bulk-imported rows. */
+  import_source: string | null;
   created_at: string;
   updated_at: string;
 }
 
-/** A raw material consumed per run of an operation. */
+/**
+ * A raw material consumed per run. `item_id` may be NULL ("to be filled") —
+ * in that case `label` holds the captured original name to resolve later.
+ */
 export interface OperationInput {
   id: string;
   operation_id: string;
-  item_id: string;
+  item_id: string | null;
+  label: string | null;
   qty_per_run: number;
   notes: string | null;
   sort_order: number;
   created_at: string;
 }
 
-/** A part produced per run of an operation. Same shape as OperationInput. */
+/** A part produced per run. Same shape as OperationInput (item_id may be NULL). */
 export interface OperationOutput {
   id: string;
   operation_id: string;
-  item_id: string;
+  item_id: string | null;
+  label: string | null;
   qty_per_run: number;
   notes: string | null;
   sort_order: number;

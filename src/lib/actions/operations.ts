@@ -21,15 +21,21 @@ export interface OperationListRow {
   code: string | null;
   name: string;
   machine: OperationMachine;
+  family_key: string | null;
+  material_label: string | null;
   input_count: number;
   output_count: number;
   is_active: boolean;
 }
 
-/** One input/output line with its item resolved for display. */
+/**
+ * One input/output line. When `item_id` is null the line is "to be filled":
+ * `label` holds the captured original name and `item_code`/`item_name` are empty.
+ */
 export interface OperationLineDetail {
   id: string;
-  item_id: string;
+  item_id: string | null;
+  label: string | null;
   item_code: string;
   item_name: string;
   uom: string;
@@ -44,6 +50,8 @@ export interface OperationDetail {
   code: string | null;
   name: string;
   machine: OperationMachine;
+  family_key: string | null;
+  material_label: string | null;
   description: string | null;
   sketch_url: string | null;
   sketch_filename: string | null;
@@ -58,7 +66,10 @@ export interface OperationDetail {
 
 /** A line as supplied by the form when saving an operation. */
 export interface OperationLineInput {
-  item_id: string;
+  /** null = "to be filled" (no item chosen yet). */
+  item_id: string | null;
+  /** Captured original name for to-be-filled lines. */
+  label?: string | null;
   qty_per_run: number;
   notes?: string | null;
 }
@@ -93,7 +104,7 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
   const { data, error } = await supabase
     .from("operations")
     .select(
-      `id, code, name, machine, is_active,
+      `id, code, name, machine, family_key, material_label, is_active,
        operation_inputs(count),
        operation_outputs(count)`,
     )
@@ -106,6 +117,8 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     code: (row.code as string | null) ?? null,
     name: row.name as string,
     machine: row.machine as OperationMachine,
+    family_key: (row.family_key as string | null) ?? null,
+    material_label: (row.material_label as string | null) ?? null,
     input_count: countOf(row.operation_inputs),
     output_count: countOf(row.operation_outputs),
     is_active: row.is_active as boolean,
@@ -127,11 +140,11 @@ const _getOperationDetailUncached = async (
     .select(
       `*,
        inputs:operation_inputs(
-         id, item_id, qty_per_run, notes, sort_order,
+         id, item_id, label, qty_per_run, notes, sort_order,
          item:items(id, code, name, uom:units_of_measurement(abbreviation))
        ),
        outputs:operation_outputs(
-         id, item_id, qty_per_run, notes, sort_order,
+         id, item_id, label, qty_per_run, notes, sort_order,
          item:items(id, code, name, uom:units_of_measurement(abbreviation))
        )`,
     )
@@ -145,6 +158,8 @@ const _getOperationDetailUncached = async (
     code: data.code ?? null,
     name: data.name,
     machine: data.machine as OperationMachine,
+    family_key: data.family_key ?? null,
+    material_label: data.material_label ?? null,
     description: data.description ?? null,
     sketch_url: data.sketch_url ?? null,
     sketch_filename: data.sketch_filename ?? null,
@@ -214,6 +229,8 @@ export async function createOperation(input: {
   name: string;
   code?: string | null;
   machine?: OperationMachine;
+  family_key?: string | null;
+  material_label?: string | null;
   description?: string | null;
   notes?: string | null;
   inputs?: OperationLineInput[];
@@ -232,6 +249,8 @@ export async function createOperation(input: {
       name,
       code,
       machine,
+      family_key: input.family_key?.trim() || null,
+      material_label: input.material_label?.trim() || null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
     })
@@ -258,6 +277,8 @@ export async function updateOperation(
     name: string;
     code?: string | null;
     machine?: OperationMachine;
+    family_key?: string | null;
+    material_label?: string | null;
     description?: string | null;
     notes?: string | null;
     inputs?: OperationLineInput[];
@@ -278,6 +299,8 @@ export async function updateOperation(
       name,
       code,
       machine,
+      family_key: input.family_key?.trim() || null,
+      material_label: input.material_label?.trim() || null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
       updated_at: new Date().toISOString(),
@@ -489,10 +512,15 @@ async function replaceLines(
 
 function cleanLines(operationId: string, lines?: OperationLineInput[]) {
   return (lines ?? [])
-    .filter((l) => l.item_id && Number(l.qty_per_run) > 0)
+    .filter(
+      (l) =>
+        (l.item_id || (l.label && l.label.trim())) &&
+        Number(l.qty_per_run) > 0,
+    )
     .map((l, idx) => ({
       operation_id: operationId,
-      item_id: l.item_id,
+      item_id: l.item_id || null,
+      label: l.label?.trim() || null,
       qty_per_run: Number(l.qty_per_run),
       notes: l.notes?.trim() || null,
       sort_order: idx,
@@ -576,9 +604,10 @@ function mapLines(rows: any): OperationLineDetail[] {
       const uom = flatten<any>(item?.uom);
       return {
         id: r.id as string,
-        item_id: r.item_id as string,
+        item_id: (r.item_id as string | null) ?? null,
+        label: (r.label as string | null) ?? null,
         item_code: (item?.code as string) ?? "",
-        item_name: (item?.name as string) ?? "(unknown item)",
+        item_name: (item?.name as string) ?? "",
         uom: (uom?.abbreviation as string) ?? "",
         qty_per_run: Number(r.qty_per_run ?? 0),
         notes: (r.notes as string | null) ?? null,

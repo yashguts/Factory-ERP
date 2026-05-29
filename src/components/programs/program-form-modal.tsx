@@ -55,6 +55,7 @@ const linesToRows = (
     item_id: l.item_id,
     item_code: l.item_code,
     item_name: l.item_name,
+    label: l.label,
     uom: l.uom,
     category_name: null,
     required_quantity: l.qty_per_run,
@@ -63,9 +64,12 @@ const linesToRows = (
 
 const rowsToLines = (rows: PickedItem[]): OperationLineInput[] =>
   rows
-    .filter((r) => r.item_id)
+    // Keep picked rows AND "to be filled" rows (captured label, no item yet) so
+    // editing a program never silently drops its unresolved lines.
+    .filter((r) => r.item_id || (r.label && r.label.trim()))
     .map((r) => ({
-      item_id: r.item_id as string,
+      item_id: r.item_id ?? null,
+      label: r.label ?? null,
       qty_per_run: r.required_quantity || 0,
     }));
 

@@ -237,17 +237,28 @@ function LineTable({
             {lines.map((l) => (
               <TableRow key={l.id}>
                 <TableCell>
-                  <Link
-                    href={`/inventory?edit=${l.item_id}`}
-                    className="hover:underline"
-                  >
-                    <span className="font-medium">{l.item_name}</span>
-                    {l.item_code && (
-                      <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
-                        {l.item_code}
+                  {l.item_id ? (
+                    <Link
+                      href={`/inventory?edit=${l.item_id}`}
+                      className="hover:underline"
+                    >
+                      <span className="font-medium">{l.item_name}</span>
+                      {l.item_code && (
+                        <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
+                          {l.item_code}
+                        </span>
+                      )}
+                    </Link>
+                  ) : (
+                    <span className="inline-flex items-center gap-2">
+                      <span className="text-[var(--foreground)]">
+                        {l.label || "(unnamed)"}
                       </span>
-                    )}
-                  </Link>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                        needs item
+                      </span>
+                    </span>
+                  )}
                 </TableCell>
                 <TableCell className="text-right tabular-nums">
                   {l.qty_per_run}

@@ -16,6 +16,8 @@ export interface PickedItem {
   item_name: string;
   /** Optional friendlier label (item.lookup_key) for picked items. */
   item_lookup?: string | null;
+  /** Captured original name for a "to be filled" row (item not yet chosen). */
+  label?: string | null;
   uom: string;
   category_name: string | null;
   required_quantity: number;
