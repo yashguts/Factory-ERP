@@ -192,6 +192,89 @@ function translateItemError(
 }
 
 /**
+ * Delete an item — smart between hard and soft delete.
+ *
+ * Hard delete (row goes away, plus any zero-stock inventory rows) is
+ * only safe when nothing references the item: no transactions, no BOM
+ * (template OR job) headers or lines, no import column mappings.
+ *
+ * If anything references it, fall back to soft delete (is_active=false)
+ * so the existing audit trail / BOMs aren't broken. The item disappears
+ * from inventory list + search but its data stays.
+ *
+ * The result tells the caller which path was taken so the UI can show
+ * an honest message.
+ */
+export type DeleteItemResult =
+  | { ok: true; action: "hard_deleted" | "soft_deleted" }
+  | { ok: false; error: string };
+
+export async function deleteItem(itemId: string): Promise<DeleteItemResult> {
+  if (!itemId) return { ok: false, error: "Missing itemId" };
+  const supabase = await createClient();
+
+  // Count references in every child table in parallel.
+  const refQueries = await Promise.all([
+    supabase
+      .from("inventory_transactions")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("job_bom_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("bom_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("bom_headers")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("job_bom_headers")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("target_column_map")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+  ]);
+
+  for (const r of refQueries) {
+    if (r.error) return { ok: false, error: r.error.message };
+  }
+  const hasHistory = refQueries.some((r) => (r.count ?? 0) > 0);
+
+  if (hasHistory) {
+    // Soft delete — preserve history, hide from active views.
+    const { error } = await supabase
+      .from("items")
+      .update({ is_active: false })
+      .eq("id", itemId);
+    if (error) return { ok: false, error: error.message };
+    revalidateTag("items");
+    revalidateTag("inventory-stock");
+    return { ok: true, action: "soft_deleted" };
+  }
+
+  // Hard delete is safe. Drop any inventory balance rows first (they
+  // exist even when qty=0 from past stock-adjust-to-zero operations).
+  const { error: invErr } = await supabase
+    .from("inventory")
+    .delete()
+    .eq("item_id", itemId);
+  if (invErr) return { ok: false, error: invErr.message };
+
+  const { error } = await supabase.from("items").delete().eq("id", itemId);
+  if (error) return { ok: false, error: error.message };
+
+  revalidateTag("items");
+  revalidateTag("inventory-stock");
+  return { ok: true, action: "hard_deleted" };
+}
+
+/**
  * Trim, drop empties, dedupe, cap at 5. Matches the CHECK constraint
  * on the column and keeps storage tidy.
  */

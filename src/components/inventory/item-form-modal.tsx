@@ -5,7 +5,8 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { createItem, updateItem } from "@/lib/actions/inventory";
+import { Trash2, Loader2 } from "lucide-react";
+import { createItem, updateItem, deleteItem } from "@/lib/actions/inventory";
 import type { ItemType, ItemCategory, UnitOfMeasurement } from "@/lib/supabase/types";
 
 interface ItemRef {
@@ -239,6 +240,38 @@ export function ItemFormModal({
       setParentCategoryId("");
       setSubCategoryId("");
     }
+  };
+
+  const handleDelete = () => {
+    if (!item) return;
+    const typed = window.prompt(
+      `Delete item "${item.code}" — ${item.name}?\n\n` +
+        "If this item is used in any BOM or has any transaction history, " +
+        "it will be soft-deleted (hidden from inventory but kept for history). " +
+        "Otherwise it will be permanently removed.\n\n" +
+        `Type the item code "${item.code}" to confirm:`,
+    );
+    if (typed === null) return;
+    if (typed.trim() !== item.code) {
+      alert("Item code did not match. Delete cancelled.");
+      return;
+    }
+    startTransition(async () => {
+      setError(null);
+      const result = await deleteItem(item.id);
+      if (!result.ok) {
+        setError(result.error);
+        return;
+      }
+      // Friendly confirmation so the user knows which path ran.
+      alert(
+        result.action === "hard_deleted"
+          ? `Item "${item.code}" permanently deleted.`
+          : `Item "${item.code}" had history (BOM lines or transactions), so it has been deactivated and hidden from the active list. Existing references are preserved.`,
+      );
+      onSaved();
+      onClose();
+    });
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -531,13 +564,36 @@ export function ItemFormModal({
           </div>
         </div>
 
-        <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border)]">
-          <Button type="button" variant="secondary" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button type="submit" disabled={isPending}>
-            {isPending ? "Saving..." : isEditing ? "Update Item" : "Create Item"}
-          </Button>
+        <div className="flex items-center justify-between gap-2 pt-4 border-t border-[var(--border)]">
+          {/* Delete is only available when editing an existing item.
+              Sits on the left so it's visually separated from the
+              positive-action buttons on the right. */}
+          {isEditing ? (
+            <Button
+              type="button"
+              variant="destructive"
+              onClick={handleDelete}
+              disabled={isPending}
+              title="Delete this item (soft-delete if it has BOM/transaction history)"
+            >
+              {isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Trash2 className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Delete Item
+            </Button>
+          ) : (
+            <span />
+          )}
+          <div className="flex items-center gap-2">
+            <Button type="button" variant="secondary" onClick={onClose}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={isPending}>
+              {isPending ? "Saving..." : isEditing ? "Update Item" : "Create Item"}
+            </Button>
+          </div>
         </div>
       </form>
     </Modal>
