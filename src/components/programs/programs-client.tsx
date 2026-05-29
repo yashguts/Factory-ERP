@@ -51,6 +51,7 @@ interface Props {
 
 type MachineFilter = "all" | OperationMachine;
 type AuditFilter = "all" | "pending" | "audited";
+type LabelFilter = "all" | string;
 
 function machineChip(machine: OperationMachine) {
   return cn(
@@ -73,6 +74,7 @@ export function ProgramsClient({
   const [search, setSearch] = useState("");
   const [machineFilter, setMachineFilter] = useState<MachineFilter>("all");
   const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
+  const [labelFilter, setLabelFilter] = useState<LabelFilter>("all");
   const [showCreate, setShowCreate] = useState(false);
   const [cloneSource, setCloneSource] = useState<OperationDetail | null>(null);
   const [editSource, setEditSource] = useState<OperationDetail | null>(null);
@@ -102,20 +104,27 @@ export function ProgramsClient({
     for (const op of initialOperations) map[op.machine] = (map[op.machine] ?? 0) + 1;
     return map;
   }, [initialOperations]);
+  const { distinctLabels, labelCounts } = useMemo(() => {
+    const lc: Record<string, number> = {};
+    for (const op of initialOperations) {
+      const l = op.program_label || "Unlabeled";
+      lc[l] = (lc[l] ?? 0) + 1;
+    }
+    return { distinctLabels: Object.keys(lc).sort(), labelCounts: lc };
+  }, [initialOperations]);
 
   const filtered = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return initialOperations.filter((op) => {
       if (machineFilter !== "all" && op.machine !== machineFilter) return false;
+      if (labelFilter !== "all" && (op.program_label || "Unlabeled") !== labelFilter) return false;
       const isAudited = auditedMap[op.id] ?? false;
       if (auditFilter === "pending" && isAudited) return false;
       if (auditFilter === "audited" && !isAudited) return false;
       if (tokens.length === 0) return true;
-      // search_text includes code/name/family/material + all input & output
-      // item names and to-be-filled labels, so search looks inside the program.
       return tokens.every((t) => op.search_text.includes(t));
     });
-  }, [initialOperations, search, machineFilter, auditFilter, auditedMap]);
+  }, [initialOperations, search, machineFilter, labelFilter, auditFilter, auditedMap]);
 
   // Group filtered rows into families (preserves name order).
   const families = useMemo(() => {
@@ -164,18 +173,8 @@ export function ProgramsClient({
         className={cn("cursor-pointer", audited && "bg-green-50/40")}
         onClick={() => router.push(`/programs/${op.id}`)}
       >
-        <TableCell className="w-10 text-center" onClick={(e) => e.stopPropagation()}>
-          <button
-            type="button"
-            onClick={() => toggleAudit(op.id, !audited)}
-            title={audited ? "Audited — click to unmark" : "Mark audited"}
-            className={cn(
-              "h-5 w-5 inline-flex items-center justify-center rounded border cursor-pointer",
-              audited ? "bg-green-600 border-green-600 text-white" : "border-[var(--border)] hover:border-green-500",
-            )}
-          >
-            {audited && <Check className="h-3.5 w-3.5" />}
-          </button>
+        <TableCell className="w-8 text-center">
+          {audited && <span className="inline-block h-2 w-2 rounded-full bg-green-500" title="Audited" />}
         </TableCell>
         <TableCell className="font-mono text-xs text-[var(--muted-foreground)]">{op.code ?? "—"}</TableCell>
         <TableCell className={cn("font-medium", indent && "pl-6")}>
@@ -186,14 +185,26 @@ export function ProgramsClient({
           )}
         </TableCell>
         <TableCell><span className={machineChip(op.machine)}>{OPERATION_MACHINE_LABELS[op.machine] ?? op.machine}</span></TableCell>
+        <TableCell className="text-xs text-[var(--muted-foreground)]">{op.program_label ?? "—"}</TableCell>
         <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">
           <span className="inline-flex items-center gap-1"><ArrowDownToLine className="h-3.5 w-3.5" />{op.input_count}</span>
         </TableCell>
         <TableCell className="text-right tabular-nums text-blue-700">
           <span className="inline-flex items-center gap-1"><ArrowUpFromLine className="h-3.5 w-3.5" />{op.output_count}</span>
         </TableCell>
-        <TableCell className="w-[80px]" onClick={(e) => e.stopPropagation()}>
+        <TableCell className="w-[110px]" onClick={(e) => e.stopPropagation()}>
           <div className="flex items-center gap-0.5">
+            <button
+              type="button"
+              onClick={() => toggleAudit(op.id, !audited)}
+              title={audited ? "Audited — click to unmark" : "Mark audited"}
+              className={cn(
+                "p-1.5 rounded cursor-pointer",
+                audited ? "text-green-600 hover:bg-green-50" : "text-[var(--muted-foreground)] hover:text-green-600 hover:bg-[var(--muted)]",
+              )}
+            >
+              <Check className="h-3.5 w-3.5" />
+            </button>
             <button type="button" onClick={() => open(op.id, "edit")} disabled={busyId === op.id} title="Quick edit — fill items + quantities" className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50">
               {busyId === op.id ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Pencil className="h-3.5 w-3.5" />}
             </button>
@@ -238,6 +249,12 @@ export function ProgramsClient({
             <FilterChip key={m} label={OPERATION_MACHINE_LABELS[m]} count={counts[m] ?? 0} active={machineFilter === m} onClick={() => setMachineFilter(m)} />
           ))}
         </div>
+        <div className="flex items-center gap-1.5">
+          <FilterChip label="All Labels" count={initialOperations.length} active={labelFilter === "all"} onClick={() => setLabelFilter("all")} />
+          {distinctLabels.map((l) => (
+            <FilterChip key={l} label={l} count={labelCounts[l] ?? 0} active={labelFilter === l} onClick={() => setLabelFilter(labelFilter === l ? "all" : l)} />
+          ))}
+        </div>
         <div className="flex items-center gap-1.5 ml-auto">
           <FilterChip label="Pending" count={initialOperations.length - auditedCount} active={auditFilter === "pending"} onClick={() => setAuditFilter(auditFilter === "pending" ? "all" : "pending")} />
           <FilterChip label="Audited" count={auditedCount} active={auditFilter === "audited"} onClick={() => setAuditFilter(auditFilter === "audited" ? "all" : "audited")} />
@@ -251,16 +268,17 @@ export function ProgramsClient({
               <TableHead className="w-10 text-center" title="Audited">✓</TableHead>
               <TableHead className="w-[190px]">Code</TableHead>
               <TableHead>Program Name</TableHead>
-              <TableHead className="w-[120px]">Type</TableHead>
+              <TableHead className="w-[120px]">Machine</TableHead>
+              <TableHead className="w-[150px]">Label</TableHead>
               <TableHead className="w-[80px] text-right">In</TableHead>
               <TableHead className="w-[80px] text-right">Out</TableHead>
-              <TableHead className="w-[80px]" />
+              <TableHead className="w-[110px]" />
             </TableRow>
           </TableHeader>
           <TableBody>
             {families.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={7} className="text-center py-12 text-[var(--muted-foreground)] text-sm">
+                <TableCell colSpan={8} className="text-center py-12 text-[var(--muted-foreground)] text-sm">
                   {initialOperations.length === 0 ? "No programs yet." : "No programs match your filters."}
                 </TableCell>
               </TableRow>
@@ -282,6 +300,7 @@ export function ProgramsClient({
                         </span>
                       </TableCell>
                       <TableCell><span className={machineChip(variants[0].machine)}>{OPERATION_MACHINE_LABELS[variants[0].machine]}</span></TableCell>
+                      <TableCell className="text-xs text-[var(--muted-foreground)]">{variants[0].program_label ?? "—"}</TableCell>
                       <TableCell colSpan={2} />
                       <TableCell className="text-right text-[11px] text-[var(--muted-foreground)] tabular-nums">{auditedIn}/{variants.length}</TableCell>
                     </TableRow>

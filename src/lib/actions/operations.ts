@@ -129,6 +129,7 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       row.code,
       row.family_key,
       row.material_label,
+      row.program_label,
       ...ins.map(partName),
       ...outs.map(partName),
     ]
