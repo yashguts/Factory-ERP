@@ -9,6 +9,7 @@ import {
   Trash2,
   Loader2,
   Copy,
+  Check,
   ArrowDownToLine,
   ArrowUpFromLine,
 } from "lucide-react";
@@ -23,7 +24,11 @@ import {
 } from "@/components/ui/table";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import { ProgramSketchPanel } from "@/components/programs/program-sketch-panel";
-import { deleteOperation, type OperationDetail } from "@/lib/actions/operations";
+import {
+  deleteOperation,
+  setOperationAudited,
+  type OperationDetail,
+} from "@/lib/actions/operations";
 import {
   OPERATION_MACHINE_LABELS,
   type ItemCategory,
@@ -47,7 +52,17 @@ export function ProgramDetailClient({
   const router = useRouter();
   const [showEdit, setShowEdit] = useState(false);
   const [showClone, setShowClone] = useState(false);
+  const [audited, setAudited] = useState(!!operation.audited_at);
   const [isPending, startTransition] = useTransition();
+
+  const handleAudit = () => {
+    const next = !audited;
+    setAudited(next); // optimistic
+    startTransition(async () => {
+      const res = await setOperationAudited(operation.id, next);
+      if (!res.ok) setAudited(!next);
+    });
+  };
 
   const handleDelete = () => {
     if (
@@ -103,6 +118,16 @@ export function ProgramDetailClient({
             )}
           </div>
           <div className="flex items-center gap-2 shrink-0">
+            <Button
+              variant={audited ? "primary" : "secondary"}
+              onClick={handleAudit}
+              disabled={isPending}
+              className={audited ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+              title={audited ? "Audited — click to unmark" : "Mark this program audited"}
+            >
+              <Check className="h-3.5 w-3.5 mr-1.5" />
+              {audited ? "Audited" : "Mark audited"}
+            </Button>
             <Button variant="secondary" onClick={() => setShowClone(true)}>
               <Copy className="h-3.5 w-3.5 mr-1.5" />
               Clone

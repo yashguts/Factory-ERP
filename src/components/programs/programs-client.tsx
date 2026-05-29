@@ -89,6 +89,10 @@ export function ProgramsClient({
     [auditedMap],
   );
 
+  const familyCount = useMemo(
+    () => new Set(initialOperations.map((o) => o.family_key || o.name)).size,
+    [initialOperations],
+  );
   const allCodes = useMemo(
     () => initialOperations.map((o) => o.code).filter((c): c is string => !!c),
     [initialOperations],
@@ -107,8 +111,9 @@ export function ProgramsClient({
       if (auditFilter === "pending" && isAudited) return false;
       if (auditFilter === "audited" && !isAudited) return false;
       if (tokens.length === 0) return true;
-      const hay = `${op.code ?? ""} ${op.name} ${op.family_key ?? ""}`.toLowerCase();
-      return tokens.every((t) => hay.includes(t));
+      // search_text includes code/name/family/material + all input & output
+      // item names and to-be-filled labels, so search looks inside the program.
+      return tokens.every((t) => op.search_text.includes(t));
     });
   }, [initialOperations, search, machineFilter, auditFilter, auditedMap]);
 
@@ -210,8 +215,11 @@ export function ProgramsClient({
             Programs
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            Standard Programs · {initialOperations.length} programs ·{" "}
-            <span className="text-green-700 font-medium">{auditedCount} audited</span> / {initialOperations.length - auditedCount} pending
+            Standard Programs · {familyCount} programs
+            {initialOperations.length !== familyCount && (
+              <> ({initialOperations.length} incl. material variants)</>
+            )}{" "}
+            · <span className="text-green-700 font-medium">{auditedCount} audited</span> / {initialOperations.length - auditedCount} pending
           </p>
         </div>
         <Button onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>

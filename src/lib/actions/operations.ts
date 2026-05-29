@@ -27,6 +27,9 @@ export interface OperationListRow {
   audited_at: string | null;
   input_count: number;
   output_count: number;
+  /** Lowercased name+code+family+material plus all input/output item names &
+   *  to-be-filled labels, so the list search can match inside a program. */
+  search_text: string;
   is_active: boolean;
 }
 
@@ -54,6 +57,7 @@ export interface OperationDetail {
   machine: OperationMachine;
   family_key: string | null;
   material_label: string | null;
+  audited_at: string | null;
   description: string | null;
   sketch_url: string | null;
   sketch_filename: string | null;
@@ -107,26 +111,45 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     .from("operations")
     .select(
       `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
-       operation_inputs(count),
-       operation_outputs(count)`,
+       operation_inputs(label, item:items(name)),
+       operation_outputs(label, item:items(name))`,
     )
     .eq("is_active", true)
     .order("name");
   if (error) throw error;
 
-  return (data ?? []).map((row: any) => ({
-    id: row.id as string,
-    code: (row.code as string | null) ?? null,
-    name: row.name as string,
-    machine: row.machine as OperationMachine,
-    family_key: (row.family_key as string | null) ?? null,
-    material_label: (row.material_label as string | null) ?? null,
-    program_label: (row.program_label as string | null) ?? null,
-    audited_at: (row.audited_at as string | null) ?? null,
-    input_count: countOf(row.operation_inputs),
-    output_count: countOf(row.operation_outputs),
-    is_active: row.is_active as boolean,
-  }));
+  const partName = (r: any): string =>
+    r.label || (Array.isArray(r.item) ? r.item[0]?.name : r.item?.name) || "";
+
+  return (data ?? []).map((row: any) => {
+    const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
+    const outs = Array.isArray(row.operation_outputs) ? row.operation_outputs : [];
+    const search_text = [
+      row.name,
+      row.code,
+      row.family_key,
+      row.material_label,
+      ...ins.map(partName),
+      ...outs.map(partName),
+    ]
+      .filter(Boolean)
+      .join(" ")
+      .toLowerCase();
+    return {
+      id: row.id as string,
+      code: (row.code as string | null) ?? null,
+      name: row.name as string,
+      machine: row.machine as OperationMachine,
+      family_key: (row.family_key as string | null) ?? null,
+      material_label: (row.material_label as string | null) ?? null,
+      program_label: (row.program_label as string | null) ?? null,
+      audited_at: (row.audited_at as string | null) ?? null,
+      input_count: ins.length,
+      output_count: outs.length,
+      search_text,
+      is_active: row.is_active as boolean,
+    };
+  });
 };
 
 export const getOperations = unstable_cache(
@@ -164,6 +187,7 @@ const _getOperationDetailUncached = async (
     machine: data.machine as OperationMachine,
     family_key: data.family_key ?? null,
     material_label: data.material_label ?? null,
+    audited_at: data.audited_at ?? null,
     description: data.description ?? null,
     sketch_url: data.sketch_url ?? null,
     sketch_filename: data.sketch_filename ?? null,
@@ -602,13 +626,6 @@ function translateOperationError(
     return "A value failed validation: " + error.message;
   }
   return error.message;
-}
-
-function countOf(rel: unknown): number {
-  if (Array.isArray(rel)) {
-    return Number((rel[0] as { count?: number } | undefined)?.count ?? 0);
-  }
-  return 0;
 }
 
 /** Flatten a PostgREST belongsTo relation that may be `{...}` or `[{...}]`. */
