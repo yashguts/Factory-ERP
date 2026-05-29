@@ -519,16 +519,22 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     });
   }
 
-  function handleSavePhase(phase: string, sections: BomSection[]) {
+  function handleSavePhase(phase: string) {
     if (!guardRequired()) return;
     startTransition(async () => {
-      setSavingPhase(phase);
+      setSavingPhase(phase); // spinner stays on the button the user clicked
       try {
         const jobId = await ensureJob();
-        const categories = sections.map((s) => s.category);
-        const lines = collectBomLines(sections);
+        // Persist the WHOLE job's BOM (every visible phase), not just this
+        // one — otherwise edits in other phases stay client-side only and
+        // are silently lost on navigation.
+        const categories = visibleSections.map((s) => s.category);
+        const lines = collectBomLines(visibleSections);
         await saveBomSection(jobId, categories, lines);
-        setSavedPhases((prev) => ({ ...prev, [phase]: true }));
+        // Everything was persisted → reflect that on every phase button.
+        const allSaved: Record<string, boolean> = {};
+        for (const p of sectionsByPhase.keys()) allSaved[p] = true;
+        setSavedPhases(allSaved);
         // Refresh Router Cache so navigating to detail/edit shows fresh data
         router.refresh();
       } catch (err: any) {
@@ -741,7 +747,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               <Button
                 size="sm"
                 variant={isSaved ? "secondary" : "primary"}
-                onClick={() => handleSavePhase(phase, sections)}
+                onClick={() => handleSavePhase(phase)}
                 disabled={isPending || !isFormValid}
               >
                 {isSaving ? (
