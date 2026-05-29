@@ -4,6 +4,7 @@ import { useMemo, useState, useTransition } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import {
   OperationLinePicker,
@@ -16,10 +17,13 @@ import {
   type OperationLineInput,
 } from "@/lib/actions/operations";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
-import type {
-  ItemCategory,
-  UnitOfMeasurement,
-  ItemType,
+import {
+  OPERATION_MACHINES,
+  OPERATION_MACHINE_LABELS,
+  type OperationMachine,
+  type ItemCategory,
+  type UnitOfMeasurement,
+  type ItemType,
 } from "@/lib/supabase/types";
 
 interface Props {
@@ -32,12 +36,14 @@ interface Props {
   onSaved: (id: string) => void;
 }
 
+const makeKey = () => Math.random().toString(36).slice(2);
+
 const linesToRows = (
   lines: OperationDetail["inputs"] | undefined,
 ): PickedItem[] => {
   if (!lines || lines.length === 0) return [emptyLine()];
   return lines.map((l) => ({
-    _key: Math.random().toString(36).slice(2),
+    _key: makeKey(),
     item_id: l.item_id,
     item_code: l.item_code,
     item_name: l.item_name,
@@ -67,6 +73,9 @@ export function ProgramFormModal({
 
   const [name, setName] = useState(operation?.name ?? "");
   const [code, setCode] = useState(operation?.code ?? "");
+  const [machine, setMachine] = useState<OperationMachine>(
+    operation?.machine ?? "cnc_cutting",
+  );
   const [description, setDescription] = useState(operation?.description ?? "");
   const [notes, setNotes] = useState(operation?.notes ?? "");
   const [inputs, setInputs] = useState<PickedItem[]>(() =>
@@ -79,13 +88,80 @@ export function ProgramFormModal({
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  // Inline "create new item" sub-modal (for unnamed output parts).
-  const [showCreateItem, setShowCreateItem] = useState(false);
+  // Inline "create new item" sub-modal. Tracks which picker triggered it so
+  // the new item drops into the right list with a sensible suggested name.
+  const [createTarget, setCreateTarget] = useState<"input" | "output" | null>(
+    null,
+  );
+
+  const isAssembly = machine === "assembly_fit";
+
+  const copy = isAssembly
+    ? {
+        typeHint: "Combines cut pieces and bought parts into a sub-assembly.",
+        inputsTitle: "Inputs (components per run)",
+        inputsHelp:
+          "The cut pieces and bought parts (glass, rivnuts, …) that go into one run.",
+        inputsSearch: "component",
+        outputsTitle: "Outputs (produced per run)",
+        outputsHelp:
+          "The sub-assembly this run builds. Use “Create new item” if it isn’t in inventory yet.",
+        outputsSearch: "sub-assembly",
+        namePlaceholder: "e.g., Car Panel 700 LV (Long Vision)",
+        codePlaceholder: "e.g., ASM-CAR-PANEL-700LV",
+      }
+    : {
+        typeHint: "Cuts raw sheet into parts (the nest).",
+        inputsTitle: "Inputs (consumed per run)",
+        inputsHelp:
+          "Raw materials this program eats each time it runs. Quantity is per single run.",
+        inputsSearch: "raw material",
+        outputsTitle: "Outputs (produced per run)",
+        outputsHelp:
+          "The parts that come off the nest. Use “Create new item” to add a placeholder for a part not in inventory yet.",
+        outputsSearch: "output part",
+        namePlaceholder: "e.g., Car Door Panel Nest V2",
+        codePlaceholder: "e.g., CNC-CD-PANEL-V2",
+      };
+
   const suggestedItemName = useMemo(() => {
     const ref = code.trim() || name.trim() || "program";
-    const n = outputs.filter((o) => o.item_id).length + 1;
-    return `Output ${n} of ${ref}`;
-  }, [code, name, outputs]);
+    const list = createTarget === "input" ? inputs : outputs;
+    const n = list.filter((x) => x.item_id).length + 1;
+    const word =
+      createTarget === "input"
+        ? isAssembly
+          ? "Component"
+          : "Material"
+        : isAssembly
+          ? "Sub-assembly"
+          : "Output";
+    return `${word} ${n} of ${ref}`;
+  }, [code, name, inputs, outputs, createTarget, isAssembly]);
+
+  const handleCreated = (created: {
+    id: string;
+    code: string;
+    name: string;
+    uom: string;
+  }) => {
+    const row: PickedItem = {
+      _key: makeKey(),
+      item_id: created.id,
+      item_code: created.code,
+      item_name: created.name,
+      uom: created.uom,
+      category_name: null,
+      required_quantity: 1,
+    };
+    const append = (prev: PickedItem[]) => [
+      ...prev.filter((r) => r.item_id),
+      row,
+      emptyLine(),
+    ];
+    if (createTarget === "input") setInputs(append);
+    else setOutputs(append);
+  };
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -98,6 +174,7 @@ export function ProgramFormModal({
       const payload = {
         name,
         code: code.trim() || null,
+        machine,
         description: description.trim() || null,
         notes: notes.trim() || null,
         inputs: rowsToLines(inputs),
@@ -136,7 +213,7 @@ export function ProgramFormModal({
             <Input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g., Car Door Panel Nest V2"
+              placeholder={copy.namePlaceholder}
               required
               autoFocus
             />
@@ -151,25 +228,32 @@ export function ProgramFormModal({
             <Input
               value={code}
               onChange={(e) => setCode(e.target.value)}
-              placeholder="e.g., CNC-CD-PANEL-V2"
+              placeholder={copy.codePlaceholder}
             />
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium">Type:</span>
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
-            CNC Cutting
-          </span>
-          <span className="text-xs text-[var(--muted-foreground)]">
-            (bending, powder coat &amp; manual stations come later)
-          </span>
+        <div className="grid grid-cols-3 gap-4 items-start">
+          <div>
+            <label className="block text-sm font-medium mb-1">Type</label>
+            <Select
+              value={machine}
+              onChange={(e) => setMachine(e.target.value as OperationMachine)}
+            >
+              {OPERATION_MACHINES.map((m) => (
+                <option key={m} value={m}>
+                  {OPERATION_MACHINE_LABELS[m]}
+                </option>
+              ))}
+            </Select>
+          </div>
+          <p className="col-span-2 text-xs text-[var(--muted-foreground)] mt-7">
+            {copy.typeHint}
+          </p>
         </div>
 
         <div>
-          <label className="block text-sm font-medium mb-1">
-            Description
-          </label>
+          <label className="block text-sm font-medium mb-1">Description</label>
           <Input
             value={description}
             onChange={(e) => setDescription(e.target.value)}
@@ -180,35 +264,34 @@ export function ProgramFormModal({
         {/* Inputs */}
         <div className="border-t border-[var(--border)] pt-3">
           <div className="mb-2">
-            <h3 className="text-sm font-semibold">Inputs (consumed per run)</h3>
+            <h3 className="text-sm font-semibold">{copy.inputsTitle}</h3>
             <p className="text-[11px] text-[var(--muted-foreground)]">
-              Raw materials this program eats each time it runs. Quantity is
-              per single run.
+              {copy.inputsHelp}
             </p>
           </div>
           <OperationLinePicker
             rows={inputs}
             onChange={setInputs}
-            searchLabel="raw material"
+            searchLabel={copy.inputsSearch}
+            allowCreate
+            onRequestCreate={() => setCreateTarget("input")}
           />
         </div>
 
         {/* Outputs */}
         <div className="border-t border-[var(--border)] pt-3">
           <div className="mb-2">
-            <h3 className="text-sm font-semibold">Outputs (produced per run)</h3>
+            <h3 className="text-sm font-semibold">{copy.outputsTitle}</h3>
             <p className="text-[11px] text-[var(--muted-foreground)]">
-              The parts that come off the nest. If a part isn’t in inventory
-              yet, use “Create new item” to add a placeholder you can rename
-              later.
+              {copy.outputsHelp}
             </p>
           </div>
           <OperationLinePicker
             rows={outputs}
             onChange={setOutputs}
-            searchLabel="output part"
+            searchLabel={copy.outputsSearch}
             allowCreate
-            onRequestCreate={() => setShowCreateItem(true)}
+            onRequestCreate={() => setCreateTarget("output")}
           />
         </div>
 
@@ -236,30 +319,15 @@ export function ProgramFormModal({
         </div>
       </form>
 
-      {showCreateItem && (
+      {createTarget && (
         <ItemFormModal
           categories={categories}
           units={units}
           items={itemRefs}
           createDefaults={{ name: suggestedItemName, item_type: "sub_assembly" }}
-          onClose={() => setShowCreateItem(false)}
-          onSaved={() => setShowCreateItem(false)}
-          onCreated={(created) => {
-            // Drop the freshly-created item straight into a new output row.
-            setOutputs((prev) => [
-              ...prev.filter((r) => r.item_id),
-              {
-                _key: Math.random().toString(36).slice(2),
-                item_id: created.id,
-                item_code: created.code,
-                item_name: created.name,
-                uom: created.uom,
-                category_name: null,
-                required_quantity: 1,
-              },
-              emptyLine(),
-            ]);
-          }}
+          onClose={() => setCreateTarget(null)}
+          onSaved={() => setCreateTarget(null)}
+          onCreated={handleCreated}
         />
       )}
     </Modal>

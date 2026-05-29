@@ -91,7 +91,7 @@ export function OperationLinePicker({
           <button
             type="button"
             onClick={onRequestCreate}
-            title="Create a new inventory item for an unnamed output part"
+            title="Create a new inventory item (placeholder you can rename later)"
             className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
           >
             <PackagePlus className="h-3 w-3" />

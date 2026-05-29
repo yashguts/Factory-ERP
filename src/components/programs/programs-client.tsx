@@ -12,9 +12,17 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { cn } from "@/lib/utils";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import type { OperationListRow } from "@/lib/actions/operations";
-import type { ItemCategory, UnitOfMeasurement, ItemType } from "@/lib/supabase/types";
+import {
+  OPERATION_MACHINE_LABELS,
+  OPERATION_MACHINES,
+  type OperationMachine,
+  type ItemCategory,
+  type UnitOfMeasurement,
+  type ItemType,
+} from "@/lib/supabase/types";
 
 interface Props {
   initialOperations: OperationListRow[];
@@ -22,6 +30,8 @@ interface Props {
   units: UnitOfMeasurement[];
   itemRefs: { item_type: ItemType; category_id: string | null }[];
 }
+
+type MachineFilter = "all" | OperationMachine;
 
 export function ProgramsClient({
   initialOperations,
@@ -31,17 +41,27 @@ export function ProgramsClient({
 }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  const [machineFilter, setMachineFilter] = useState<MachineFilter>("all");
   const [showCreate, setShowCreate] = useState(false);
+
+  const counts = useMemo(() => {
+    const map: Record<string, number> = {};
+    for (const op of initialOperations) {
+      map[op.machine] = (map[op.machine] ?? 0) + 1;
+    }
+    return map;
+  }, [initialOperations]);
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase();
-    if (!q) return initialOperations;
     const tokens = q.split(/\s+/).filter(Boolean);
     return initialOperations.filter((op) => {
+      if (machineFilter !== "all" && op.machine !== machineFilter) return false;
+      if (tokens.length === 0) return true;
       const hay = `${op.code ?? ""} ${op.name}`.toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
-  }, [initialOperations, search]);
+  }, [initialOperations, search, machineFilter]);
 
   return (
     <div>
@@ -53,7 +73,7 @@ export function ProgramsClient({
             Programs
           </h1>
           <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            CNC Cutting nesting programs ·{" "}
+            Cutting &amp; assembly operations ·{" "}
             {initialOperations.length === 1
               ? "1 program"
               : `${initialOperations.length} programs`}
@@ -65,9 +85,9 @@ export function ProgramsClient({
         </Button>
       </div>
 
-      {/* Search */}
-      <div className="mb-4">
-        <div className="relative max-w-sm">
+      {/* Search + type filter */}
+      <div className="mb-4 flex flex-wrap items-center gap-3">
+        <div className="relative max-w-sm flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
           <input
             value={search}
@@ -76,6 +96,23 @@ export function ProgramsClient({
             className="w-full h-9 pl-9 pr-3 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1"
           />
         </div>
+        <div className="flex items-center gap-1.5">
+          <FilterChip
+            label="All"
+            count={initialOperations.length}
+            active={machineFilter === "all"}
+            onClick={() => setMachineFilter("all")}
+          />
+          {OPERATION_MACHINES.map((m) => (
+            <FilterChip
+              key={m}
+              label={OPERATION_MACHINE_LABELS[m]}
+              count={counts[m] ?? 0}
+              active={machineFilter === m}
+              onClick={() => setMachineFilter(m)}
+            />
+          ))}
+        </div>
       </div>
 
       {/* Table */}
@@ -83,28 +120,29 @@ export function ProgramsClient({
         <Table>
           <TableHeader>
             <TableRow>
-              <TableHead className="w-[200px]">Code</TableHead>
+              <TableHead className="w-[190px]">Code</TableHead>
               <TableHead>Program Name</TableHead>
-              <TableHead className="w-[120px] text-right">Inputs</TableHead>
-              <TableHead className="w-[120px] text-right">Outputs</TableHead>
+              <TableHead className="w-[130px]">Type</TableHead>
+              <TableHead className="w-[100px] text-right">Inputs</TableHead>
+              <TableHead className="w-[100px] text-right">Outputs</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={4} className="text-center py-12">
+                <TableCell colSpan={5} className="text-center py-12">
                   <div className="text-[var(--muted-foreground)]">
                     {initialOperations.length === 0 ? (
                       <>
                         <Cog className="h-8 w-8 mx-auto mb-2 opacity-40" />
                         <p className="text-sm font-medium">No programs yet</p>
                         <p className="text-xs mt-1">
-                          Add your first CNC cutting program — what it consumes
-                          and the parts that come off the nest.
+                          Add your first program — what it consumes and what it
+                          produces.
                         </p>
                       </>
                     ) : (
-                      <p className="text-sm">No programs match “{search}”.</p>
+                      <p className="text-sm">No programs match your filters.</p>
                     )}
                   </div>
                 </TableCell>
@@ -120,6 +158,18 @@ export function ProgramsClient({
                     {op.code ?? "—"}
                   </TableCell>
                   <TableCell className="font-medium">{op.name}</TableCell>
+                  <TableCell>
+                    <span
+                      className={cn(
+                        "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium",
+                        op.machine === "assembly_fit"
+                          ? "bg-purple-100 text-purple-700"
+                          : "bg-blue-100 text-blue-700",
+                      )}
+                    >
+                      {OPERATION_MACHINE_LABELS[op.machine] ?? op.machine}
+                    </span>
+                  </TableCell>
                   <TableCell className="text-right tabular-nums">
                     <span className="inline-flex items-center gap-1 text-[var(--muted-foreground)]">
                       <ArrowDownToLine className="h-3.5 w-3.5" />
@@ -147,12 +197,38 @@ export function ProgramsClient({
           onClose={() => setShowCreate(false)}
           onSaved={(id) => {
             setShowCreate(false);
-            // Land on the new program's detail page so the user can add a
-            // sketch and review the lines.
             router.push(`/programs/${id}`);
           }}
         />
       )}
     </div>
+  );
+}
+
+function FilterChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 px-2.5 h-9 rounded-md text-sm border cursor-pointer transition-colors",
+        active
+          ? "border-[var(--primary)] bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
+          : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]",
+      )}
+    >
+      {label}
+      <span className="text-[11px] opacity-70 tabular-nums">{count}</span>
+    </button>
   );
 }

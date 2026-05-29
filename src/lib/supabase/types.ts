@@ -282,6 +282,7 @@ export type OperationMachine =
 /** Human labels for each machine value, used across the Programs UI. */
 export const OPERATION_MACHINE_LABELS: Record<OperationMachine, string> = {
   cnc_cutting: "CNC Cutting",
+  assembly_fit: "Assembly",
   cnc_punch: "CNC Punch",
   cnc_laser: "CNC Laser",
   cnc_bending: "CNC Bending",
@@ -289,14 +290,17 @@ export const OPERATION_MACHINE_LABELS: Record<OperationMachine, string> = {
   manual_cut: "Manual Cut",
   manual_weld: "Manual Weld",
   manual_fit: "Manual Fit",
-  assembly_fit: "Assembly Fit",
 };
 
 /**
- * Machine values offered in the Programs UI right now. Phase 0 = CNC
- * Cutting only; widen this list as later phases add their stations.
+ * Machine values offered in the Programs UI right now. Phase 0 covers CNC
+ * Cutting (raw sheet -> cut pieces) and Assembly (cut pieces + bought parts
+ * -> sub-assembly). Widen this list as later phases add their stations.
  */
-export const OPERATION_MACHINES: OperationMachine[] = ["cnc_cutting"];
+export const OPERATION_MACHINES: OperationMachine[] = [
+  "cnc_cutting",
+  "assembly_fit",
+];
 
 /** A program/recipe: one run produces many parts (the nest). */
 export interface Operation {

@@ -223,14 +223,15 @@ export async function createOperation(input: {
   if (!name) return { ok: false, error: "Program name is required." };
 
   const supabase = await createClient();
-  const code = await resolveCode(supabase, input.code, name, null);
+  const machine = input.machine ?? "cnc_cutting";
+  const code = await resolveCode(supabase, input.code, name, null, machine);
 
   const { data: op, error } = await supabase
     .from("operations")
     .insert({
       name,
       code,
-      machine: input.machine ?? "cnc_cutting",
+      machine,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
     })
@@ -268,14 +269,15 @@ export async function updateOperation(
   if (!name) return { ok: false, error: "Program name is required." };
 
   const supabase = await createClient();
-  const code = await resolveCode(supabase, input.code, name, id);
+  const machine = input.machine ?? "cnc_cutting";
+  const code = await resolveCode(supabase, input.code, name, id, machine);
 
   const { error } = await supabase
     .from("operations")
     .update({
       name,
       code,
-      machine: input.machine ?? "cnc_cutting",
+      machine,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
       updated_at: new Date().toISOString(),
@@ -507,11 +509,12 @@ async function resolveCode(
   provided: string | null | undefined,
   name: string,
   excludeId: string | null,
+  machine: OperationMachine,
 ): Promise<string | null> {
   const typed = provided?.trim();
   if (typed) return typed;
 
-  const base = slugifyCode(name);
+  const base = slugifyCode(name, machine === "assembly_fit" ? "ASM" : "CNC");
   if (!base) return null;
 
   let candidate = base;
@@ -528,14 +531,14 @@ async function resolveCode(
   return candidate;
 }
 
-function slugifyCode(name: string): string {
+function slugifyCode(name: string, prefix: string): string {
   const slug = name
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, "-")
     .replace(/^-+|-+$/g, "")
     .slice(0, 32)
     .replace(/-+$/g, "");
-  return slug ? `CNC-${slug}` : "";
+  return slug ? `${prefix}-${slug}` : "";
 }
 
 function translateOperationError(

@@ -84,7 +84,13 @@ export function ProgramDetailClient({
                   {operation.code}
                 </span>
               )}
-              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-700">
+              <span
+                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
+                  operation.machine === "assembly_fit"
+                    ? "bg-purple-100 text-purple-700"
+                    : "bg-blue-100 text-blue-700"
+                }`}
+              >
                 {OPERATION_MACHINE_LABELS[operation.machine]}
               </span>
             </div>
@@ -123,14 +129,14 @@ export function ProgramDetailClient({
             subtitle="Consumed per run"
             icon={<ArrowDownToLine className="h-4 w-4" />}
             lines={operation.inputs}
-            emptyText="No inputs recorded yet. Edit the program to add the raw materials it consumes."
+            emptyText="No inputs recorded yet. Edit the program to add what it consumes."
           />
           <LineTable
             title="Outputs"
             subtitle="Produced per run"
             icon={<ArrowUpFromLine className="h-4 w-4 text-blue-700" />}
             lines={operation.outputs}
-            emptyText="No outputs recorded yet. Edit the program to add the parts that come off the nest."
+            emptyText="No outputs recorded yet. Edit the program to add what it produces."
           />
           {operation.notes && (
             <div className="rounded-md border border-[var(--border)] p-3">
