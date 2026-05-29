@@ -281,10 +281,12 @@ export type OperationMachine =
 
 /** Human labels for each machine value, used across the Programs UI. */
 export const OPERATION_MACHINE_LABELS: Record<OperationMachine, string> = {
-  cnc_cutting: "CNC Cutting",
+  cnc_laser: "Laser Cutting",
+  cnc_punch: "Punching",
   assembly_fit: "Assembly",
-  cnc_punch: "CNC Punch",
-  cnc_laser: "CNC Laser",
+  // Legacy: programs created before laser/punch were split. Still rendered
+  // so existing rows read correctly; re-tag via Edit. Not offered for new.
+  cnc_cutting: "CNC Cutting",
   cnc_bending: "CNC Bending",
   powder_coat: "Powder Coat",
   manual_cut: "Manual Cut",
@@ -293,12 +295,14 @@ export const OPERATION_MACHINE_LABELS: Record<OperationMachine, string> = {
 };
 
 /**
- * Machine values offered in the Programs UI right now. Phase 0 covers CNC
- * Cutting (raw sheet -> cut pieces) and Assembly (cut pieces + bought parts
- * -> sub-assembly). Widen this list as later phases add their stations.
+ * Machine values offered in the Programs UI right now: the two cutting
+ * machines (laser + punch, which run different programs) and Assembly.
+ * `cnc_cutting` is a legacy value kept renderable for older rows but no
+ * longer offered. Widen this list as later phases add their stations.
  */
 export const OPERATION_MACHINES: OperationMachine[] = [
-  "cnc_cutting",
+  "cnc_laser",
+  "cnc_punch",
   "assembly_fit",
 ];
 

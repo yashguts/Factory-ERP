@@ -90,7 +90,7 @@ export function ProgramFormModal({
     operation?.code ?? (isCloning ? (suggestedCode ?? "") : ""),
   );
   const [machine, setMachine] = useState<OperationMachine>(
-    source?.machine ?? "cnc_cutting",
+    source?.machine ?? "cnc_laser",
   );
   const [description, setDescription] = useState(source?.description ?? "");
   const [notes, setNotes] = useState(source?.notes ?? "");
@@ -111,6 +111,12 @@ export function ProgramFormModal({
   );
 
   const isAssembly = machine === "assembly_fit";
+
+  // Offered types, plus the current value if it's a legacy one (e.g. an older
+  // `cnc_cutting` program being edited) so it still displays and can be switched.
+  const typeOptions = OPERATION_MACHINES.includes(machine)
+    ? OPERATION_MACHINES
+    : [machine, ...OPERATION_MACHINES];
 
   const copy = isAssembly
     ? {
@@ -273,7 +279,7 @@ export function ProgramFormModal({
               value={machine}
               onChange={(e) => setMachine(e.target.value as OperationMachine)}
             >
-              {OPERATION_MACHINES.map((m) => (
+              {typeOptions.map((m) => (
                 <option key={m} value={m}>
                   {OPERATION_MACHINE_LABELS[m]}
                 </option>
