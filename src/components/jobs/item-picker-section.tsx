@@ -115,7 +115,7 @@ export function ItemPickerSection({
             {category}
           </h3>
           {pickedCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700 shrink-0">
+            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
               {pickedCount}
             </span>
           )}

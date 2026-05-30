@@ -5,6 +5,8 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Badge as UIBadge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import {
   Undo2,
   Pencil,
@@ -44,11 +46,11 @@ const TXN_LABELS: Record<TransactionType, string> = {
   scrap: "Scrap",
 };
 
-const ACTION_BADGE: Record<string, string> = {
-  create: "bg-green-100 text-green-800 border-green-200",
-  update: "bg-blue-100 text-blue-800 border-blue-200",
-  delete: "bg-red-100 text-red-800 border-red-200",
-  stock: "bg-purple-100 text-purple-800 border-purple-200",
+const ACTION_BADGE_VARIANT: Record<string, BadgeVariant> = {
+  create: "green",
+  update: "blue",
+  delete: "red",
+  stock: "purple",
 };
 
 function formatTime(iso: string): string {
@@ -127,7 +129,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <History size={22} /> Daily Inventory Changes
           </h1>
           <p className="text-sm text-[var(--muted-foreground)]">
@@ -146,7 +148,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
             value={date}
             max={maxDate}
             onChange={(e) => changeDate(e.target.value)}
-            className="h-10 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer"
+            className="h-10 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors"
           />
           <Link href="/inventory">
             <Button variant="secondary">Back to Inventory</Button>
@@ -156,7 +158,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
 
       {/* Empty state */}
       {initialRows.length === 0 ? (
-        <div className="rounded-lg border border-[var(--border)] bg-[var(--muted)]/30 p-12 text-center">
+        <div className="card-surface p-12 text-center">
           <History
             size={32}
             className="mx-auto mb-3 text-[var(--muted-foreground)]"
@@ -224,7 +226,7 @@ function CardShell({
 }) {
   return (
     <div
-      className={`rounded-lg border border-[var(--border)] bg-[var(--background)] p-4 ${
+      className={`card-surface p-4 ${
         dimmed ? "opacity-60" : ""
       }`}
     >
@@ -233,15 +235,11 @@ function CardShell({
   );
 }
 
-function Badge({ kind, children }: { kind: string; children: React.ReactNode }) {
+function ActionBadge({ kind, children }: { kind: string; children: React.ReactNode }) {
   return (
-    <span
-      className={`inline-block rounded-full border px-2 py-0.5 text-[11px] font-medium ${
-        ACTION_BADGE[kind] ?? "bg-gray-100 text-gray-700 border-gray-200"
-      }`}
-    >
+    <UIBadge variant={ACTION_BADGE_VARIANT[kind] ?? "neutral"}>
       {children}
-    </span>
+    </UIBadge>
   );
 }
 
@@ -321,13 +319,13 @@ function ItemChangeCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge kind={row.action}>
+            <ActionBadge kind={row.action}>
               {row.action === "create"
                 ? "Created"
                 : row.action === "delete"
                   ? "Deleted"
                   : "Updated"}
-            </Badge>
+            </ActionBadge>
             {row.item_code && (
               <span className="font-mono text-xs text-[var(--muted-foreground)]">
                 {row.item_code}
@@ -433,7 +431,7 @@ function StockChangeCard({
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <Badge kind="stock">Stock</Badge>
+            <ActionBadge kind="stock">Stock</ActionBadge>
             <span className="text-xs font-medium text-[var(--muted-foreground)]">
               {TXN_LABELS[row.transaction_type]}
             </span>

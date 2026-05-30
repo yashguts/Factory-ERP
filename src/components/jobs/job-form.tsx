@@ -588,10 +588,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           </h1>
           {savedJobId && (
             <span
-              className={`text-[10px] px-1.5 py-0.5 rounded-full font-medium shrink-0 ${
+              className={`text-[10px] px-1.5 py-0.5 rounded-full border font-medium shrink-0 ${
                 hasUnsavedChanges
-                  ? "bg-amber-100 text-amber-800"
-                  : "bg-green-100 text-green-700"
+                  ? "bg-[var(--warning-bg)] text-[var(--warning)] border-[var(--warning-border)]"
+                  : "bg-[var(--success-bg)] text-[var(--success)] border-[var(--success-border)]"
               }`}
             >
               {hasUnsavedChanges ? "Unsaved" : "Saved"}

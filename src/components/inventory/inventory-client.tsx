@@ -9,6 +9,7 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
@@ -62,12 +63,12 @@ const TYPE_LABELS: Record<ItemType, string> = {
   door_panel: "Door Panel",
 };
 
-const TYPE_COLORS: Record<ItemType, string> = {
-  raw_material: "bg-blue-100 text-blue-800",
-  sub_assembly: "bg-purple-100 text-purple-800",
-  finished_good: "bg-green-100 text-green-800",
-  mechanical_finished_stock: "bg-amber-100 text-amber-800",
-  door_panel: "bg-pink-100 text-pink-800",
+const TYPE_BADGE_VARIANT: Record<ItemType, "blue" | "purple" | "green" | "amber" | "pink"> = {
+  raw_material: "blue",
+  sub_assembly: "purple",
+  finished_good: "green",
+  mechanical_finished_stock: "amber",
+  door_panel: "pink",
 };
 
 type SortKey = "code" | "name" | "stock" | "category" | "cost";
@@ -302,7 +303,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Inventory</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             {sorted.length} of {initialItems.length} items
             {isPending ? " — refreshing..." : ""}
@@ -393,8 +394,8 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
 
       {/* Table */}
       {paginated.length === 0 ? (
-        <div className="border border-[var(--border)] rounded-lg p-12 text-center">
-          <Package size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
+        <div className="card-surface p-12 text-center">
+          <Package size={48} className="mx-auto mb-4 text-[var(--muted-foreground)] opacity-50" />
           <p className="text-[var(--muted-foreground)]">
             {initialItems.length === 0
               ? "No items yet. Add your first item to get started."
@@ -402,7 +403,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           </p>
         </div>
       ) : (
-        <div className="border border-[var(--border)] rounded-lg">
+        <div className="card-surface overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -437,14 +438,15 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                       )}
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[item.item_type]}`}>
+                      <Badge variant={TYPE_BADGE_VARIANT[item.item_type]}>
                         {TYPE_LABELS[item.item_type]}
-                      </span>
+                      </Badge>
                     </TableCell>
                     <TableCell>
                       {item.effective_procurement_type === "make" ? (
-                        <span
-                          className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-700"
+                        <Badge
+                          variant="blue"
+                          className="text-[10px] px-1.5"
                           title={
                             item.procurement_type
                               ? "Make (per-item override)"
@@ -452,10 +454,11 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                           }
                         >
                           M
-                        </span>
+                        </Badge>
                       ) : item.effective_procurement_type === "trade" ? (
-                        <span
-                          className="inline-block text-[10px] font-semibold px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-800"
+                        <Badge
+                          variant="amber"
+                          className="text-[10px] px-1.5"
                           title={
                             item.procurement_type
                               ? "Trade (per-item override)"
@@ -463,9 +466,9 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                           }
                         >
                           T
-                        </span>
+                        </Badge>
                       ) : (
-                        <span className="text-[10px] text-[var(--muted-foreground)]">
+                        <span className="text-xs text-[var(--muted-foreground)]">
                           —
                         </span>
                       )}
@@ -484,17 +487,11 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                     </TableCell>
                     <TableCell>
                       {isLow ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
-                          Low
-                        </span>
+                        <Badge variant="warning">Low</Badge>
                       ) : item.total_stock === 0 ? (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-red-100 text-red-800">
-                          Out
-                        </span>
+                        <Badge variant="danger">Out</Badge>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-full bg-green-100 text-green-800">
-                          OK
-                        </span>
+                        <Badge variant="success">OK</Badge>
                       )}
                     </TableCell>
                     <TableCell className="w-8 px-1" onClick={(e) => e.stopPropagation()}>

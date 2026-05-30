@@ -22,6 +22,8 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import {
@@ -51,16 +53,17 @@ type MachineFilter = "all" | OperationMachine;
 type AuditFilter = "all" | "pending" | "audited";
 type LabelFilter = "all" | string;
 
-function machineChip(machine: OperationMachine) {
-  return cn(
-    "inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium",
-    machine === "assembly_fit"
-      ? "bg-purple-100 text-purple-700"
-      : machine === "cnc_laser"
-        ? "bg-cyan-100 text-cyan-700"
-        : "bg-blue-100 text-blue-700",
-  );
-}
+const MACHINE_BADGE_VARIANT: Partial<Record<OperationMachine, BadgeVariant>> = {
+  assembly_fit: "purple",
+  cnc_laser: "cyan",
+  cnc_punch: "blue",
+  cnc_cutting: "blue",
+  cnc_bending: "blue",
+  powder_coat: "amber",
+  manual_cut: "green",
+  manual_weld: "green",
+  manual_fit: "green",
+};
 
 export function ProgramsClient({
   initialOperations,
@@ -153,7 +156,7 @@ export function ProgramsClient({
         </TableCell>
         <TableCell className="font-mono text-xs text-[var(--muted-foreground)]">{op.code ?? "—"}</TableCell>
         <TableCell className="font-medium">{op.name}</TableCell>
-        <TableCell><span className={machineChip(op.machine)}>{OPERATION_MACHINE_LABELS[op.machine] ?? op.machine}</span></TableCell>
+        <TableCell><Badge variant={MACHINE_BADGE_VARIANT[op.machine] ?? "neutral"}>{OPERATION_MACHINE_LABELS[op.machine] ?? op.machine}</Badge></TableCell>
         <TableCell className="text-xs text-[var(--muted-foreground)]">{op.program_label ?? "—"}</TableCell>
         <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">
           <span className="inline-flex items-center gap-1"><ArrowDownToLine className="h-3.5 w-3.5" />{op.input_count}</span>
@@ -190,7 +193,7 @@ export function ProgramsClient({
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
             <Cog className="h-6 w-6 text-[var(--muted-foreground)]" />
             Programs
           </h1>
@@ -207,7 +210,7 @@ export function ProgramsClient({
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code or name..." className="w-full h-9 pl-9 pr-3 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code or name..." className="w-full h-9 pl-9 pr-3 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors" />
         </div>
         <div className="flex items-center gap-1.5">
           <FilterChip label="All" count={initialOperations.length} active={machineFilter === "all"} onClick={() => setMachineFilter("all")} />
@@ -227,7 +230,7 @@ export function ProgramsClient({
         </div>
       </div>
 
-      <div className="border border-[var(--border)] rounded-lg">
+      <div className="card-surface overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>

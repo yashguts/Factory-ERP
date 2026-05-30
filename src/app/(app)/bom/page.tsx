@@ -11,6 +11,8 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import { Plus, Search, ChevronRight, Layers } from "lucide-react";
 import type { ItemType } from "@/lib/supabase/types";
 
@@ -72,12 +74,12 @@ const DEMO_BOMS: BomDisplay[] = [
   },
 ];
 
-const TYPE_COLORS: Record<ItemType, string> = {
-  raw_material: "bg-blue-100 text-blue-800",
-  sub_assembly: "bg-purple-100 text-purple-800",
-  finished_good: "bg-green-100 text-green-800",
-  mechanical_finished_stock: "bg-amber-100 text-amber-800",
-  door_panel: "bg-pink-100 text-pink-800",
+const TYPE_BADGE_VARIANT: Record<ItemType, BadgeVariant> = {
+  raw_material: "blue",
+  sub_assembly: "purple",
+  finished_good: "green",
+  mechanical_finished_stock: "amber",
+  door_panel: "pink",
 };
 
 export default function BomPage() {
@@ -93,7 +95,7 @@ export default function BomPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Bill of Materials</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Bill of Materials</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             Manage multi-level BOMs for elevator assemblies
           </p>
@@ -116,7 +118,7 @@ export default function BomPage() {
         </div>
       </div>
 
-      <div className="border border-[var(--border)] rounded-lg">
+      <div className="card-surface overflow-hidden">
         <Table>
           <TableHeader>
             <TableRow>
@@ -140,9 +142,9 @@ export default function BomPage() {
                   </div>
                 </TableCell>
                 <TableCell>
-                  <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[bom.item_type]}`}>
+                  <Badge variant={TYPE_BADGE_VARIANT[bom.item_type]}>
                     {bom.item_type === "finished_good" ? "Finished Good" : "Sub Assembly"}
-                  </span>
+                  </Badge>
                 </TableCell>
                 <TableCell>v{bom.version}</TableCell>
                 <TableCell className="text-right">{bom.line_count} items</TableCell>

@@ -22,23 +22,27 @@ export function Modal({ title, onClose, children, className }: ModalProps) {
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center">
-      <div className="fixed inset-0 bg-black/50 cursor-pointer" onClick={onClose} />
+      <div
+        className="fixed inset-0 bg-black/40 backdrop-blur-[2px] cursor-pointer animate-fade-in"
+        onClick={onClose}
+      />
       <div
         className={cn(
-          "relative z-[60] bg-[var(--background)] rounded-lg border border-[var(--border)] shadow-xl w-full max-h-[90vh] overflow-y-auto cursor-default",
+          "relative z-[60] bg-[var(--background)] rounded-lg border border-[var(--border)] w-full max-h-[90vh] overflow-y-auto cursor-default",
+          "shadow-[var(--shadow-xl)] animate-scale-in",
           className ?? "max-w-lg"
         )}
       >
-        <div className="flex items-center justify-between p-4 border-b border-[var(--border)]">
+        <div className="sticky top-0 z-10 flex items-center justify-between px-5 py-4 border-b border-[var(--border)] bg-[var(--background)] rounded-t-lg">
           <h2 className="text-lg font-semibold">{title}</h2>
           <button
             onClick={onClose}
-            className="p-1 rounded hover:bg-[var(--muted)] transition-colors cursor-pointer"
+            className="p-1.5 rounded-md hover:bg-[var(--muted)] transition-colors cursor-pointer text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
           >
-            <X size={18} />
+            <X size={16} />
           </button>
         </div>
-        <div className="p-4">{children}</div>
+        <div className="p-5">{children}</div>
       </div>
     </div>
   );

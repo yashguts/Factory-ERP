@@ -8,6 +8,7 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
 import { Upload, ArrowLeft, Check, X, Search, AlertTriangle } from "lucide-react";
 import { resolveColumnMapping, saveColumnMapping, validateJobImport, executeJobImport } from "@/lib/actions/jobs-import";
 import { parseJobRow, parseHeaderRow, parseBomQuantities } from "@/lib/import/parse-target-list";
@@ -273,7 +274,7 @@ export function ImportWizard() {
                 step === s
                   ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                   : ["upload", "columns", "preview", "result"].indexOf(step) > i
-                  ? "bg-green-100 text-green-800"
+                  ? "bg-[var(--success-bg)] text-[var(--success)]"
                   : "bg-[var(--muted)] text-[var(--muted-foreground)]"
               }`}
             >
@@ -479,13 +480,13 @@ export function ImportWizard() {
                     <TableCell className="text-sm font-medium">{job.bom_item_count}</TableCell>
                     <TableCell>
                       {job.status === "new" ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-800">New</span>
+                        <Badge variant="green">New</Badge>
                       ) : job.status === "update" ? (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-blue-100 text-blue-800">Update</span>
+                        <Badge variant="blue">Update</Badge>
                       ) : (
-                        <span className="text-xs px-2 py-0.5 rounded-full bg-red-100 text-red-800" title={job.error}>
+                        <Badge variant="red" title={job.error}>
                           Error
-                        </span>
+                        </Badge>
                       )}
                     </TableCell>
                   </TableRow>

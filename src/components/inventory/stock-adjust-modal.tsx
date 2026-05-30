@@ -170,7 +170,7 @@ function ItemSearchSelect({
       {open && (
         <div
           ref={listRef}
-          className="fixed z-[200] max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--background)] shadow-xl"
+          className="fixed z-[200] max-h-60 overflow-auto rounded-md border border-[var(--border)] bg-[var(--background)] shadow-[var(--shadow-xl)]"
           style={{ top: dropdownPos.top, left: dropdownPos.left, width: dropdownPos.width }}
         >
           {filtered.length === 0 ? (
@@ -267,7 +267,7 @@ export function StockAdjustModal({
     <Modal title="Stock Adjustment" onClose={onClose}>
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="p-3 text-sm bg-red-500/10 text-red-400 rounded-md border border-red-500/20">
+          <div className="p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
           </div>
         )}

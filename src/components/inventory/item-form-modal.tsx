@@ -392,13 +392,13 @@ export function ItemFormModal({
     >
       <form onSubmit={handleSubmit} className="space-y-4">
         {error && (
-          <div className="p-3 text-sm bg-red-50 text-red-700 rounded-md border border-red-200">
+          <div className="p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
           </div>
         )}
 
         {isCloning && cloneSource && (
-          <div className="p-2.5 text-xs bg-blue-50 text-blue-900 rounded-md border border-blue-200">
+          <div className="p-2.5 text-xs bg-blue-50 text-blue-800 rounded-md border border-blue-200">
             Cloning from{" "}
             <span className="font-mono font-medium">{cloneSource.code}</span> —{" "}
             <span className="font-medium">{cloneSource.name}</span>.

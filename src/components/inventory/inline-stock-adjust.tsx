@@ -131,7 +131,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
       {isOpen && (
         <div
           ref={popoverRef}
-          className="fixed z-[200] w-68 rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-xl"
+          className="fixed z-[200] w-68 rounded-lg border border-[var(--border)] bg-[var(--background)] shadow-[var(--shadow-xl)]"
           style={{ top: popoverPos.top, left: popoverPos.left }}
           onClick={(e) => e.stopPropagation()}
         >
@@ -210,7 +210,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
 
             {/* Error */}
             {error && (
-              <div className="text-xs text-red-400 bg-red-500/10 px-2 py-1 rounded">
+              <div className="text-xs text-[var(--destructive)] bg-[var(--destructive-bg)] px-2 py-1 rounded border border-[var(--destructive-border)]">
                 {error}
               </div>
             )}

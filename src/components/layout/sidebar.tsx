@@ -28,8 +28,6 @@ const navItems = [
 export function Sidebar() {
   const pathname = usePathname();
 
-  // Pick the single most-specific matching nav href so nested routes (e.g.
-  // /inventory/changes) don't light up their parent ("Inventory") as well.
   const activeHref = navItems
     .map((i) => i.href)
     .filter((href) =>
@@ -40,13 +38,15 @@ export function Sidebar() {
     .sort((a, b) => b.length - a.length)[0];
 
   return (
-    <aside className="w-64 border-r border-[var(--border)] h-screen sticky top-0 flex flex-col">
-      <div className="p-4 border-b border-[var(--border)]">
-        <h1 className="text-lg font-bold">Factory ERP</h1>
-        <p className="text-xs text-[var(--muted-foreground)]">Elevator Manufacturing</p>
+    <aside className="w-64 border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] h-screen sticky top-0 flex flex-col">
+      <div className="px-5 py-4 border-b border-[var(--sidebar-border)]">
+        <h1 className="text-base font-bold tracking-tight">Factory ERP</h1>
+        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+          Elevator Manufacturing
+        </p>
       </div>
 
-      <nav className="flex-1 p-3 space-y-1">
+      <nav className="flex-1 px-3 py-3 space-y-0.5">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = item.href === activeHref;
@@ -56,13 +56,13 @@ export function Sidebar() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-colors",
+                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-150",
                 isActive
-                  ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
+                  ? "bg-[var(--sidebar-accent)] text-[var(--primary)] font-medium shadow-[var(--shadow-xs)]"
                   : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
               )}
             >
-              <Icon size={18} />
+              <Icon size={18} strokeWidth={isActive ? 2.25 : 1.75} />
               {item.label}
             </Link>
           );

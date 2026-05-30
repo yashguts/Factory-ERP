@@ -1,49 +1,207 @@
 @import "tailwindcss";
 
+/* ------------------------------------------------------------------ *
+ * Design tokens. Every var name used across components is preserved;
+ * values are refined and new tokens (elevation, radius, ring, canvas,
+ * sidebar, chart, semantic tints) are added. Dark mode is class-based
+ * (.dark) and dormant — the polished light theme is the default so we
+ * never ship the old half-broken auto-dark.
+ * ------------------------------------------------------------------ */
+
 :root {
-  --background: #ffffff;
-  --foreground: #171717;
+  /* Surfaces */
+  --canvas: #f6f7f9;            /* app background behind cards */
+  --background: #ffffff;        /* cards, inputs, surfaces */
+  --foreground: #0f172a;
   --card: #ffffff;
-  --card-foreground: #171717;
+  --card-foreground: #0f172a;
   --popover: #ffffff;
-  --popover-foreground: #171717;
-  --muted: #f5f5f5;
-  --muted-foreground: #737373;
-  --border: #e5e5e5;
-  --primary: #1d4ed8;
+  --popover-foreground: #0f172a;
+
+  /* Neutrals */
+  --muted: #f1f5f9;
+  --muted-foreground: #64748b;
+  --border: #e2e8f0;
+  --border-strong: #cbd5e1;
+
+  /* Brand */
+  --primary: #2563eb;
   --primary-foreground: #ffffff;
+  --primary-hover: #1d4ed8;
+  --accent: #eff6ff;
+  --accent-foreground: #1d4ed8;
+
+  /* Semantic */
   --destructive: #dc2626;
   --destructive-foreground: #ffffff;
-  --accent: #f0f9ff;
-  --accent-foreground: #1e40af;
+  --destructive-bg: #fef2f2;
+  --destructive-border: #fecaca;
   --success: #16a34a;
+  --success-foreground: #ffffff;
+  --success-bg: #f0fdf4;
+  --success-border: #bbf7d0;
   --warning: #d97706;
+  --warning-foreground: #ffffff;
+  --warning-bg: #fffbeb;
+  --warning-border: #fde68a;
+
+  /* Sidebar */
+  --sidebar: #ffffff;
+  --sidebar-foreground: #0f172a;
+  --sidebar-border: #e9edf2;
+  --sidebar-accent: #eff6ff;
+
+  /* Focus ring */
+  --ring: #93c5fd;
+
+  /* Radius scale */
+  --radius: 0.625rem;
+  --radius-sm: 0.375rem;
+  --radius-md: 0.5rem;
+  --radius-lg: 0.75rem;
+  --radius-xl: 1rem;
+
+  /* Elevation — soft, layered, low-contrast */
+  --shadow-xs: 0 1px 2px 0 rgb(15 23 42 / 0.04);
+  --shadow-sm: 0 1px 3px 0 rgb(15 23 42 / 0.06), 0 1px 2px -1px rgb(15 23 42 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(15 23 42 / 0.08), 0 2px 6px -2px rgb(15 23 42 / 0.05);
+  --shadow-lg: 0 12px 28px -6px rgb(15 23 42 / 0.12), 0 6px 12px -6px rgb(15 23 42 / 0.08);
+  --shadow-xl: 0 24px 48px -12px rgb(15 23 42 / 0.18);
+
+  /* Chart palette */
+  --chart-1: #2563eb;
+  --chart-2: #16a34a;
+  --chart-3: #d97706;
+  --chart-4: #9333ea;
+  --chart-5: #0891b2;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
-    --card: #171717;
-    --card-foreground: #ededed;
-    --popover: #171717;
-    --popover-foreground: #ededed;
-    --muted: #262626;
-    --muted-foreground: #a3a3a3;
-    --border: #404040;
-    --primary: #3b82f6;
-    --primary-foreground: #ffffff;
-    --destructive: #ef4444;
-    --destructive-foreground: #ffffff;
-    --accent: #1e293b;
-    --accent-foreground: #93c5fd;
-    --success: #22c55e;
-    --warning: #f59e0b;
-  }
+.dark {
+  --canvas: #0a0a0a;
+  --background: #111317;
+  --foreground: #e7eaee;
+  --card: #15181d;
+  --card-foreground: #e7eaee;
+  --popover: #15181d;
+  --popover-foreground: #e7eaee;
+  --muted: #1f242b;
+  --muted-foreground: #94a3b8;
+  --border: #2a313a;
+  --border-strong: #3a434f;
+  --primary: #3b82f6;
+  --primary-foreground: #ffffff;
+  --primary-hover: #60a5fa;
+  --accent: #172033;
+  --accent-foreground: #93c5fd;
+  --destructive: #ef4444;
+  --destructive-foreground: #ffffff;
+  --destructive-bg: #2a1515;
+  --destructive-border: #5b2626;
+  --success: #22c55e;
+  --success-bg: #102417;
+  --success-border: #1f5132;
+  --warning: #f59e0b;
+  --warning-bg: #2a1f08;
+  --warning-border: #5c4314;
+  --sidebar: #111317;
+  --sidebar-foreground: #e7eaee;
+  --sidebar-border: #2a313a;
+  --sidebar-accent: #172033;
+  --ring: #3b82f6;
 }
 
 body {
   background: var(--background);
   color: var(--foreground);
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family: var(--font-sans), system-ui, -apple-system, "Segoe UI", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+  text-rendering: optimizeLegibility;
+}
+
+/* Crisp, consistent focus ring everywhere */
+*:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 1px;
+  border-radius: var(--radius-sm);
+}
+
+::selection {
+  background: color-mix(in srgb, var(--primary) 22%, transparent);
+}
+
+/* Refined scrollbars */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border-strong) transparent;
+}
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background: var(--border-strong);
+  border-radius: 9999px;
+  border: 3px solid var(--background);
+}
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--muted-foreground);
+}
+
+/* Motion */
+@keyframes fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes slide-up-fade {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes scale-in {
+  from { opacity: 0; transform: scale(0.97); }
+  to { opacity: 1; transform: scale(1); }
+}
+@keyframes shimmer {
+  100% { transform: translateX(100%); }
+}
+
+.animate-fade-in { animation: fade-in 0.18s ease-out both; }
+.animate-slide-up { animation: slide-up-fade 0.22s cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-scale-in { animation: scale-in 0.16s cubic-bezier(0.16, 1, 0.3, 1) both; }
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in, .animate-slide-up, .animate-scale-in { animation: none; }
+}
+
+/* Skeleton shimmer */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background: var(--muted);
+  border-radius: var(--radius-sm);
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--background) 60%, transparent),
+    transparent
+  );
+  animation: shimmer 1.4s infinite;
+}
+
+/* Reusable elevated surface */
+.card-surface {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow-sm);
 }

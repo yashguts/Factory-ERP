@@ -108,6 +108,12 @@ src/
         import/             Excel import (legacy)
         loading.tsx         (and various per-route loadings)
       mrp/page.tsx          Material Requirements Planning
+      programs/
+        page.tsx            Programs list (server component)
+        [id]/page.tsx       Program detail
+        loading.tsx         Skeleton
+      inventory/
+        changes/page.tsx    Inventory Daily Changes (item edits + stock moves)
       bom/page.tsx          Standalone BOM (placeholder)
       settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper
@@ -119,6 +125,7 @@ src/
     inventory/              Inventory page + form modal + stock adjust
     jobs/                   Job form, detail, BOM picker, GAD drawing panel, template picker
     mrp/                    MRP table + per-item jobs popover
+    programs/               Programs list, form modal, detail, sketch panel, line picker
   lib/
     utils.ts                cn() utility
     supabase/
@@ -133,6 +140,8 @@ src/
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
+      operations.ts         Programs CRUD, sketch upload, audit toggle
+      inventory-changes.ts  Daily Changes feed (item edits + stock moves + undo)
       gad-drawings.ts       uploadGadDrawing, deleteGadDrawing
       bom-mapping.ts        Unmatched-BOM helpers
       import.ts             Item Excel import
@@ -212,10 +221,42 @@ when searching by a parent.
 
 **`job_bom_lines`** — line items: `job_bom_id` FK (CASCADE), `category` (display section name from `BOM_SECTIONS`), `item_id` (FK to items, NO ACTION — items used here can't be hard-deleted), `required_quantity`, `variant`, `value_text`, `sort_order`.
 
+**`operations`** — programs / recipes (production-visibility Phase 0).
+
+| column | type | notes |
+|---|---|---|
+| `id` | uuid PK | |
+| `name` | text | Program name, e.g. "Car Door Panel Nest V2". |
+| `code` | text UNIQUE | Auto-derived `CNC-SLUG` or `ASM-SLUG` if left blank. |
+| `machine` | text CHECK | `cnc_laser` \| `cnc_punch` \| `assembly_fit` (active). Legacy: `cnc_cutting` + others in constraint for later phases. |
+| `family_key` | text \| null | Groups material/finish variants of the same base program. |
+| `material_label` | text \| null | e.g. "MS", "SS", "SS Rose Gold". |
+| `program_label` | text \| null | Set grouping, e.g. "Standard Programs". |
+| `import_source` | text \| null | null = manual; tag like `cnc_std_v1` = bulk import. |
+| `audited_at` | timestamptz \| null | Set when program is reviewed; null = pending. |
+| `sketch_url/filename/uploaded_at` | text / timestamptz | One sketch per program, in `program-sketches` bucket. |
+| `description`, `notes` | text \| null | |
+| `is_active` | boolean | |
+| `created_at`, `updated_at` | timestamptz | |
+
+**`operation_inputs`** — raw materials consumed per run.
+
+| column | notes |
+|---|---|
+| `id` PK, `operation_id` FK (CASCADE) | |
+| `item_id` FK → items (NO ACTION) \| null | null = "to be filled" (unresolved from import). |
+| `label` | Captured original name for to-be-filled lines. |
+| `qty_per_run` | numeric > 0. |
+| `notes`, `sort_order`, `created_at` | |
+
+**`operation_outputs`** — parts produced per run. Same shape as `operation_inputs`.
+
 ### Storage
 
 - Bucket `gad-drawings` — public, 50 MB cap, MIME-whitelisted to PDF/PNG/JPG/WebP.
-- Files at `{jobId}/{timestamp}-{filename}`. Replacing a drawing deletes the previous file.
+  Files at `{jobId}/{timestamp}-{filename}`. Replacing a drawing deletes the previous file.
+- Bucket `program-sketches` — public, 50 MB cap, same MIME types.
+  Files at `{operationId}/{timestamp}-{filename}`. Same replace-on-upload pattern.
 
 ---
 
@@ -311,6 +352,40 @@ The MRP page has a "Requirement Dispatch Date up to" filter. Server-side,
 `requirement_dispatch_date <= cutoffDate` and only counts BOM lines from
 those.
 
+### Programs / operations model
+
+An **operation** (called "Program" in the UI) is a recipe: one run
+consumes some raw materials (inputs) and produces many parts (outputs —
+the nest). The DB table is `operations`; the code says "operation"
+internally and "program" in the UI.
+
+Phase 0 is **catalog-only** — no inventory effects. Phase 1 will add
+`operation_runs` that post `inventory_transactions` on completion.
+
+Key mechanics:
+
+- **Machine types**: `cnc_laser`, `cnc_punch`, `assembly_fit` are the
+  active values offered in the UI. `cnc_cutting` is a legacy value from
+  before the laser/punch split — still rendered, but not offered for new
+  programs.
+- **Family / material**: `family_key` groups variants of the same base
+  nest (e.g. same geometry, different sheet material). `material_label`
+  is the variant's material/finish (e.g. "MS", "SS Rose Gold").
+- **To-be-filled lines**: `item_id` on inputs/outputs can be null. In
+  that case `label` holds the captured original name from the import,
+  shown with an amber "needs item" badge in the UI, resolvable later.
+- **Audit tracking**: `audited_at` marks a program as reviewed.
+  The list shows audited/pending counts and supports filter by status.
+- **Codes**: auto-derived as `CNC-SLUG` or `ASM-SLUG` from the name
+  if left blank. Uniqueness enforced by DB; `resolveCode` appends `-2`,
+  `-3`, etc. on clash.
+- **Save semantics**: `replaceLines` deletes all input/output lines and
+  re-inserts from the form — same pattern as `saveBomSection`.
+- **Sketch**: one PDF/image per program, stored in `program-sketches`
+  bucket. Same upload/replace/remove pattern as GAD drawings.
+- **Program labels**: grouping tag (e.g. "Standard Programs"). Filterable
+  in the list via chip filters.
+
 ---
 
 ## 5 — Server-action conventions
@@ -320,7 +395,7 @@ those.
 **Read queries** that we want fast → wrap with `unstable_cache` and tag
 them. They use `createCacheClient()` (anon, no cookies — wouldn't work
 inside `unstable_cache` otherwise). Tags: `"items"`, `"jobs"`,
-`"bom-lines"`, `"inventory-stock"`, `"categories"`.
+`"bom-lines"`, `"inventory-stock"`, `"categories"`, `"operations"`.
 
 **Mutations** use the cookies-aware `createClient()` from
 `lib/supabase/server.ts`. Every mutation must call `revalidateTag()`
@@ -421,6 +496,32 @@ Don't add new code that reads or writes `lookup_key` for display — use
 - Table: Code, Item Name, Type, Category, Required, In Stock, Shortfall, Jobs
 - **Jobs hover popover** — per-item breakdown of jobs requiring it (lines + qty), click row to navigate
 
+### Programs (`/programs`)
+- List with code, name, machine chip, label, input/output counts
+- Multi-token search across program name/code/family + all input/output item names
+- Filter chips: by machine type (Laser Cutting / Punching / Assembly), by program label, by audit status (pending / audited)
+- Audit progress counter: "X audited / Y pending"
+- **Add Program** modal — name, code (auto if blank), machine type, description, inputs picker, outputs picker, notes
+- **Clone Program** — pre-fills form from source, auto-suggests next code via `nextCodeInSeries`
+- **Quick-edit** (pencil icon per row) — opens form modal pre-filled for editing
+- **Audit toggle** (check icon per row) — optimistic mark/unmark audited
+- Click row → program detail page
+- Loading skeleton
+
+### Program detail (`/programs/[id]`)
+- Header with name, code, machine badge, description
+- Audit / Clone / Edit / Delete buttons
+- **Inputs table** (consumed per run) — item name + code + qty + unit, with "needs item" badge for to-be-filled lines
+- **Outputs table** (produced per run) — same format
+- **Sketch panel** (sticky right column) — upload/view/replace/remove PDF or image, same pattern as GAD drawings
+- Notes section
+- Items link back to inventory (`/inventory?edit={id}`)
+
+### Daily Changes (`/inventory/changes`)
+- Unified feed of item edits (from `item_change_log`) and stock moves (from `inventory_transactions`)
+- Date picker to browse by day
+- Per-entry undo (one-click revert for item edits, reversing adjustment for stock moves)
+
 ### GAD drawings
 - Upload / view / replace / remove per job
 - PDF rendered via browser native iframe; images via `<img>`
@@ -507,6 +608,9 @@ already wipes it.
 
 (Capture from conversation; not committed work.)
 
+- **Production visibility Phase 1+**: operation runs that post inventory
+  transactions (consume inputs, produce outputs). Programs catalog
+  (Phase 0) is done.
 - Better procurement workflow on Trade items (POs, supplier prices)
 - Production workflow on Make items (work orders, stages)
 - More analytics on the dashboard (it's a placeholder right now)
@@ -537,6 +641,7 @@ these would warrant a feature branch.
 | | Where |
 |---|---|
 | Add BOM section | `src/lib/bom/bom-sections.ts` |
+| Programs CRUD | `src/lib/actions/operations.ts` |
 | Add server action | `src/lib/actions/<domain>.ts` |
 | Reusable UI primitive | `src/components/ui/` |
 | Database state | Supabase MCP `execute_sql` / `list_tables` |

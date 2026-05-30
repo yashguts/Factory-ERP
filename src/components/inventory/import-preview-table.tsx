@@ -8,12 +8,14 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import type { ImportPreviewRow } from "@/lib/import/types";
 
-const STATUS_STYLES: Record<string, string> = {
-  valid: "bg-green-100 text-green-800",
-  error: "bg-red-100 text-red-800",
-  duplicate: "bg-yellow-100 text-yellow-800",
+const STATUS_BADGE_VARIANT: Record<string, BadgeVariant> = {
+  valid: "green",
+  error: "red",
+  duplicate: "amber",
 };
 
 interface Props {
@@ -82,9 +84,9 @@ export function ImportPreviewTable({ rows, onToggleRow, onToggleAll }: Props) {
                 <TableCell className="text-xs">{row.sub_category_name}</TableCell>
                 <TableCell className="text-right">{row.current_stock}</TableCell>
                 <TableCell>
-                  <span className={`px-2 py-0.5 rounded text-xs font-medium ${STATUS_STYLES[row.status]}`}>
+                  <Badge variant={STATUS_BADGE_VARIANT[row.status] ?? "neutral"}>
                     {row.status}
-                  </span>
+                  </Badge>
                   {row.error && (
                     <span className="block text-xs text-red-600 mt-0.5">{row.error}</span>
                   )}

@@ -88,7 +88,7 @@ export function MrpJobsPopover({
       {children}
       {open && (
         <div
-          className="absolute right-0 top-full mt-1 z-50 w-[340px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg text-left"
+          className="absolute right-0 top-full mt-1 z-50 w-[340px] rounded-md border border-[var(--border)] bg-[var(--background)] shadow-[var(--shadow-lg)] text-left"
           onMouseEnter={handleEnter}
           onMouseLeave={handleLeave}
         >

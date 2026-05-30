@@ -9,6 +9,8 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2 } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
@@ -21,10 +23,10 @@ const STATUS_LABELS: Record<JobStatus, string> = {
   hold: "Hold",
 };
 
-const STATUS_COLORS: Record<JobStatus, string> = {
-  new: "bg-gray-100 text-gray-800",
-  in_production: "bg-amber-100 text-amber-800",
-  hold: "bg-red-100 text-red-800",
+const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
+  new: "neutral",
+  in_production: "amber",
+  hold: "red",
 };
 
 const STAGE_LABELS: Record<JobStage, string> = {
@@ -291,10 +293,10 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
         <div className="flex items-start justify-between">
           <div>
             <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold">Job {job.job_number}</h1>
-              <span className={`text-xs px-2 py-0.5 rounded-full ${STATUS_COLORS[job.status]}`}>
+              <h1 className="text-2xl font-bold tracking-tight">Job {job.job_number}</h1>
+              <Badge variant={STATUS_BADGE[job.status]}>
                 {STATUS_LABELS[job.status]}
-              </span>
+              </Badge>
             </div>
             <p className="text-sm text-[var(--muted-foreground)] mt-1">
               {job.customer_name || "No customer"}{job.brand ? ` — ${job.brand}` : ""}
@@ -362,7 +364,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
         <div className={splitView ? "overflow-y-auto pr-2" : "contents"}>
 
       {/* Progress Bar */}
-      <div className="mb-6 p-4 border border-[var(--border)] rounded-lg">
+      <div className="mb-6 p-4 card-surface">
         <div className="flex items-center justify-between mb-2">
           <span className="text-sm font-medium">Progress</span>
           <span className="text-sm text-[var(--muted-foreground)]">{pct}%</span>
@@ -379,7 +381,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
       </div>
 
       {/* Metadata Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 border border-[var(--border)] rounded-lg">
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 card-surface">
         <MetaItem label="Spec" value={job.spec_string} />
         <MetaItem label="Floors" value={job.floors?.toString()} />
         <MetaItem label="Door Type" value={job.door_type} />
@@ -414,7 +416,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
       </div>
 
       {job.remark && (
-        <div className="mb-6 p-4 border border-[var(--border)] rounded-lg">
+        <div className="mb-6 p-4 card-surface">
           <h3 className="text-sm font-medium mb-1">Remark</h3>
           <p className="text-sm text-[var(--muted-foreground)]">{job.remark}</p>
         </div>
@@ -476,7 +478,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
                     {phase.sections.map((sec) => (
                       <div
                         key={sec.category}
-                        className="border border-[var(--border)] rounded-lg p-4"
+                        className="card-surface p-4"
                       >
                         <h4 className="font-medium text-sm mb-2">{sec.category}</h4>
                         <div className="grid grid-cols-1 gap-y-1">
@@ -498,7 +500,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
               ))}
             </div>
           ) : (
-            <div className="border border-[var(--border)] rounded-lg p-8 text-center">
+            <div className="card-surface p-8 text-center">
               <p className="text-[var(--muted-foreground)] mb-3">
                 No section-based BOM data yet.
               </p>
@@ -516,7 +518,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
         {/* Item View */}
         {viewTab === "items" && (
           hasItemBom ? (
-            <div className="border border-[var(--border)] rounded-lg">
+            <div className="card-surface overflow-hidden">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -553,7 +555,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
               </Table>
             </div>
           ) : (
-            <div className="border border-[var(--border)] rounded-lg p-8 text-center">
+            <div className="card-surface p-8 text-center">
               <p className="text-[var(--muted-foreground)]">
                 No item-based BOM data. Import from Excel to populate.
               </p>

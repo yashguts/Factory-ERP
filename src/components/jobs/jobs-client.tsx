@@ -10,6 +10,8 @@ import {
 } from "@/components/ui/table";
 import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
 import Link from "next/link";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob } from "@/lib/actions/jobs";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
@@ -19,10 +21,16 @@ const STATUS_LABELS: Record<JobStatus, string> = {
   hold: "Hold",
 };
 
-const STATUS_COLORS: Record<JobStatus, string> = {
-  new: "bg-gray-100 text-gray-800",
-  in_production: "bg-amber-100 text-amber-800",
-  hold: "bg-red-100 text-red-800",
+const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
+  new: "neutral",
+  in_production: "amber",
+  hold: "red",
+};
+
+const STATUS_SELECT_COLORS: Record<JobStatus, string> = {
+  new: "bg-[var(--muted)] text-[var(--muted-foreground)]",
+  in_production: "bg-amber-50 text-amber-700",
+  hold: "bg-red-50 text-red-700",
 };
 
 const STAGE_LABELS: Record<JobStage, string> = {
@@ -31,10 +39,16 @@ const STAGE_LABELS: Record<JobStage, string> = {
   full_material: "Full Material",
 };
 
-const STAGE_COLORS: Record<JobStage, string> = {
-  new: "bg-gray-100 text-gray-800",
-  first_phase: "bg-blue-100 text-blue-800",
-  full_material: "bg-green-100 text-green-800",
+const STAGE_BADGE: Record<JobStage, BadgeVariant> = {
+  new: "neutral",
+  first_phase: "blue",
+  full_material: "green",
+};
+
+const STAGE_SELECT_COLORS: Record<JobStage, string> = {
+  new: "bg-[var(--muted)] text-[var(--muted-foreground)]",
+  first_phase: "bg-blue-50 text-blue-700",
+  full_material: "bg-emerald-50 text-emerald-700",
 };
 
 type SortKey = "job_number" | "customer" | "status" | "stage" | "req_stage" | "req_dispatch";
@@ -189,7 +203,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-bold">Job Orders</h1>
+          <h1 className="text-2xl font-bold tracking-tight">Job Orders</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             {sorted.length} of {jobs.length} jobs
             {savingJobId ? " — saving..." : ""}
@@ -211,7 +225,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
       {unmatchedCount > 0 && (
         <Link
           href="/jobs/unmatched"
-          className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg border border-amber-200 bg-amber-50 text-amber-800 hover:bg-amber-100 transition-colors"
+          className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] hover:opacity-90 transition-colors"
         >
           <AlertTriangle size={18} className="shrink-0" />
           <span className="text-sm">
@@ -286,7 +300,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
 
       {/* Table */}
       {paginated.length === 0 ? (
-        <div className="border border-[var(--border)] rounded-lg p-12 text-center">
+        <div className="card-surface p-12 text-center">
           <ClipboardList size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
           <p className="text-[var(--muted-foreground)]">
             {initialJobs.length === 0
@@ -295,7 +309,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
           </p>
         </div>
       ) : (
-        <div className="border border-[var(--border)] rounded-lg">
+        <div className="card-surface overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -329,7 +343,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <select
-                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STAGE_COLORS[job.stage ?? "new"]}`}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STAGE_SELECT_COLORS[job.stage ?? "new"]}`}
                       value={job.stage ?? "new"}
                       onChange={(e) => handleInlineUpdate(job.id, { stage: e.target.value })}
                       disabled={savingJobId === job.id}
@@ -341,7 +355,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <select
-                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${job.requirement_stage ? STAGE_COLORS[job.requirement_stage] : "bg-transparent text-[var(--muted-foreground)]"}`}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${job.requirement_stage ? STAGE_SELECT_COLORS[job.requirement_stage] : "bg-transparent text-[var(--muted-foreground)]"}`}
                       value={job.requirement_stage ?? ""}
                       onChange={(e) => handleInlineUpdate(job.id, { requirement_stage: e.target.value || null })}
                       disabled={savingJobId === job.id}
@@ -355,7 +369,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <input
                       type="date"
-                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer focus:ring-2 focus:ring-[var(--primary)] focus:outline-none"
+                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                       value={job.requirement_dispatch_date ?? ""}
                       onChange={(e) => handleInlineUpdate(job.id, { requirement_dispatch_date: e.target.value || null })}
                       disabled={savingJobId === job.id}
@@ -363,7 +377,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <select
-                      className={`text-xs px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--primary)] ${STATUS_COLORS[job.status]}`}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STATUS_SELECT_COLORS[job.status]}`}
                       value={job.status}
                       onChange={(e) => handleInlineUpdate(job.id, { status: e.target.value })}
                       disabled={savingJobId === job.id}

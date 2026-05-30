@@ -8,6 +8,8 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown, CalendarDays } from "lucide-react";
 import type { MrpRow } from "@/lib/actions/mrp";
 import type { ItemType } from "@/lib/supabase/types";
@@ -21,12 +23,12 @@ const TYPE_LABELS: Record<string, string> = {
   door_panel: "Door Panel",
 };
 
-const TYPE_COLORS: Record<string, string> = {
-  raw_material: "bg-blue-100 text-blue-800",
-  sub_assembly: "bg-purple-100 text-purple-800",
-  finished_good: "bg-green-100 text-green-800",
-  mechanical_finished_stock: "bg-amber-100 text-amber-800",
-  door_panel: "bg-pink-100 text-pink-800",
+const TYPE_BADGE_VARIANT: Record<string, BadgeVariant> = {
+  raw_material: "blue",
+  sub_assembly: "purple",
+  finished_good: "green",
+  mechanical_finished_stock: "amber",
+  door_panel: "pink",
 };
 
 type SortKey = "code" | "name" | "category" | "required" | "stock" | "shortfall" | "jobs";
@@ -195,7 +197,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
       {/* Header */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h1 className="text-2xl font-bold">MRP - Material Requirements</h1>
+          <h1 className="text-2xl font-bold tracking-tight">MRP - Material Requirements</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
             {sorted.length} of {tabRows.length} items in this tab
             {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
@@ -242,26 +244,26 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="border border-[var(--border)] rounded-lg p-4">
-          <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Items</p>
-          <p className="text-2xl font-bold">{totals.totalItems.toLocaleString()}</p>
+        <div className="card-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Items</p>
+          <p className="text-2xl font-bold tabular-nums">{totals.totalItems.toLocaleString()}</p>
         </div>
-        <div className="border border-[var(--border)] rounded-lg p-4">
-          <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Required</p>
-          <p className="text-2xl font-bold">{totals.totalRequired.toLocaleString()}</p>
+        <div className="card-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Required</p>
+          <p className="text-2xl font-bold tabular-nums">{totals.totalRequired.toLocaleString()}</p>
         </div>
-        <div className="border border-[var(--border)] rounded-lg p-4">
-          <p className="text-xs text-[var(--muted-foreground)] mb-1">Items with Shortfall</p>
-          <p className="text-2xl font-bold text-[var(--destructive)]">{totals.itemsWithShortfall.toLocaleString()}</p>
+        <div className="card-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Items with Shortfall</p>
+          <p className="text-2xl font-bold tabular-nums text-[var(--destructive)]">{totals.itemsWithShortfall.toLocaleString()}</p>
         </div>
-        <div className="border border-[var(--border)] rounded-lg p-4">
-          <p className="text-xs text-[var(--muted-foreground)] mb-1">Total Shortfall Units</p>
-          <p className="text-2xl font-bold text-[var(--destructive)]">{totals.totalShortfall.toLocaleString()}</p>
+        <div className="card-surface p-4">
+          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Shortfall Units</p>
+          <p className="text-2xl font-bold tabular-nums text-[var(--destructive)]">{totals.totalShortfall.toLocaleString()}</p>
         </div>
       </div>
 
       {/* Date Filter Bar */}
-      <div className="flex items-center gap-3 mb-4 p-3 border border-[var(--border)] rounded-lg bg-[var(--card)]">
+      <div className="flex items-center gap-3 mb-4 p-3 card-surface">
         <CalendarDays size={18} className="text-[var(--muted-foreground)] shrink-0" />
         <span className="text-sm font-medium whitespace-nowrap">Requirement Dispatch Date up to:</span>
         <input
@@ -270,7 +272,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
           value={cutoffDate}
           onChange={(e) => handleDateChange(e.target.value)}
           onClick={() => { try { dateRef.current?.showPicker(); } catch {} }}
-          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1 [color-scheme:dark]"
+          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors [color-scheme:dark]"
         />
         {cutoffDate && (
           <Button variant="secondary" size="sm" onClick={clearDate}>
@@ -322,7 +324,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
 
       {/* Table */}
       {paginated.length === 0 ? (
-        <div className="border border-[var(--border)] rounded-lg p-12 text-center">
+        <div className="card-surface p-12 text-center">
           <Calculator size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
           <p className="text-[var(--muted-foreground)]">
             {initialData.length === 0
@@ -331,7 +333,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
           </p>
         </div>
       ) : (
-        <div className="border border-[var(--border)] rounded-lg">
+        <div className="card-surface overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -355,9 +357,9 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
                       <div className="font-medium">{row.item_name}</div>
                     </TableCell>
                     <TableCell>
-                      <span className={`inline-block text-xs px-2 py-0.5 rounded-full ${TYPE_COLORS[row.item_type] ?? "bg-gray-100 text-gray-800"}`}>
+                      <Badge variant={TYPE_BADGE_VARIANT[row.item_type] ?? "neutral"}>
                         {TYPE_LABELS[row.item_type] ?? row.item_type}
-                      </span>
+                      </Badge>
                     </TableCell>
                     <TableCell className="text-sm">{row.category_name ?? "-"}</TableCell>
                     <TableCell className="text-right font-medium">

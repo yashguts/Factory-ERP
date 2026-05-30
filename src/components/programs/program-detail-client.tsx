@@ -14,6 +14,8 @@ import {
   ArrowUpFromLine,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import type { BadgeVariant } from "@/components/ui/badge";
 import {
   Table,
   TableHeader,
@@ -94,22 +96,16 @@ export function ProgramDetailClient({
         </Link>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
-            <h1 className="text-2xl font-bold">{operation.name}</h1>
+            <h1 className="text-2xl font-bold tracking-tight">{operation.name}</h1>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               {operation.code && (
                 <span className="font-mono text-xs text-[var(--muted-foreground)]">
                   {operation.code}
                 </span>
               )}
-              <span
-                className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium ${
-                  operation.machine === "assembly_fit"
-                    ? "bg-purple-100 text-purple-700"
-                    : "bg-blue-100 text-blue-700"
-                }`}
-              >
+              <Badge variant={operation.machine === "assembly_fit" ? "purple" : operation.machine === "cnc_laser" ? "cyan" : "blue"}>
                 {OPERATION_MACHINE_LABELS[operation.machine]}
-              </span>
+              </Badge>
             </div>
             {operation.description && (
               <p className="text-sm text-[var(--muted-foreground)] mt-2 max-w-2xl">
@@ -234,7 +230,7 @@ function LineTable({
   emptyText: string;
 }) {
   return (
-    <div className="border border-[var(--border)] rounded-lg overflow-hidden">
+    <div className="card-surface overflow-hidden">
       <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
         {icon}
         <h2 className="text-sm font-semibold">{title}</h2>
@@ -279,9 +275,9 @@ function LineTable({
                       <span className="text-[var(--foreground)]">
                         {l.label || "(unnamed)"}
                       </span>
-                      <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-amber-100 text-amber-700">
+                      <Badge variant="warning">
                         needs item
-                      </span>
+                      </Badge>
                     </span>
                   )}
                 </TableCell>
