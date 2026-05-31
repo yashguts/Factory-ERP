@@ -272,9 +272,16 @@ is **unchanged** (locked); this only reads what a job asks for and explodes it.
   (the exact `child_item_id`, no finish dimension). `child_item_id` always stores
   a representative; inherit/pinned resolve by `child_family` at explode time.
 - **Item detail page** `/inventory/[id]` (`ItemDetailClient`): one-panel identity
-  (Bought / Made-cut / Made-assembled) + the "Built from" editor + produced-by/
+  (Bought / Made-cut / Made-assembled) + two parts sections — **"Built from"**
+  (stocked sub-parts) and **"Assembly parts"** (loose parts = `phantom` items)
+  — both writing `item_bom_lines`, split on load by the child's stock_behaviour;
+  one Save persists both. "Create loose part" makes a phantom item. Produced-by/
   consumed-by program links. Actions in `lib/actions/item-bom.ts`
   (`getItemBom`, `saveItemBom`). Inventory rows link the code here.
+- **Loose parts** are `phantom` items: link one to the program(s) that cut it
+  by adding it as a `cut_part` output; list it under "Assembly parts" on the
+  assemblies it fits (many-to-many). The `/mrp/plan` explode routes a phantom
+  child through its cut_part program to the sheet.
 - **Raw-material plan** `/mrp/plan` (`getProductionPlan` in `lib/actions/mrp.ts`):
   explodes job demand through parts lists (finish-resolved) and programs down to a
   **steel + purchased buy-list**, netted vs stock. Program runs are rolled up at
