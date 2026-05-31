@@ -20,6 +20,8 @@ interface LoosePartPickerProps {
   onQty: (n: number) => void;
   onRemove?: () => void;
   onCreateNew: (query: string) => void;
+  /** A captured loose-part name not yet linked to an item (edit/import case). */
+  pendingLabel?: string | null;
 }
 
 /**
@@ -40,6 +42,7 @@ export function LoosePartPicker({
   onQty,
   onRemove,
   onCreateNew,
+  pendingLabel,
 }: LoosePartPickerProps) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<LoosePartCandidate[]>([]);
@@ -47,6 +50,9 @@ export function LoosePartPicker({
   const [open, setOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [promoting, setPromoting] = useState<string | null>(null);
+  // An imported/edited loose row carries a captured label but no item yet.
+  // Show it as a pending chip until the user resolves it (keeps it visible).
+  const [resolving, setResolving] = useState(false);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -119,6 +125,8 @@ export function LoosePartPicker({
   };
 
   const hasItem = !!itemId;
+  const showPending = !hasItem && !!pendingLabel && !resolving;
+  const inSearch = !hasItem && !showPending;
 
   return (
     <div ref={containerRef} className="relative flex items-start gap-2">
@@ -143,6 +151,28 @@ export function LoosePartPicker({
               <X className="h-3 w-3" />
             </button>
           </div>
+        ) : showPending ? (
+          <div className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-amber-300 bg-amber-50/50">
+            <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600 shrink-0">
+              loose
+            </span>
+            <span className="text-sm truncate flex-1" title={pendingLabel ?? ""}>
+              {pendingLabel}
+            </span>
+            <button
+              type="button"
+              onClick={() => {
+                setResolving(true);
+                setSearch(pendingLabel ?? "");
+                setOpen(true);
+                setTimeout(() => inputRef.current?.focus(), 0);
+              }}
+              title="Link this loose part to a tracked item"
+              className="text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer shrink-0"
+            >
+              Link
+            </button>
+          </div>
         ) : (
           <>
             <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--muted-foreground)] pointer-events-none" />
@@ -165,7 +195,7 @@ export function LoosePartPicker({
         )}
 
         {/* Dropdown */}
-        {open && !hasItem && (
+        {open && inSearch && (
           <div className="absolute z-50 mt-1 w-full min-w-[440px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-80 overflow-y-auto">
             {error ? (
               <div className="px-3 py-3 text-xs flex items-start gap-1.5 text-red-700">

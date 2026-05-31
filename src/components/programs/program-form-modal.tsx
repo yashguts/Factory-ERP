@@ -25,6 +25,7 @@ import {
   type ItemCategory,
   type UnitOfMeasurement,
   type ItemType,
+  type OutputRole,
 } from "@/lib/supabase/types";
 
 interface Props {
@@ -48,6 +49,16 @@ interface Props {
 }
 
 const makeKey = () => Math.random().toString(36).slice(2);
+
+/**
+ * Which picker asked to create an item. "loose" creates a phantom loose part
+ * and drops it back into the specific output row that asked (by key).
+ */
+type CreateTarget =
+  | { kind: "input" }
+  | { kind: "output" }
+  | { kind: "loose"; rowKey: string; name: string }
+  | null;
 
 const linesToRows = (
   lines: OperationDetail["inputs"] | undefined,
@@ -122,9 +133,7 @@ export function ProgramFormModal({
 
   // Inline "create new item" sub-modal. Tracks which picker triggered it so
   // the new item drops into the right list with a sensible suggested name.
-  const [createTarget, setCreateTarget] = useState<"input" | "output" | null>(
-    null,
-  );
+  const [createTarget, setCreateTarget] = useState<CreateTarget>(null);
 
   const isAssembly = machine === "assembly_fit";
 
@@ -164,16 +173,16 @@ export function ProgramFormModal({
 
   const suggestedItemName = useMemo(() => {
     const ref = code.trim() || name.trim() || "program";
-    const list = createTarget === "input" ? inputs : outputs;
+    const isInput = createTarget?.kind === "input";
+    const list = isInput ? inputs : outputs;
     const n = list.filter((x) => x.item_id).length + 1;
-    const word =
-      createTarget === "input"
-        ? isAssembly
-          ? "Component"
-          : "Material"
-        : isAssembly
-          ? "Sub-assembly"
-          : "Output";
+    const word = isInput
+      ? isAssembly
+        ? "Component"
+        : "Material"
+      : isAssembly
+        ? "Sub-assembly"
+        : "Output";
     return `${word} ${n} of ${ref}`;
   }, [code, name, inputs, outputs, createTarget, isAssembly]);
 
@@ -206,6 +215,30 @@ export function ProgramFormModal({
     name: string;
     uom: string;
   }) => {
+    if (!createTarget) return;
+
+    // Loose part: drop the new phantom into the exact output row that asked,
+    // keeping its "Loose part" type. Don't append a fresh row.
+    if (createTarget.kind === "loose") {
+      const { rowKey } = createTarget;
+      setOutputs((prev) =>
+        prev.map((r) =>
+          r._key === rowKey
+            ? {
+                ...r,
+                item_id: created.id,
+                item_code: created.code,
+                item_name: created.name,
+                uom: created.uom,
+                role: "cut_part" as OutputRole,
+                required_quantity: r.required_quantity || 1,
+              }
+            : r,
+        ),
+      );
+      return;
+    }
+
     const row: PickedItem = {
       _key: makeKey(),
       item_id: created.id,
@@ -214,13 +247,17 @@ export function ProgramFormModal({
       uom: created.uom,
       category_name: null,
       required_quantity: 1,
+      // A created output is a real, stocked finished part.
+      ...(createTarget.kind === "output"
+        ? { role: "component" as OutputRole }
+        : {}),
     };
     const append = (prev: PickedItem[]) => [
       ...prev.filter((r) => r.item_id),
       row,
       emptyLine(),
     ];
-    if (createTarget === "input") setInputs(append);
+    if (createTarget.kind === "input") setInputs(append);
     else setOutputs(append);
   };
 
@@ -441,7 +478,7 @@ export function ProgramFormModal({
             onChange={setInputs}
             searchLabel={copy.inputsSearch}
             allowCreate
-            onRequestCreate={() => setCreateTarget("input")}
+            onRequestCreate={() => setCreateTarget({ kind: "input" })}
           />
         </div>
 
@@ -458,7 +495,10 @@ export function ProgramFormModal({
             onChange={setOutputs}
             searchLabel={copy.outputsSearch}
             allowCreate
-            onRequestCreate={() => setCreateTarget("output")}
+            onRequestCreate={() => setCreateTarget({ kind: "output" })}
+            onCreateLoose={(rowKey, query) =>
+              setCreateTarget({ kind: "loose", rowKey, name: query })
+            }
             withRole
           />
         </div>
@@ -492,7 +532,15 @@ export function ProgramFormModal({
           categories={categories}
           units={units}
           items={itemRefs}
-          createDefaults={{ name: suggestedItemName, item_type: "sub_assembly" }}
+          createDefaults={
+            createTarget.kind === "loose"
+              ? {
+                  name: createTarget.name.trim() || suggestedItemName,
+                  item_type: "sub_assembly",
+                  stock_behaviour: "phantom",
+                }
+              : { name: suggestedItemName, item_type: "sub_assembly" }
+          }
           onClose={() => setCreateTarget(null)}
           onSaved={() => setCreateTarget(null)}
           onCreated={handleCreated}
