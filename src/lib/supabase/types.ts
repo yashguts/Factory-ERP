@@ -7,6 +7,14 @@ export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mech
  * - tooling: jigs/templates; excluded from product BOM + MRP
  */
 export type StockBehaviour = "stocked" | "phantom" | "tooling";
+/**
+ * What a program OUTPUT line represents:
+ * - component: a real (stocked) item — links/should-link to inventory
+ * - cut_part: intentional phantom — cut & fitted into an assembly, never stocked
+ * - tooling: a jig/template, not a product
+ * - scrap: offcut, ignored in planning
+ */
+export type OutputRole = "component" | "cut_part" | "tooling" | "scrap";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
 export type JobStatus = "new" | "in_production" | "hold";
 export type JobStage = "new" | "first_phase" | "full_material";

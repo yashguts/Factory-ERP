@@ -62,6 +62,7 @@ const linesToRows = (
     uom: l.uom,
     category_name: null,
     required_quantity: l.qty_per_run,
+    role: l.role,
   }));
 };
 
@@ -74,6 +75,7 @@ const rowsToLines = (rows: PickedItem[]): OperationLineInput[] =>
       item_id: r.item_id ?? null,
       label: r.label ?? null,
       qty_per_run: r.required_quantity || 0,
+      role: r.role,
     }));
 
 export function ProgramFormModal({
@@ -457,6 +459,7 @@ export function ProgramFormModal({
             searchLabel={copy.outputsSearch}
             allowCreate
             onRequestCreate={() => setCreateTarget("output")}
+            withRole
           />
         </div>
 

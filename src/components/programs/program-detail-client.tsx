@@ -73,10 +73,18 @@ export function ProgramDetailClient({
   // Inventory-match summary for this program: how many input/output lines are
   // still "to be filled" (no item_id).
   const match = useMemo(() => {
+    // Only 'component' lines (real items) are expected to map to inventory.
+    // cut_part / tooling / scrap outputs are intentionally not items.
     const all = [...operation.inputs, ...operation.outputs];
-    const total = all.length;
-    const unmatched = all.filter((l) => !l.item_id).length;
-    return { total, unmatched, matched: total - unmatched };
+    const mappable = all.filter((l) => (l.role ?? "component") === "component");
+    const unmatched = mappable.filter((l) => !l.item_id).length;
+    const nonItem = all.length - mappable.length;
+    return {
+      total: mappable.length,
+      unmatched,
+      matched: mappable.length - unmatched,
+      nonItem,
+    };
   }, [operation.inputs, operation.outputs]);
 
   // Unmark immediately; require confirmation before marking audited.
@@ -420,9 +428,15 @@ function LineTable({
                       <span className="text-[var(--foreground)]">
                         {l.label || "(unnamed)"}
                       </span>
-                      <Badge variant="warning">
-                        needs item
-                      </Badge>
+                      {l.role === "tooling" ? (
+                        <Badge variant="neutral" title="Tool / template — not a product">tool</Badge>
+                      ) : l.role === "cut_part" ? (
+                        <Badge variant="blue" title="Loose part — cut & fitted into an assembly, never stocked">loose part</Badge>
+                      ) : l.role === "scrap" ? (
+                        <Badge variant="neutral" title="Scrap / offcut">scrap</Badge>
+                      ) : (
+                        <Badge variant="warning" title="Finished part with no inventory item yet">needs item</Badge>
+                      )}
                     </span>
                   )}
                 </TableCell>

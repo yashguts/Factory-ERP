@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
-import type { OperationMachine } from "@/lib/supabase/types";
+import type { OperationMachine, OutputRole } from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ *
  * Operations catalog (production-visibility Phase 0).
@@ -51,6 +51,8 @@ export interface OperationLineDetail {
   qty_per_run: number;
   notes: string | null;
   sort_order: number;
+  /** Outputs only: component | cut_part | tooling | scrap. Inputs are always 'component'. */
+  role: OutputRole;
 }
 
 /** Full operation with resolved input/output lines. */
@@ -82,6 +84,8 @@ export interface OperationLineInput {
   label?: string | null;
   qty_per_run: number;
   notes?: string | null;
+  /** Outputs only: classification role. Ignored for inputs. */
+  role?: OutputRole;
 }
 
 /**
@@ -116,7 +120,7 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     .select(
       `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
        operation_inputs(item_id, label, item:items(name)),
-       operation_outputs(item_id, label, item:items(name))`,
+       operation_outputs(item_id, label, role, item:items(name))`,
     )
     .eq("is_active", true)
     .order("name");
@@ -152,7 +156,12 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       input_count: ins.length,
       output_count: outs.length,
       input_matched: ins.filter((r: any) => r.item_id).length,
-      output_matched: outs.filter((r: any) => r.item_id).length,
+      // An output is "resolved" if it's linked to an item OR intentionally not
+      // an item (cut_part/tooling/scrap). Only unmapped 'component' outputs are
+      // true gaps that still need an inventory item.
+      output_matched: outs.filter(
+        (r: any) => r.item_id || (r.role && r.role !== "component"),
+      ).length,
       search_text,
       is_active: row.is_active as boolean,
     };
@@ -178,7 +187,7 @@ const _getOperationDetailUncached = async (
          item:items(id, code, name, uom:units_of_measurement(abbreviation))
        ),
        outputs:operation_outputs(
-         id, item_id, label, qty_per_run, notes, sort_order,
+         id, item_id, label, qty_per_run, notes, sort_order, role,
          item:items(id, code, name, uom:units_of_measurement(abbreviation))
        )`,
     )
@@ -660,8 +669,9 @@ async function replaceLines(
   if (delIn.error) return delIn.error.message;
   if (delOut.error) return delOut.error.message;
 
-  const inRows = cleanLines(operationId, inputs);
-  const outRows = cleanLines(operationId, outputs);
+  // Inputs have no role column; outputs carry the component/cut_part/tooling role.
+  const inRows = cleanLines(operationId, inputs, false);
+  const outRows = cleanLines(operationId, outputs, true);
 
   if (inRows.length > 0) {
     const { error } = await supabase.from("operation_inputs").insert(inRows);
@@ -674,21 +684,33 @@ async function replaceLines(
   return null;
 }
 
-function cleanLines(operationId: string, lines?: OperationLineInput[]) {
+const VALID_OUTPUT_ROLES: OutputRole[] = ["component", "cut_part", "tooling", "scrap"];
+
+function cleanLines(
+  operationId: string,
+  lines: OperationLineInput[] | undefined,
+  includeRole: boolean,
+) {
   return (lines ?? [])
     .filter(
       (l) =>
         (l.item_id || (l.label && l.label.trim())) &&
         Number(l.qty_per_run) > 0,
     )
-    .map((l, idx) => ({
-      operation_id: operationId,
-      item_id: l.item_id || null,
-      label: l.label?.trim() || null,
-      qty_per_run: Number(l.qty_per_run),
-      notes: l.notes?.trim() || null,
-      sort_order: idx,
-    }));
+    .map((l, idx) => {
+      const base = {
+        operation_id: operationId,
+        item_id: l.item_id || null,
+        label: l.label?.trim() || null,
+        qty_per_run: Number(l.qty_per_run),
+        notes: l.notes?.trim() || null,
+        sort_order: idx,
+      };
+      if (!includeRole) return base;
+      const role: OutputRole =
+        l.role && VALID_OUTPUT_ROLES.includes(l.role) ? l.role : "component";
+      return { ...base, role };
+    });
 }
 
 /**
@@ -769,6 +791,7 @@ function mapLines(rows: any): OperationLineDetail[] {
         qty_per_run: Number(r.qty_per_run ?? 0),
         notes: (r.notes as string | null) ?? null,
         sort_order: Number(r.sort_order ?? 0),
+        role: ((r.role as OutputRole | null) ?? "component") as OutputRole,
       };
     })
     .sort((a, b) => a.sort_order - b.sort_order);

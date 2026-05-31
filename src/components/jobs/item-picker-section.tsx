@@ -21,6 +21,11 @@ export interface PickedItem {
   uom: string;
   category_name: string | null;
   required_quantity: number;
+  /**
+   * Program-output classification (component | cut_part | tooling | scrap).
+   * Only used by the program output picker; ignored elsewhere (jobs, inputs).
+   */
+  role?: import("@/lib/supabase/types").OutputRole;
 }
 
 interface ItemPickerSectionProps {
