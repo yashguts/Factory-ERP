@@ -53,8 +53,30 @@ export interface Item {
   cost_price: number;
   is_active: boolean;
   stock_behaviour: StockBehaviour;
+  /** Groups finish/material variants of one part. NULL = not a finish family. */
+  family: string | null;
+  /** This variant's finish/material (MS, SS, SS Champagne…). NULL = no finish. */
+  finish: string | null;
   created_at: string;
   updated_at: string;
+}
+
+/** How a parts-list line resolves its child's finish at explode time. */
+export type FinishRule = "inherit" | "pinned" | "neutral";
+
+/** A line in an assembly item's multi-level parts list ("Built from"). */
+export interface ItemBomLine {
+  id: string;
+  parent_item_id: string;
+  /** Specific child (used for finish_rule = 'neutral'). */
+  child_item_id: string | null;
+  /** Child family to resolve within (used for 'inherit' / 'pinned'). */
+  child_family: string | null;
+  qty: number;
+  finish_rule: FinishRule;
+  /** The fixed finish when finish_rule = 'pinned' (e.g. 'MS'). */
+  pinned_finish: string | null;
+  sort_order: number;
 }
 
 export interface Warehouse {
