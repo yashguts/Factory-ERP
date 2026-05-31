@@ -114,6 +114,10 @@ src/
         loading.tsx         Skeleton
       inventory/
         changes/page.tsx    Inventory Daily Changes (item edits + stock moves)
+        [id]/page.tsx       Item detail (identity + Built-from + Assembly parts)
+      subassemblies/
+        page.tsx            Sub-assemblies list (items with a parts list) + define-search
+        loading.tsx         Skeleton
       bom/page.tsx          Standalone BOM (placeholder)
       settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper
@@ -122,7 +126,8 @@ src/
   components/
     ui/                     Reusable primitives (Button, Input, Select, Modal, Table)
     layout/                 AppShell, Sidebar, StaleDeployGuard
-    inventory/              Inventory page + form modal + stock adjust
+    inventory/              Inventory page + form modal + stock adjust + item detail
+                            (Built-from/Assembly parts) + loose-part picker + sub-assemblies
     jobs/                   Job form, detail, BOM picker, GAD drawing panel, template picker
     mrp/                    MRP table + per-item jobs popover
     programs/               Programs list, form modal, detail, sketch panel, line picker
@@ -141,6 +146,8 @@ src/
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
       operations.ts         Programs CRUD, sketch upload, audit toggle
+      item-bom.ts           Item parts list (Built-from/Assembly parts), loose-part
+                            search + promote, getSubassemblies
       inventory-changes.ts  Daily Changes feed (item edits + stock moves + undo)
       gad-drawings.ts       uploadGadDrawing, deleteGadDrawing
       bom-mapping.ts        Unmatched-BOM helpers
@@ -282,6 +289,16 @@ is **unchanged** (locked); this only reads what a job asks for and explodes it.
   by adding it as a `cut_part` output; list it under "Assembly parts" on the
   assemblies it fits (many-to-many). The `/mrp/plan` explode routes a phantom
   child through its cut_part program to the sheet.
+  - **Program outputs are type-first** (`operation-line-picker.tsx`): each output
+    row picks its role (Finished part / Loose part / Tool / Scrap) BEFORE the
+    name — a new row is gated until a type is chosen. "Loose part" rows use a
+    loose-only picker (`searchLooseParts` — phantoms + cut_part labels) with
+    promote-on-pick (`promoteLoosePartLabel` creates/reuses a phantom + relinks
+    every program sharing the label); "Create new item" on a loose row makes a
+    phantom automatically. Other roles use the normal inventory search.
+  - **Sub-assemblies page** `/subassemblies` (`getSubassemblies`) lists every
+    item that already has a parts list; the "Define a sub-assembly" search jumps
+    to the item detail editor. Starts empty, grows one item at a time.
 - **Raw-material plan** `/mrp/plan` (`getProductionPlan` in `lib/actions/mrp.ts`):
   explodes job demand through parts lists (finish-resolved) and programs down to a
   **steel + purchased buy-list**, netted vs stock. Program runs are rolled up at
@@ -558,6 +575,13 @@ Don't add new code that reads or writes `lookup_key` for display — use
 - Unified feed of item edits (from `item_change_log`) and stock moves (from `inventory_transactions`)
 - Date picker to browse by day
 - Per-entry undo (one-click revert for item edits, reversing adjustment for stock moves)
+
+### Sub-assemblies (`/subassemblies`)
+- Dedicated section (sidebar: after Daily Changes, before Bill of Materials)
+- Lists every item that has a parts list (Built-from and/or Assembly parts), with
+  per-row built/loose counts + finish-family badge. Starts empty, grows one at a time.
+- "Define a sub-assembly" search → pick any item → its `/inventory/[id]` detail
+  editor (Built-from + Assembly parts). The detail page is the single editor.
 
 ### GAD drawings
 - Upload / view / replace / remove per job
