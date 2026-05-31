@@ -27,6 +27,10 @@ export interface OperationListRow {
   audited_at: string | null;
   input_count: number;
   output_count: number;
+  /** Input lines already linked to an inventory item (item_id not null). */
+  input_matched: number;
+  /** Output lines already linked to an inventory item (item_id not null). */
+  output_matched: number;
   /** Lowercased name+code+family+material plus all input/output item names &
    *  to-be-filled labels, so the list search can match inside a program. */
   search_text: string;
@@ -111,8 +115,8 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     .from("operations")
     .select(
       `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
-       operation_inputs(label, item:items(name)),
-       operation_outputs(label, item:items(name))`,
+       operation_inputs(item_id, label, item:items(name)),
+       operation_outputs(item_id, label, item:items(name))`,
     )
     .eq("is_active", true)
     .order("name");
@@ -147,6 +151,8 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       audited_at: (row.audited_at as string | null) ?? null,
       input_count: ins.length,
       output_count: outs.length,
+      input_matched: ins.filter((r: any) => r.item_id).length,
+      output_matched: outs.filter((r: any) => r.item_id).length,
       search_text,
       is_active: row.is_active as boolean,
     };
@@ -247,6 +253,71 @@ export async function getOperationsForItem(
   const cached = unstable_cache(
     () => _getOperationsForItemUncached(itemId),
     ["operations-for-item", itemId],
+    { revalidate: 60, tags: ["operations"] },
+  );
+  return cached();
+}
+
+/** A sibling program in the same family — a material/finish variant. */
+export interface FamilyVariant {
+  id: string;
+  code: string | null;
+  name: string;
+  material_label: string | null;
+  audited_at: string | null;
+  input_count: number;
+  input_matched: number;
+  output_count: number;
+  output_matched: number;
+}
+
+const _getFamilyVariantsUncached = async (
+  familyKey: string,
+): Promise<FamilyVariant[]> => {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase
+    .from("operations")
+    .select(
+      `id, code, name, material_label, audited_at,
+       operation_inputs(item_id),
+       operation_outputs(item_id)`,
+    )
+    .eq("is_active", true)
+    .eq("family_key", familyKey)
+    .order("material_label");
+  if (error) throw error;
+
+  return (data ?? []).map((row: any) => {
+    const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
+    const outs = Array.isArray(row.operation_outputs)
+      ? row.operation_outputs
+      : [];
+    return {
+      id: row.id as string,
+      code: (row.code as string | null) ?? null,
+      name: row.name as string,
+      material_label: (row.material_label as string | null) ?? null,
+      audited_at: (row.audited_at as string | null) ?? null,
+      input_count: ins.length,
+      input_matched: ins.filter((r: any) => r.item_id).length,
+      output_count: outs.length,
+      output_matched: outs.filter((r: any) => r.item_id).length,
+    };
+  });
+};
+
+/**
+ * Sibling material/finish variants of a program (same `family_key`). Returns
+ * all active members of the family — the caller decides whether to highlight
+ * or exclude the current one. Empty array when familyKey is null/blank.
+ */
+export async function getFamilyVariants(
+  familyKey: string | null,
+): Promise<FamilyVariant[]> {
+  if (!familyKey || !familyKey.trim()) return [];
+  const cached = unstable_cache(
+    () => _getFamilyVariantsUncached(familyKey),
+    ["operation-family", familyKey],
     { revalidate: 60, tags: ["operations"] },
   );
   return cached();

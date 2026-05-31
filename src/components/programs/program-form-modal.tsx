@@ -98,6 +98,12 @@ export function ProgramFormModal({
   );
   const [description, setDescription] = useState(source?.description ?? "");
   const [notes, setNotes] = useState(source?.notes ?? "");
+  // Family groups material/finish variants of the same base program; material
+  // is this variant's finish (MS, SS, SS Rose Gold, …). Both optional.
+  const [familyKey, setFamilyKey] = useState(source?.family_key ?? "");
+  const [materialLabel, setMaterialLabel] = useState(
+    source?.material_label ?? "",
+  );
   const [inputs, setInputs] = useState<PickedItem[]>(() =>
     linesToRows(source?.inputs),
   );
@@ -201,6 +207,8 @@ export function ProgramFormModal({
         name,
         code: code.trim() || null,
         machine,
+        family_key: familyKey.trim() || null,
+        material_label: materialLabel.trim() || null,
         description: description.trim() || null,
         notes: notes.trim() || null,
         inputs: rowsToLines(inputs),
@@ -303,6 +311,39 @@ export function ProgramFormModal({
             placeholder="Optional — what this program is for"
           />
         </div>
+
+        {/* Family / material — groups the material variants of one base
+            program so they're navigable together on the list & detail pages. */}
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Family
+              <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                (groups material variants)
+              </span>
+            </label>
+            <Input
+              value={familyKey}
+              onChange={(e) => setFamilyKey(e.target.value)}
+              placeholder="e.g., 153A ACO LDP MV 700-2100"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Material / finish
+            </label>
+            <Input
+              value={materialLabel}
+              onChange={(e) => setMaterialLabel(e.target.value)}
+              placeholder="e.g., MS, SS, SS Rose Gold"
+            />
+          </div>
+        </div>
+        <p className="-mt-2 text-[11px] text-[var(--muted-foreground)]">
+          Programs that share a <span className="font-medium">Family</span> are
+          treated as the same part in different materials — they group together
+          on the Programs list and link to each other on the detail page.
+        </p>
 
         {/* Inputs */}
         <div className="border-t border-[var(--border)] pt-3">

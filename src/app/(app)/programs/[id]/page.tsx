@@ -1,5 +1,8 @@
 import { notFound } from "next/navigation";
-import { getOperationDetail } from "@/lib/actions/operations";
+import {
+  getOperationDetail,
+  getFamilyVariants,
+} from "@/lib/actions/operations";
 import {
   getItemsWithStock,
   getCategories,
@@ -23,6 +26,9 @@ export default async function ProgramDetailPage({ params }: Props) {
 
   if (!operation) notFound();
 
+  // Sibling material/finish variants (same family) for the variant switcher.
+  const variants = await getFamilyVariants(operation.family_key);
+
   const itemRefs = items.map((i) => ({
     item_type: i.item_type,
     category_id: i.category_id,
@@ -31,6 +37,7 @@ export default async function ProgramDetailPage({ params }: Props) {
   return (
     <ProgramDetailClient
       operation={operation}
+      variants={variants}
       categories={categories}
       units={units}
       itemRefs={itemRefs}

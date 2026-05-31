@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -12,10 +12,14 @@ import {
   Check,
   ArrowDownToLine,
   ArrowUpFromLine,
+  Layers,
+  CheckCircle2,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { BadgeVariant } from "@/components/ui/badge";
+import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { cn } from "@/lib/utils";
 import {
   Table,
   TableHeader,
@@ -30,6 +34,7 @@ import {
   deleteOperation,
   setOperationAudited,
   type OperationDetail,
+  type FamilyVariant,
 } from "@/lib/actions/operations";
 import {
   OPERATION_MACHINE_LABELS,
@@ -40,6 +45,8 @@ import {
 
 interface Props {
   operation: OperationDetail;
+  /** Sibling material/finish variants in the same family (incl. this one). */
+  variants: FamilyVariant[];
   categories: ItemCategory[];
   units: UnitOfMeasurement[];
   itemRefs: { item_type: ItemType; category_id: string | null }[];
@@ -47,6 +54,7 @@ interface Props {
 
 export function ProgramDetailClient({
   operation,
+  variants,
   categories,
   units,
   itemRefs,
@@ -55,14 +63,37 @@ export function ProgramDetailClient({
   const [showEdit, setShowEdit] = useState(false);
   const [showClone, setShowClone] = useState(false);
   const [audited, setAudited] = useState(!!operation.audited_at);
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const [isPending, startTransition] = useTransition();
 
-  const handleAudit = () => {
-    const next = !audited;
-    setAudited(next); // optimistic
+  // Inventory-match summary for this program: how many input/output lines are
+  // still "to be filled" (no item_id).
+  const match = useMemo(() => {
+    const all = [...operation.inputs, ...operation.outputs];
+    const total = all.length;
+    const unmatched = all.filter((l) => !l.item_id).length;
+    return { total, unmatched, matched: total - unmatched };
+  }, [operation.inputs, operation.outputs]);
+
+  // Unmark immediately; require confirmation before marking audited.
+  const requestAudit = () => {
+    if (audited) {
+      setAudited(false);
+      startTransition(async () => {
+        const res = await setOperationAudited(operation.id, false);
+        if (!res.ok) setAudited(true);
+      });
+    } else {
+      setConfirmOpen(true);
+    }
+  };
+
+  const confirmAuditYes = () => {
+    setAudited(true);
+    setConfirmOpen(false);
     startTransition(async () => {
-      const res = await setOperationAudited(operation.id, next);
-      if (!res.ok) setAudited(!next);
+      const res = await setOperationAudited(operation.id, true);
+      if (!res.ok) setAudited(false);
     });
   };
 
@@ -116,9 +147,9 @@ export function ProgramDetailClient({
           <div className="flex items-center gap-2 shrink-0">
             <Button
               variant={audited ? "primary" : "secondary"}
-              onClick={handleAudit}
+              onClick={requestAudit}
               disabled={isPending}
-              className={audited ? "bg-green-600 hover:bg-green-700 text-white" : ""}
+              className={audited ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
               title={audited ? "Audited — click to unmark" : "Mark this program audited"}
             >
               <Check className="h-3.5 w-3.5 mr-1.5" />
@@ -147,6 +178,90 @@ export function ProgramDetailClient({
           </div>
         </div>
       </div>
+
+      {/* Material variants — jump between same-program-different-material
+          siblings. Only shown when the family has more than one member. */}
+      {variants.length > 1 && (
+        <div className="card-surface p-3 mb-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Layers className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+            <span className="text-xs font-medium text-[var(--muted-foreground)]">
+              Material variants ({variants.length})
+              {operation.family_key ? ` · ${operation.family_key}` : ""}
+            </span>
+          </div>
+          <div className="flex flex-wrap gap-1.5">
+            {variants.map((v) => {
+              const current = v.id === operation.id;
+              const vUnmatched =
+                v.input_count +
+                v.output_count -
+                (v.input_matched + v.output_matched);
+              return (
+                <button
+                  key={v.id}
+                  type="button"
+                  onClick={() => {
+                    if (!current) router.push(`/programs/${v.id}`);
+                  }}
+                  title={v.name}
+                  className={cn(
+                    "inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md text-sm border transition-colors",
+                    current
+                      ? "border-[var(--primary)] bg-[var(--accent)] text-[var(--accent-foreground)] font-medium cursor-default"
+                      : "border-[var(--border)] text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer",
+                  )}
+                >
+                  {v.audited_at && (
+                    <span
+                      className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                      title="Audited"
+                    />
+                  )}
+                  {v.material_label ?? v.code ?? "Variant"}
+                  {vUnmatched > 0 && (
+                    <span
+                      className="text-[10px] text-amber-600 tabular-nums"
+                      title={`${vUnmatched} item(s) need mapping`}
+                    >
+                      {vUnmatched}⚠
+                    </span>
+                  )}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Inventory-match summary banner. */}
+      {match.total > 0 && (
+        <div
+          className={cn(
+            "flex items-center gap-2 mb-4 px-4 py-3 rounded-lg border text-sm",
+            match.unmatched === 0
+              ? "border-[var(--success-border)] bg-[var(--success-bg)] text-[var(--success)]"
+              : "border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)]",
+          )}
+        >
+          {match.unmatched === 0 ? (
+            <>
+              <CheckCircle2 className="h-4 w-4 shrink-0" />
+              All {match.total} item{match.total === 1 ? "" : "s"} are matched to
+              inventory.
+            </>
+          ) : (
+            <>
+              <AlertTriangle className="h-4 w-4 shrink-0" />
+              <span>
+                <strong>{match.unmatched}</strong> of {match.total} item
+                {match.total === 1 ? "" : "s"} still need an inventory match.
+                Edit the program to link them.
+              </span>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Body: lines on the left, sketch on the right */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
@@ -210,6 +325,30 @@ export function ProgramDetailClient({
             setShowClone(false);
             router.push(`/programs/${id}`);
           }}
+        />
+      )}
+
+      {confirmOpen && (
+        <ConfirmDialog
+          title="Mark program audited?"
+          message={
+            <>
+              Are you sure all inputs and outputs in{" "}
+              <span className="font-medium">{operation.name}</span> are accurate
+              and correctly mapped to inventory?
+              {match.unmatched > 0 && (
+                <span className="block mt-2 text-[var(--warning)]">
+                  Heads up: {match.unmatched} item
+                  {match.unmatched === 1 ? "" : "s"} still{" "}
+                  {match.unmatched === 1 ? "needs" : "need"} an inventory match.
+                </span>
+              )}
+            </>
+          }
+          confirmLabel="Yes, mark audited"
+          cancelLabel="No"
+          onConfirm={confirmAuditYes}
+          onCancel={() => setConfirmOpen(false)}
         />
       )}
     </div>
