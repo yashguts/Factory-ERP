@@ -70,7 +70,7 @@ interface ItemFormModalProps {
    * Create-mode seed values (e.g. when opened inline from another form to
    * add a placeholder item). Ignored when editing/cloning.
    */
-  createDefaults?: { name?: string; item_type?: ItemType };
+  createDefaults?: { name?: string; item_type?: ItemType; stock_behaviour?: StockBehaviour };
   /**
    * Called after a successful CREATE with the new item's essentials, so the
    * caller can drop it straight into a picker. Not called on edit.
@@ -243,7 +243,7 @@ export function ItemFormModal({
 
   // Stock behaviour: stocked (default) | phantom | tooling.
   const [stockBehaviour, setStockBehaviour] = useState<StockBehaviour>(
-    seed?.stock_behaviour ?? "stocked",
+    seed?.stock_behaviour ?? createDefaults?.stock_behaviour ?? "stocked",
   );
 
   // What the category itself says about Make/Trade — used to label the

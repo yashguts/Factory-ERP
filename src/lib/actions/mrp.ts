@@ -289,12 +289,15 @@ async function _getProductionPlanUncached(
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
 
-  // item -> the program that produces it (component output) + that output's qty/run.
+  // item -> the program that produces it + that output's qty/run. Includes
+  // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
+  // link to a phantom item, so a phantom loose-part child of an assembly still
+  // explodes through the program that cuts it down to its sheet.
   const outRows = await fetchAllRows((off, page) =>
     supabase
       .from("operation_outputs")
       .select("operation_id, item_id, qty_per_run")
-      .eq("role", "component")
+      .in("role", ["component", "cut_part"])
       .not("item_id", "is", null)
       .range(off, off + page - 1),
   );

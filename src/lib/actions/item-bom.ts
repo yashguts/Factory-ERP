@@ -44,6 +44,8 @@ export interface ItemBomLineDetail {
   /** The child item's own family/finish (lets the editor rebuild the row). */
   child_item_family: string | null;
   child_item_finish: string | null;
+  /** The child's stock behaviour — splits stocked sub-parts vs loose (phantom) parts. */
+  child_stock_behaviour: StockBehaviour;
 }
 
 export interface ItemBomResult {
@@ -88,7 +90,7 @@ const _getItemBomUncached = async (
     .from("item_bom_lines")
     .select(
       `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
-       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, uom:units_of_measurement(abbreviation))`,
+       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, uom:units_of_measurement(abbreviation))`,
     )
     .eq("parent_item_id", itemId)
     .order("sort_order");
@@ -117,6 +119,8 @@ const _getItemBomUncached = async (
       child_uom: (cuom?.abbreviation as string) ?? null,
       child_item_family: (child?.family as string | null) ?? null,
       child_item_finish: (child?.finish as string | null) ?? null,
+      child_stock_behaviour:
+        ((child?.stock_behaviour as StockBehaviour | null) ?? "stocked"),
     };
   });
 
