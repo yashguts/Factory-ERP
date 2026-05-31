@@ -12,7 +12,7 @@ import {
   getOperationsForItem,
   type ItemOperationsResult,
 } from "@/lib/actions/operations";
-import type { ItemType, ItemCategory, UnitOfMeasurement } from "@/lib/supabase/types";
+import type { ItemType, ItemCategory, UnitOfMeasurement, StockBehaviour } from "@/lib/supabase/types";
 
 interface ItemRef {
   item_type: ItemType;
@@ -34,6 +34,7 @@ interface ItemFormModalProps {
     lead_time_days: number;
     cost_price: number;
     procurement_type?: "make" | "trade" | null;
+    stock_behaviour?: StockBehaviour;
     suppliers?: string[];
   } | null;
   /**
@@ -55,6 +56,7 @@ interface ItemFormModalProps {
     lead_time_days: number;
     cost_price: number;
     procurement_type?: "make" | "trade" | null;
+    stock_behaviour?: StockBehaviour;
     suppliers?: string[];
   } | null;
   /** Pre-computed next code in series (caller derives via nextCodeInSeries). */
@@ -239,6 +241,11 @@ export function ItemFormModal({
     seed?.procurement_type ?? "",
   );
 
+  // Stock behaviour: stocked (default) | phantom | tooling.
+  const [stockBehaviour, setStockBehaviour] = useState<StockBehaviour>(
+    seed?.stock_behaviour ?? "stocked",
+  );
+
   // What the category itself says about Make/Trade — used to label the
   // "Inherit" option in the dropdown and to compute the effective type
   // when the user hasn't set a per-item override.
@@ -340,6 +347,7 @@ export function ItemFormModal({
           procurement_type: (procOverride === ""
             ? null
             : procOverride) as "make" | "trade" | null,
+          stock_behaviour: stockBehaviour,
           suppliers: cleanedSuppliers,
           note: note.trim() || undefined,
         };
@@ -600,6 +608,34 @@ export function ItemFormModal({
               min={0}
               step="0.01"
             />
+          </div>
+        </div>
+
+        {/* Stock behaviour — how the item is planned/held. */}
+        <div className="border-t border-[var(--border)] pt-4">
+          <div className="grid grid-cols-3 gap-4 items-start">
+            <div>
+              <label className="block text-sm font-medium mb-1">
+                Stock behaviour
+              </label>
+              <Select
+                value={stockBehaviour}
+                onChange={(e) =>
+                  setStockBehaviour(e.target.value as StockBehaviour)
+                }
+              >
+                <option value="stocked">Stocked (held & planned)</option>
+                <option value="phantom">Phantom (made, never stocked)</option>
+                <option value="tooling">Tooling (jig/template, not a product)</option>
+              </Select>
+            </div>
+            <p className="col-span-2 text-xs text-[var(--muted-foreground)] mt-7">
+              {stockBehaviour === "stocked"
+                ? "Has a stock balance and is planned by MRP (raw sheets, bought parts, real sub-assemblies)."
+                : stockBehaviour === "phantom"
+                  ? "Cut/made but never held in stock — explodes through to its raw material; gets no balance or order of its own. Rare as an item."
+                  : "A jig or template used to make other parts — excluded from product BOMs and MRP."}
+            </p>
           </div>
         </div>
 

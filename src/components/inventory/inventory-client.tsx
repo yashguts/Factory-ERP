@@ -31,6 +31,7 @@ interface ItemWithStock {
   lead_time_days: number;
   cost_price: number;
   is_active: boolean;
+  stock_behaviour: "stocked" | "phantom" | "tooling";
   procurement_type: "make" | "trade" | null;
   category_procurement_type: "make" | "trade" | null;
   effective_procurement_type: "make" | "trade" | null;
@@ -83,6 +84,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<"all" | "low" | "zero" | "in_stock">("all");
+  const [behaviourFilter, setBehaviourFilter] = useState<"all" | "stocked" | "phantom" | "tooling">("all");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
@@ -217,6 +219,8 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
 
       if (typeFilter !== "all" && item.item_type !== typeFilter) return false;
 
+      if (behaviourFilter !== "all" && item.stock_behaviour !== behaviourFilter) return false;
+
       if (categoryFilter !== "all") {
         if (subCategoryFilter !== "all") {
           if (item.category_id !== subCategoryFilter) return false;
@@ -239,7 +243,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
 
       return true;
     });
-  }, [initialItems, searchTokens, typeFilter, categoryFilter, subCategoryFilter, stockFilter, categoryTree]);
+  }, [initialItems, searchTokens, typeFilter, behaviourFilter, categoryFilter, subCategoryFilter, stockFilter, categoryTree]);
 
   // Sort items
   const sorted = useMemo(() => {
@@ -390,6 +394,18 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           <option value="low">Low Stock</option>
           <option value="zero">Zero Stock</option>
         </Select>
+
+        {/* Stock-behaviour filter */}
+        <Select
+          value={behaviourFilter}
+          onChange={(e) => { setBehaviourFilter(e.target.value as typeof behaviourFilter); resetPage(); }}
+          className="w-[150px]"
+        >
+          <option value="all">All Behaviour</option>
+          <option value="stocked">Stocked</option>
+          <option value="phantom">Phantom</option>
+          <option value="tooling">Tooling</option>
+        </Select>
       </div>
 
       {/* Table */}
@@ -438,9 +454,21 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant={TYPE_BADGE_VARIANT[item.item_type]}>
-                        {TYPE_LABELS[item.item_type]}
-                      </Badge>
+                      <span className="inline-flex items-center gap-1">
+                        <Badge variant={TYPE_BADGE_VARIANT[item.item_type]}>
+                          {TYPE_LABELS[item.item_type]}
+                        </Badge>
+                        {item.stock_behaviour === "phantom" && (
+                          <Badge variant="purple" className="text-[10px] px-1.5" title="Phantom — made but never stocked">
+                            Phantom
+                          </Badge>
+                        )}
+                        {item.stock_behaviour === "tooling" && (
+                          <Badge variant="neutral" className="text-[10px] px-1.5" title="Tooling — jig/template, not a product">
+                            Tooling
+                          </Badge>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell>
                       {item.effective_procurement_type === "make" ? (

@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import type { ItemType, TransactionType, FieldChange } from "@/lib/supabase/types";
+import type { ItemType, TransactionType, FieldChange, StockBehaviour } from "@/lib/supabase/types";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -64,6 +64,8 @@ const _getItemsWithStockUncached = async () => {
       lead_time_days: Number(item.lead_time_days),
       cost_price: Number(item.cost_price),
       is_active: item.is_active as boolean,
+      /** stocked | phantom | tooling — stock/planning behaviour. */
+      stock_behaviour: (item.stock_behaviour as StockBehaviour) ?? "stocked",
       /** Per-item override. NULL = inherit from category. */
       procurement_type: itemPT,
       /** The (sub-)category's default — used by the form's "Inherit (X)" label. */
@@ -120,6 +122,8 @@ export async function createItem(data: {
   cost_price: number;
   /** Make/Trade override. NULL/undefined = inherit from category. */
   procurement_type?: "make" | "trade" | null;
+  /** stocked | phantom | tooling. Defaults to 'stocked' if omitted. */
+  stock_behaviour?: StockBehaviour;
   /** Up to 5 supplier names (only meaningful for Trade items). */
   suppliers?: string[];
   /** Optional reason recorded in the change log (not stored on items). */
@@ -142,6 +146,7 @@ export async function createItem(data: {
       lead_time_days: data.lead_time_days,
       cost_price: data.cost_price,
       procurement_type: data.procurement_type ?? null,
+      stock_behaviour: data.stock_behaviour ?? "stocked",
       suppliers: normalizeSuppliers(data.suppliers),
     })
     .select("id")
@@ -243,6 +248,7 @@ const TRACKED_ITEM_FIELDS = [
   "lead_time_days",
   "cost_price",
   "procurement_type",
+  "stock_behaviour",
   "suppliers",
   "is_active",
 ] as const;
@@ -476,6 +482,8 @@ export async function updateItem(
      * (item then inherits from category). Omit to leave unchanged.
      */
     procurement_type?: "make" | "trade" | null;
+    /** stocked | phantom | tooling. Omit to leave unchanged. */
+    stock_behaviour?: StockBehaviour;
     /** Up to 5 supplier names. Pass `[]` to clear all. Omit to leave unchanged. */
     suppliers?: string[];
     /** Optional reason recorded in the change log (not stored on items). */
@@ -506,7 +514,7 @@ export async function updateItem(
   const { data: before } = await supabase
     .from("items")
     .select(
-      "code, name, description, item_type, category_id, uom_id, minimum_stock, reorder_point, lead_time_days, cost_price, procurement_type, suppliers, is_active",
+      "code, name, description, item_type, category_id, uom_id, minimum_stock, reorder_point, lead_time_days, cost_price, procurement_type, stock_behaviour, suppliers, is_active",
     )
     .eq("id", id)
     .single();

@@ -1,4 +1,12 @@
 export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock" | "door_panel";
+/**
+ * How an item behaves in stock/planning (orthogonal to make/trade procurement_type):
+ * - stocked: has a balance, is planned (raw sheets, bought parts, real sub-assemblies)
+ * - phantom: made but never stocked — a transient cut part; rare as an item (mostly
+ *   lives on operation_outputs.role), explodes through to its raw material
+ * - tooling: jigs/templates; excluded from product BOM + MRP
+ */
+export type StockBehaviour = "stocked" | "phantom" | "tooling";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
 export type JobStatus = "new" | "in_production" | "hold";
 export type JobStage = "new" | "first_phase" | "full_material";
@@ -36,6 +44,7 @@ export interface Item {
   lead_time_days: number;
   cost_price: number;
   is_active: boolean;
+  stock_behaviour: StockBehaviour;
   created_at: string;
   updated_at: string;
 }
@@ -255,6 +264,7 @@ export const ITEM_FIELD_LABELS: Record<string, string> = {
   lead_time_days: "Lead Time (days)",
   cost_price: "Cost Price",
   procurement_type: "Make/Trade",
+  stock_behaviour: "Stock Behaviour",
   suppliers: "Suppliers",
   is_active: "Active",
 };
