@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ItemRow } from "@/components/jobs/item-row";
+import { LoosePartPicker } from "@/components/inventory/loose-part-picker";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import {
@@ -222,17 +223,12 @@ export function ItemDetailClient({
 
           {/* Loose parts (phantoms) cut on programs and fitted in */}
           <div className="mt-4">
-            <PartsSection
-              title="Assembly parts"
-              subtitle="loose parts (cut on programs, never stocked) fitted into this item"
-              icon={<Puzzle className="h-4 w-4" />}
+            <LoosePartsSection
               rows={looseRows}
               onUpdate={updater(setLooseRows)}
               onAdd={adder(setLooseRows)}
               onRemove={remover(setLooseRows)}
-              searchLabel="loose part"
               onCreate={() => setShowCreateLoose(true)}
-              createLabel="Create loose part"
               onSave={save}
               saved={saved}
               isPending={isPending}
@@ -413,6 +409,123 @@ function PartsSection({
               <Plus className="h-3 w-3" /> {createLabel}
             </button>
           )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Assembly-parts section. Same card chrome as PartsSection, but each row uses
+ * the LoosePartPicker (searches only loose parts — phantom items + program
+ * cut_part labels — never the full inventory). No finish-rule column: a loose
+ * part is a concrete cut piece (neutral).
+ */
+function LoosePartsSection({
+  rows,
+  onUpdate,
+  onAdd,
+  onRemove,
+  onCreate,
+  onSave,
+  saved,
+  isPending,
+  error,
+}: {
+  rows: BomRow[];
+  onUpdate: (key: string, patch: Partial<BomRow>) => void;
+  onAdd: () => void;
+  onRemove: (key: string) => void;
+  onCreate: (query: string) => void;
+  onSave: () => void;
+  saved: boolean;
+  isPending: boolean;
+  error: string | null;
+}) {
+  return (
+    <div className="card-surface overflow-hidden">
+      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
+        <Puzzle className="h-4 w-4" />
+        <h2 className="text-sm font-semibold">Assembly parts</h2>
+        <span className="text-xs text-[var(--muted-foreground)]">
+          · loose parts (cut on programs, never stocked) fitted into this item
+        </span>
+        <div className="ml-auto flex items-center gap-2">
+          {saved && (
+            <span className="text-xs text-[var(--success)] inline-flex items-center gap-1">
+              <Check className="h-3.5 w-3.5" /> Saved
+            </span>
+          )}
+          <Button size="sm" onClick={onSave} disabled={isPending}>
+            {isPending ? (
+              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+            ) : (
+              <Save className="h-3.5 w-3.5 mr-1.5" />
+            )}
+            Save parts list
+          </Button>
+        </div>
+      </div>
+      <div className="p-4">
+        {error && (
+          <div className="mb-3 p-2.5 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
+            {error}
+          </div>
+        )}
+        <div className="space-y-1.5">
+          {rows.map((row) => (
+            <LoosePartPicker
+              key={row._key}
+              itemId={row.item_id}
+              itemName={row.item_name}
+              itemCode={row.item_code}
+              uom={row.uom}
+              qty={row.required_quantity}
+              onPick={(p) =>
+                onUpdate(row._key, {
+                  item_id: p.id,
+                  item_code: p.code,
+                  item_name: p.name,
+                  uom: p.uom,
+                  required_quantity: row.required_quantity || 1,
+                  finishRule: "neutral",
+                  family: null,
+                  finish: null,
+                })
+              }
+              onClear={() =>
+                onUpdate(row._key, {
+                  item_id: null,
+                  item_code: "",
+                  item_name: "",
+                  uom: "",
+                })
+              }
+              onQty={(n) => onUpdate(row._key, { required_quantity: n })}
+              onRemove={
+                rows.length > 1 || row.item_id
+                  ? () => onRemove(row._key)
+                  : undefined
+              }
+              onCreateNew={(q) => onCreate(q)}
+            />
+          ))}
+        </div>
+        <div className="mt-2 flex items-center gap-4">
+          <button
+            type="button"
+            onClick={onAdd}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
+          >
+            <Plus className="h-3 w-3" /> Add loose part
+          </button>
+          <button
+            type="button"
+            onClick={() => onCreate("")}
+            className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
+          >
+            <Plus className="h-3 w-3" /> Create loose part
+          </button>
         </div>
       </div>
     </div>
