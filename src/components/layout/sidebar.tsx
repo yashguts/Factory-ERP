@@ -12,12 +12,14 @@ import {
   Settings,
   History,
   Cog,
+  Boxes,
 } from "lucide-react";
 
 const navItems = [
   { href: "/", label: "Dashboard", icon: Home },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/inventory/changes", label: "Daily Changes", icon: History },
+  { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
   { href: "/bom", label: "Bill of Materials", icon: Layers },
   { href: "/programs", label: "Programs", icon: Cog },
   { href: "/jobs", label: "Job Orders", icon: ClipboardList },

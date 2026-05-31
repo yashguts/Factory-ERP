@@ -437,5 +437,80 @@ export async function promoteLoosePartLabel(
   revalidateTag("bom-lines");
   revalidatePath("/programs");
   revalidatePath("/inventory");
+  revalidatePath("/subassemblies");
   return { ok: true, item, linkedOutputs: ids.length };
+}
+
+/* ------------------------------------------------------------------ *
+ * Sub-assemblies list — every item that has a parts list defined
+ * (built-from and/or assembly parts). Powers the /subassemblies page.
+ * Starts empty; grows one item at a time as engineers define structures.
+ * ------------------------------------------------------------------ */
+
+export interface SubassemblyRow {
+  id: string;
+  code: string;
+  name: string;
+  family: string | null;
+  finish: string | null;
+  stock_behaviour: StockBehaviour;
+  effective_procurement_type: "make" | "trade" | null;
+  built_count: number;
+  loose_count: number;
+}
+
+const _getSubassembliesUncached = async (): Promise<SubassemblyRow[]> => {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase.from("item_bom_lines").select(
+    `parent_item_id,
+     child:items!item_bom_lines_child_item_id_fkey(stock_behaviour),
+     parent:items!item_bom_lines_parent_item_id_fkey(
+       id, code, name, family, finish, stock_behaviour, procurement_type,
+       category:item_categories!items_category_id_fkey(procurement_type)
+     )`,
+  );
+  if (error) throw error;
+
+  const byParent = new Map<string, SubassemblyRow>();
+  for (const r of data ?? []) {
+    const parent = flatten<any>((r as any).parent);
+    if (!parent) continue;
+    const id = parent.id as string;
+    const childBeh =
+      (flatten<any>((r as any).child)?.stock_behaviour as StockBehaviour) ??
+      "stocked";
+    let row = byParent.get(id);
+    if (!row) {
+      const itemPT = (parent.procurement_type as "make" | "trade" | null) ?? null;
+      const catPT =
+        (flatten<any>(parent.category)?.procurement_type as
+          | "make"
+          | "trade"
+          | null) ?? null;
+      row = {
+        id,
+        code: parent.code as string,
+        name: parent.name as string,
+        family: (parent.family as string | null) ?? null,
+        finish: (parent.finish as string | null) ?? null,
+        stock_behaviour:
+          (parent.stock_behaviour as StockBehaviour) ?? "stocked",
+        effective_procurement_type: itemPT ?? catPT,
+        built_count: 0,
+        loose_count: 0,
+      };
+      byParent.set(id, row);
+    }
+    if (childBeh === "phantom") row.loose_count++;
+    else row.built_count++;
+  }
+  return [...byParent.values()].sort((a, b) => a.name.localeCompare(b.name));
+};
+
+export async function getSubassemblies(): Promise<SubassemblyRow[]> {
+  const cached = unstable_cache(_getSubassembliesUncached, ["subassemblies"], {
+    revalidate: 60,
+    tags: ["bom-lines", "items"],
+  });
+  return cached();
 }
