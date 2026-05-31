@@ -2,6 +2,7 @@
 
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
+import { getItemsWithStock } from "@/lib/actions/inventory";
 
 export interface MrpRow {
   item_id: string;
@@ -213,6 +214,264 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
 
   rows.sort((a, b) => b.shortfall - a.shortfall);
   return rows;
+}
+
+/* ================================================================== */
+/*  Multi-level explosion -> raw-material / purchased buy list         */
+/*                                                                    */
+/*  Walks job demand top-down: each make item explodes through its    */
+/*  parts list (item_bom_lines, finish-resolved) and/or the program   */
+/*  that cuts it, down to raw sheets + purchased parts. Phantoms are   */
+/*  byproducts of a run and never appear as demand, so they drop out   */
+/*  naturally. NOTE: nesting/yield optimisation is intentionally NOT   */
+/*  solved — sheet demand is rolled up per program at whole runs,      */
+/*  which is conservative (never under-orders). Treat as an estimate   */
+/*  to validate by hand against one door's program.                   */
+/* ================================================================== */
+
+export interface PlanLeaf {
+  item_id: string;
+  code: string;
+  name: string;
+  uom: string | null;
+  qty: number;
+  in_stock: number;
+  shortfall: number;
+}
+export interface ProductionPlan {
+  cutoffDate: string | null;
+  /** Raw sheets / materials to buy (program inputs + un-recipe'd raw items). */
+  rawMaterials: PlanLeaf[];
+  /** Purchased (trade) parts to buy. */
+  purchased: PlanLeaf[];
+  /** Make items with no program and no parts list — can't explode (flag). */
+  unresolved: { item_id: string; code: string; name: string; qty: number }[];
+  /** Program run counts (for reference / shop scheduling). */
+  programRuns: { program_id: string; code: string | null; name: string; runs: number }[];
+}
+
+async function fetchAllRows(
+  build: (offset: number, page: number) => PromiseLike<{ data: any[] | null; error: any }>,
+): Promise<any[]> {
+  const PAGE = 1000;
+  let all: any[] = [];
+  let offset = 0;
+  while (true) {
+    const { data, error } = await build(offset, PAGE);
+    if (error) throw error;
+    all = all.concat(data ?? []);
+    if (!data || data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return all;
+}
+
+export async function getProductionPlan(
+  cutoffDate?: string,
+): Promise<ProductionPlan> {
+  const key = cutoffDate ?? "__all__";
+  return unstable_cache(
+    _getProductionPlanUncached,
+    ["production-plan", key],
+    { revalidate: 60, tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"] },
+  )(cutoffDate);
+}
+
+async function _getProductionPlanUncached(
+  cutoffDate?: string,
+): Promise<ProductionPlan> {
+  const supabase = createCacheClient();
+
+  // Top-level demand + every active item (procurement, family/finish, stock).
+  const [demand, items] = await Promise.all([
+    getMrpData(cutoffDate),
+    getItemsWithStock(),
+  ]);
+  const itemById = new Map(items.map((i) => [i.id, i]));
+
+  // item -> the program that produces it (component output) + that output's qty/run.
+  const outRows = await fetchAllRows((off, page) =>
+    supabase
+      .from("operation_outputs")
+      .select("operation_id, item_id, qty_per_run")
+      .eq("role", "component")
+      .not("item_id", "is", null)
+      .range(off, off + page - 1),
+  );
+  const itemToProgram = new Map<string, { programId: string; outQty: number }>();
+  for (const o of outRows) {
+    if (!itemToProgram.has(o.item_id)) {
+      itemToProgram.set(o.item_id, {
+        programId: o.operation_id,
+        outQty: Number(o.qty_per_run) || 1,
+      });
+    }
+  }
+
+  // program -> its input lines (sheets/bought).
+  const inRows = await fetchAllRows((off, page) =>
+    supabase
+      .from("operation_inputs")
+      .select("operation_id, item_id, qty_per_run")
+      .not("item_id", "is", null)
+      .range(off, off + page - 1),
+  );
+  const programInputs = new Map<string, { item_id: string; qty: number }[]>();
+  for (const i of inRows) {
+    const arr = programInputs.get(i.operation_id) ?? [];
+    arr.push({ item_id: i.item_id, qty: Number(i.qty_per_run) || 0 });
+    programInputs.set(i.operation_id, arr);
+  }
+
+  // assembly parts lists.
+  const bomRows = await fetchAllRows((off, page) =>
+    supabase
+      .from("item_bom_lines")
+      .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish")
+      .range(off, off + page - 1),
+  );
+  const bomByParent = new Map<string, any[]>();
+  for (const b of bomRows) {
+    const arr = bomByParent.get(b.parent_item_id) ?? [];
+    arr.push(b);
+    bomByParent.set(b.parent_item_id, arr);
+  }
+
+  // family+finish -> item, for inherit/pinned resolution.
+  const familyFinishToItem = new Map<string, string>();
+  for (const it of items) {
+    if (it.family && it.finish) {
+      familyFinishToItem.set(`${it.family}|||${it.finish}`, it.id);
+    }
+  }
+
+  // program-name lookup (only needed for the few programs we actually run).
+  const programIdsUsed = new Set<string>();
+
+  const programRuns = new Map<string, number>();
+  const purchased = new Map<string, number>();
+  const rawLeaf = new Map<string, number>();
+  const unresolved = new Map<string, number>();
+
+  const resolveChild = (line: any, parentFinish: string | null): string | null => {
+    if (line.finish_rule === "neutral") return line.child_item_id;
+    const fam = line.child_family;
+    const finish = line.finish_rule === "pinned" ? line.pinned_finish : parentFinish;
+    if (fam && finish) {
+      const hit = familyFinishToItem.get(`${fam}|||${finish}`);
+      if (hit) return hit;
+    }
+    return line.child_item_id; // fall back to the representative child
+  };
+
+  const explode = (
+    itemId: string,
+    qty: number,
+    parentFinish: string | null,
+    visited: Set<string>,
+    depth: number,
+  ): void => {
+    const it = itemById.get(itemId);
+    if (!it) return; // inactive/unknown — ignore
+    if (depth > 12 || visited.has(itemId)) {
+      unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
+      return;
+    }
+    if (it.effective_procurement_type === "trade") {
+      purchased.set(itemId, (purchased.get(itemId) ?? 0) + qty);
+      return;
+    }
+    const bom = bomByParent.get(itemId);
+    if (bom && bom.length > 0) {
+      const nv = new Set(visited);
+      nv.add(itemId);
+      for (const line of bom) {
+        const childId = resolveChild(line, it.finish);
+        if (childId) explode(childId, qty * (Number(line.qty) || 0), it.finish, nv, depth + 1);
+      }
+      return;
+    }
+    const prog = itemToProgram.get(itemId);
+    if (prog) {
+      const runs = qty / (prog.outQty || 1);
+      programRuns.set(prog.programId, Math.max(programRuns.get(prog.programId) ?? 0, runs));
+      programIdsUsed.add(prog.programId);
+      return;
+    }
+    // make/unset with no recipe: raw material -> buy it; otherwise flag.
+    if (it.item_type === "raw_material") {
+      rawLeaf.set(itemId, (rawLeaf.get(itemId) ?? 0) + qty);
+    } else {
+      unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
+    }
+  };
+
+  for (const d of demand) {
+    explode(d.item_id, d.total_required, itemById.get(d.item_id)?.finish ?? null, new Set(), 0);
+  }
+
+  // Roll up program input sheets at whole runs.
+  const rawDemand = new Map<string, number>(rawLeaf);
+  for (const [pid, runs] of programRuns) {
+    const wholeRuns = Math.ceil(runs - 1e-9);
+    for (const inp of programInputs.get(pid) ?? []) {
+      const it = itemById.get(inp.item_id);
+      const add = wholeRuns * inp.qty;
+      if (it && it.effective_procurement_type === "trade") {
+        purchased.set(inp.item_id, (purchased.get(inp.item_id) ?? 0) + add);
+      } else {
+        rawDemand.set(inp.item_id, (rawDemand.get(inp.item_id) ?? 0) + add);
+      }
+    }
+  }
+
+  const toLeaf = (m: Map<string, number>): PlanLeaf[] =>
+    Array.from(m.entries())
+      .map(([id, qty]) => {
+        const it = itemById.get(id);
+        const in_stock = it?.total_stock ?? 0;
+        return {
+          item_id: id,
+          code: it?.code ?? "—",
+          name: it?.name ?? "(unknown item)",
+          uom: it?.uom?.abbreviation ?? null,
+          qty,
+          in_stock,
+          shortfall: Math.max(0, qty - in_stock),
+        };
+      })
+      .sort((a, b) => b.shortfall - a.shortfall);
+
+  // Program names for the runs list.
+  const usedIds = Array.from(programIdsUsed);
+  const progNames = new Map<string, { code: string | null; name: string }>();
+  for (let i = 0; i < usedIds.length; i += 200) {
+    const { data } = await supabase
+      .from("operations")
+      .select("id, code, name")
+      .in("id", usedIds.slice(i, i + 200));
+    for (const p of data ?? []) progNames.set(p.id, { code: p.code ?? null, name: p.name });
+  }
+
+  return {
+    cutoffDate: cutoffDate ?? null,
+    rawMaterials: toLeaf(rawDemand),
+    purchased: toLeaf(purchased),
+    unresolved: Array.from(unresolved.entries())
+      .map(([id, qty]) => {
+        const it = itemById.get(id);
+        return { item_id: id, code: it?.code ?? "—", name: it?.name ?? "(unknown)", qty };
+      })
+      .sort((a, b) => b.qty - a.qty),
+    programRuns: Array.from(programRuns.entries())
+      .map(([pid, runs]) => ({
+        program_id: pid,
+        code: progNames.get(pid)?.code ?? null,
+        name: progNames.get(pid)?.name ?? "(program)",
+        runs: Math.ceil(runs - 1e-9),
+      }))
+      .sort((a, b) => b.runs - a.runs),
+  };
 }
 
 /* ================================================================== */

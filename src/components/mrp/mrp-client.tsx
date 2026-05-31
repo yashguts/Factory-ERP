@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useTransition, useRef } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -204,6 +205,9 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
             {isPending ? " — refreshing..." : ""}
           </p>
         </div>
+        <Link href={`/mrp/plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
+          <Button variant="secondary">Raw material plan →</Button>
+        </Link>
       </div>
 
       {/* Procurement Type Tabs — split MRP into procurement vs production
