@@ -36,6 +36,7 @@ import {
   setOperationAudited,
   type OperationListRow,
   type OperationDetail,
+  type FamilyOption,
 } from "@/lib/actions/operations";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import {
@@ -147,6 +148,27 @@ export function ProgramsClient({
       lc[l] = (lc[l] ?? 0) + 1;
     }
     return { distinctLabels: Object.keys(lc).sort(), labelCounts: lc };
+  }, [initialOperations]);
+
+  // Existing families for the form's family-autocomplete (derived in-memory —
+  // the list already has every program loaded).
+  const familyOptions = useMemo<FamilyOption[]>(() => {
+    const map = new Map<string, { count: number; materials: Set<string> }>();
+    for (const op of initialOperations) {
+      const key = op.family_key?.trim();
+      if (!key) continue;
+      const e = map.get(key) ?? { count: 0, materials: new Set<string>() };
+      e.count += 1;
+      if (op.material_label?.trim()) e.materials.add(op.material_label.trim());
+      map.set(key, e);
+    }
+    return Array.from(map.entries())
+      .map(([key, v]) => ({
+        key,
+        count: v.count,
+        materials: Array.from(v.materials).sort(),
+      }))
+      .sort((a, b) => a.key.localeCompare(b.key));
   }, [initialOperations]);
 
   // How many programs are fully matched vs still have unmapped lines —
@@ -632,6 +654,7 @@ export function ProgramsClient({
           operation={editSource}
           cloneSource={editSource ? null : cloneSource}
           suggestedCode={cloneSource && !editSource ? nextCodeInSeries(cloneSource.code ?? "", allCodes) : null}
+          familyOptions={familyOptions}
           categories={categories}
           units={units}
           itemRefs={itemRefs}

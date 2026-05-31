@@ -323,6 +323,54 @@ export async function getFamilyVariants(
   return cached();
 }
 
+/** An existing family for the form's family-autocomplete. */
+export interface FamilyOption {
+  key: string;
+  /** How many active programs already use this family. */
+  count: number;
+  /** Distinct material/finish labels seen in this family. */
+  materials: string[];
+}
+
+const _getFamilyOptionsUncached = async (): Promise<FamilyOption[]> => {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase
+    .from("operations")
+    .select("family_key, material_label")
+    .eq("is_active", true)
+    .not("family_key", "is", null);
+  if (error) throw error;
+
+  const map = new Map<string, { count: number; materials: Set<string> }>();
+  for (const row of (data ?? []) as any[]) {
+    const key = (row.family_key as string | null)?.trim();
+    if (!key) continue;
+    const entry = map.get(key) ?? { count: 0, materials: new Set<string>() };
+    entry.count += 1;
+    const mat = (row.material_label as string | null)?.trim();
+    if (mat) entry.materials.add(mat);
+    map.set(key, entry);
+  }
+  return Array.from(map.entries())
+    .map(([key, v]) => ({
+      key,
+      count: v.count,
+      materials: Array.from(v.materials).sort(),
+    }))
+    .sort((a, b) => a.key.localeCompare(b.key));
+};
+
+/**
+ * Distinct families (with counts + seen materials) for the program form's
+ * family-autocomplete, so a manually-typed variant lands in an existing
+ * family instead of creating a near-duplicate group from a typo.
+ */
+export const getFamilyOptions = unstable_cache(
+  _getFamilyOptionsUncached,
+  ["operation-family-options"],
+  { revalidate: 60, tags: ["operations"] },
+);
+
 /* ---------------------------- mutations ---------------------------- */
 
 export async function createOperation(input: {

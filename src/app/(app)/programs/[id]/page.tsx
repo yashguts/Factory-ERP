@@ -2,6 +2,7 @@ import { notFound } from "next/navigation";
 import {
   getOperationDetail,
   getFamilyVariants,
+  getFamilyOptions,
 } from "@/lib/actions/operations";
 import {
   getItemsWithStock,
@@ -26,8 +27,12 @@ export default async function ProgramDetailPage({ params }: Props) {
 
   if (!operation) notFound();
 
-  // Sibling material/finish variants (same family) for the variant switcher.
-  const variants = await getFamilyVariants(operation.family_key);
+  // Sibling material/finish variants (same family) for the variant switcher,
+  // plus all families for the edit/clone form's family-autocomplete.
+  const [variants, familyOptions] = await Promise.all([
+    getFamilyVariants(operation.family_key),
+    getFamilyOptions(),
+  ]);
 
   const itemRefs = items.map((i) => ({
     item_type: i.item_type,
@@ -38,6 +43,7 @@ export default async function ProgramDetailPage({ params }: Props) {
     <ProgramDetailClient
       operation={operation}
       variants={variants}
+      familyOptions={familyOptions}
       categories={categories}
       units={units}
       itemRefs={itemRefs}

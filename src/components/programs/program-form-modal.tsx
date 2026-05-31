@@ -15,6 +15,7 @@ import {
   updateOperation,
   type OperationDetail,
   type OperationLineInput,
+  type FamilyOption,
 } from "@/lib/actions/operations";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import {
@@ -37,6 +38,8 @@ interface Props {
   cloneSource?: OperationDetail | null;
   /** Pre-computed code suggestion for clone mode (often null → auto-derived). */
   suggestedCode?: string | null;
+  /** Existing families for the family-autocomplete (suggest + warn on typos). */
+  familyOptions?: FamilyOption[];
   categories: ItemCategory[];
   units: UnitOfMeasurement[];
   itemRefs: { item_type: ItemType; category_id: string | null }[];
@@ -77,6 +80,7 @@ export function ProgramFormModal({
   operation,
   cloneSource,
   suggestedCode,
+  familyOptions = [],
   categories,
   units,
   itemRefs,
@@ -170,6 +174,29 @@ export function ProgramFormModal({
           : "Output";
     return `${word} ${n} of ${ref}`;
   }, [code, name, inputs, outputs, createTarget, isAssembly]);
+
+  // Live family suggestion: exact match → confirm it will group; partial →
+  // offer existing families to click; otherwise note it's a brand-new family.
+  const familyHint = useMemo(() => {
+    const typed = familyKey.trim();
+    if (!typed || familyOptions.length === 0) return null;
+    const lower = typed.toLowerCase();
+    const exact = familyOptions.find((f) => f.key.toLowerCase() === lower);
+    if (exact) return { kind: "exact" as const, option: exact };
+    const suggestions = familyOptions
+      .filter((f) => f.key.toLowerCase().includes(lower))
+      .slice(0, 4);
+    if (suggestions.length > 0)
+      return { kind: "suggest" as const, suggestions };
+    return { kind: "new" as const };
+  }, [familyKey, familyOptions]);
+
+  // Distinct materials across all families, for the material datalist.
+  const materialOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const f of familyOptions) for (const m of f.materials) set.add(m);
+    return Array.from(set).sort();
+  }, [familyOptions]);
 
   const handleCreated = (created: {
     id: string;
@@ -313,7 +340,9 @@ export function ProgramFormModal({
         </div>
 
         {/* Family / material — groups the material variants of one base
-            program so they're navigable together on the list & detail pages. */}
+            program so they're navigable together on the list & detail pages.
+            The Family field autocompletes against existing families and warns
+            so a typo doesn't spawn a near-duplicate group. */}
         <div className="grid grid-cols-2 gap-4">
           <div>
             <label className="block text-sm font-medium mb-1">
@@ -326,7 +355,52 @@ export function ProgramFormModal({
               value={familyKey}
               onChange={(e) => setFamilyKey(e.target.value)}
               placeholder="e.g., 153A ACO LDP MV 700-2100"
+              list="program-family-options"
+              autoComplete="off"
             />
+            <datalist id="program-family-options">
+              {familyOptions.map((f) => (
+                <option key={f.key} value={f.key}>
+                  {f.count} variant{f.count === 1 ? "" : "s"}
+                </option>
+              ))}
+            </datalist>
+            {familyHint?.kind === "exact" && (
+              <p className="mt-1 text-[11px] text-[var(--success)]">
+                ✓ Groups with an existing family ({familyHint.option.count}{" "}
+                program{familyHint.option.count === 1 ? "" : "s"})
+                {familyHint.option.materials.length > 0 && (
+                  <span className="text-[var(--muted-foreground)]">
+                    {" "}
+                    — {familyHint.option.materials.slice(0, 6).join(", ")}
+                    {familyHint.option.materials.length > 6 ? "…" : ""}
+                  </span>
+                )}
+              </p>
+            )}
+            {familyHint?.kind === "suggest" && (
+              <div className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                Did you mean an existing family?{" "}
+                <span className="inline-flex flex-wrap gap-1 align-middle">
+                  {familyHint.suggestions.map((s) => (
+                    <button
+                      key={s.key}
+                      type="button"
+                      onClick={() => setFamilyKey(s.key)}
+                      className="px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] cursor-pointer"
+                      title={`${s.count} program(s)`}
+                    >
+                      {s.key}
+                    </button>
+                  ))}
+                </span>
+              </div>
+            )}
+            {familyHint?.kind === "new" && (
+              <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+                New family — no other program uses this yet.
+              </p>
+            )}
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">
@@ -336,7 +410,14 @@ export function ProgramFormModal({
               value={materialLabel}
               onChange={(e) => setMaterialLabel(e.target.value)}
               placeholder="e.g., MS, SS, SS Rose Gold"
+              list="program-material-options"
+              autoComplete="off"
             />
+            <datalist id="program-material-options">
+              {materialOptions.map((m) => (
+                <option key={m} value={m} />
+              ))}
+            </datalist>
           </div>
         </div>
         <p className="-mt-2 text-[11px] text-[var(--muted-foreground)]">

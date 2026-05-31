@@ -35,6 +35,7 @@ import {
   setOperationAudited,
   type OperationDetail,
   type FamilyVariant,
+  type FamilyOption,
 } from "@/lib/actions/operations";
 import {
   OPERATION_MACHINE_LABELS,
@@ -47,6 +48,8 @@ interface Props {
   operation: OperationDetail;
   /** Sibling material/finish variants in the same family (incl. this one). */
   variants: FamilyVariant[];
+  /** Existing families for the edit/clone form's family-autocomplete. */
+  familyOptions: FamilyOption[];
   categories: ItemCategory[];
   units: UnitOfMeasurement[];
   itemRefs: { item_type: ItemType; category_id: string | null }[];
@@ -55,6 +58,7 @@ interface Props {
 export function ProgramDetailClient({
   operation,
   variants,
+  familyOptions,
   categories,
   units,
   itemRefs,
@@ -303,6 +307,7 @@ export function ProgramDetailClient({
       {showEdit && (
         <ProgramFormModal
           operation={operation}
+          familyOptions={familyOptions}
           categories={categories}
           units={units}
           itemRefs={itemRefs}
@@ -317,6 +322,7 @@ export function ProgramDetailClient({
       {showClone && (
         <ProgramFormModal
           cloneSource={operation}
+          familyOptions={familyOptions}
           categories={categories}
           units={units}
           itemRefs={itemRefs}
