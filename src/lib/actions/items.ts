@@ -16,6 +16,9 @@ export interface SearchableItem {
   uom_abbreviation: string;
   /** Sum of inventory.quantity across all warehouses for this item. */
   total_stock: number;
+  /** Finish-variant grouping (for BOM finish-rule resolution). */
+  family: string | null;
+  finish: string | null;
 }
 
 /**
@@ -57,7 +60,7 @@ export async function searchItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name, lookup_key,
+      `id, code, name, lookup_key, family, finish,
       category:item_categories!items_category_id_fkey(name),
       uom:units_of_measurement(abbreviation),
       inventory(quantity)`,
@@ -110,6 +113,8 @@ export async function searchItems(
         ? (row.uom[0]?.abbreviation ?? "")
         : (row.uom?.abbreviation ?? ""),
       total_stock,
+      family: (row.family as string | null) ?? null,
+      finish: (row.finish as string | null) ?? null,
     };
   });
 }

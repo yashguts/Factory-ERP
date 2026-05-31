@@ -138,6 +138,8 @@ export function ItemRow({
         item_lookup: item.lookup_key,
         uom: item.uom_abbreviation,
         category_name: item.category_name,
+        family: item.family,
+        finish: item.finish,
         required_quantity: row.required_quantity || 1,
       });
       setSearch(item.name);

@@ -32,6 +32,8 @@ interface ItemWithStock {
   cost_price: number;
   is_active: boolean;
   stock_behaviour: "stocked" | "phantom" | "tooling";
+  family: string | null;
+  finish: string | null;
   procurement_type: "make" | "trade" | null;
   category_procurement_type: "make" | "trade" | null;
   effective_procurement_type: "make" | "trade" | null;
@@ -444,7 +446,15 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                     className="cursor-pointer hover:bg-[var(--muted)]"
                     onClick={() => { setSelectedItem(item); setShowItemForm(true); }}
                   >
-                    <TableCell className="font-mono text-xs">{item.code}</TableCell>
+                    <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/inventory/${item.id}`}
+                        className="text-[var(--primary)] hover:underline"
+                        title="Open item — structure, parts list, programs"
+                      >
+                        {item.code}
+                      </Link>
+                    </TableCell>
                     <TableCell>
                       <div className="font-medium">{item.name}</div>
                       {item.description && (

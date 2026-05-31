@@ -26,6 +26,9 @@ export interface PickedItem {
    * Only used by the program output picker; ignored elsewhere (jobs, inputs).
    */
   role?: import("@/lib/supabase/types").OutputRole;
+  /** Finish-variant grouping of the picked item (used by the parts-list editor). */
+  family?: string | null;
+  finish?: string | null;
 }
 
 interface ItemPickerSectionProps {

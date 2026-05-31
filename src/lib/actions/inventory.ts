@@ -66,6 +66,9 @@ const _getItemsWithStockUncached = async () => {
       is_active: item.is_active as boolean,
       /** stocked | phantom | tooling — stock/planning behaviour. */
       stock_behaviour: (item.stock_behaviour as StockBehaviour) ?? "stocked",
+      /** Finish-variant grouping. */
+      family: (item.family as string | null) ?? null,
+      finish: (item.finish as string | null) ?? null,
       /** Per-item override. NULL = inherit from category. */
       procurement_type: itemPT,
       /** The (sub-)category's default — used by the form's "Inherit (X)" label. */
