@@ -249,7 +249,37 @@ when searching by a parent.
 | `qty_per_run` | numeric > 0. |
 | `notes`, `sort_order`, `created_at` | |
 
-**`operation_outputs`** — parts produced per run. Same shape as `operation_inputs`.
+**`operation_outputs`** — parts produced per run. Same shape as `operation_inputs`,
+plus `role` (text CHECK): `component` (a real/stocked item — links to inventory) |
+`cut_part` (intentional phantom — cut & fitted, never stocked) | `tooling`
+(jig/template) | `scrap`. Default `component`. The Programs UI's "needs item"
+badge only fires on **unmapped `component`** outputs (true gaps); cut_part/tooling
+are "resolved". Editable via the per-output role selector on the program form.
+
+### Production-visibility foundation (Phases A–C)
+
+Underneath jobs/programs sits a multi-level product structure. Job upload/creation
+is **unchanged** (locked); this only reads what a job asks for and explodes it.
+
+- **`items.stock_behaviour`** (text CHECK): `stocked` | `phantom` | `tooling`.
+  Orthogonal to `procurement_type` (make/trade). MRP/planning ignores `tooling`.
+- **`items.family` / `items.finish`** — group finish variants of one part
+  (mirror programs' `family_key`/`material_label`). NULL = not a finish family.
+- **`item_bom_lines`** — an assembly item's multi-level parts list ("Built from"):
+  `parent_item_id` → child, `qty`, and a **`finish_rule`**: `inherit` (child takes
+  the parent's finish — resolved via `child_family` + parent finish), `pinned`
+  (fixed `pinned_finish`, e.g. an MS bracket inside an SS door), or `neutral`
+  (the exact `child_item_id`, no finish dimension). `child_item_id` always stores
+  a representative; inherit/pinned resolve by `child_family` at explode time.
+- **Item detail page** `/inventory/[id]` (`ItemDetailClient`): one-panel identity
+  (Bought / Made-cut / Made-assembled) + the "Built from" editor + produced-by/
+  consumed-by program links. Actions in `lib/actions/item-bom.ts`
+  (`getItemBom`, `saveItemBom`). Inventory rows link the code here.
+- **Raw-material plan** `/mrp/plan` (`getProductionPlan` in `lib/actions/mrp.ts`):
+  explodes job demand through parts lists (finish-resolved) and programs down to a
+  **steel + purchased buy-list**, netted vs stock. Program runs are rolled up at
+  whole runs (nesting NOT optimised — it's a conservative estimate, validate by
+  hand). Make items with no recipe surface under "cannot explode".
 
 ### Storage
 
