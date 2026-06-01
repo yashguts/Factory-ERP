@@ -109,8 +109,48 @@ export const getItemsWithStock = unstable_cache(
  * "code already exists" needs to come back as data, not an exception.
  */
 export type ItemSaveResult =
-  | { ok: true; id: string }
+  | { ok: true; id: string; code: string }
   | { ok: false; error: string };
+
+/** Prefix used when auto-generating an item code (blank code on create). */
+function autoCodePrefix(
+  stockBehaviour: StockBehaviour | undefined,
+  itemType: ItemType,
+): string {
+  if (stockBehaviour === "phantom") return "LP"; // loose part
+  switch (itemType) {
+    case "raw_material":
+      return "RM";
+    case "sub_assembly":
+      return "SA";
+    case "finished_good":
+      return "FG";
+    case "mechanical_finished_stock":
+      return "MFS";
+    case "door_panel":
+      return "DP";
+    default:
+      return "ITM";
+  }
+}
+
+/** Next free PREFIX-NNN code (zero-padded), scanning existing codes. */
+async function nextAutoCode(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  prefix: string,
+): Promise<string> {
+  const { data } = await supabase
+    .from("items")
+    .select("code")
+    .ilike("code", `${prefix}-%`);
+  const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
+  let max = 0;
+  for (const r of data ?? []) {
+    const m = re.exec(String((r as { code: string }).code));
+    if (m) max = Math.max(max, parseInt(m[1], 10));
+  }
+  return `${prefix}-${String(max + 1).padStart(3, "0")}`;
+}
 
 export async function createItem(data: {
   code: string;
@@ -133,10 +173,21 @@ export async function createItem(data: {
   note?: string;
 }): Promise<ItemSaveResult> {
   const supabase = await createClient();
+
+  // Auto-generate the code when the user leaves it blank (e.g. the quick
+  // "Create loose part" flow). Typed codes are always used as-is.
+  let code = (data.code ?? "").trim();
+  if (!code) {
+    code = await nextAutoCode(
+      supabase,
+      autoCodePrefix(data.stock_behaviour, data.item_type),
+    );
+  }
+
   const { data: item, error } = await supabase
     .from("items")
     .insert({
-      code: data.code,
+      code,
       name: data.name,
       // Keep lookup_key in sync with name — see updateItem for context.
       lookup_key: data.name,
@@ -156,7 +207,7 @@ export async function createItem(data: {
     .single();
 
   if (error) {
-    return { ok: false, error: translateItemError(error, data.code, data.name) };
+    return { ok: false, error: translateItemError(error, code, data.name) };
   }
 
   // Log the creation as a snapshot of the meaningful starting values.
@@ -179,7 +230,7 @@ export async function createItem(data: {
     );
   await logItemChange(supabase, {
     item_id: item.id as string,
-    item_code: data.code,
+    item_code: code,
     item_name: data.name,
     action: "create",
     changes: createChanges,
@@ -187,7 +238,7 @@ export async function createItem(data: {
   });
 
   revalidateTag("items");
-  return { ok: true, id: item.id as string };
+  return { ok: true, id: item.id as string, code };
 }
 
 /**
@@ -564,7 +615,11 @@ export async function updateItem(
   }
 
   revalidateTag("items");
-  return { ok: true, id: item.id as string };
+  return {
+    ok: true,
+    id: item.id as string,
+    code: (fields.code as string) ?? (before?.code as string) ?? "",
+  };
 }
 
 export async function recordTransaction(data: {

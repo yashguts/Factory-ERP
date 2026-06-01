@@ -323,6 +323,12 @@ is **unchanged** (locked); this only reads what a job asks for and explodes it.
 `lib/inventory/next-code.ts` extrapolates the next number in a series. Used
 by the clone feature.
 
+`createItem` **auto-generates the code when it is left blank** (the field is
+optional on create; typed codes are used as-is). Prefix is `LP` for phantom
+(loose) parts, else by item_type (`RM`/`SA`/`FG`/`MFS`/`DP`); it scans the
+existing `PREFIX-NNN` codes for the next free number. `createItem`/`updateItem`
+now return `code` in the success result so inline pickers get the real code.
+
 ### Item name = lookup_key invariant
 
 We migrated `name = lookup_key` for every item and now sync them on every

@@ -373,7 +373,9 @@ export function ItemFormModal({
             units.find((u) => u.id === form.uom_id)?.abbreviation ?? "";
           onCreated({
             id: result.id,
-            code: form.code,
+            // Use the server's code — it may have been auto-generated when
+            // the user left the field blank.
+            code: result.code,
             name: form.name,
             uom: uomAbbr,
           });
@@ -472,17 +474,21 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">
               Item Code
-              {isCloning && (
+              {isCloning ? (
                 <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
                   (auto-suggested — editable)
                 </span>
-              )}
+              ) : !isEditing ? (
+                <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                  (auto if blank)
+                </span>
+              ) : null}
             </label>
             <Input
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
-              placeholder="e.g., RM-MTR-001"
-              required
+              placeholder={isEditing ? "e.g., RM-MTR-001" : "Leave blank to auto-generate"}
+              required={isEditing}
             />
           </div>
           <div>
