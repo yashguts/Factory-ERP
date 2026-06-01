@@ -148,7 +148,8 @@ src/
       operations.ts         Programs CRUD, sketch upload, audit toggle
       item-bom.ts           Item parts list (Built-from/Assembly parts), loose-part
                             search + promote, getSubassemblies
-      inventory-changes.ts  Daily Changes feed (item edits + stock moves + undo)
+      inventory-changes.ts  Daily Changes feed + per-item history (edits + stock
+                            moves + undo); getItemChangeHistory
       gad-drawings.ts       uploadGadDrawing, deleteGadDrawing
       bom-mapping.ts        Unmatched-BOM helpers
       import.ts             Item Excel import
@@ -574,6 +575,9 @@ Don't add new code that reads or writes `lookup_key` for display — use
 ### Daily Changes (`/inventory/changes`)
 - Unified feed of item edits (from `item_change_log`) and stock moves (from `inventory_transactions`)
 - Date picker to browse by day
+- **Item-history search** (fuzzy, across all categories) — pick an item to switch
+  the feed to that item's full change history across all dates (`getItemChangeHistory`;
+  cards show the date, not just time). Clear to return to the day view.
 - Per-entry undo (one-click revert for item edits, reversing adjustment for stock moves)
 
 ### Sub-assemblies (`/subassemblies`)

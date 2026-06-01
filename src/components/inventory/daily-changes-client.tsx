@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useTransition, useRef, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,16 @@ import {
   ArrowRight,
   CalendarDays,
   History,
+  Search,
 } from "lucide-react";
 import {
   revertItemChange,
   reverseTransaction,
   updateItemChangeNote,
   updateTransactionNote,
+  getItemChangeHistory,
 } from "@/lib/actions/inventory-changes";
+import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import type {
   InventoryChangeRow,
   ItemChangeRow,
@@ -53,11 +56,16 @@ const ACTION_BADGE_VARIANT: Record<string, BadgeVariant> = {
   stock: "purple",
 };
 
-function formatTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], {
-    hour: "2-digit",
-    minute: "2-digit",
+function formatStamp(iso: string, withDate?: boolean): string {
+  const d = new Date(iso);
+  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  if (!withDate) return time;
+  const day = d.toLocaleDateString([], {
+    day: "2-digit",
+    month: "short",
+    year: "numeric",
   });
+  return `${day} · ${time}`;
 }
 
 export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
@@ -67,14 +75,51 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
   const [noteDraft, setNoteDraft] = useState("");
 
+  // Item-history mode: pick an item to see its full change history (all dates),
+  // instead of the single-day feed.
+  const [historyItem, setHistoryItem] = useState<{
+    id: string;
+    code: string;
+    name: string;
+  } | null>(null);
+  const [historyRows, setHistoryRows] = useState<InventoryChangeRow[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+
+  const loadHistory = (item: { id: string; code: string; name: string }) => {
+    setHistoryItem(item);
+    setHistoryLoading(true);
+    startTransition(async () => {
+      const rows = await getItemChangeHistory(item.id);
+      setHistoryRows(rows);
+      setHistoryLoading(false);
+    });
+  };
+
+  const clearHistory = () => {
+    setHistoryItem(null);
+    setHistoryRows([]);
+  };
+
+  // After an undo/note edit: refresh the right view (history list or day feed).
+  const afterMutation = () => {
+    if (historyItem) {
+      setHistoryLoading(true);
+      startTransition(async () => {
+        const rows = await getItemChangeHistory(historyItem.id);
+        setHistoryRows(rows);
+        setHistoryLoading(false);
+      });
+    } else {
+      router.refresh();
+    }
+  };
+
   const changeDate = (newDate: string) => {
     if (!newDate) return;
     startTransition(() => {
       router.push(`/inventory/changes?date=${newDate}`);
     });
   };
-
-  const refresh = () => startTransition(() => router.refresh());
 
   const handleUndo = (row: InventoryChangeRow) => {
     const label =
@@ -98,7 +143,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         alert(`Could not undo: ${res.error}`);
         return;
       }
-      router.refresh();
+      afterMutation();
     });
   };
 
@@ -120,35 +165,58 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         return;
       }
       setEditingNoteId(null);
-      router.refresh();
+      afterMutation();
     });
+  };
+
+  const renderRow = (row: InventoryChangeRow) => {
+    const common = {
+      busy: busyId === row.id || isPending,
+      editing: editingNoteId === row.id,
+      noteDraft,
+      setNoteDraft,
+      showDate: !!historyItem,
+      onUndo: () => handleUndo(row),
+      onStartEditNote: () => startEditNote(row),
+      onSaveNote: () => saveNote(row),
+      onCancelNote: () => setEditingNoteId(null),
+    };
+    return row.kind === "item" ? (
+      <ItemChangeCard key={row.id} row={row} {...common} />
+    ) : (
+      <StockChangeCard key={row.id} row={row} {...common} />
+    );
   };
 
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-6">
+      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
           <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <History size={22} /> Daily Inventory Changes
+            <History size={22} /> Inventory Changes
           </h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {initialRows.length} change{initialRows.length === 1 ? "" : "s"} on
-            this day
+            {historyItem
+              ? `Full change history for ${historyItem.name}`
+              : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"} on this day`}
             {isPending ? " — refreshing..." : ""}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <CalendarDays
-            size={16}
-            className="text-[var(--muted-foreground)]"
-          />
+          <CalendarDays size={16} className="text-[var(--muted-foreground)]" />
           <input
             type="date"
             value={date}
             max={maxDate}
             onChange={(e) => changeDate(e.target.value)}
-            className="h-10 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+            disabled={!!historyItem}
+            title={
+              historyItem
+                ? "Clear the item history to browse by day"
+                : "Browse changes by day"
+            }
+            className="h-10 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           />
           <Link href="/inventory">
             <Button variant="secondary">Back to Inventory</Button>
@@ -156,8 +224,41 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         </div>
       </div>
 
-      {/* Empty state */}
-      {initialRows.length === 0 ? (
+      {/* Item-history search */}
+      <div className="mb-5">
+        <ItemHistorySearch
+          selected={historyItem}
+          onPick={loadHistory}
+          onClear={clearHistory}
+        />
+      </div>
+
+      {/* Body: item history OR single-day feed */}
+      {historyItem ? (
+        historyLoading ? (
+          <div className="card-surface p-12 text-center">
+            <Loader2
+              size={28}
+              className="mx-auto mb-3 animate-spin text-[var(--muted-foreground)]"
+            />
+            <p className="text-sm text-[var(--muted-foreground)]">
+              Loading history...
+            </p>
+          </div>
+        ) : historyRows.length === 0 ? (
+          <div className="card-surface p-12 text-center">
+            <History
+              size={32}
+              className="mx-auto mb-3 text-[var(--muted-foreground)]"
+            />
+            <p className="text-sm text-[var(--muted-foreground)]">
+              No recorded changes for this item yet.
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-3">{historyRows.map(renderRow)}</div>
+        )
+      ) : initialRows.length === 0 ? (
         <div className="card-surface p-12 text-center">
           <History
             size={32}
@@ -168,38 +269,140 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
           </p>
         </div>
       ) : (
-        <div className="space-y-3">
-          {initialRows.map((row) =>
-            row.kind === "item" ? (
-              <ItemChangeCard
-                key={row.id}
-                row={row}
-                busy={busyId === row.id || isPending}
-                editing={editingNoteId === row.id}
-                noteDraft={noteDraft}
-                setNoteDraft={setNoteDraft}
-                onUndo={() => handleUndo(row)}
-                onStartEditNote={() => startEditNote(row)}
-                onSaveNote={() => saveNote(row)}
-                onCancelNote={() => setEditingNoteId(null)}
-              />
-            ) : (
-              <StockChangeCard
-                key={row.id}
-                row={row}
-                busy={busyId === row.id || isPending}
-                editing={editingNoteId === row.id}
-                noteDraft={noteDraft}
-                setNoteDraft={setNoteDraft}
-                onUndo={() => handleUndo(row)}
-                onStartEditNote={() => startEditNote(row)}
-                onSaveNote={() => saveNote(row)}
-                onCancelNote={() => setEditingNoteId(null)}
-              />
-            ),
-          )}
-        </div>
+        <div className="space-y-3">{initialRows.map(renderRow)}</div>
       )}
+    </div>
+  );
+}
+
+/** Fuzzy item search (all categories) → load that item's full change history. */
+function ItemHistorySearch({
+  selected,
+  onPick,
+  onClear,
+}: {
+  selected: { id: string; code: string; name: string } | null;
+  onPick: (item: { id: string; code: string; name: string }) => void;
+  onClear: () => void;
+}) {
+  const [search, setSearch] = useState("");
+  const [results, setResults] = useState<SearchableItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [open, setOpen] = useState(false);
+  const containerRef = useRef<HTMLDivElement>(null);
+  const seqRef = useRef(0);
+  const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
+
+  const doSearch = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!q.trim()) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      const seq = ++seqRef.current;
+      setLoading(true);
+      try {
+        const data = await searchItems(q, undefined, 20);
+        if (seqRef.current === seq) setResults(data);
+      } finally {
+        if (seqRef.current === seq) setLoading(false);
+      }
+    }, 250);
+  }, []);
+
+  useEffect(() => {
+    if (open) doSearch(search);
+    return () => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
+  }, [open, search, doSearch]);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e: MouseEvent) => {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node))
+        setOpen(false);
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [open]);
+
+  if (selected) {
+    return (
+      <div className="card-surface p-3 flex items-center gap-2 flex-wrap">
+        <History size={16} className="text-[var(--primary)] shrink-0" />
+        <span className="text-sm font-medium">{selected.name}</span>
+        <span className="font-mono text-xs text-[var(--muted-foreground)]">
+          {selected.code}
+        </span>
+        <span className="text-xs text-[var(--muted-foreground)]">
+          — full change history
+        </span>
+        <button
+          type="button"
+          onClick={onClear}
+          className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-[var(--primary)] hover:underline cursor-pointer"
+        >
+          <X size={13} /> Clear / back to day view
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <div ref={containerRef} className="card-surface p-3">
+      <label className="text-xs font-semibold text-[var(--muted-foreground)] flex items-center gap-1.5 mb-2">
+        <Search size={13} /> Find an item to see its full history
+      </label>
+      <div className="relative max-w-xl">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
+        <input
+          value={search}
+          onChange={(e) => {
+            setSearch(e.target.value);
+            setOpen(true);
+          }}
+          onFocus={() => setOpen(true)}
+          placeholder="Search by code or name across all categories..."
+          className="w-full h-10 pl-9 pr-9 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1"
+        />
+        {loading && (
+          <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+        )}
+        {open && search.trim() && (
+          <div className="absolute z-50 mt-1 w-full rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-80 overflow-y-auto">
+            {results.length === 0 ? (
+              <div className="px-3 py-4 text-center text-xs text-[var(--muted-foreground)]">
+                {loading ? "Searching..." : "No items found"}
+              </div>
+            ) : (
+              results.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => {
+                    onPick({ id: item.id, code: item.code, name: item.name });
+                    setSearch("");
+                    setOpen(false);
+                  }}
+                  className="w-full text-left px-3 py-2 text-sm cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
+                >
+                  <div className="font-medium leading-snug break-words">
+                    {item.name}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[11px] text-[var(--muted-foreground)]">
+                    <span className="font-mono">{item.code}</span>
+                    {item.category_name && (
+                      <span className="italic">{item.category_name}</span>
+                    )}
+                  </div>
+                </button>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }
@@ -211,6 +414,8 @@ interface CardCommonProps {
   editing: boolean;
   noteDraft: string;
   setNoteDraft: (v: string) => void;
+  /** Show full date alongside the time (item-history view spans many days). */
+  showDate?: boolean;
   onUndo: () => void;
   onStartEditNote: () => void;
   onSaveNote: () => void;
@@ -388,7 +593,7 @@ function ItemChangeCard({
         {/* Right column: time + actions */}
         <div className="flex flex-col items-end gap-2 shrink-0">
           <span className="text-xs text-[var(--muted-foreground)]">
-            {formatTime(row.created_at)}
+            {formatStamp(row.created_at, common.showDate)}
           </span>
           <div className="flex items-center gap-2">
             {row.item_id && (
@@ -466,7 +671,7 @@ function StockChangeCard({
 
         <div className="flex flex-col items-end gap-2 shrink-0">
           <span className="text-xs text-[var(--muted-foreground)]">
-            {formatTime(row.created_at)}
+            {formatStamp(row.created_at, common.showDate)}
           </span>
           {row.can_undo && (
             <Button

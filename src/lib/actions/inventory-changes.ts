@@ -133,8 +133,74 @@ export async function getInventoryChanges(
     ),
   };
 
-  // Which of today's transactions already have a reversal posted (any date)?
-  const txns = (txnRes.data ?? []) as Array<Record<string, unknown>>;
+  return assembleRows(
+    supabase,
+    (logRes.data ?? []) as ItemChangeLog[],
+    (txnRes.data ?? []) as Array<Record<string, unknown>>,
+    maps,
+  );
+}
+
+/**
+ * Full change history for ONE item across all dates (newest first): its
+ * create/update/delete log entries merged with its stock movements. Powers
+ * the item-history search on the Daily Changes page.
+ */
+export async function getItemChangeHistory(
+  itemId: string,
+): Promise<InventoryChangeRow[]> {
+  if (!itemId) return [];
+  const supabase = await createClient();
+
+  const [logRes, txnRes, cats, units] = await Promise.all([
+    supabase
+      .from("item_change_log")
+      .select("*")
+      .eq("item_id", itemId)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    supabase
+      .from("inventory_transactions")
+      .select(
+        `id, created_at, item_id, warehouse_id, transaction_type, quantity, notes, reference_type, reference_id,
+         item:items(code, name),
+         warehouse:warehouses(name)`,
+      )
+      .eq("item_id", itemId)
+      .order("created_at", { ascending: false })
+      .limit(300),
+    getCategories(),
+    getUnits(),
+  ]);
+
+  if (logRes.error) throw logRes.error;
+  if (txnRes.error) throw txnRes.error;
+
+  const maps = {
+    cat: new Map<string, string>((cats ?? []).map((c) => [c.id, c.name])),
+    uom: new Map<string, string>(
+      (units ?? []).map((u) => [u.id, u.abbreviation as string]),
+    ),
+  };
+
+  return assembleRows(
+    supabase,
+    (logRes.data ?? []) as ItemChangeLog[],
+    (txnRes.data ?? []) as Array<Record<string, unknown>>,
+    maps,
+  );
+}
+
+/**
+ * Build the unified, sorted change-row list from raw log + transaction rows,
+ * flagging which stock movements already have a reversal posted (any date).
+ */
+async function assembleRows(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  logRows: ItemChangeLog[],
+  txns: Array<Record<string, unknown>>,
+  maps: { cat: Map<string, string>; uom: Map<string, string> },
+): Promise<InventoryChangeRow[]> {
   const txnIds = txns.map((t) => t.id as string);
   let reversedIds = new Set<string>();
   if (txnIds.length > 0) {
@@ -150,9 +216,7 @@ export async function getInventoryChanges(
     );
   }
 
-  const itemRows: ItemChangeRow[] = (
-    (logRes.data ?? []) as ItemChangeLog[]
-  ).map((row) => ({
+  const itemRows: ItemChangeRow[] = logRows.map((row) => ({
     kind: "item",
     id: row.id,
     created_at: row.created_at,
