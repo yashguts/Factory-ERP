@@ -357,6 +357,14 @@ form's BOM sections. Each section has:
   `job_bom_lines`.
 - `phase`: groups sections in the form. Order defined by `PHASE_ORDER`.
 - `gate`: `always` | `doorType(...)` | `driveType(...)` | `driveTypeExclude(...)`.
+
+**Dispatch phase** (separate from the form `phase`): `FIRST_PHASE_SECTIONS` +
+`dispatchPhaseOf(category)` in `bom-sections.ts` classify each section as
+first- vs second-phase **dispatch** (rails/brackets/door-frame/sill/linton/
+controller-stand/troughing/fireman-switch = first; everything else = second).
+Keyed by the `category` string stored on `job_bom_lines`, so any saved line
+classifies directly. Job detail shows a "1st/2nd phase" badge per section; this
+is the basis for the (future) split-dispatch flow.
 - `defaultItemCategories`: path strings like
   `"Rail Bracket > Rail Bracket Main"`. At search time these resolve to
   category IDs and expand to include all descendants.

@@ -12,7 +12,7 @@ import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Tras
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob } from "@/lib/actions/jobs";
-import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
+import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
@@ -480,7 +480,19 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
                         key={sec.category}
                         className="card-surface p-4"
                       >
-                        <h4 className="font-medium text-sm mb-2">{sec.category}</h4>
+                        <h4 className="font-medium text-sm mb-2 flex items-center gap-2 flex-wrap">
+                          {sec.category}
+                          <span
+                            className={`text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border ${
+                              dispatchPhaseOf(sec.category) === "first"
+                                ? "text-blue-700 bg-blue-50 border-blue-200"
+                                : "text-[var(--muted-foreground)] bg-[var(--muted)] border-[var(--border)]"
+                            }`}
+                            title="Dispatch phase"
+                          >
+                            {dispatchPhaseOf(sec.category) === "first" ? "1st phase" : "2nd phase"}
+                          </span>
+                        </h4>
                         <div className="grid grid-cols-1 gap-y-1">
                           {sec.lines.map((line, li) => (
                             <div key={li} className="flex justify-between text-sm py-0.5">

@@ -516,3 +516,39 @@ export const PHASE_ORDER = [
   "Cabin Rubber Pad",
   "Cabin Add-on Items",
 ] as const;
+
+/* ------------------------------------------------------------------ *
+ * Dispatch phase (separate from the form `phase` grouping above).
+ *
+ * Elevators ship in two dispatches: first-phase material goes out early
+ * (rails, brackets, the door frame/sill that's installed during the
+ * structural work), second-phase is the rest (cabin, door panels,
+ * machine, finishing). A job can dispatch first only, second only, or
+ * both. Keyed by section `category` — which is exactly what's stored on
+ * `job_bom_lines.category`, so any saved line classifies directly.
+ * Anything not listed here (incl. ad-hoc sections) is second phase.
+ * ------------------------------------------------------------------ */
+export type DispatchPhase = "first" | "second";
+
+export const FIRST_PHASE_SECTIONS: ReadonlySet<string> = new Set([
+  "RAIL",
+  "Stud Anchor",
+  "BRICK",
+  "MAIN BRACKET",
+  "COUNTER BRACKET",
+  "RAIL CLIP",
+  "Buffer Channel Main",
+  "Buffer Channel Counter",
+  "Door Post / Frame",
+  "Door Sill",
+  "Linton Panel",
+  "CONT. STAND",
+  "TROUGHING 50",
+  "TROUGHING 100",
+  "FIREMAN SWITCH",
+]);
+
+/** Dispatch phase for a section/line by its stored `category` name. */
+export function dispatchPhaseOf(category: string): DispatchPhase {
+  return FIRST_PHASE_SECTIONS.has(category) ? "first" : "second";
+}
