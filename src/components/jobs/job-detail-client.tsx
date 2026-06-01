@@ -548,7 +548,19 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
                     return (
                       <TableRow key={line.id}>
                         <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
-                        <TableCell className="font-medium text-sm">{line.item?.name ?? "-"}</TableCell>
+                        <TableCell className="font-medium text-sm">
+                          <span className="inline-flex items-center gap-2 flex-wrap">
+                            {line.item?.name ?? "-"}
+                            {dispatchPhaseOf(line.category ?? "") === "first" && (
+                              <span
+                                className="text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border text-blue-700 bg-blue-50 border-blue-200"
+                                title="First-phase dispatch item"
+                              >
+                                1st phase
+                              </span>
+                            )}
+                          </span>
+                        </TableCell>
                         <TableCell className="text-sm">{line.item?.category?.name ?? "-"}</TableCell>
                         <TableCell className="text-right font-medium">
                           {Number(line.required_quantity).toLocaleString()}{" "}

@@ -221,7 +221,15 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
 
       if (typeFilter !== "all" && item.item_type !== typeFilter) return false;
 
-      if (behaviourFilter !== "all" && item.stock_behaviour !== behaviourFilter) return false;
+      // Loose/phantom parts are internal build pieces (cut on programs, never
+      // stocked) — hide them from the general list by default. Still reachable
+      // via the explicit "Loose (phantom)" filter, Sub-assemblies, and the
+      // loose-part search.
+      if (behaviourFilter === "all") {
+        if (item.stock_behaviour === "phantom") return false;
+      } else if (item.stock_behaviour !== behaviourFilter) {
+        return false;
+      }
 
       if (categoryFilter !== "all") {
         if (subCategoryFilter !== "all") {
@@ -403,9 +411,9 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           onChange={(e) => { setBehaviourFilter(e.target.value as typeof behaviourFilter); resetPage(); }}
           className="w-[150px]"
         >
-          <option value="all">All Behaviour</option>
+          <option value="all">All (excl. loose)</option>
           <option value="stocked">Stocked</option>
-          <option value="phantom">Phantom</option>
+          <option value="phantom">Loose (phantom)</option>
           <option value="tooling">Tooling</option>
         </Select>
       </div>
