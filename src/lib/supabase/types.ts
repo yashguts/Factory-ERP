@@ -134,6 +134,8 @@ export interface Job {
   job_number: string;
   description: string | null;
   customer_name: string | null;
+  /** Optional contact mobile number. NULL or exactly 10 numeric digits. */
+  mobile_number: string | null;
   status: JobStatus;
   planned_start: string | null;
   planned_end: string | null;

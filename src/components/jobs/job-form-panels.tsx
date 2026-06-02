@@ -61,6 +61,9 @@ interface JobDetailsPanelProps {
 
   jobNumber: string;
   customerName: string;
+  mobileNumber: string;
+  /** Non-null when the entered mobile isn't exactly 10 digits. */
+  mobileError: string | null;
   location: string;
   stage: JobStage;
   requirementStage: JobStage | "";
@@ -68,6 +71,7 @@ interface JobDetailsPanelProps {
 
   setJobNumber: (v: string) => void;
   setCustomerName: (v: string) => void;
+  setMobileNumber: (v: string) => void;
   setLocation: (v: string) => void;
   setStage: (v: JobStage) => void;
   setRequirementStage: (v: JobStage | "") => void;
@@ -86,12 +90,15 @@ export function JobDetailsPanel({
   isFormValid,
   jobNumber,
   customerName,
+  mobileNumber,
+  mobileError,
   location,
   stage,
   requirementStage,
   requirementDispatchDate,
   setJobNumber,
   setCustomerName,
+  setMobileNumber,
   setLocation,
   setStage,
   setRequirementStage,
@@ -142,6 +149,24 @@ export function JobDetailsPanel({
             }}
             placeholder="Customer"
           />
+        </Field>
+        <Field label="Mobile Number">
+          <Input
+            type="tel"
+            inputMode="numeric"
+            maxLength={10}
+            value={mobileNumber}
+            onChange={(e) => {
+              // Numeric only, capped at 10 digits.
+              setMobileNumber(e.target.value.replace(/\D/g, "").slice(0, 10));
+              setJobSaved(false);
+            }}
+            placeholder="10-digit mobile (optional)"
+            aria-invalid={!!mobileError}
+          />
+          {mobileError && (
+            <p className="mt-1 text-[11px] text-red-600">{mobileError}</p>
+          )}
         </Field>
         <Field label="Location *">
           <Input

@@ -91,6 +91,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [customerName, setCustomerName] = useState(
     job?.customer_name ?? "",
   );
+  // Optional contact mobile. Kept as a digits-only string; the input strips
+  // non-digits and caps length at 10, so the only invalid state is a partial
+  // (1–9 digit) entry, which mobileError flags below.
+  const [mobileNumber, setMobileNumber] = useState(job?.mobile_number ?? "");
   const [location, setLocation] = useState(job?.location ?? "");
   const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
   const [requirementStage, setRequirementStage] = useState<JobStage | "">(
@@ -197,7 +201,15 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     driveType,
     capacity,
   ]);
-  const isFormValid = missingFields.length === 0;
+  // Mobile is optional, but if entered it must be exactly 10 digits.
+  const mobileError = useMemo(() => {
+    if (!mobileNumber) return null;
+    return /^[0-9]{10}$/.test(mobileNumber)
+      ? null
+      : "Mobile Number must be exactly 10 digits";
+  }, [mobileNumber]);
+
+  const isFormValid = missingFields.length === 0 && !mobileError;
 
   // ── Ad-hoc sections (user-added via +Add Section) ─────────────────
   // Each ad-hoc section binds to one inventory category path. Stored on
@@ -439,6 +451,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     return {
       job_number: jobNumber.trim(),
       customer_name: customerName.trim() || null,
+      mobile_number: mobileNumber.trim() || null,
       location: location.trim() || null,
       spec_string: buildSpecString(),
       floors: floors || null,
@@ -494,10 +507,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   // field is missing we surface an alert and bail before hitting the DB.
   function guardRequired(): boolean {
     if (isFormValid) return true;
+    const problems = [...missingFields, ...(mobileError ? [mobileError] : [])];
     alert(
-      `Please fill the following required field${
-        missingFields.length === 1 ? "" : "s"
-      } before saving:\n\n• ${missingFields.join("\n• ")}`,
+      `Please fix the following before saving:\n\n• ${problems.join("\n• ")}`,
     );
     return false;
   }
@@ -681,12 +693,15 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         isFormValid={isFormValid}
         jobNumber={jobNumber}
         customerName={customerName}
+        mobileNumber={mobileNumber}
+        mobileError={mobileError}
         location={location}
         stage={stage}
         requirementStage={requirementStage}
         requirementDispatchDate={requirementDispatchDate}
         setJobNumber={setJobNumber}
         setCustomerName={setCustomerName}
+        setMobileNumber={setMobileNumber}
         setLocation={setLocation}
         setStage={setStage}
         setRequirementStage={setRequirementStage}
@@ -713,7 +728,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       {!isFormValid && (
         <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           <span className="font-medium">Required to save:</span>{" "}
-          {missingFields.join(", ")}.
+          {[...missingFields, ...(mobileError ? [mobileError] : [])].join(", ")}.
         </div>
       )}
 

@@ -403,6 +403,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         <MetaItem label="Structure" value={job.structure_included} />
         <MetaItem label="Door Finish" value={job.door_finish} />
         <MetaItem label="Location" value={job.location} />
+        <MetaItem label="Mobile" value={job.mobile_number} />
         <MetaItem label="Brand" value={job.brand} />
         <MetaItem
           label="Order Date"

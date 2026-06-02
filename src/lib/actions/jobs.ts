@@ -83,6 +83,8 @@ export async function getJobDetail(jobId: string) {
 export async function createJob(data: {
   job_number: string;
   customer_name?: string | null;
+  /** Optional contact mobile number — NULL or exactly 10 digits. */
+  mobile_number?: string | null;
   description?: string | null;
   status?: JobStatus;
   spec_string?: string | null;
@@ -524,6 +526,8 @@ export async function updateJob(
   data: {
     job_number?: string;
     customer_name?: string | null;
+    /** Optional contact mobile number — NULL or exactly 10 digits. */
+    mobile_number?: string | null;
     description?: string | null;
     status?: JobStatus;
     spec_string?: string | null;
