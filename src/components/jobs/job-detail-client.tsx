@@ -8,13 +8,16 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2 } from "lucide-react";
+import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
+import { DispatchPanel } from "@/components/jobs/dispatch-panel";
+import { DispatchModal } from "@/components/jobs/dispatch-modal";
+import type { JobDispatchSummary } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -70,15 +73,17 @@ interface Props {
   bomLines: BomLineWithItem[];
   bomHeaderId: string | null;
   bomSectionLines: BomSectionLine[];
+  dispatch: JobDispatchSummary;
 }
 
 type SortKey = "code" | "name" | "category" | "required" | "issued";
 type SortDir = "asc" | "desc";
 type ViewTab = "sections" | "items";
 
-export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }: Props) {
+export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [showDispatch, setShowDispatch] = useState(false);
   const [bomSearch, setBomSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -304,6 +309,14 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
           </div>
           <div className="flex items-center gap-2">
             <Button
+              size="sm"
+              onClick={() => setShowDispatch(true)}
+              title="Record a dispatch for this job"
+            >
+              <Truck className="h-4 w-4 mr-1" />
+              Dispatch
+            </Button>
+            <Button
               variant="secondary"
               size="sm"
               onClick={() => setSplitView((v) => !v)}
@@ -420,6 +433,21 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines }:
           <h3 className="text-sm font-medium mb-1">Remark</h3>
           <p className="text-sm text-[var(--muted-foreground)]">{job.remark}</p>
         </div>
+      )}
+
+      {/* Dispatch */}
+      <DispatchPanel
+        jobId={job.id}
+        summary={dispatch}
+        onNewDispatch={() => setShowDispatch(true)}
+      />
+      {showDispatch && (
+        <DispatchModal
+          jobId={job.id}
+          jobNumber={job.job_number}
+          onClose={() => setShowDispatch(false)}
+          onSaved={() => router.refresh()}
+        />
       )}
 
       {/* BOM Section */}

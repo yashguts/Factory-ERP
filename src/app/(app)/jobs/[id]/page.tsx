@@ -1,4 +1,5 @@
 import { getJobDetail, getJobBomSections } from "@/lib/actions/jobs";
+import { getJobDispatchSummary } from "@/lib/actions/dispatch";
 import { JobDetailClient } from "@/components/jobs/job-detail-client";
 
 interface Props {
@@ -8,11 +9,13 @@ interface Props {
 export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
 
-  // Parallel fetch — don't wait for job detail before fetching BOM sections
-  const [{ job, bomLines, bomHeaderId }, bomSections] = await Promise.all([
-    getJobDetail(id),
-    getJobBomSections(id),
-  ]);
+  // Parallel fetch — job detail, BOM sections, and dispatch summary together.
+  const [{ job, bomLines, bomHeaderId }, bomSections, dispatch] =
+    await Promise.all([
+      getJobDetail(id),
+      getJobBomSections(id),
+      getJobDispatchSummary(id),
+    ]);
 
   return (
     <JobDetailClient
@@ -20,6 +23,7 @@ export default async function JobDetailPage({ params }: Props) {
       bomLines={bomLines}
       bomHeaderId={bomHeaderId}
       bomSectionLines={bomSections}
+      dispatch={dispatch}
     />
   );
 }

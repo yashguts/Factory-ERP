@@ -13,6 +13,7 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob } from "@/lib/actions/jobs";
+import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -58,9 +59,10 @@ const PAGE_SIZE = 50;
 interface Props {
   initialJobs: Job[];
   unmatchedCount?: number;
+  dispatchStatus?: Record<string, DispatchStatus>;
 }
 
-export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
+export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {} }: Props) {
   const router = useRouter();
   const [, startTransition] = useTransition();
   // Optimistic local copy so inline edits are instant
@@ -320,6 +322,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                 <SortHeader label="Req. Stage" sortField="req_stage" />
                 <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
                 <SortHeader label="Status" sortField="status" />
+                <TableHead>Dispatch</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -386,6 +389,24 @@ export function JobsClient({ initialJobs, unmatchedCount = 0 }: Props) {
                         <option key={s} value={s}>{STATUS_LABELS[s]}</option>
                       ))}
                     </select>
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const st = dispatchStatus[job.id] ?? "none";
+                      if (st === "none")
+                        return <span className="text-xs text-[var(--muted-foreground)]">—</span>;
+                      return (
+                        <span
+                          className={`text-[11px] font-medium uppercase tracking-wide rounded-full px-2 py-0.5 border ${
+                            st === "full"
+                              ? "text-green-700 bg-green-50 border-green-200"
+                              : "text-amber-700 bg-amber-50 border-amber-200"
+                          }`}
+                        >
+                          {st === "full" ? "Dispatched" : "Partial"}
+                        </span>
+                      );
+                    })()}
                   </TableCell>
                 </TableRow>
               ))}
