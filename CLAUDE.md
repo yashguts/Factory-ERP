@@ -145,6 +145,8 @@ src/
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
+      dispatch.ts           Job dispatch: getJobDispatchSummary (required/sent/
+                            left), createDispatch, deleteDispatch, status badges
       operations.ts         Programs CRUD, sketch upload, audit toggle
       item-bom.ts           Item parts list (Built-from/Assembly parts), loose-part
                             search + promote, getSubassemblies
@@ -228,6 +230,14 @@ when searching by a parent.
 **`job_bom_headers`** — one per job (`job_id` FK with CASCADE).
 
 **`job_bom_lines`** — line items: `job_bom_id` FK (CASCADE), `category` (display section name from `BOM_SECTIONS`), `item_id` (FK to items, NO ACTION — items used here can't be hard-deleted), `required_quantity`, `variant`, `value_text`, `sort_order`.
+
+**`job_dispatches` / `job_dispatch_lines`** — dispatch records (Phase 0, **no
+inventory effect**). `job_dispatches`: one per dated shipment (`job_id` CASCADE,
+`dispatch_date`, `phase_scope` CHECK `first`/`second`/`full`, `note`).
+`job_dispatch_lines`: `dispatch_id` FK (CASCADE), `job_bom_line_id` (FK SET NULL
+— the BOM line fulfilled; NULL = ad-hoc item not on the BOM), `item_id` (the item
+actually sent, may differ from the BOM line), `category`, `qty`. Remaining per
+BOM line = `required − Σ dispatched`; partials accumulate across dispatches.
 
 **`operations`** — programs / recipes (production-visibility Phase 0).
 
@@ -550,12 +560,25 @@ Don't add new code that reads or writes `lookup_key` for display — use
 - Drawing panel + split view, opens by default if job has a drawing
 
 ### Job detail (`/jobs/[id]`)
-- Header with status badge + Drawing toggle + Edit BOM + Delete + status dropdown
+- Header with status badge + **Dispatch** + Drawing toggle + Edit BOM + Delete + status dropdown
 - Meta strip (job number, customer, spec, floors, drive type, capacity, **structure**, location, brand, dates, stage)
 - Progress bar
-- Section view (read-only group-by-phase cards) and Item view (sortable table) with toggle
+- **Dispatch panel** — per-phase status (First/Second: Pending / Partial (x/y) /
+  Dispatched) + dated history of every dispatch (expandable lines, per-dispatch undo)
+- Section view (read-only group-by-phase cards, with 1st/2nd-phase badge) and Item
+  view (sortable table, "1st phase" badge on first-phase lines) with toggle
 - BOM-line search
 - Split-screen GAD drawing on the right
+
+#### Dispatch flow (`dispatch-modal.tsx`, `dispatch-panel.tsx`)
+- "Mark dispatched" modal: pick **date** + **scope** (First phase / Second phase
+  / Entire job). Scope pre-loads in-scope BOM items showing **Required · Sent ·
+  Left**, dispatch-now qty defaulting to what's left.
+- Edit qty (partial supported, accumulates across dispatches), **swap the item**
+  (sent item may differ from BOM), **add ad-hoc items** not on the BOM,
+  over-dispatch allowed (amber hint). NO inventory effect (Phase 0).
+- Jobs list shows a **Dispatch** column badge (Dispatched / Partial / —) via
+  `getJobsDispatchStatus`.
 
 ### MRP (`/mrp`)
 - Three tabs: **Trade · To Procure** / **Make · To Manufacture** / **All** (default = Trade)
