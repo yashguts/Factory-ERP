@@ -239,6 +239,21 @@ export async function createDispatch(input: {
     return { ok: false, error: le.message };
   }
 
+  // Advance the job's Stage to reflect the dispatch (first → First Phase;
+  // second / full → Full Material). Only ever moves forward, never back, so a
+  // later first-phase correction can't downgrade a fully-dispatched job.
+  const rank = (s: string | null | undefined) =>
+    s === "full_material" ? 2 : s === "first_phase" ? 1 : 0;
+  const target = input.phase_scope === "first" ? "first_phase" : "full_material";
+  const { data: jobRow } = await supabase
+    .from("jobs")
+    .select("stage")
+    .eq("id", input.job_id)
+    .maybeSingle();
+  if (rank(target) > rank(jobRow?.stage as string | null)) {
+    await supabase.from("jobs").update({ stage: target }).eq("id", input.job_id);
+  }
+
   revalidatePath(`/jobs/${input.job_id}`);
   revalidatePath("/jobs");
   return { ok: true, id: head.id as string };

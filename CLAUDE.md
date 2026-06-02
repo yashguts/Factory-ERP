@@ -577,6 +577,10 @@ Don't add new code that reads or writes `lookup_key` for display — use
 - Edit qty (partial supported, accumulates across dispatches), **swap the item**
   (sent item may differ from BOM), **add ad-hoc items** not on the BOM,
   over-dispatch allowed (amber hint). NO inventory effect (Phase 0).
+- Recording a dispatch **advances the job `stage`** (first → `first_phase`;
+  second/full → `full_material`), forward-only — set in `createDispatch`
+  (direct `jobs.stage` write; does not touch the locked createJob/updateJob).
+  Undo does not regress the stage (edit it manually if needed).
 - Jobs list shows a **Dispatch** column badge (Dispatched / Partial / —) via
   `getJobsDispatchStatus`.
 
