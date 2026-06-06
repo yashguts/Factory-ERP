@@ -358,6 +358,13 @@ export interface Operation {
   sketch_url: string | null;
   sketch_filename: string | null;
   sketch_uploaded_at: string | null;
+  /** Extra per-program attachments (any format, ≤15 MB) — design + print files. */
+  design_file_url: string | null;
+  design_file_filename: string | null;
+  design_file_uploaded_at: string | null;
+  print_file_url: string | null;
+  print_file_filename: string | null;
+  print_file_uploaded_at: string | null;
   notes: string | null;
   is_active: boolean;
   /** Groups material/finish variants of the same base program. */

@@ -68,6 +68,12 @@ export interface OperationDetail {
   sketch_url: string | null;
   sketch_filename: string | null;
   sketch_uploaded_at: string | null;
+  design_file_url: string | null;
+  design_file_filename: string | null;
+  design_file_uploaded_at: string | null;
+  print_file_url: string | null;
+  print_file_filename: string | null;
+  print_file_uploaded_at: string | null;
   notes: string | null;
   is_active: boolean;
   created_at: string;
@@ -208,6 +214,12 @@ const _getOperationDetailUncached = async (
     sketch_url: data.sketch_url ?? null,
     sketch_filename: data.sketch_filename ?? null,
     sketch_uploaded_at: data.sketch_uploaded_at ?? null,
+    design_file_url: data.design_file_url ?? null,
+    design_file_filename: data.design_file_filename ?? null,
+    design_file_uploaded_at: data.design_file_uploaded_at ?? null,
+    print_file_url: data.print_file_url ?? null,
+    print_file_filename: data.print_file_filename ?? null,
+    print_file_uploaded_at: data.print_file_uploaded_at ?? null,
     notes: data.notes ?? null,
     is_active: data.is_active,
     created_at: data.created_at,
@@ -510,13 +522,20 @@ export async function deleteOperation(
 
   const { data: row } = await supabase
     .from("operations")
-    .select("sketch_url")
+    .select("sketch_url, design_file_url, print_file_url")
     .eq("id", id)
     .maybeSingle();
   const sketchUrl = (row?.sketch_url as string | null) ?? null;
   if (sketchUrl) {
     const path = extractStoragePath(sketchUrl);
     if (path) await supabase.storage.from(BUCKET).remove([path]);
+  }
+  // Also clean up the design/print files (separate bucket).
+  for (const u of [row?.design_file_url, row?.print_file_url]) {
+    const url = (u as string | null) ?? null;
+    if (!url) continue;
+    const path = extractStoragePath(url, FILES_BUCKET);
+    if (path) await supabase.storage.from(FILES_BUCKET).remove([path]);
   }
 
   const { error } = await supabase.from("operations").delete().eq("id", id);
@@ -631,6 +650,145 @@ export async function deleteProgramSketch(operationId: string): Promise<void> {
       sketch_url: null,
       sketch_filename: null,
       sketch_uploaded_at: null,
+    })
+    .eq("id", operationId);
+  if (error) throw error;
+
+  revalidateOperations(operationId);
+}
+
+/* ------------------- extra program files (design / print) ------------------- *
+ * Two additional attachments per program beyond the Sketch: a "design" file and
+ * a "print" file. ANY format, max 15 MB each, stored in the separate
+ * `program-files` bucket (no MIME restriction). Mirrors the sketch upload/delete
+ * but parameterised by slot.
+ * --------------------------------------------------------------------------- */
+
+const FILES_BUCKET = "program-files";
+const MAX_FILE_BYTES = 15 * 1024 * 1024; // 15 MB
+
+export type ProgramFileSlot = "design" | "print";
+
+const FILE_SLOT_COLUMNS: Record<
+  ProgramFileSlot,
+  { url: string; filename: string; uploaded_at: string }
+> = {
+  design: {
+    url: "design_file_url",
+    filename: "design_file_filename",
+    uploaded_at: "design_file_uploaded_at",
+  },
+  print: {
+    url: "print_file_url",
+    filename: "print_file_filename",
+    uploaded_at: "print_file_uploaded_at",
+  },
+};
+
+/**
+ * Upload (or replace) the design/print file for an operation. Any file type;
+ * 15 MB cap (also enforced by the bucket). Stores at
+ * `{operationId}/{slot}/{timestamp}-{name}` and removes the previous file in
+ * that slot on replace.
+ */
+export async function uploadProgramFile(
+  formData: FormData,
+): Promise<ProgramSketchInfo> {
+  const operationId = formData.get("operationId");
+  const slot = formData.get("slot");
+  const file = formData.get("file");
+
+  if (typeof operationId !== "string" || !operationId) {
+    throw new Error("Missing operationId");
+  }
+  if (slot !== "design" && slot !== "print") {
+    throw new Error("Invalid file slot");
+  }
+  if (!(file instanceof File)) throw new Error("Missing file");
+  if (file.size === 0) throw new Error("File is empty");
+  if (file.size > MAX_FILE_BYTES) {
+    throw new Error(
+      `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 15 MB.`,
+    );
+  }
+
+  const cols = FILE_SLOT_COLUMNS[slot];
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("operations")
+    .select(cols.url)
+    .eq("id", operationId)
+    .maybeSingle();
+  const previousUrl =
+    ((existing as Record<string, unknown> | null)?.[cols.url] as
+      | string
+      | null) ?? null;
+  if (previousUrl) {
+    const previousPath = extractStoragePath(previousUrl, FILES_BUCKET);
+    if (previousPath)
+      await supabase.storage.from(FILES_BUCKET).remove([previousPath]);
+  }
+
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+  const path = `${operationId}/${slot}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage
+    .from(FILES_BUCKET)
+    .upload(path, file, {
+      contentType: file.type || "application/octet-stream",
+      upsert: false,
+    });
+  if (uploadError) throw uploadError;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(FILES_BUCKET).getPublicUrl(path);
+  const uploaded_at = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from("operations")
+    .update({
+      [cols.url]: publicUrl,
+      [cols.filename]: file.name,
+      [cols.uploaded_at]: uploaded_at,
+    })
+    .eq("id", operationId);
+  if (updateError) throw updateError;
+
+  revalidateOperations(operationId);
+  return { url: publicUrl, filename: file.name, uploaded_at };
+}
+
+export async function deleteProgramFile(
+  operationId: string,
+  slot: ProgramFileSlot,
+): Promise<void> {
+  if (!operationId) throw new Error("Missing operationId");
+  if (slot !== "design" && slot !== "print") {
+    throw new Error("Invalid file slot");
+  }
+  const cols = FILE_SLOT_COLUMNS[slot];
+  const supabase = await createClient();
+
+  const { data: row } = await supabase
+    .from("operations")
+    .select(cols.url)
+    .eq("id", operationId)
+    .maybeSingle();
+  const url =
+    ((row as Record<string, unknown> | null)?.[cols.url] as string | null) ??
+    null;
+  if (url) {
+    const path = extractStoragePath(url, FILES_BUCKET);
+    if (path) await supabase.storage.from(FILES_BUCKET).remove([path]);
+  }
+
+  const { error } = await supabase
+    .from("operations")
+    .update({
+      [cols.url]: null,
+      [cols.filename]: null,
+      [cols.uploaded_at]: null,
     })
     .eq("id", operationId);
   if (error) throw error;
@@ -817,8 +975,8 @@ function mapItemOps(rows: any): ItemOperationRef[] {
  * Public storage URL → object path (`<operationId>/<file>`), or null if it
  * isn't one of ours.
  */
-function extractStoragePath(url: string): string | null {
-  const marker = `/object/public/${BUCKET}/`;
+function extractStoragePath(url: string, bucket: string = BUCKET): string | null {
+  const marker = `/object/public/${bucket}/`;
   const idx = url.indexOf(marker);
   if (idx < 0) return null;
   return decodeURIComponent(url.slice(idx + marker.length));

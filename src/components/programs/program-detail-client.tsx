@@ -30,6 +30,7 @@ import {
 } from "@/components/ui/table";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import { ProgramSketchPanel } from "@/components/programs/program-sketch-panel";
+import { ProgramFilePanel } from "@/components/programs/program-file-panel";
 import {
   deleteOperation,
   setOperationAudited,
@@ -302,12 +303,28 @@ export function ProgramDetailClient({
           )}
         </div>
 
-        <div className="lg:sticky lg:top-4">
+        <div className="lg:sticky lg:top-4 space-y-4">
           <ProgramSketchPanel
             operationId={operation.id}
             initialUrl={operation.sketch_url}
             initialFilename={operation.sketch_filename}
             initialUploadedAt={operation.sketch_uploaded_at}
+          />
+          <ProgramFilePanel
+            operationId={operation.id}
+            slot="design"
+            title="Design File"
+            initialUrl={operation.design_file_url}
+            initialFilename={operation.design_file_filename}
+            initialUploadedAt={operation.design_file_uploaded_at}
+          />
+          <ProgramFilePanel
+            operationId={operation.id}
+            slot="print"
+            title="Print File"
+            initialUrl={operation.print_file_url}
+            initialFilename={operation.print_file_filename}
+            initialUploadedAt={operation.print_file_uploaded_at}
           />
         </div>
       </div>
