@@ -100,6 +100,31 @@ export async function searchCabinItems(
   }));
 }
 
+/** Look up a single active item by exact name (case-insensitive). Used by the
+ *  cabin-job form to auto-fill the matching "... Cover" when a Support is picked. */
+export async function getCabinItemByName(
+  name: string,
+): Promise<CabinSearchItem | null> {
+  const n = (name ?? "").trim();
+  if (!n) return null;
+  const supabase = createCacheClient();
+  const { data } = await supabase
+    .from("items")
+    .select(`id, code, name, uom:units_of_measurement(abbreviation)`)
+    .eq("is_active", true)
+    .ilike("name", n)
+    .limit(1)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    id: (data as any).id as string,
+    code: (data as any).code as string,
+    name: (data as any).name as string,
+    uom: (flatten<any>((data as any).uom)?.abbreviation as string) ?? "",
+    sub_category: null,
+  };
+}
+
 export interface CabinJobListRow {
   id: string;
   job_number: string;
