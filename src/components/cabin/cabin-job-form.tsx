@@ -165,8 +165,8 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
         {CABIN_TYPES.map((type) => {
           const rows = rowsByType[type] ?? [];
           return (
-            <div key={type} className="card-surface overflow-hidden">
-              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
+            <div key={type} className="card-surface">
+              <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40 rounded-t-[var(--radius)]">
                 <h2 className="text-sm font-semibold">{type}</h2>
                 {rows.filter((r) => r.item_id).length > 0 && (
                   <span className="text-xs text-[var(--muted-foreground)]">
