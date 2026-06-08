@@ -1,4 +1,5 @@
-import { Container } from "lucide-react";
+import Link from "next/link";
+import { Container, ArrowRight } from "lucide-react";
 import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
 import { getCabinTypeSummary } from "@/lib/actions/cabin";
 
@@ -6,7 +7,7 @@ export const metadata = { title: "Cabin Inventory" };
 
 export default async function CabinInventoryPage() {
   const summary = await getCabinTypeSummary();
-  const countByName = new Map(summary.map((s) => [s.name, s.itemCount]));
+  const byName = new Map(summary.map((s) => [s.name, s]));
   const totalItems = summary.reduce((a, s) => a + s.itemCount, 0);
 
   return (
@@ -23,19 +24,37 @@ export default async function CabinInventoryPage() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
         {CABIN_TYPES.map((name) => {
-          const count = countByName.get(name) ?? 0;
-          return (
-            <div
-              key={name}
-              className="card-surface p-4 flex items-center justify-between"
-            >
+          const s = byName.get(name);
+          const count = s?.itemCount ?? 0;
+          const inner = (
+            <>
               <div className="min-w-0">
                 <div className="font-medium text-sm truncate">{name}</div>
                 <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
                   {count} item{count === 1 ? "" : "s"}
                 </div>
               </div>
-              <Container className="h-5 w-5 text-[var(--muted-foreground)] opacity-40 shrink-0" />
+              {s?.id ? (
+                <ArrowRight className="h-4 w-4 text-[var(--muted-foreground)] opacity-0 group-hover:opacity-100 group-hover:text-[var(--primary)] transition-opacity shrink-0" />
+              ) : (
+                <Container className="h-5 w-5 text-[var(--muted-foreground)] opacity-40 shrink-0" />
+              )}
+            </>
+          );
+          return s?.id ? (
+            <Link
+              key={name}
+              href={`/cabin-inventory/${s.id}`}
+              className="card-surface p-4 flex items-center justify-between hover:bg-[var(--muted)]/50 transition-colors cursor-pointer group"
+            >
+              {inner}
+            </Link>
+          ) : (
+            <div
+              key={name}
+              className="card-surface p-4 flex items-center justify-between opacity-70"
+            >
+              {inner}
             </div>
           );
         })}

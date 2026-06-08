@@ -46,7 +46,37 @@ const _getItemsWithStockUncached = async () => {
     offset += PAGE;
   }
 
-  return allItems.map((item) => {
+  // Cabin items live in their own /cabin-inventory section — keep them out of
+  // the main inventory list. Build the "Cabin" category subtree to exclude.
+  const { data: allCats } = await supabase
+    .from("item_categories")
+    .select("id, name, parent_id");
+  const cabinChildrenOf = new Map<string, string[]>();
+  for (const c of allCats ?? []) {
+    if (c.parent_id) {
+      const a = cabinChildrenOf.get(c.parent_id) ?? [];
+      a.push(c.id as string);
+      cabinChildrenOf.set(c.parent_id as string, a);
+    }
+  }
+  const cabinRoot = (allCats ?? []).find(
+    (c) => c.name === "Cabin" && c.parent_id === null,
+  );
+  const cabinCatIds = new Set<string>();
+  if (cabinRoot) {
+    const stack = [cabinRoot.id as string];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      cabinCatIds.add(id);
+      for (const ch of cabinChildrenOf.get(id) ?? []) stack.push(ch);
+    }
+  }
+
+  return allItems
+    .filter(
+      (item) => !(item.category_id && cabinCatIds.has(item.category_id as string)),
+    )
+    .map((item) => {
     const itemPT = (item.procurement_type as "make" | "trade" | null) ?? null;
     const catPT =
       (item.category?.procurement_type as "make" | "trade" | null) ?? null;

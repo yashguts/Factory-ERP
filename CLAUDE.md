@@ -120,9 +120,13 @@ src/
         loading.tsx         Skeleton
       cabin-inventory/
         page.tsx            Cabin Inventory — 11 cabin part types (item_categories
-                            under "Cabin" parent), per-type item counts incl.
-                            sub-categories. Platform type populated (327 items
-                            under Platform > ACO/AT/Collapsible/…); others pending.
+                            under "Cabin" parent), clickable cards w/ per-type
+                            counts (incl. sub-categories). Platform populated
+                            (327 items under Platform > ACO/AT/Collapsible/…).
+        [id]/page.tsx       One cabin type's items (search + sub-type filter);
+                            rows link to the item detail. getCabinTypeItems.
+        # Cabin items are EXCLUDED from the main /inventory list (getItemsWithStock
+        # filters out the "Cabin" category subtree).
       bom/page.tsx          Standalone BOM (placeholder)
       settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper
