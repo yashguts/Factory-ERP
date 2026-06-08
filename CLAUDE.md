@@ -260,6 +260,9 @@ sub-categories (Platform, Side Panel, Front Wall RHS/LHS, Bottom/Top Support
 (Glass), Linton, Cabin Support, Corner Wall, Canopy, Corner Wall Cover). Cabin
 items are normal `items` filed under a type (or a sub-type beneath it, e.g.
 Platform > ACO). Surfaced in `/cabin-inventory`; kept OUT of the main inventory.
+**Populated:** Platform (327) and Side Panel (1,745 items under P1–P6 sub-
+categories — every MS/SS panel shape × the designer-finish range; finish is in
+the item name with "SS" dropped on designer variants, e.g. `P2C-350 BIG Rose Gold`).
 
 **`cabin_jobs` / `cabin_job_lines`** — a cabin job = a job number + cabin items
 grouped by the 11 types. `cabin_jobs`: job_number (unique, case-insensitive),
