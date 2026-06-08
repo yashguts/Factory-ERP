@@ -62,15 +62,24 @@ const _getCabinTypeSummaryUncached = async (): Promise<CabinTypeSummary[]> => {
   const allCabinCatIds = [...new Set([...typeToCatIds.values()].flat())];
 
   const countByCat = new Map<string, number>();
+  const PAGE = 1000;
   for (const cc of chunk(allCabinCatIds, 150)) {
-    const { data: its } = await supabase
-      .from("items")
-      .select("category_id")
-      .eq("is_active", true)
-      .in("category_id", cc);
-    for (const it of its ?? []) {
-      const c = it.category_id as string | null;
-      if (c) countByCat.set(c, (countByCat.get(c) ?? 0) + 1);
+    // Page past PostgREST's 1000-row cap so big types (e.g. Side Panel) count fully.
+    let offset = 0;
+    while (true) {
+      const { data: its } = await supabase
+        .from("items")
+        .select("category_id")
+        .eq("is_active", true)
+        .in("category_id", cc)
+        .order("id")
+        .range(offset, offset + PAGE - 1);
+      for (const it of its ?? []) {
+        const c = it.category_id as string | null;
+        if (c) countByCat.set(c, (countByCat.get(c) ?? 0) + 1);
+      }
+      if (!its || its.length < PAGE) break;
+      offset += PAGE;
     }
   }
 
@@ -149,33 +158,42 @@ const _getCabinTypeItemsUncached = async (
     ((cats ?? []) as any[]).map((c) => [c.id as string, c.name as string]),
   );
 
-  // Fetch items in those categories (paged), with stock.
+  // Fetch items in those categories, with stock. Page past PostgREST's 1000-row
+  // cap so large types (Side Panel, Front Wall) return EVERY item, not just 1000.
   const items: CabinItem[] = [];
+  const PAGE = 1000;
   for (const cc of chunk(catIds, 100)) {
-    const { data } = await supabase
-      .from("items")
-      .select(
-        `id, code, name, category_id, stock_behaviour,
-         uom:units_of_measurement(abbreviation), inventory(quantity)`,
-      )
-      .eq("is_active", true)
-      .in("category_id", cc)
-      .order("name");
-    for (const it of (data ?? []) as any[]) {
-      const uom = Array.isArray(it.uom) ? it.uom[0] : it.uom;
-      const total = (it.inventory ?? []).reduce(
-        (s: number, r: { quantity: number }) => s + Number(r.quantity ?? 0),
-        0,
-      );
-      items.push({
-        id: it.id as string,
-        code: it.code as string,
-        name: it.name as string,
-        sub_category: catName.get(it.category_id as string) ?? null,
-        uom: (uom?.abbreviation as string) ?? "",
-        total_stock: total,
-        stock_behaviour: (it.stock_behaviour as string) ?? "stocked",
-      });
+    let offset = 0;
+    while (true) {
+      const { data } = await supabase
+        .from("items")
+        .select(
+          `id, code, name, category_id, stock_behaviour,
+           uom:units_of_measurement(abbreviation), inventory(quantity)`,
+        )
+        .eq("is_active", true)
+        .in("category_id", cc)
+        .order("name")
+        .range(offset, offset + PAGE - 1);
+      const batch = (data ?? []) as any[];
+      for (const it of batch) {
+        const uom = Array.isArray(it.uom) ? it.uom[0] : it.uom;
+        const total = (it.inventory ?? []).reduce(
+          (s: number, r: { quantity: number }) => s + Number(r.quantity ?? 0),
+          0,
+        );
+        items.push({
+          id: it.id as string,
+          code: it.code as string,
+          name: it.name as string,
+          sub_category: catName.get(it.category_id as string) ?? null,
+          uom: (uom?.abbreviation as string) ?? "",
+          total_stock: total,
+          stock_behaviour: (it.stock_behaviour as string) ?? "stocked",
+        });
+      }
+      if (batch.length < PAGE) break;
+      offset += PAGE;
     }
   }
   items.sort((a, b) => a.name.localeCompare(b.name));

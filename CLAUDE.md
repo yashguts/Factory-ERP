@@ -265,6 +265,12 @@ categories — every MS/SS panel shape × the designer-finish range; finish is i
 the item name: 24 designer finishes ("SS" dropped, e.g. `P2C-350 BIG Rose Gold`),
 plain SS by grade (`SS 304/430/441` + a generic `SS` holding grade-unknown stock),
 and `MS`. Goods + explicit-gauge (1.5/1.6/2mm) rows kept as-is, not fanned out).
+**Front Wall** (3,977 items) is filed by door-type **Category** sub-cats (ACO / AT /
+Collapsible / Goods Collapsible / Swing / MT / COP Back Cover / AFF / Goods AFF);
+the category is part of the item name (`ACO P1L-150 STD SS`) because the same panel
+code recurs across door types. Codes `FW-NNNN`. R1/COP/LHO-RHO are shape variants;
+Collapsible / Goods Collapsible / COP Back Cover / MT / Goods-* are preserved plain
+(no finish fan-out). Granite/Touch finishes preserved where they appear, not fanned.
 
 **`cabin_jobs` / `cabin_job_lines`** — a cabin job = a job number + cabin items
 grouped by the 11 types. `cabin_jobs`: job_number (unique, case-insensitive),
@@ -741,6 +747,10 @@ already wipes it.
   don't be alarmed if you see "Server Action X was not found" errors in
   testing; just hard-refresh.
 - **CRLF warnings on Windows**: ignore. Git auto-converts.
+- **PostgREST 1000-row cap**: a single supabase-js `select` returns at most 1000
+  rows. Any read that can exceed that MUST page with `.range(off, off+PAGE-1)` in a
+  loop (see `getItemsWithStock`, `mrp.ts`, and the cabin reads). This bit the cabin
+  type pages once Side Panel/Front Wall grew past 1000 items.
 
 ---
 
