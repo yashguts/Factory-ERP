@@ -123,10 +123,14 @@ src/
                             under "Cabin" parent), clickable cards w/ per-type
                             counts (incl. sub-categories). Platform populated
                             (327 items under Platform > ACO/AT/Collapsible/…).
-        [id]/page.tsx       One cabin type's items (search + sub-type filter);
-                            rows link to the item detail. getCabinTypeItems.
+        [id]/page.tsx       One cabin type's items (search + sub-type filter) +
+                            "Add item" modal (createCabinItem); rows -> item detail.
         # Cabin items are EXCLUDED from the main /inventory list (getItemsWithStock
         # filters out the "Cabin" category subtree).
+      cabin-jobs/
+        page.tsx            Cabin Jobs list (job # + cabin items by type)
+        new/page.tsx        New cabin job form
+        [id]/page.tsx       Edit cabin job
       bom/page.tsx          Standalone BOM (placeholder)
       settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper
@@ -247,6 +251,19 @@ inventory effect**). `job_dispatches`: one per dated shipment (`job_id` CASCADE,
 — the BOM line fulfilled; NULL = ad-hoc item not on the BOM), `item_id` (the item
 actually sent, may differ from the BOM line), `category`, `qty`. Remaining per
 BOM line = `required − Σ dispatched`; partials accumulate across dispatches.
+
+**Cabin** — top-level `item_categories` row "Cabin" (Make) with 11 type
+sub-categories (Platform, Side Panel, Front Wall RHS/LHS, Bottom/Top Support
+(Glass), Linton, Cabin Support, Corner Wall, Canopy, Corner Wall Cover). Cabin
+items are normal `items` filed under a type (or a sub-type beneath it, e.g.
+Platform > ACO). Surfaced in `/cabin-inventory`; kept OUT of the main inventory.
+
+**`cabin_jobs` / `cabin_job_lines`** — a cabin job = a job number + cabin items
+grouped by the 11 types. `cabin_jobs`: job_number (unique, case-insensitive),
+customer_name, note. `cabin_job_lines`: cabin_job_id (CASCADE), cabin_type,
+item_id (FK NO ACTION), qty, sort_order. Actions in `lib/actions/cabin-jobs.ts`
+(searchCabinItems scoped to a type, get/create/update/delete). Cabin Inventory
+actions (incl. `createCabinItem`) live in `lib/actions/cabin.ts`.
 
 **`operations`** — programs / recipes (production-visibility Phase 0).
 
