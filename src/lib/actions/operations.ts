@@ -489,7 +489,13 @@ export async function setOperationAudited(
     .update({ audited_at: audited ? new Date().toISOString() : null })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
-  revalidateOperations(id);
+  // Auditing only flips a flag — it does NOT change any inventory item, so skip the
+  // heavy /inventory revalidation that revalidateOperations() does (regenerating
+  // that large page inside this action was crashing the function -> 503). Just
+  // refresh the programs views.
+  revalidateTag("operations");
+  revalidatePath("/programs");
+  revalidatePath(`/programs/${id}`);
   return { ok: true };
 }
 

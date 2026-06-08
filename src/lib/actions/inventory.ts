@@ -23,31 +23,12 @@ export async function getItems() {
 const _getItemsWithStockUncached = async () => {
   const supabase = createCacheClient();
 
-  const PAGE = 1000;
-  let allItems: any[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await supabase
-      .from("items")
-      .select(`
-        *,
-        category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
-        uom:units_of_measurement(id, abbreviation),
-        inventory(quantity, warehouse_id)
-      `)
-      .eq("is_active", true)
-      .order("code")
-      .range(offset, offset + PAGE - 1);
-
-    if (error) throw error;
-    allItems = allItems.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  // Cabin items live in their own /cabin-inventory section — keep them out of
-  // the main inventory list. Build the "Cabin" category subtree to exclude.
+  // Cabin items live in their own /cabin-inventory section — keep them OUT of the
+  // main inventory list. Build the "Cabin" category subtree FIRST so we can exclude
+  // it AT THE QUERY. (Cabin grew to ~9k items; fetching all of them just to drop
+  // them in JS bloats this read past the cache limit and makes any regeneration of
+  // /inventory heavy enough to crash the serverless function — which is what broke
+  // the program-audit action, since it revalidates /inventory.)
   const { data: allCats } = await supabase
     .from("item_categories")
     .select("id, name, parent_id");
@@ -70,6 +51,33 @@ const _getItemsWithStockUncached = async () => {
       cabinCatIds.add(id);
       for (const ch of cabinChildrenOf.get(id) ?? []) stack.push(ch);
     }
+  }
+  const cabinIds = [...cabinCatIds];
+
+  const PAGE = 1000;
+  let allItems: any[] = [];
+  let offset = 0;
+
+  while (true) {
+    let q = supabase
+      .from("items")
+      .select(`
+        *,
+        category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
+        uom:units_of_measurement(id, abbreviation),
+        inventory(quantity, warehouse_id)
+      `)
+      .eq("is_active", true);
+    // Exclude the whole Cabin subtree at the DB (keep items with no category).
+    if (cabinIds.length > 0) {
+      q = q.or(`category_id.is.null,category_id.not.in.(${cabinIds.join(",")})`);
+    }
+    const { data, error } = await q.order("code").range(offset, offset + PAGE - 1);
+
+    if (error) throw error;
+    allItems = allItems.concat(data ?? []);
+    if (!data || data.length < PAGE) break;
+    offset += PAGE;
   }
 
   return allItems
