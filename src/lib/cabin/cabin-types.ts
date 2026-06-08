@@ -22,10 +22,29 @@ export const CABIN_TYPES = [
 
 export type CabinType = (typeof CABIN_TYPES)[number];
 
+/**
+ * Display order for the Cabin INVENTORY page. Front Wall RHS/LHS are collapsed
+ * into a single "Front Wall" type here (they live as sub-categories under it in
+ * the DB). Cabin JOBS still use the full {@link CABIN_TYPES} (RHS/LHS separate).
+ */
+export const CABIN_INVENTORY_TYPES = [
+  "Platform",
+  "Side Panel",
+  "Front Wall",
+  "Bottom Support (Glass)",
+  "Top Support (Glass)",
+  "Linton",
+  "Cabin Support",
+  "Corner Wall",
+  "Canopy",
+  "Corner Wall Cover",
+] as const;
+
 /** Code prefix per cabin type for auto-generated item codes (PLAT-001, …). */
 export const CABIN_TYPE_CODE: Record<string, string> = {
   Platform: "PLAT",
   "Side Panel": "SIDE",
+  "Front Wall": "FW",
   "Front Wall RHS": "FWRHS",
   "Front Wall LHS": "FWLHS",
   "Bottom Support (Glass)": "BSG",

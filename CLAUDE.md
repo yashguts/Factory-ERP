@@ -119,6 +119,9 @@ src/
         page.tsx            Sub-assemblies list (items with a parts list) + define-search
         loading.tsx         Skeleton
       cabin-inventory/
+        # CABIN_INVENTORY_TYPES (10) collapses Front Wall RHS/LHS into one
+        # "Front Wall" (RHS/LHS are sub-categories under it). Cabin Jobs still
+        # use CABIN_TYPES (11) so RHS/LHS stay separate there.
         page.tsx            Cabin Inventory — 11 cabin part types (item_categories
                             under "Cabin" parent), clickable cards w/ per-type
                             counts (incl. sub-categories). Platform populated

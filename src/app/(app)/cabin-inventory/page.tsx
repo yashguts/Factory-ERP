@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { Container, ArrowRight } from "lucide-react";
-import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
+import { CABIN_INVENTORY_TYPES } from "@/lib/cabin/cabin-types";
 import { getCabinTypeSummary } from "@/lib/actions/cabin";
 
 export const metadata = { title: "Cabin Inventory" };
@@ -17,13 +17,13 @@ export default async function CabinInventoryPage() {
           <Container className="h-6 w-6" /> Cabin Inventory
         </h1>
         <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          Cabin panels &amp; parts, organised by type. {CABIN_TYPES.length} types
+          Cabin panels &amp; parts, organised by type. {CABIN_INVENTORY_TYPES.length} types
           {totalItems > 0 ? ` · ${totalItems} items` : ""}.
         </p>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {CABIN_TYPES.map((name) => {
+        {CABIN_INVENTORY_TYPES.map((name) => {
           const s = byName.get(name);
           const count = s?.itemCount ?? 0;
           const inner = (
