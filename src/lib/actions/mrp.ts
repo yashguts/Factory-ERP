@@ -83,7 +83,7 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   while (true) {
     let query = supabase
       .from("job_bom_lines")
-      .select("item_id, required_quantity, job_bom_id")
+      .select("id, item_id, required_quantity, job_bom_id")
       .not("item_id", "is", null)
       .gt("required_quantity", 0);
 
@@ -98,12 +98,43 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
     offset += PAGE;
   }
 
-  // total = sum of required_quantity across all BOM lines for the item
-  // (previously this just counted lines, which under-reported requirements
-  // whenever a job needed more than 1 of something).
+  // Dispatched-so-far per BOM line. Dispatch (any phase: first/second/full) is
+  // netted out of MRP demand, so already-shipped material stops showing as
+  // "required". Keyed by job_bom_line_id — the same definition the dispatch
+  // panel uses for "Remaining" (getJobDispatchSummary). Ad-hoc dispatch lines
+  // (null job_bom_line_id) aren't tied to a BOM line, so they don't reduce demand.
+  const dispatchedByLine = new Map<string, number>();
+  {
+    const PAGE_D = 1000;
+    let offsetD = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from("job_dispatch_lines")
+        .select("job_bom_line_id, qty")
+        .not("job_bom_line_id", "is", null)
+        .range(offsetD, offsetD + PAGE_D - 1);
+      if (error) throw error;
+      for (const d of data ?? []) {
+        const lineId = d.job_bom_line_id as string;
+        dispatchedByLine.set(
+          lineId,
+          (dispatchedByLine.get(lineId) ?? 0) + (Number(d.qty) || 0),
+        );
+      }
+      if (!data || data.length < PAGE_D) break;
+      offsetD += PAGE_D;
+    }
+  }
+
+  // total = sum of NET required_quantity across all BOM lines for the item,
+  // where net = required − dispatched (floored at 0). Lines fully dispatched
+  // contribute nothing; an item whose lines all net to 0 drops out entirely.
   const reqMap = new Map<string, { total: number; bomIds: Set<string> }>();
   for (const line of allLines) {
-    const qty = Number(line.required_quantity) || 0;
+    const required = Number(line.required_quantity) || 0;
+    const dispatched = dispatchedByLine.get(line.id) ?? 0;
+    const qty = Math.max(0, required - dispatched);
+    if (qty <= 0) continue; // fully dispatched — no remaining demand
     const existing = reqMap.get(line.item_id);
     if (existing) {
       existing.total += qty;
@@ -521,6 +552,7 @@ async function _getMrpItemJobsUncached(
   // 1) Fetch BOM lines referencing this item with qty > 0.
   const PAGE = 1000;
   let allLines: Array<{
+    id: string;
     job_bom_id: string;
     required_quantity: number;
   }> = [];
@@ -528,7 +560,7 @@ async function _getMrpItemJobsUncached(
   while (true) {
     const { data, error } = await supabase
       .from("job_bom_lines")
-      .select("job_bom_id, required_quantity")
+      .select("id, job_bom_id, required_quantity")
       .eq("item_id", itemId)
       .gt("required_quantity", 0)
       .range(offset, offset + PAGE - 1);
@@ -538,6 +570,23 @@ async function _getMrpItemJobsUncached(
     offset += PAGE;
   }
   if (allLines.length === 0) return [];
+
+  // Net out dispatched qty per BOM line (any phase), same as getMrpData, so a
+  // fully-dispatched job stops appearing for this item and partials show only
+  // the remaining qty.
+  const dispatchedByLine = new Map<string, number>();
+  const lineIds = allLines.map((l) => l.id);
+  for (let i = 0; i < lineIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("job_dispatch_lines")
+      .select("job_bom_line_id, qty")
+      .in("job_bom_line_id", lineIds.slice(i, i + 200));
+    if (error) throw error;
+    for (const d of data ?? []) {
+      const lid = d.job_bom_line_id as string;
+      dispatchedByLine.set(lid, (dispatchedByLine.get(lid) ?? 0) + (Number(d.qty) || 0));
+    }
+  }
 
   // 2) Resolve BOM headers → job_id (in batches).
   const headerIds = Array.from(new Set(allLines.map((l) => l.job_bom_id)));
@@ -559,9 +608,14 @@ async function _getMrpItemJobsUncached(
   for (const line of allLines) {
     const jobId = headerToJob.get(line.job_bom_id);
     if (!jobId) continue;
+    const net = Math.max(
+      0,
+      (Number(line.required_quantity) || 0) - (dispatchedByLine.get(line.id) ?? 0),
+    );
+    if (net <= 0) continue; // fully dispatched on this line
     const agg = byJob.get(jobId) ?? { line_count: 0, total_quantity: 0 };
     agg.line_count += 1;
-    agg.total_quantity += Number(line.required_quantity);
+    agg.total_quantity += net;
     byJob.set(jobId, agg);
   }
   if (byJob.size === 0) return [];

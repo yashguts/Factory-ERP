@@ -1,7 +1,7 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
 
 /* ------------------------------------------------------------------ *
@@ -254,8 +254,13 @@ export async function createDispatch(input: {
     await supabase.from("jobs").update({ stage: target }).eq("id", input.job_id);
   }
 
+  // Dispatch is now netted out of MRP demand, so refresh the MRP / production
+  // -plan caches (tagged "bom-lines" / "jobs") in addition to the job pages.
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
   revalidatePath(`/jobs/${input.job_id}`);
   revalidatePath("/jobs");
+  revalidatePath("/mrp");
   return { ok: true, id: head.id as string };
 }
 
@@ -270,8 +275,12 @@ export async function deleteDispatch(
     .delete()
     .eq("id", dispatchId);
   if (error) return { ok: false, error: error.message };
+  // Un-dispatching restores demand to MRP — bust the same caches.
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath("/jobs");
+  revalidatePath("/mrp");
   return { ok: true };
 }
 
