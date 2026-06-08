@@ -119,7 +119,8 @@ src/
         page.tsx            Sub-assemblies list (items with a parts list) + define-search
         loading.tsx         Skeleton
       cabin-inventory/
-        page.tsx            Cabin panel catalog (placeholder — cabin panels not imported yet)
+        page.tsx            Cabin Inventory — 11 cabin part types (item_categories
+                            under "Cabin" parent); items not imported yet
       bom/page.tsx          Standalone BOM (placeholder)
       settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper

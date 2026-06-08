@@ -1,8 +1,14 @@
 import { Container } from "lucide-react";
+import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
+import { getCabinTypeSummary } from "@/lib/actions/cabin";
 
 export const metadata = { title: "Cabin Inventory" };
 
-export default function CabinInventoryPage() {
+export default async function CabinInventoryPage() {
+  const summary = await getCabinTypeSummary();
+  const countByName = new Map(summary.map((s) => [s.name, s.itemCount]));
+  const totalItems = summary.reduce((a, s) => a + s.itemCount, 0);
+
   return (
     <div>
       <div className="mb-6">
@@ -10,21 +16,37 @@ export default function CabinInventoryPage() {
           <Container className="h-6 w-6" /> Cabin Inventory
         </h1>
         <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          The cabin panels and cabin-specific parts that go into an elevator car.
+          Cabin panels &amp; parts, organised by type. {CABIN_TYPES.length} types
+          {totalItems > 0 ? ` · ${totalItems} items` : ""}.
         </p>
       </div>
 
-      <div className="card-surface p-10 text-center">
-        <Container className="h-9 w-9 mx-auto text-[var(--muted-foreground)] opacity-50" />
-        <p className="text-sm font-medium mt-3">No cabin items yet</p>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1 max-w-xl mx-auto">
-          This section will hold the cabin panel catalog — organised by the
-          dimensions we mapped from your sheet: panel type &amp; size
-          (STD&nbsp;/&nbsp;BIG&nbsp;/&nbsp;2400&nbsp;/&nbsp;Goods), material
-          (MS&nbsp;/&nbsp;SS), surface finish, and thickness. Import the cabin
-          panels to populate it.
-        </p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {CABIN_TYPES.map((name) => {
+          const count = countByName.get(name) ?? 0;
+          return (
+            <div
+              key={name}
+              className="card-surface p-4 flex items-center justify-between"
+            >
+              <div className="min-w-0">
+                <div className="font-medium text-sm truncate">{name}</div>
+                <div className="text-xs text-[var(--muted-foreground)] mt-0.5">
+                  {count} item{count === 1 ? "" : "s"}
+                </div>
+              </div>
+              <Container className="h-5 w-5 text-[var(--muted-foreground)] opacity-40 shrink-0" />
+            </div>
+          );
+        })}
       </div>
+
+      {totalItems === 0 && (
+        <p className="text-xs text-[var(--muted-foreground)] mt-4">
+          These types are ready — they&rsquo;ll fill up once cabin panels are added
+          or imported.
+        </p>
+      )}
     </div>
   );
 }
