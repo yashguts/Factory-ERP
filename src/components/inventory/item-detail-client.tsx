@@ -168,9 +168,17 @@ export function ItemDetailClient({
     <div>
       {/* Header */}
       <div className="mb-6">
-        <Link href="/inventory" className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Inventory
-        </Link>
+        {/* Item detail is reached from many sections (inventory, cabin pages, MRP,
+            sub-assemblies, programs) — go back to wherever the user came from, not
+            a hardcoded Inventory. Fall back to /inventory only on a direct deep-link. */}
+        <button
+          onClick={() =>
+            window.history.length > 1 ? router.back() : router.push("/inventory")
+          }
+          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2 cursor-pointer"
+        >
+          <ArrowLeft className="h-3.5 w-3.5" /> Back
+        </button>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">{item.name}</h1>
