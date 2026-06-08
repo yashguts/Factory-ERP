@@ -135,7 +135,21 @@ export function CabinItemPicker({
                 }}
                 className="w-full text-left px-3 py-2 text-sm cursor-pointer border-b border-[var(--border)] last:border-0 hover:bg-[var(--muted)]"
               >
-                <div className="font-medium leading-snug break-words">{it.name}</div>
+                <div className="flex items-start gap-2">
+                  <span className="font-medium leading-snug break-words flex-1">
+                    {it.name}
+                  </span>
+                  <span
+                    className={`text-[11px] font-mono shrink-0 mt-0.5 tabular-nums ${
+                      it.total_stock <= 0
+                        ? "text-red-500"
+                        : "text-[var(--muted-foreground)]"
+                    }`}
+                    title={`In stock: ${formatStock(it.total_stock)} ${it.uom_abbreviation}`.trim()}
+                  >
+                    {formatStock(it.total_stock)}
+                  </span>
+                </div>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
                   <span className="font-mono">{it.code}</span>
                   {it.category_name && <span className="italic">{it.category_name}</span>}
@@ -147,4 +161,13 @@ export function CabinItemPicker({
       )}
     </div>
   );
+}
+
+/** Match the job-orders picker: whole numbers plain, fractions to 2 dp. */
+function formatStock(qty: number): string {
+  if (!Number.isFinite(qty)) return "0";
+  if (Number.isInteger(qty)) return qty.toLocaleString();
+  return Number(qty.toFixed(2)).toLocaleString(undefined, {
+    maximumFractionDigits: 2,
+  });
 }
