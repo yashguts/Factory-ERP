@@ -15,7 +15,6 @@ export const CABIN_TYPES = [
   "Top Support (Glass)",
   "Car Linton",
   "Cabin Support",
-  "Corner Wall",
   "Canopy",
   "Corner Wall Cover",
 ] as const;
@@ -35,7 +34,6 @@ export const CABIN_INVENTORY_TYPES = [
   "Top Support (Glass)",
   "Car Linton",
   "Cabin Support",
-  "Corner Wall",
   "Canopy",
   "Corner Wall Cover",
 ] as const;
@@ -51,7 +49,6 @@ export const CABIN_TYPE_CODE: Record<string, string> = {
   "Top Support (Glass)": "TSG",
   "Car Linton": "LINTON",
   "Cabin Support": "CSUP",
-  "Corner Wall": "CWALL",
   Canopy: "CANOPY",
   "Corner Wall Cover": "CWCOV",
 };
