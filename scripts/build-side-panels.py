@@ -25,6 +25,10 @@ DESIGNER_FINISHES = [
     "Blue Flower","Moon Rock","Honey Comb","Designer IPF01","Grade 430 Mirror",
     "Bronze","Wooden","Chequered",
 ]
+# SS itself is a finish (plain SS) and comes in grades. Drop "SS" only on designer
+# variants, not here. "SS" = generic (holds grade-unknown stock); grades = orderable.
+SS_PLAIN = ["SS", "SS 304", "SS 430", "SS 441"]
+ALL_FINISHES = SS_PLAIN + DESIGNER_FINISHES
 
 df = pd.read_excel(PATH, sheet_name="Sheet1", header=0)
 df.columns = ["material","name","spec","combined","stock"]
@@ -113,36 +117,34 @@ def shapekey(p):
     return (p["series"], p["pos"], p["width"], p["cop"], p["spl"], p["height"])
 aStock = {}
 for p in rows:
-    if p["material"] == "SS" and not p["goods"] and p["thick"] == 1.2 and p["finish"]:
-        aStock[(shapekey(p), p["finish"])] = aStock.get((shapekey(p), p["finish"]), 0) + p["stock"]
+    if p["material"] == "SS" and not p["goods"] and p["thick"] == 1.2:
+        f = p["finish"] or "SS"  # plain SS rows -> the "SS" finish variant
+        aStock[(shapekey(p), f)] = aStock.get((shapekey(p), f), 0) + p["stock"]
 
-# (A) expansion: every passenger-SS shape x 24 finishes, standard gauge
+# (A) expansion: every passenger-SS shape x all finishes (incl. plain SS), standard gauge
 shapes = {}
 for p in rows:
     if p["material"] == "SS" and not p["goods"]:
         shapes[shapekey(p)] = p  # representative
 for sk, p in shapes.items():
-    for f in DESIGNER_FINISHES:
+    for f in ALL_FINISHES:
         nm = f"{stem(p)} {hlabel(p['height'])} {f}"
         add(nm, p["series"], aStock.get((sk, f), 0.0))
         items[nm]["group"] = "A"
 
 # (B) preserve actual rows that aren't passenger-SS-default-designer (already in A)
 for p in rows:
-    covered_by_A = (p["material"] == "SS" and not p["goods"] and p["thick"] == 1.2 and p["finish"])
+    # passenger SS at default gauge (incl. plain SS) is fully covered by (A) now
+    covered_by_A = (p["material"] == "SS" and not p["goods"] and p["thick"] == 1.2)
     if covered_by_A:
         continue
     if p["material"] == "MS":
         lab = glabel(p["height"]) if p["goods"] else hlabel(p["height"])
         nm = f"{stem(p)} {lab} MS{thk_sfx(p['thick'])}"
-    elif p["goods"]:  # SS goods
+    elif p["goods"]:  # SS goods (plain or its existing finish)
         nm = f"{stem(p)} {glabel(p['height'])} {p['finish'] or 'SS'}{thk_sfx(p['thick'])}"
-    elif p["thick"] != 1.2:  # passenger SS explicit gauge
+    else:  # passenger SS at explicit gauge (1.5/1.6/2mm)
         nm = f"{stem(p)} {hlabel(p['height'])} {p['finish'] or 'SS'}{thk_sfx(p['thick'])}"
-    else:  # passenger SS plain default gauge -> preserve only if it has stock
-        if p["stock"] == 0:
-            continue
-        nm = f"{stem(p)} {hlabel(p['height'])} SS"
     add(nm, p["series"], p["stock"])
     if items[nm]["group"] is None:
         items[nm]["group"] = "B"
@@ -172,5 +174,8 @@ for it in out[:6] + [it for it in out if it["stock"]!=0][:8]:
     print(f"  {it['code']}  {it['name']:42}  stock={it['stock']:g}  ({it['group']})")
 
 json.dump(out, open(OUT_JSON, "w"), indent=0)
-pd.DataFrame(out)[["code","series","name","stock","group"]].to_csv(OUT_CSV, index=False)
-print("\nwrote", OUT_JSON, "and", OUT_CSV)
+try:
+    pd.DataFrame(out)[["code","series","name","stock","group"]].to_csv(OUT_CSV, index=False)
+    print("\nwrote", OUT_JSON, "and", OUT_CSV)
+except PermissionError:
+    print("\nwrote", OUT_JSON, "(CSV locked/open - skipped; close it and re-run to refresh)")
