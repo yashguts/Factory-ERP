@@ -367,14 +367,20 @@ export async function promoteLoosePartLabel(
     if (!nos) return { ok: false, error: "No unit of measurement configured." };
 
     // Next code in the LP-NNN loose-part series.
-    const { data: lps } = await supabase
-      .from("items")
-      .select("code")
-      .ilike("code", "LP-%");
+    // Page past PostgREST's 1000-row cap so the LP series max is accurate.
     let max = 0;
-    for (const r of lps ?? []) {
-      const m = /^LP-(\d+)$/i.exec(String((r as any).code));
-      if (m) max = Math.max(max, parseInt(m[1], 10));
+    for (let off = 0; ; off += 1000) {
+      const { data: lps } = await supabase
+        .from("items")
+        .select("code")
+        .ilike("code", "LP-%")
+        .order("code")
+        .range(off, off + 999);
+      for (const r of lps ?? []) {
+        const m = /^LP-(\d+)$/i.exec(String((r as any).code));
+        if (m) max = Math.max(max, parseInt(m[1], 10));
+      }
+      if (!lps || lps.length < 1000) break;
     }
     const code = `LP-${String(max + 1).padStart(3, "0")}`;
 

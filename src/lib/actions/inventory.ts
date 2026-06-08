@@ -169,15 +169,22 @@ async function nextAutoCode(
   supabase: Awaited<ReturnType<typeof createClient>>,
   prefix: string,
 ): Promise<string> {
-  const { data } = await supabase
-    .from("items")
-    .select("code")
-    .ilike("code", `${prefix}-%`);
   const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
   let max = 0;
-  for (const r of data ?? []) {
-    const m = re.exec(String((r as { code: string }).code));
-    if (m) max = Math.max(max, parseInt(m[1], 10));
+  // Page past PostgREST's 1000-row cap: a big series (e.g. SIDE has 2000+) would
+  // otherwise compute a stale max and generate a code that already exists (23505).
+  for (let off = 0; ; off += 1000) {
+    const { data } = await supabase
+      .from("items")
+      .select("code")
+      .ilike("code", `${prefix}-%`)
+      .order("code")
+      .range(off, off + 999);
+    for (const r of data ?? []) {
+      const m = re.exec(String((r as { code: string }).code));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    if (!data || data.length < 1000) break;
   }
   return `${prefix}-${String(max + 1).padStart(3, "0")}`;
 }

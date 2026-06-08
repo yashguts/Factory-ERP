@@ -266,15 +266,23 @@ export async function createCabinItem(input: {
     .eq("id", input.typeId)
     .maybeSingle();
   const prefix = cabinCodePrefix(typeCat?.name as string | undefined);
-  const { data: codes } = await supabase
-    .from("items")
-    .select("code")
-    .ilike("code", `${prefix}-%`);
+  // Page past PostgREST's 1000-row cap — big cabin types (Side Panel 2000+,
+  // Front Wall 3900+) would otherwise yield a stale max and a colliding code,
+  // which surfaces (misleadingly) as "An item named ... already exists".
   let max = 0;
   const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
-  for (const r of codes ?? []) {
-    const m = re.exec(String((r as any).code));
-    if (m) max = Math.max(max, parseInt(m[1], 10));
+  for (let off = 0; ; off += 1000) {
+    const { data: codes } = await supabase
+      .from("items")
+      .select("code")
+      .ilike("code", `${prefix}-%`)
+      .order("code")
+      .range(off, off + 999);
+    for (const r of codes ?? []) {
+      const m = re.exec(String((r as any).code));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    if (!codes || codes.length < 1000) break;
   }
   const code = `${prefix}-${String(max + 1).padStart(3, "0")}`;
 
