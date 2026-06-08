@@ -273,14 +273,18 @@ export async function updateCabinJob(
   if (!job_number) return { ok: false, error: "Job number is required." };
 
   const supabase = await createClient();
+  // Only touch customer/note when explicitly provided — the form no longer asks
+  // for them, so omitting must leave any existing values untouched.
+  const payload: Record<string, unknown> = {
+    job_number,
+    updated_at: new Date().toISOString(),
+  };
+  if (input.customer_name !== undefined)
+    payload.customer_name = input.customer_name?.trim() || null;
+  if (input.note !== undefined) payload.note = input.note?.trim() || null;
   const { error: ue } = await supabase
     .from("cabin_jobs")
-    .update({
-      job_number,
-      customer_name: input.customer_name?.trim() || null,
-      note: input.note?.trim() || null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq("id", id);
   if (ue) {
     const msg =

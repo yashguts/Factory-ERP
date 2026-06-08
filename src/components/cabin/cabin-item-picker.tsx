@@ -2,18 +2,28 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Loader2, X } from "lucide-react";
-import { searchCabinItems, type CabinSearchItem } from "@/lib/actions/cabin-jobs";
+import { searchItems, type SearchableItem } from "@/lib/actions/items";
+
+export interface PickedCabinItem {
+  id: string;
+  code: string;
+  name: string;
+  uom: string;
+}
 
 interface Props {
   cabinType: string;
   itemId: string | null;
   itemCode: string | null;
   itemName: string | null;
-  onPick: (it: CabinSearchItem) => void;
+  onPick: (it: PickedCabinItem) => void;
   onClear: () => void;
 }
 
-/** Per-row picker that searches ONLY Cabin Inventory items, scoped to one type. */
+/**
+ * Per-row item picker for a cabin job. Fuzzy search across ALL items —
+ * regular inventory AND cabin inventory (searchItems returns both).
+ */
 export function CabinItemPicker({
   cabinType,
   itemId,
@@ -23,7 +33,7 @@ export function CabinItemPicker({
   onClear,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<CabinSearchItem[]>([]);
+  const [results, setResults] = useState<SearchableItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -31,23 +41,23 @@ export function CabinItemPicker({
   const seqRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const doSearch = useCallback(
-    (q: string) => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
-      const delay = q ? 250 : 30;
-      debounceRef.current = setTimeout(async () => {
-        const seq = ++seqRef.current;
-        setLoading(true);
-        try {
-          const data = await searchCabinItems(q, cabinType, 25);
-          if (seqRef.current === seq) setResults(data);
-        } finally {
-          if (seqRef.current === seq) setLoading(false);
-        }
-      }, delay);
-    },
-    [cabinType],
-  );
+  const doSearch = useCallback((q: string) => {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    if (!q.trim()) {
+      setResults([]);
+      return;
+    }
+    debounceRef.current = setTimeout(async () => {
+      const seq = ++seqRef.current;
+      setLoading(true);
+      try {
+        const data = await searchItems(q, undefined, 25);
+        if (seqRef.current === seq) setResults(data);
+      } finally {
+        if (seqRef.current === seq) setLoading(false);
+      }
+    }, 250);
+  }, []);
 
   useEffect(() => {
     if (open) doSearch(search);
@@ -96,17 +106,17 @@ export function CabinItemPicker({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder={`Search ${cabinType} items...`}
+        placeholder={`Search any item for ${cabinType}...`}
         className="w-full h-8 pl-8 pr-7 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
       />
       {loading && (
         <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-[var(--muted-foreground)]" />
       )}
-      {open && (
+      {open && search.trim() && (
         <div className="absolute z-50 mt-1 w-full min-w-[360px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-72 overflow-y-auto">
           {results.length === 0 ? (
             <div className="px-3 py-3 text-center text-xs text-[var(--muted-foreground)]">
-              {loading ? "Searching..." : search ? "No cabin items found" : "Type to search"}
+              {loading ? "Searching..." : "No items found"}
             </div>
           ) : (
             results.map((it) => (
@@ -114,7 +124,12 @@ export function CabinItemPicker({
                 key={it.id}
                 type="button"
                 onClick={() => {
-                  onPick(it);
+                  onPick({
+                    id: it.id,
+                    code: it.code,
+                    name: it.name,
+                    uom: it.uom_abbreviation,
+                  });
                   setSearch("");
                   setOpen(false);
                 }}
@@ -123,7 +138,7 @@ export function CabinItemPicker({
                 <div className="font-medium leading-snug break-words">{it.name}</div>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
                   <span className="font-mono">{it.code}</span>
-                  {it.sub_category && <span className="italic">{it.sub_category}</span>}
+                  {it.category_name && <span className="italic">{it.category_name}</span>}
                 </div>
               </button>
             ))

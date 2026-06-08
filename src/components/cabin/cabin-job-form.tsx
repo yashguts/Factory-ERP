@@ -13,7 +13,6 @@ import {
   updateCabinJob,
   deleteCabinJob,
   type CabinJobDetail,
-  type CabinSearchItem,
 } from "@/lib/actions/cabin-jobs";
 
 interface Row {
@@ -42,8 +41,6 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
   const [error, setError] = useState<string | null>(null);
 
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
-  const [customer, setCustomer] = useState(job?.customer_name ?? "");
-  const [note, setNote] = useState(job?.note ?? "");
 
   const [rowsByType, setRowsByType] = useState<Record<string, Row[]>>(() => {
     const map: Record<string, Row[]> = {};
@@ -82,18 +79,8 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
     );
     startTransition(async () => {
       const res = isEditing
-        ? await updateCabinJob(job!.id, {
-            job_number: jobNumber,
-            customer_name: customer,
-            note,
-            lines,
-          })
-        : await createCabinJob({
-            job_number: jobNumber,
-            customer_name: customer,
-            note,
-            lines,
-          });
+        ? await updateCabinJob(job!.id, { job_number: jobNumber, lines })
+        : await createCabinJob({ job_number: jobNumber, lines });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -155,35 +142,17 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
         </div>
       )}
 
-      {/* Header fields */}
-      <div className="card-surface p-4 mb-5 grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <label className="block text-sm font-medium mb-1">
-            Job Number <span className="text-red-500">*</span>
-          </label>
-          <Input
-            value={jobNumber}
-            onChange={(e) => setJobNumber(e.target.value)}
-            placeholder="e.g., RNLBLR-0051"
-            autoFocus={!isEditing}
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Customer</label>
-          <Input
-            value={customer}
-            onChange={(e) => setCustomer(e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
-        <div>
-          <label className="block text-sm font-medium mb-1">Note</label>
-          <Input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Optional"
-          />
-        </div>
+      {/* Header field */}
+      <div className="card-surface p-4 mb-5 max-w-sm">
+        <label className="block text-sm font-medium mb-1">
+          Job Number <span className="text-red-500">*</span>
+        </label>
+        <Input
+          value={jobNumber}
+          onChange={(e) => setJobNumber(e.target.value)}
+          placeholder="e.g., RNLBLR-0051"
+          autoFocus={!isEditing}
+        />
       </div>
 
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
@@ -216,7 +185,7 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
                             itemId={row.item_id}
                             itemCode={row.item_code}
                             itemName={row.item_name}
-                            onPick={(it: CabinSearchItem) =>
+                            onPick={(it) =>
                               setRows(type, (rs) =>
                                 rs.map((r) =>
                                   r._key === row._key
