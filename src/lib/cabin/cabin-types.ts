@@ -9,6 +9,7 @@ export const CABIN_PARENT = "Cabin";
 export const CABIN_TYPES = [
   "Platform",
   "Side Panel",
+  "Cabin Glass",
   "Front Wall RHS",
   "Front Wall LHS",
   "Bottom Support (Glass)",

@@ -41,9 +41,12 @@ async function cabinCategoryIds(
 
   let roots: string[];
   if (cabinType) {
-    const typeCat = list.find(
-      (c) => c.name === cabinType && c.parent_id === cabinRoot.id,
-    );
+    // "Cabin Glass" lives under the top-level "Glass" category (not under Cabin),
+    // so the Cabin Jobs "Cabin Glass" block searches that sub-category by name.
+    const typeCat =
+      cabinType === "Cabin Glass"
+        ? list.find((c) => c.name === "Cabin Glass")
+        : list.find((c) => c.name === cabinType && c.parent_id === cabinRoot.id);
     if (!typeCat) return { ids: [], nameById };
     roots = [typeCat.id];
   } else {
