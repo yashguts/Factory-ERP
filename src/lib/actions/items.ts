@@ -79,8 +79,12 @@ export async function searchItems(
       .split(/\s+/)
       .filter(Boolean);
     for (const token of tokens) {
+      // Strip PostgREST-special chars (%, comma, parentheses) from each token.
+      // Item names like "... (LHS Glass)" contain "(", which otherwise breaks the
+      // or-filter parser and makes the search return zero results.
+      const safe = token.replace(/[%,()]/g, "");
+      if (!safe) continue;
       // ilike with OR across the three text columns
-      const safe = token.replace(/[%,]/g, "");
       q = q.or(
         `name.ilike.%${safe}%,lookup_key.ilike.%${safe}%,code.ilike.%${safe}%`,
       );
