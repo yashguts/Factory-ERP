@@ -62,3 +62,13 @@ export const CABIN_TYPE_CODE: Record<string, string> = {
 export function cabinCodePrefix(typeName?: string | null): string {
   return (typeName && CABIN_TYPE_CODE[typeName]) || "CAB";
 }
+
+/**
+ * Map a cabin JOB type to the INVENTORY type whose items it should search.
+ * Front Wall RHS/LHS were collapsed into a single "Front Wall" inventory type,
+ * so both job blocks search within Front Wall. Everything else maps to itself.
+ */
+export function cabinInventoryType(jobType: string): string {
+  if (jobType === "Front Wall RHS" || jobType === "Front Wall LHS") return "Front Wall";
+  return jobType;
+}

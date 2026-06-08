@@ -2,7 +2,8 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { Search, Loader2, X } from "lucide-react";
-import { searchItems, type SearchableItem } from "@/lib/actions/items";
+import { searchCabinItems, type CabinSearchItem } from "@/lib/actions/cabin-jobs";
+import { cabinInventoryType } from "@/lib/cabin/cabin-types";
 
 export interface PickedCabinItem {
   id: string;
@@ -21,8 +22,9 @@ interface Props {
 }
 
 /**
- * Per-row item picker for a cabin job. Fuzzy search across ALL items —
- * regular inventory AND cabin inventory (searchItems returns both).
+ * Per-row item picker for a cabin job. Search is SCOPED to the block's cabin
+ * inventory type (no universal search). Front Wall RHS/LHS both search the
+ * collapsed "Front Wall" inventory type (see cabinInventoryType).
  */
 export function CabinItemPicker({
   cabinType,
@@ -33,7 +35,7 @@ export function CabinItemPicker({
   onClear,
 }: Props) {
   const [search, setSearch] = useState("");
-  const [results, setResults] = useState<SearchableItem[]>([]);
+  const [results, setResults] = useState<CabinSearchItem[]>([]);
   const [loading, setLoading] = useState(false);
   const [open, setOpen] = useState(false);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -41,23 +43,26 @@ export function CabinItemPicker({
   const seqRef = useRef(0);
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const doSearch = useCallback((q: string) => {
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    if (!q.trim()) {
-      setResults([]);
-      return;
-    }
-    debounceRef.current = setTimeout(async () => {
-      const seq = ++seqRef.current;
-      setLoading(true);
-      try {
-        const data = await searchItems(q, undefined, 25);
-        if (seqRef.current === seq) setResults(data);
-      } finally {
-        if (seqRef.current === seq) setLoading(false);
+  const doSearch = useCallback(
+    (q: string) => {
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+      if (!q.trim()) {
+        setResults([]);
+        return;
       }
-    }, 250);
-  }, []);
+      debounceRef.current = setTimeout(async () => {
+        const seq = ++seqRef.current;
+        setLoading(true);
+        try {
+          const data = await searchCabinItems(q, cabinInventoryType(cabinType), 25);
+          if (seqRef.current === seq) setResults(data);
+        } finally {
+          if (seqRef.current === seq) setLoading(false);
+        }
+      }, 250);
+    },
+    [cabinType],
+  );
 
   useEffect(() => {
     if (open) doSearch(search);
@@ -106,7 +111,7 @@ export function CabinItemPicker({
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder={`Search any item for ${cabinType}...`}
+        placeholder={`Search ${cabinType} items...`}
         className="w-full h-8 pl-8 pr-7 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
       />
       {loading && (
@@ -128,7 +133,7 @@ export function CabinItemPicker({
                     id: it.id,
                     code: it.code,
                     name: it.name,
-                    uom: it.uom_abbreviation,
+                    uom: it.uom,
                   });
                   setSearch("");
                   setOpen(false);
@@ -145,14 +150,14 @@ export function CabinItemPicker({
                         ? "text-red-500"
                         : "text-[var(--muted-foreground)]"
                     }`}
-                    title={`In stock: ${formatStock(it.total_stock)} ${it.uom_abbreviation}`.trim()}
+                    title={`In stock: ${formatStock(it.total_stock)} ${it.uom}`.trim()}
                   >
                     {formatStock(it.total_stock)}
                   </span>
                 </div>
                 <div className="mt-0.5 flex items-center gap-2 text-[11px] text-[var(--muted-foreground)]">
                   <span className="font-mono">{it.code}</span>
-                  {it.category_name && <span className="italic">{it.category_name}</span>}
+                  {it.sub_category && <span className="italic">{it.sub_category}</span>}
                 </div>
               </button>
             ))

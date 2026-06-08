@@ -65,6 +65,7 @@ export interface CabinSearchItem {
   name: string;
   uom: string;
   sub_category: string | null;
+  total_stock: number;
 }
 
 export async function searchCabinItems(
@@ -79,13 +80,15 @@ export async function searchCabinItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name, category_id, uom:units_of_measurement(abbreviation)`,
+      `id, code, name, category_id, uom:units_of_measurement(abbreviation), inventory(quantity)`,
     )
     .eq("is_active", true)
     .in("category_id", ids);
 
   for (const token of query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
-    const safe = token.replace(/[%,]/g, "");
+    // strip PostgREST-special chars incl. parentheses — cabin names have "(Glass)" etc.
+    const safe = token.replace(/[%,()]/g, "");
+    if (!safe) continue;
     q = q.or(`name.ilike.%${safe}%,code.ilike.%${safe}%`);
   }
   const { data, error } = await q.order("name").limit(limit);
@@ -97,6 +100,9 @@ export async function searchCabinItems(
     name: it.name as string,
     uom: (flatten<any>(it.uom)?.abbreviation as string) ?? "",
     sub_category: nameById.get(it.category_id as string) ?? null,
+    total_stock: Array.isArray(it.inventory)
+      ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0)
+      : 0,
   }));
 }
 
@@ -122,6 +128,7 @@ export async function getCabinItemByName(
     name: (data as any).name as string,
     uom: (flatten<any>((data as any).uom)?.abbreviation as string) ?? "",
     sub_category: null,
+    total_stock: 0,
   };
 }
 
