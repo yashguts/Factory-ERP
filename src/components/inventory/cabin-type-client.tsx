@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, Search, Container, Plus } from "lucide-react";
@@ -30,6 +30,8 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
   const [search, setSearch] = useState("");
   const [subFilter, setSubFilter] = useState<string>("all");
   const [showAdd, setShowAdd] = useState(false);
+  const [page, setPage] = useState(1);
+  const PAGE_SIZE = 100;
 
   const tokens = useMemo(
     () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
@@ -48,6 +50,15 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
   }, [items, subFilter, tokens]);
 
   const inStock = filtered.filter((i) => i.total_stock > 0).length;
+
+  // Render one page at a time so large types (e.g. Front Wall ACO ~2k) stay snappy.
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const safePage = Math.min(page, totalPages);
+  const paged = useMemo(
+    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
+    [filtered, safePage, PAGE_SIZE],
+  );
+  useEffect(() => setPage(1), [search, subFilter]);
 
   return (
     <div>
@@ -117,7 +128,7 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
               </TableRow>
             </TableHeader>
             <TableBody>
-              {filtered.map((it) => (
+              {paged.map((it) => (
                 <TableRow
                   key={it.id}
                   className="cursor-pointer hover:bg-[var(--muted)]"
@@ -146,6 +157,36 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
               ))}
             </TableBody>
           </Table>
+        </div>
+      )}
+
+      {filtered.length > PAGE_SIZE && (
+        <div className="flex items-center justify-between mt-4 text-sm">
+          <span className="text-[var(--muted-foreground)]">
+            Showing {(safePage - 1) * PAGE_SIZE + 1}–
+            {Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+          </span>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={safePage <= 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Prev
+            </Button>
+            <span className="text-[var(--muted-foreground)] tabular-nums">
+              Page {safePage} of {totalPages}
+            </span>
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={safePage >= totalPages}
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+            >
+              Next
+            </Button>
+          </div>
         </div>
       )}
 
