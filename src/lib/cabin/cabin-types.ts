@@ -21,3 +21,22 @@ export const CABIN_TYPES = [
 ] as const;
 
 export type CabinType = (typeof CABIN_TYPES)[number];
+
+/** Code prefix per cabin type for auto-generated item codes (PLAT-001, …). */
+export const CABIN_TYPE_CODE: Record<string, string> = {
+  Platform: "PLAT",
+  "Side Panel": "SIDE",
+  "Front Wall RHS": "FWRHS",
+  "Front Wall LHS": "FWLHS",
+  "Bottom Support (Glass)": "BSG",
+  "Top Support (Glass)": "TSG",
+  Linton: "LINTON",
+  "Cabin Support": "CSUP",
+  "Corner Wall": "CWALL",
+  Canopy: "CANOPY",
+  "Corner Wall Cover": "CWCOV",
+};
+
+export function cabinCodePrefix(typeName?: string | null): string {
+  return (typeName && CABIN_TYPE_CODE[typeName]) || "CAB";
+}

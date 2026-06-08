@@ -3,7 +3,8 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, Container } from "lucide-react";
+import { ArrowLeft, Search, Container, Plus } from "lucide-react";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -14,18 +15,21 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
 import type { CabinItem } from "@/lib/actions/cabin";
 
 interface Props {
+  typeId: string;
   typeName: string;
   subCategories: { id: string; name: string }[];
   items: CabinItem[];
 }
 
-export function CabinTypeClient({ typeName, subCategories, items }: Props) {
+export function CabinTypeClient({ typeId, typeName, subCategories, items }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
   const [subFilter, setSubFilter] = useState<string>("all");
+  const [showAdd, setShowAdd] = useState(false);
 
   const tokens = useMemo(
     () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
@@ -54,12 +58,19 @@ export function CabinTypeClient({ typeName, subCategories, items }: Props) {
         >
           <ArrowLeft className="h-3.5 w-3.5" /> Back to Cabin Inventory
         </Link>
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Container className="h-6 w-6" /> {typeName}
-        </h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          {filtered.length} of {items.length} items · {inStock} in stock
-        </p>
+        <div className="flex items-start justify-between gap-3">
+          <div>
+            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
+              <Container className="h-6 w-6" /> {typeName}
+            </h1>
+            <p className="text-sm text-[var(--muted-foreground)] mt-1">
+              {filtered.length} of {items.length} items · {inStock} in stock
+            </p>
+          </div>
+          <Button onClick={() => setShowAdd(true)}>
+            <Plus className="h-4 w-4 mr-1.5" /> Add item
+          </Button>
+        </div>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-4">
@@ -136,6 +147,16 @@ export function CabinTypeClient({ typeName, subCategories, items }: Props) {
             </TableBody>
           </Table>
         </div>
+      )}
+
+      {showAdd && (
+        <CabinAddItemModal
+          typeId={typeId}
+          typeName={typeName}
+          subCategories={subCategories}
+          onClose={() => setShowAdd(false)}
+          onSaved={() => router.refresh()}
+        />
       )}
     </div>
   );

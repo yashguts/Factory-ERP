@@ -13,6 +13,7 @@ export default async function CabinTypePage({ params }: Props) {
 
   return (
     <CabinTypeClient
+      typeId={data.type.id}
       typeName={data.type.name}
       subCategories={data.subCategories}
       items={data.items}
