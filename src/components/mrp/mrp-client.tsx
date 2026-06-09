@@ -205,9 +205,14 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
             {isPending ? " — refreshing..." : ""}
           </p>
         </div>
-        <Link href={`/mrp/plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
-          <Button variant="secondary">Raw material plan →</Button>
-        </Link>
+        <div className="flex items-center gap-2">
+          <Link href={`/mrp/make-plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
+            <Button variant="secondary">Programs to run →</Button>
+          </Link>
+          <Link href={`/mrp/plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
+            <Button variant="secondary">Raw material plan →</Button>
+          </Link>
+        </div>
       </div>
 
       {/* Procurement Type Tabs — split MRP into procurement vs production
