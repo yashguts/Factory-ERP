@@ -80,7 +80,7 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                     <span className="font-mono">{c.code}</span>
                     <span className="truncate flex-1">{c.name}</span>
                     <span className="italic shrink-0">{c.subCategory}</span>
-                    <span className="tabular-nums shrink-0">need {c.need} · make {c.make}</span>
+                    <span className="tabular-nums shrink-0">need {c.need}</span>
                   </div>
                 ))}
               </div>

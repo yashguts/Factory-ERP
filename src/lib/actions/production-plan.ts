@@ -24,7 +24,6 @@ export interface PlanCover {
   category: string; // top-level category
   subCategory: string; // direct (sub-)category
   need: number;
-  make: number;
 }
 export interface PlanProgram {
   code: string;
@@ -216,6 +215,18 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   }
   const makeable = [...short.keys()].filter((f) => ["direct", "assembly"].includes(statusOf.get(f)!.kind));
 
+  // Map each produced (make-)leaf back to the finished item(s) it builds, so the plan
+  // shows job-relevant finished items rather than internal/phantom cut parts.
+  const finishedByLeaf = new Map<string, Set<string>>();
+  for (const f of makeable) {
+    for (const l of leavesOf(f)) {
+      if (!isMakeLeaf(l)) continue;
+      const set = finishedByLeaf.get(l) ?? new Set<string>();
+      set.add(f);
+      finishedByLeaf.set(l, set);
+    }
+  }
+
   // 7) topo explosion seeded from makeable finished items -> leaf demand (stock netted at every level)
   const seed = new Set<string>();
   { const st = [...makeable]; while (st.length) { const it = st.pop() as string; if (seed.has(it)) continue; seed.add(it); for (const { child } of partsOf.get(it) ?? []) st.push(child); } }
@@ -269,8 +280,20 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     const fout = fullOut.get(op) ?? new Map<string, number>();
     const made = r * [...fout.values()].reduce((s, q) => s + q, 0);
     const coverParts = [...(progOut.get(op)?.keys() ?? [])].filter((p) => leafProduce.has(p));
-    const covers: PlanCover[] = coverParts.map((p) => ({ code: code(p), name: name(p), type: itemType(p), category: topCatName(p), subCategory: catName(p), need: Math.round(leafProduce.get(p)!), make: Math.round(r * (progOut.get(op)!.get(p) ?? 0)) }));
     const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (progOut.get(op)!.get(p) ?? 0)), 0);
+    // Roll produced parts up to the finished items they build (hide internal cut parts).
+    const finishedIds = new Set<string>();
+    for (const p of coverParts) for (const f of finishedByLeaf.get(p) ?? []) finishedIds.add(f);
+    const covers: PlanCover[] = [...finishedIds]
+      .map((f) => ({
+        code: short.get(f)!.code,
+        name: short.get(f)!.name,
+        type: itemType(f),
+        category: topCatName(f),
+        subCategory: catName(f),
+        need: Math.round(short.get(f)!.shortfall),
+      }))
+      .sort((a, b) => b.need - a.need);
     plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers });
   }
 
