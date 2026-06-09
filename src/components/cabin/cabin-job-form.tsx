@@ -22,6 +22,7 @@ interface Row {
   item_id: string | null;
   item_code: string | null;
   item_name: string | null;
+  item_family?: string | null;
   uom: string | null;
   qty: number;
   /** For an auto-added Cover row: the _key of the Support row it mirrors. */
@@ -66,6 +67,7 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
         item_id: l.item_id,
         item_code: l.item_code,
         item_name: l.item_name,
+        item_family: l.item_family,
         uom: l.uom,
         qty: l.qty || 1,
       });
@@ -295,6 +297,7 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
                               itemId={row.item_id}
                               itemCode={row.item_code}
                               itemName={row.item_name}
+                              initialFamily={row.item_family}
                               onPick={(it) => pickItem(type, row._key, it)}
                               onClear={() => clearItem(type, row._key)}
                             />
