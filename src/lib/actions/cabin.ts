@@ -102,7 +102,62 @@ export async function getCabinTypeSummary(): Promise<CabinTypeSummary[]> {
   return cached();
 }
 
-export interface CabinItem {
+/* ------------------------------------------------------------------ *
+ * Server-side pagination for a single cabin type's items.
+ *
+ * A cabin type page (e.g. Front Wall ~3,900 items) used to ship EVERY item in
+ * the type to the browser and filter/search/paginate in JS. These helpers move
+ * filter + multi-token search + sort + paginate (and the header aggregates)
+ * into one Postgres call (search_cabin_type), so the browser only ever receives
+ * one page (~100 rows). Behaviour matches the old client exactly: items scope =
+ * the type category + all descendants; the sub-type filter and the search both
+ * key off the item's direct sub-category NAME.
+ * ------------------------------------------------------------------ */
+
+/** A cabin type's identity + its sub-type dropdown options. Light, cached. */
+export interface CabinTypeMeta {
+  type: { id: string; name: string } | null;
+  subCategories: { id: string; name: string }[];
+}
+
+const _getCabinTypeMetaUncached = async (
+  typeId: string,
+): Promise<CabinTypeMeta> => {
+  const supabase = createCacheClient();
+
+  const { data: type } = await supabase
+    .from("item_categories")
+    .select("id, name")
+    .eq("id", typeId)
+    .maybeSingle();
+  if (!type) return { type: null, subCategories: [] };
+
+  // Direct children only — matches the old dropdown (sub-types are one level
+  // under the type), sorted by name.
+  const { data: subs } = await supabase
+    .from("item_categories")
+    .select("id, name")
+    .eq("parent_id", typeId)
+    .order("name");
+  const subCategories = ((subs ?? []) as any[])
+    .map((c) => ({ id: c.id as string, name: c.name as string }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+
+  return { type: { id: type.id as string, name: type.name as string }, subCategories };
+};
+
+export async function getCabinTypeMeta(typeId: string): Promise<CabinTypeMeta> {
+  if (!typeId) return { type: null, subCategories: [] };
+  const cached = unstable_cache(
+    () => _getCabinTypeMetaUncached(typeId),
+    ["cabin-type-meta", typeId],
+    { revalidate: 600, tags: ["categories"] },
+  );
+  return cached();
+}
+
+/** Lightweight row for the cabin type table (one page worth). */
+export interface CabinTypeRow {
   id: string;
   code: string;
   name: string;
@@ -112,103 +167,85 @@ export interface CabinItem {
   stock_behaviour: string;
 }
 
-export interface CabinTypeItems {
-  type: { id: string; name: string } | null;
-  subCategories: { id: string; name: string }[];
-  items: CabinItem[];
+export interface CabinTypePageResult {
+  rows: CabinTypeRow[];
+  /** Rows matching the current filters/search (across all pages). */
+  total: number;
+  /** Rows matching the filters that have stock > 0 (for the header "in stock"). */
+  inStock: number;
+  /** Total items in the type, ignoring filters (for the header "of Y items"). */
+  typeTotal: number;
 }
 
-const _getCabinTypeItemsUncached = async (
-  typeId: string,
-): Promise<CabinTypeItems> => {
+export interface CabinTypeQuery {
+  typeId: string;
+  search?: string;
+  sub?: string; // sub-category NAME | "all"
+  sort?: string; // code | name | stock
+  dir?: string; // asc | desc
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * One page of a cabin type's items + the filtered count, in-stock count and the
+ * type's unfiltered total. Not cached: a single fast RPC we want live (fresh per
+ * user, matching the /inventory pattern).
+ */
+export async function getCabinTypePage(
+  q: CabinTypeQuery,
+): Promise<CabinTypePageResult> {
+  if (!q.typeId) return { rows: [], total: 0, inStock: 0, typeTotal: 0 };
+  const pageSize = q.pageSize ?? 100;
+  const page = Math.max(1, q.page ?? 1);
+
   const supabase = createCacheClient();
+  const { data, error } = await supabase.rpc("search_cabin_type", {
+    p_type_category_id: q.typeId,
+    p_search: q.search?.trim() ? q.search.trim() : null,
+    p_sub: q.sub && q.sub !== "all" ? q.sub : null,
+    p_sort: q.sort ?? "name",
+    p_dir: q.dir ?? "asc",
+    p_limit: pageSize,
+    p_offset: (page - 1) * pageSize,
+  });
+  if (error) throw error;
 
-  const { data: type } = await supabase
-    .from("item_categories")
-    .select("id, name")
-    .eq("id", typeId)
-    .maybeSingle();
-  if (!type) return { type: null, subCategories: [], items: [] };
+  const rows = (data ?? []) as Record<string, unknown>[];
+  // total_count / in_stock_count / type_total ride on every row (window/scalar
+  // aggregates). On an empty page they're absent, so default them — but
+  // type_total still needs to be known, so the caller snaps to page 1 on empty.
+  const total = rows.length > 0 ? Number(rows[0].total_count ?? 0) : 0;
+  const inStock = rows.length > 0 ? Number(rows[0].in_stock_count ?? 0) : 0;
+  const typeTotal = rows.length > 0 ? Number(rows[0].type_total ?? 0) : 0;
+  return {
+    total,
+    inStock,
+    typeTotal,
+    rows: rows.map((r) => ({
+      id: r.id as string,
+      code: r.code as string,
+      name: r.name as string,
+      sub_category: (r.sub_category_name as string | null) ?? null,
+      uom: (r.uom_abbreviation as string | null) ?? "",
+      total_stock: Number(r.total_stock ?? 0),
+      stock_behaviour: (r.stock_behaviour as string | null) ?? "stocked",
+    })),
+  };
+}
 
-  const { data: cats } = await supabase
-    .from("item_categories")
-    .select("id, name, parent_id");
-  const childrenOf = new Map<string, string[]>();
-  for (const c of (cats ?? []) as any[]) {
-    if (c.parent_id) {
-      const a = childrenOf.get(c.parent_id) ?? [];
-      a.push(c.id);
-      childrenOf.set(c.parent_id, a);
-    }
-  }
-  const subCategories = ((cats ?? []) as any[])
-    .filter((c) => c.parent_id === typeId)
-    .map((c) => ({ id: c.id as string, name: c.name as string }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-
-  // type + all descendant category ids
-  const catIds: string[] = [];
-  const stack = [typeId];
-  while (stack.length) {
-    const id = stack.pop() as string;
-    catIds.push(id);
-    for (const ch of childrenOf.get(id) ?? []) stack.push(ch);
-  }
-  const catName = new Map(
-    ((cats ?? []) as any[]).map((c) => [c.id as string, c.name as string]),
-  );
-
-  // Fetch items in those categories, with stock. Page past PostgREST's 1000-row
-  // cap so large types (Side Panel, Front Wall) return EVERY item, not just 1000.
-  const items: CabinItem[] = [];
-  const PAGE = 1000;
-  for (const cc of chunk(catIds, 100)) {
-    let offset = 0;
-    while (true) {
-      const { data } = await supabase
-        .from("items")
-        .select(
-          `id, code, name, category_id, stock_behaviour,
-           uom:units_of_measurement(abbreviation), inventory(quantity)`,
-        )
-        .eq("is_active", true)
-        .in("category_id", cc)
-        .order("name")
-        .range(offset, offset + PAGE - 1);
-      const batch = (data ?? []) as any[];
-      for (const it of batch) {
-        const uom = Array.isArray(it.uom) ? it.uom[0] : it.uom;
-        const total = (it.inventory ?? []).reduce(
-          (s: number, r: { quantity: number }) => s + Number(r.quantity ?? 0),
-          0,
-        );
-        items.push({
-          id: it.id as string,
-          code: it.code as string,
-          name: it.name as string,
-          sub_category: catName.get(it.category_id as string) ?? null,
-          uom: (uom?.abbreviation as string) ?? "",
-          total_stock: total,
-          stock_behaviour: (it.stock_behaviour as string) ?? "stocked",
-        });
-      }
-      if (batch.length < PAGE) break;
-      offset += PAGE;
-    }
-  }
-  items.sort((a, b) => a.name.localeCompare(b.name));
-
-  return { type: { id: type.id, name: type.name }, subCategories, items };
-};
-
-export async function getCabinTypeItems(typeId: string): Promise<CabinTypeItems> {
-  if (!typeId) return { type: null, subCategories: [], items: [] };
-  const cached = unstable_cache(
-    () => _getCabinTypeItemsUncached(typeId),
-    ["cabin-type-items", typeId],
-    { revalidate: 600, tags: ["categories", "items", "inventory-stock"] },
-  );
-  return cached();
+/** Cached default first page (no filters) for an instant initial paint of a
+ *  cabin type page. Invalidated by the items/inventory-stock tags. Live
+ *  user-driven queries go through getCabinTypePage. */
+export async function getCabinTypeFirstPage(
+  typeId: string,
+): Promise<CabinTypePageResult> {
+  if (!typeId) return { rows: [], total: 0, inStock: 0, typeTotal: 0 };
+  return unstable_cache(
+    () => getCabinTypePage({ typeId, page: 1, pageSize: 100 }),
+    ["cabin-type-first-page", typeId],
+    { revalidate: 300, tags: ["items", "inventory-stock"] },
+  )();
 }
 
 export type CabinItemCreateResult =

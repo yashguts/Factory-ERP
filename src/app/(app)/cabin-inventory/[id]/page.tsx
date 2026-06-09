@@ -1,5 +1,5 @@
 import { notFound } from "next/navigation";
-import { getCabinTypeItems } from "@/lib/actions/cabin";
+import { getCabinTypeMeta, getCabinTypeFirstPage } from "@/lib/actions/cabin";
 import { CabinTypeClient } from "@/components/inventory/cabin-type-client";
 
 interface Props {
@@ -8,15 +8,23 @@ interface Props {
 
 export default async function CabinTypePage({ params }: Props) {
   const { id } = await params;
-  const data = await getCabinTypeItems(id);
-  if (!data.type) notFound();
+  // Light identity + sub-type options, plus the first (default) page of rows —
+  // both small. Subsequent pages / filtered queries are fetched client-side.
+  const [meta, first] = await Promise.all([
+    getCabinTypeMeta(id),
+    getCabinTypeFirstPage(id),
+  ]);
+  if (!meta.type) notFound();
 
   return (
     <CabinTypeClient
-      typeId={data.type.id}
-      typeName={data.type.name}
-      subCategories={data.subCategories}
-      items={data.items}
+      typeId={meta.type.id}
+      typeName={meta.type.name}
+      subCategories={meta.subCategories}
+      initialRows={first.rows}
+      initialTotal={first.total}
+      initialInStock={first.inStock}
+      typeTotal={first.typeTotal}
     />
   );
 }
