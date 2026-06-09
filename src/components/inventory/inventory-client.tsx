@@ -95,8 +95,12 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
   }, [search]);
 
   // Fetch a page from the server for the current query. Stable per query state,
-  // so it doubles as the "reload after a mutation" function.
+  // so it doubles as the "reload after a mutation" function. A monotonic request
+  // id guards against a slow earlier response overwriting a newer one when the
+  // user changes filters/search/page quickly.
+  const reqId = useRef(0);
   const runQuery = useCallback(() => {
+    const myId = ++reqId.current;
     startTransition(async () => {
       const res = await getInventoryPage({
         search: debouncedSearch,
@@ -110,6 +114,14 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
         page,
         pageSize: PAGE_SIZE,
       });
+      if (myId !== reqId.current) return; // a newer query superseded this one
+      // Ran off the end (e.g. the last row on this page was just deleted, or a
+      // shrinking filter) — total_count rides on rows, so an empty page would
+      // otherwise read as "0 items". Snap back to page 1 (re-fetches via effect).
+      if (res.rows.length === 0 && page > 1) {
+        setPage(1);
+        return;
+      }
       setRows(res.rows);
       setTotal(res.total);
     });

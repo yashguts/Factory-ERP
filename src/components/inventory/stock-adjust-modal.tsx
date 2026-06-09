@@ -51,7 +51,7 @@ function ItemSearchSelect({
     setLoading(true);
     const t = setTimeout(async () => {
       try {
-        const res = await searchItems(query, undefined, 50);
+        const res = await searchItems(query, undefined, 50, { excludeCabin: true });
         if (!cancelled) {
           setResults(res);
           setHighlightIdx(0);

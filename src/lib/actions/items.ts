@@ -39,6 +39,7 @@ export async function searchItems(
   query: string,
   categoryPaths?: string[],
   limit = 50,
+  opts?: { excludeCabin?: boolean },
 ): Promise<SearchableItem[]> {
   // Use the cache-friendly anon client (no cookies). The SSR client's
   // cookie session can go stale on long-open tabs, which used to make
@@ -69,6 +70,38 @@ export async function searchItems(
 
   if (categoryIds && categoryIds.length > 0) {
     q = q.in("category_id", categoryIds);
+  }
+
+  // Optionally exclude the whole "Cabin" category subtree (cabin items live in
+  // their own /cabin-inventory section). Mirrors getItemsWithStock's exclusion —
+  // used by the Stock Adjustment picker so it stays scoped to main inventory.
+  if (opts?.excludeCabin) {
+    const { data: allCats } = await supabase
+      .from("item_categories")
+      .select("id, name, parent_id");
+    const childrenOf = new Map<string, string[]>();
+    for (const c of allCats ?? []) {
+      if (c.parent_id) {
+        const arr = childrenOf.get(c.parent_id as string) ?? [];
+        arr.push(c.id as string);
+        childrenOf.set(c.parent_id as string, arr);
+      }
+    }
+    const root = (allCats ?? []).find(
+      (c) => c.name === "Cabin" && c.parent_id === null,
+    );
+    const cabinIds: string[] = [];
+    if (root) {
+      const stack = [root.id as string];
+      while (stack.length) {
+        const cid = stack.pop() as string;
+        cabinIds.push(cid);
+        for (const ch of childrenOf.get(cid) ?? []) stack.push(ch);
+      }
+    }
+    if (cabinIds.length > 0) {
+      q = q.or(`category_id.is.null,category_id.not.in.(${cabinIds.join(",")})`);
+    }
   }
 
   // Multi-token AND search. Each token must appear in name OR lookup_key OR code.

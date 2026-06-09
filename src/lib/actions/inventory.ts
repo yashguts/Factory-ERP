@@ -350,6 +350,9 @@ export async function getItemForEdit(
        inventory(quantity, warehouse_id)`,
     )
     .eq("id", id)
+    // Active only: a stale ?edit=<id> deep-link to a since-soft-deleted item
+    // returns null → the modal won't open (matches the prior list-find behaviour).
+    .eq("is_active", true)
     .maybeSingle();
   if (error) throw error;
   if (!item) return null;
