@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/table";
 import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
 import { getCabinTypePage, type CabinTypeRow } from "@/lib/actions/cabin";
+import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
 
 interface Props {
   typeId: string;
@@ -115,6 +116,9 @@ export function CabinTypeClient({
     }
     runQuery();
   }, [runQuery]);
+
+  // Live sync: re-fetch the current page when another user changes items/stock.
+  useRealtimeRefresh(["items", "inventory"], runQuery);
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;

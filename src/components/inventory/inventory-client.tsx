@@ -22,6 +22,7 @@ import {
   type TypeCatFacet,
 } from "@/lib/actions/inventory";
 import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse } from "@/lib/supabase/types";
+import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
 
 interface Props {
   /** First page of rows, rendered server-side for instant paint. */
@@ -137,6 +138,9 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
     }
     runQuery();
   }, [runQuery]);
+
+  // Live sync across users: re-fetch the current page when items/stock change.
+  useRealtimeRefresh(["items", "inventory"], runQuery);
 
   // Deep-link from Daily Changes: `/inventory?edit=<id>` opens that item's edit
   // modal, then strips the param. Soft-deleted items return null → no open.
