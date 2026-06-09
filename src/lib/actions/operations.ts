@@ -15,7 +15,14 @@ import type { OperationMachine, OutputRole } from "@/lib/supabase/types";
  * modal shows produced-by / consumed-by badges).
  * ------------------------------------------------------------------ */
 
-/** A row in the Programs list. */
+/**
+ * A row in the Programs list. Deliberately LIGHT: it omits the per-program
+ * concatenation of every input/output item name. That concatenation (the old
+ * `search_text`) ballooned the cached payload past the 2 MB `unstable_cache`
+ * limit once the catalog passed ~1k programs. Item-name search now happens
+ * server-side via `searchOperations`; the client keeps the full light list in
+ * memory for family grouping + chip-filter counts, which span the whole set.
+ */
 export interface OperationListRow {
   id: string;
   code: string | null;
@@ -31,9 +38,6 @@ export interface OperationListRow {
   input_matched: number;
   /** Output lines already linked to an inventory item (item_id not null). */
   output_matched: number;
-  /** Lowercased name+code+family+material plus all input/output item names &
-   *  to-be-filled labels, so the list search can match inside a program. */
-  search_text: string;
   is_active: boolean;
 }
 
@@ -115,35 +119,23 @@ export interface ItemOperationsResult {
 
 const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
   const supabase = createCacheClient();
+  // We only need item_id (to count matched lines) and role (to know which
+  // unmapped outputs are real gaps) — NOT the joined item names. Dropping the
+  // item:items(name) join is what keeps this read small enough to cache.
   const { data, error } = await supabase
     .from("operations")
     .select(
       `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
-       operation_inputs(item_id, label, item:items(name)),
-       operation_outputs(item_id, label, role, item:items(name))`,
+       operation_inputs(item_id),
+       operation_outputs(item_id, role)`,
     )
     .eq("is_active", true)
     .order("name");
   if (error) throw error;
 
-  const partName = (r: any): string =>
-    r.label || (Array.isArray(r.item) ? r.item[0]?.name : r.item?.name) || "";
-
   return (data ?? []).map((row: any) => {
     const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
     const outs = Array.isArray(row.operation_outputs) ? row.operation_outputs : [];
-    const search_text = [
-      row.name,
-      row.code,
-      row.family_key,
-      row.material_label,
-      row.program_label,
-      ...ins.map(partName),
-      ...outs.map(partName),
-    ]
-      .filter(Boolean)
-      .join(" ")
-      .toLowerCase();
     return {
       id: row.id as string,
       code: (row.code as string | null) ?? null,
@@ -162,7 +154,6 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       output_matched: outs.filter(
         (r: any) => r.item_id || (r.role && r.role !== "component"),
       ).length,
-      search_text,
       is_active: row.is_active as boolean,
     };
   });
@@ -173,6 +164,29 @@ export const getOperations = unstable_cache(
   ["operations-list"],
   { revalidate: 600, tags: ["operations"] },
 );
+
+/**
+ * Server-side text search across every program's name/code/family/material/
+ * program_label PLUS all its input/output item names & to-be-filled labels.
+ * Returns the matching active operation IDs (the client intersects this set
+ * with its in-memory light list, so family grouping & chip-filter counts still
+ * run over the full dataset). Multi-token AND, same semantics as the old
+ * client-side `search_text.includes(token)` check.
+ *
+ * NOT cached — it's keyed on a free-text query, so caching would just bloat the
+ * data cache with one entry per keystroke. The RPC does the work in one round
+ * trip via the `search_operations` Postgres function.
+ */
+export async function searchOperations(query: string): Promise<string[]> {
+  const q = query?.trim();
+  if (!q) return [];
+  const supabase = createCacheClient();
+  const { data, error } = await supabase.rpc("search_operations", {
+    p_query: q,
+  });
+  if (error) throw error;
+  return ((data ?? []) as { id: string }[]).map((r) => r.id);
+}
 
 const _getOperationDetailUncached = async (
   id: string,
