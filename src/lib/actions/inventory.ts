@@ -427,7 +427,8 @@ async function logItemChange(
  *
  * Hard delete (row goes away, plus any zero-stock inventory rows) is
  * only safe when nothing references the item: no transactions, no BOM
- * (template OR job) headers or lines, no import column mappings.
+ * (template OR job) headers or lines, no import column mappings, and no
+ * program outputs/inputs, parts-list (item_bom_lines) or cabin-job lines.
  *
  * If anything references it, fall back to soft delete (is_active=false)
  * so the existing audit trail / BOMs aren't broken. The item disappears
@@ -479,6 +480,29 @@ export async function deleteItem(
       .eq("item_id", itemId),
     supabase
       .from("target_column_map")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    // Production-visibility references (program outputs/inputs, multi-level parts
+    // lists, cabin jobs). These FKs also block a hard delete, so they must force a
+    // soft delete too — otherwise the delete throws an opaque FK-constraint error.
+    supabase
+      .from("operation_outputs")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("operation_inputs")
+      .select("id", { count: "exact", head: true })
+      .eq("item_id", itemId),
+    supabase
+      .from("item_bom_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("child_item_id", itemId),
+    supabase
+      .from("item_bom_lines")
+      .select("id", { count: "exact", head: true })
+      .eq("parent_item_id", itemId),
+    supabase
+      .from("cabin_job_lines")
       .select("id", { count: "exact", head: true })
       .eq("item_id", itemId),
   ]);
