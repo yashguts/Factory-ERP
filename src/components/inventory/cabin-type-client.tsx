@@ -1,9 +1,15 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useCallback,
+  useTransition,
+} from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, Search, Container, Plus } from "lucide-react";
+import { ArrowLeft, Search, Container, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -16,49 +22,103 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
-import type { CabinItem } from "@/lib/actions/cabin";
+import { getCabinTypePage, type CabinTypeRow } from "@/lib/actions/cabin";
 
 interface Props {
   typeId: string;
   typeName: string;
   subCategories: { id: string; name: string }[];
-  items: CabinItem[];
+  /** First page of rows, rendered server-side for instant paint. */
+  initialRows: CabinTypeRow[];
+  /** Count matching the default (unfiltered) query. */
+  initialTotal: number;
+  /** In-stock count matching the default query. */
+  initialInStock: number;
+  /** Total items in this type, ignoring filters (the "of Y items" figure). */
+  typeTotal: number;
 }
 
-export function CabinTypeClient({ typeId, typeName, subCategories, items }: Props) {
+const PAGE_SIZE = 100;
+
+export function CabinTypeClient({
+  typeId,
+  typeName,
+  subCategories,
+  initialRows,
+  initialTotal,
+  initialInStock,
+  typeTotal,
+}: Props) {
   const router = useRouter();
+  const [isPending, startTransition] = useTransition();
+
+  // Query state (drives the server fetch).
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [subFilter, setSubFilter] = useState<string>("all");
-  const [showAdd, setShowAdd] = useState(false);
   const [page, setPage] = useState(1);
-  const PAGE_SIZE = 100;
+  const [showAdd, setShowAdd] = useState(false);
 
-  const tokens = useMemo(
-    () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
-    [search],
-  );
+  // Server-provided page data.
+  const [rows, setRows] = useState<CabinTypeRow[]>(initialRows);
+  const [total, setTotal] = useState(initialTotal);
+  const [inStock, setInStock] = useState(initialInStock);
 
-  const filtered = useMemo(() => {
-    return items.filter((it) => {
-      if (subFilter !== "all" && it.sub_category !== subFilter) return false;
-      if (tokens.length > 0) {
-        const hay = `${it.name} ${it.code} ${it.sub_category ?? ""}`.toLowerCase();
-        if (!tokens.every((t) => hay.includes(t))) return false;
+  // Debounce the search box → debouncedSearch (which the fetch watches).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
+
+  // Reset to page 1 whenever the filters change.
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch, subFilter]);
+
+  // Fetch a page from the server for the current query. A monotonic request id
+  // guards against a slow earlier response overwriting a newer one when the user
+  // changes filters/search/page quickly. Doubles as the post-mutation reload.
+  const reqId = useRef(0);
+  const runQuery = useCallback(() => {
+    const myId = ++reqId.current;
+    startTransition(async () => {
+      const res = await getCabinTypePage({
+        typeId,
+        search: debouncedSearch,
+        sub: subFilter,
+        sort: "name",
+        dir: "asc",
+        page,
+        pageSize: PAGE_SIZE,
+      });
+      if (myId !== reqId.current) return; // a newer query superseded this one
+      // Ran off the end (e.g. an item was removed, or a shrinking filter) — the
+      // counts ride on rows, so an empty page would otherwise read as "0 items".
+      // Snap back to page 1 (re-fetches via the effect below).
+      if (res.rows.length === 0 && page > 1) {
+        setPage(1);
+        return;
       }
-      return true;
+      setRows(res.rows);
+      setTotal(res.total);
+      setInStock(res.inStock);
     });
-  }, [items, subFilter, tokens]);
+  }, [typeId, debouncedSearch, subFilter, page]);
 
-  const inStock = filtered.filter((i) => i.total_stock > 0).length;
+  // Re-fetch when the query changes — but skip the very first run, since
+  // initialRows already match the default query (instant paint, no flash).
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    runQuery();
+  }, [runQuery]);
 
-  // Render one page at a time so large types (e.g. Front Wall ACO ~2k) stay snappy.
-  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
-  const safePage = Math.min(page, totalPages);
-  const paged = useMemo(
-    () => filtered.slice((safePage - 1) * PAGE_SIZE, safePage * PAGE_SIZE),
-    [filtered, safePage, PAGE_SIZE],
-  );
-  useEffect(() => setPage(1), [search, subFilter]);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
 
   return (
     <div>
@@ -75,7 +135,9 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
               <Container className="h-6 w-6" /> {typeName}
             </h1>
             <p className="text-sm text-[var(--muted-foreground)] mt-1">
-              {filtered.length} of {items.length} items · {inStock} in stock
+              {total.toLocaleString()} of {typeTotal.toLocaleString()} items ·{" "}
+              {inStock.toLocaleString()} in stock
+              {isPending ? " — loading…" : ""}
             </p>
           </div>
           <Button onClick={() => setShowAdd(true)}>
@@ -110,10 +172,14 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
         )}
       </div>
 
-      {filtered.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="card-surface p-12 text-center">
           <p className="text-sm text-[var(--muted-foreground)]">
-            {items.length === 0 ? "No items in this type yet." : "No items match your filters."}
+            {isPending
+              ? "Loading…"
+              : typeTotal === 0
+                ? "No items in this type yet."
+                : "No items match your filters."}
           </p>
         </div>
       ) : (
@@ -128,7 +194,7 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paged.map((it) => (
+              {rows.map((it) => (
                 <TableRow
                   key={it.id}
                   className="cursor-pointer hover:bg-[var(--muted)]"
@@ -160,31 +226,30 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
         </div>
       )}
 
-      {filtered.length > PAGE_SIZE && (
+      {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 text-sm">
           <span className="text-[var(--muted-foreground)]">
-            Showing {(safePage - 1) * PAGE_SIZE + 1}–
-            {Math.min(safePage * PAGE_SIZE, filtered.length)} of {filtered.length}
+            Showing {rangeStart}–{rangeEnd} of {total.toLocaleString()}
           </span>
           <div className="flex items-center gap-2">
             <Button
               variant="secondary"
               size="sm"
-              disabled={safePage <= 1}
+              disabled={page <= 1}
               onClick={() => setPage((p) => Math.max(1, p - 1))}
             >
-              Prev
+              <ChevronLeft size={16} />
             </Button>
             <span className="text-[var(--muted-foreground)] tabular-nums">
-              Page {safePage} of {totalPages}
+              Page {page} of {totalPages}
             </span>
             <Button
               variant="secondary"
               size="sm"
-              disabled={safePage >= totalPages}
+              disabled={page >= totalPages}
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
             >
-              Next
+              <ChevronRight size={16} />
             </Button>
           </div>
         </div>
@@ -196,7 +261,13 @@ export function CabinTypeClient({ typeId, typeName, subCategories, items }: Prop
           typeName={typeName}
           subCategories={subCategories}
           onClose={() => setShowAdd(false)}
-          onSaved={() => router.refresh()}
+          onSaved={() => {
+            // The modal already calls router.refresh() (re-runs the server
+            // component → refreshes the cached first page + typeTotal). runQuery
+            // additionally refreshes the live page the user is looking at (which
+            // may be filtered/paged beyond the default first page).
+            runQuery();
+          }}
         />
       )}
     </div>
