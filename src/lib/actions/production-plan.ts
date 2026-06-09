@@ -17,13 +17,23 @@ import { getMrpData } from "@/lib/actions/mrp";
  *   ratio, so co-products that are also needed come "for free" and wasteful nests are avoided.
  */
 
-export interface PlanCover {
+export interface PlanFeed {
   code: string;
   name: string;
   type: string;
   category: string; // top-level category
   subCategory: string; // direct (sub-)category
   need: number;
+}
+export interface PlanCover {
+  code: string; // the produced part — the program's TRUE output
+  name: string;
+  qty: number; // units of this part the run contributes toward the plan (capped at need)
+  direct: boolean; // the produced part is itself a shortfall finished item
+  type: string;
+  category: string; // top-level category (of the produced part)
+  subCategory: string; // direct (sub-)category (of the produced part)
+  feeds: PlanFeed[]; // finished items this part is a sub-component of (empty when produced directly)
 }
 export interface PlanProgram {
   code: string;
@@ -281,19 +291,38 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     const made = r * [...fout.values()].reduce((s, q) => s + q, 0);
     const coverParts = [...(progOut.get(op)?.keys() ?? [])].filter((p) => leafProduce.has(p));
     const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (progOut.get(op)!.get(p) ?? 0)), 0);
-    // Roll produced parts up to the finished items they build (hide internal cut parts).
-    const finishedIds = new Set<string>();
-    for (const p of coverParts) for (const f of finishedByLeaf.get(p) ?? []) finishedIds.add(f);
-    const covers: PlanCover[] = [...finishedIds]
-      .map((f) => ({
-        code: short.get(f)!.code,
-        name: short.get(f)!.name,
-        type: itemType(f),
-        category: topCatName(f),
-        subCategory: catName(f),
-        need: Math.round(short.get(f)!.shortfall),
-      }))
-      .sort((a, b) => b.need - a.need);
+    // Covers = the NEEDED parts this program actually outputs (its true outputs), each
+    // annotated with the finished item(s) it feeds. We deliberately DON'T relabel a shared
+    // sub-part as the finished items that consume it — that made a generic cut part (e.g. a
+    // guide-shoe plate used by 9 assemblies) look like the program "produces" every one of
+    // them, with their full shortfall, which is what confused the plan readers.
+    const covers: PlanCover[] = coverParts
+      .map((p) => {
+        const perRun = progOut.get(op)!.get(p) ?? 0;
+        const qty = Math.min(leafProduce.get(p) ?? 0, r * perRun);
+        const feeds: PlanFeed[] = [...(finishedByLeaf.get(p) ?? [])]
+          .filter((f) => f !== p) // a finished item is its own leaf — that's "direct", not "feeds"
+          .map((f) => ({
+            code: short.get(f)!.code,
+            name: short.get(f)!.name,
+            type: itemType(f),
+            category: topCatName(f),
+            subCategory: catName(f),
+            need: Math.round(short.get(f)!.shortfall),
+          }))
+          .sort((a, b) => b.need - a.need);
+        return {
+          code: code(p),
+          name: name(p),
+          qty: Math.round(qty),
+          direct: short.has(p),
+          type: itemType(p),
+          category: topCatName(p),
+          subCategory: catName(p),
+          feeds,
+        };
+      })
+      .sort((a, b) => b.qty - a.qty);
     plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers });
   }
 

@@ -17,11 +17,21 @@ const MACHINE: Record<string, string> = {
 export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   const t = plan.totals;
   const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
+  // Filter options come from both the produced part AND every finished item it feeds, so a
+  // program that only cuts a shared sub-part stays findable under that part's assembly.
   const filterRows = [
-    ...plan.plan.flatMap((p) => p.covers.map((c) => ({ type: c.type, category: c.category, subCategory: c.subCategory }))),
+    ...plan.plan.flatMap((p) =>
+      p.covers.flatMap((c) => [
+        { type: c.type, category: c.category, subCategory: c.subCategory },
+        ...c.feeds.map((f) => ({ type: f.type, category: f.category, subCategory: f.subCategory })),
+      ]),
+    ),
     ...plan.blocked.map((b) => ({ type: b.type, category: b.category, subCategory: b.subCategory })),
   ];
-  const shownPrograms = plan.plan.filter((p) => p.covers.some((c) => planMatches(c, filter)));
+  // A program shows if any of its outputs match, OR any finished item those outputs feed matches.
+  const coverMatches = (c: MakeProductionPlan["plan"][number]["covers"][number]) =>
+    planMatches(c, filter) || c.feeds.some((f) => planMatches(f, filter));
+  const shownPrograms = plan.plan.filter((p) => p.covers.some(coverMatches));
   const shownBlocked = plan.blocked.filter((b) => planMatches(b, filter));
 
   return (
@@ -73,14 +83,32 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                   {p.partsMade} parts{p.extra > 0 ? ` · ${p.extra} extra` : " · no waste"}
                 </span>
               </div>
-              <div className="mt-2 pl-1 space-y-0.5">
+              <div className="mt-2 pl-1 space-y-1.5">
                 {p.covers.map((c) => (
-                  <div key={c.code} className="flex items-center gap-2 text-xs text-[var(--muted-foreground)]">
-                    <ChevronRight className="h-3 w-3 shrink-0" />
-                    <span className="font-mono">{c.code}</span>
-                    <span className="truncate flex-1">{c.name}</span>
-                    <span className="italic shrink-0">{c.subCategory}</span>
-                    <span className="tabular-nums shrink-0">need {c.need}</span>
+                  <div key={c.code} className="text-xs">
+                    <div className="flex items-center gap-2">
+                      <ChevronRight className="h-3 w-3 shrink-0 text-[var(--muted-foreground)]" />
+                      <span className="font-mono text-[var(--muted-foreground)]">{c.code}</span>
+                      <span className="truncate flex-1">{c.name}</span>
+                      {c.direct ? (
+                        <Badge variant="neutral" className="shrink-0">finished item</Badge>
+                      ) : (
+                        <span className="italic text-[var(--muted-foreground)] shrink-0">sub-part</span>
+                      )}
+                      <span className="tabular-nums shrink-0 text-[var(--muted-foreground)]">makes ×{c.qty}</span>
+                    </div>
+                    {c.feeds.length > 0 && (
+                      <div className="pl-6 mt-0.5 text-[11px] text-[var(--muted-foreground)] leading-snug">
+                        ↳ goes into{" "}
+                        {c.feeds.slice(0, 6).map((f, i) => (
+                          <span key={f.code}>
+                            {i > 0 && ", "}
+                            {f.name} <span className="tabular-nums">(need {f.need})</span>
+                          </span>
+                        ))}
+                        {c.feeds.length > 6 && ` +${c.feeds.length - 6} more`}
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
