@@ -3,6 +3,7 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { getItemsWithStock } from "@/lib/actions/inventory";
+import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
 
 export interface MrpRow {
   item_id: string;
@@ -36,62 +37,60 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
 async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   const supabase = createCacheClient();
 
-  let jobIdsFilter: string[] | null = null;
-
-  if (cutoffDate) {
+  // Demand comes ONLY from jobs in production (exclude new/hold), optionally within
+  // the "dispatch date up to" cutoff. Capture each job's requirement_stage so a
+  // first-phase job pulls only its first-phase material.
+  const stageByJob = new Map<string, string>();
+  {
     const PAGE = 1000;
-    let allJobs: any[] = [];
     let offset = 0;
     while (true) {
-      const { data, error } = await supabase
+      let q = supabase
         .from("jobs")
-        .select("id")
-        .lte("requirement_dispatch_date", cutoffDate)
-        .range(offset, offset + PAGE - 1);
+        .select("id, requirement_stage")
+        .eq("status", "in_production");
+      if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+      const { data, error } = await q.range(offset, offset + PAGE - 1);
       if (error) throw error;
-      allJobs = allJobs.concat(data ?? []);
+      for (const j of data ?? [])
+        stageByJob.set(
+          j.id as string,
+          (j.requirement_stage as string | null) ?? "full_material",
+        );
       if (!data || data.length < PAGE) break;
       offset += PAGE;
     }
-    jobIdsFilter = allJobs.map((j) => j.id);
-    if (jobIdsFilter.length === 0) return [];
   }
+  if (stageByJob.size === 0) return [];
+  const prodJobIds = Array.from(stageByJob.keys());
 
-  let bomHeaderIds: string[] | null = null;
-  if (jobIdsFilter) {
-    const PAGE = 1000;
-    let allHeaders: any[] = [];
-    let offset = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from("job_bom_headers")
-        .select("id")
-        .in("job_id", jobIdsFilter)
-        .range(offset, offset + PAGE - 1);
-      if (error) throw error;
-      allHeaders = allHeaders.concat(data ?? []);
-      if (!data || data.length < PAGE) break;
-      offset += PAGE;
-    }
-    bomHeaderIds = allHeaders.map((h) => h.id);
-    if (bomHeaderIds.length === 0) return [];
+  // Header -> job map (drives both the stage scope below and job_count later).
+  const headerToJob = new Map<string, string>();
+  for (let i = 0; i < prodJobIds.length; i += 200) {
+    const { data, error } = await supabase
+      .from("job_bom_headers")
+      .select("id, job_id")
+      .in("job_id", prodJobIds.slice(i, i + 200));
+    if (error) throw error;
+    for (const h of data ?? [])
+      headerToJob.set(h.id as string, h.job_id as string);
   }
+  if (headerToJob.size === 0) return [];
+  const bomHeaderIds = Array.from(headerToJob.keys());
 
+  // BOM lines for those headers. `category` lets us scope first-phase jobs to
+  // their first-phase sections (dispatchPhaseOf).
   const PAGE = 1000;
   let allLines: any[] = [];
   let offset = 0;
   while (true) {
-    let query = supabase
+    const { data, error } = await supabase
       .from("job_bom_lines")
-      .select("id, item_id, required_quantity, job_bom_id")
+      .select("id, item_id, required_quantity, job_bom_id, category")
+      .in("job_bom_id", bomHeaderIds)
       .not("item_id", "is", null)
-      .gt("required_quantity", 0);
-
-    if (bomHeaderIds) {
-      query = query.in("job_bom_id", bomHeaderIds);
-    }
-
-    const { data, error } = await query.range(offset, offset + PAGE - 1);
+      .gt("required_quantity", 0)
+      .range(offset, offset + PAGE - 1);
     if (error) throw error;
     allLines = allLines.concat(data ?? []);
     if (!data || data.length < PAGE) break;
@@ -131,6 +130,16 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   // contribute nothing; an item whose lines all net to 0 drops out entirely.
   const reqMap = new Map<string, { total: number; bomIds: Set<string> }>();
   for (const line of allLines) {
+    // Requirement-stage scope: full_material -> all sections; first_phase ->
+    // first-phase sections only; new -> nothing (not yet required).
+    const jobId = headerToJob.get(line.job_bom_id);
+    const stage = jobId ? stageByJob.get(jobId) : undefined;
+    if (!stage || stage === "new") continue;
+    if (
+      stage === "first_phase" &&
+      dispatchPhaseOf((line.category as string) ?? "") !== "first"
+    )
+      continue;
     const required = Number(line.required_quantity) || 0;
     const dispatched = dispatchedByLine.get(line.id) ?? 0;
     const qty = Math.max(0, required - dispatched);
@@ -151,61 +160,30 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
 
   const itemIds = Array.from(reqMap.keys());
 
-  // Collect all BOM header IDs we need to resolve
-  const allBomIds = new Set<string>();
-  for (const entry of reqMap.values()) {
-    for (const bid of entry.bomIds) allBomIds.add(bid);
+  // Fetch the items (with stock) for the required item ids. The header -> job map
+  // was already built up front (and used for the stage scope above).
+  const allItems: any[] = [];
+  {
+    const batches = [];
+    for (let i = 0; i < itemIds.length; i += 200) {
+      batches.push(
+        supabase
+          .from("items")
+          .select(`
+            id, code, name, item_type, procurement_type,
+            category:item_categories!items_category_id_fkey(name, procurement_type),
+            uom:units_of_measurement(abbreviation),
+            inventory(quantity)
+          `)
+          .in("id", itemIds.slice(i, i + 200)),
+      );
+    }
+    const results = await Promise.all(batches);
+    for (const r of results) {
+      if (r.error) throw r.error;
+      allItems.push(...(r.data ?? []));
+    }
   }
-  const bomIdArr = Array.from(allBomIds);
-
-  // Fetch items AND header-to-job mapping IN PARALLEL (both are batched)
-  const [allItems, headerToJob] = await Promise.all([
-    // Items with inventory stock
-    (async () => {
-      const batches = [];
-      for (let i = 0; i < itemIds.length; i += 200) {
-        batches.push(
-          supabase
-            .from("items")
-            .select(`
-              id, code, name, item_type, procurement_type,
-              category:item_categories!items_category_id_fkey(name, procurement_type),
-              uom:units_of_measurement(abbreviation),
-              inventory(quantity)
-            `)
-            .in("id", itemIds.slice(i, i + 200)),
-        );
-      }
-      const results = await Promise.all(batches);
-      const items: any[] = [];
-      for (const r of results) {
-        if (r.error) throw r.error;
-        items.push(...(r.data ?? []));
-      }
-      return items;
-    })(),
-    // BOM header → job mapping
-    (async () => {
-      const map = new Map<string, string>();
-      const batches = [];
-      for (let i = 0; i < bomIdArr.length; i += 200) {
-        batches.push(
-          supabase
-            .from("job_bom_headers")
-            .select("id, job_id")
-            .in("id", bomIdArr.slice(i, i + 200)),
-        );
-      }
-      const results = await Promise.all(batches);
-      for (const r of results) {
-        if (r.error) throw r.error;
-        for (const h of r.data ?? []) {
-          map.set(h.id, h.job_id);
-        }
-      }
-      return map;
-    })(),
-  ]);
 
   const rows: MrpRow[] = allItems.map((item) => {
     const req = reqMap.get(item.id)!;
