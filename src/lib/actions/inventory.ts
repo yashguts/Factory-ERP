@@ -142,6 +142,76 @@ export const getItemsWithStock = unstable_cache(
 );
 
 /* ------------------------------------------------------------------ *
+ * Lightweight item refs for the ItemFormModal's category-per-type
+ * dropdowns. The modal only needs to know which categories contain
+ * items of each type, so we ship the DISTINCT (item_type, category_id)
+ * pairs — a few hundred tiny objects instead of the full ~2,400-row
+ * catalog that getItemsWithStock builds. Detail pages were paying
+ * seconds of server time for two fields.
+ * ------------------------------------------------------------------ */
+
+const _getItemRefsUncached = async () => {
+  const supabase = createCacheClient();
+
+  // Same Cabin-subtree exclusion as getItemsWithStock: cabin items live in
+  // their own section and must not surface cabin categories in the modal.
+  const { data: allCats } = await supabase
+    .from("item_categories")
+    .select("id, name, parent_id");
+  const childrenOf = new Map<string, string[]>();
+  for (const c of allCats ?? []) {
+    if (c.parent_id) {
+      const a = childrenOf.get(c.parent_id) ?? [];
+      a.push(c.id as string);
+      childrenOf.set(c.parent_id as string, a);
+    }
+  }
+  const cabinRoot = (allCats ?? []).find(
+    (c) => c.name === "Cabin" && c.parent_id === null,
+  );
+  const cabinCatIds = new Set<string>();
+  if (cabinRoot) {
+    const stack = [cabinRoot.id as string];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      cabinCatIds.add(id);
+      for (const ch of childrenOf.get(id) ?? []) stack.push(ch);
+    }
+  }
+
+  const PAGE = 1000;
+  const pairs = new Set<string>();
+  let offset = 0;
+  while (true) {
+    const { data, error } = await supabase
+      .from("items")
+      .select("item_type, category_id")
+      .eq("is_active", true)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      if (r.category_id && cabinCatIds.has(r.category_id as string)) continue;
+      pairs.add(`${r.item_type}|${r.category_id ?? ""}`);
+    }
+    if (!data || data.length < PAGE) break;
+    offset += PAGE;
+  }
+
+  return [...pairs].map((p) => {
+    const [item_type, cat] = p.split("|");
+    return {
+      item_type: item_type as ItemType,
+      category_id: cat || null,
+    };
+  });
+};
+
+export const getItemRefs = unstable_cache(_getItemRefsUncached, ["item-refs"], {
+  revalidate: 3600,
+  tags: ["items"],
+});
+
+/* ------------------------------------------------------------------ *
  * Server-side inventory pagination (the /inventory list).
  *
  * The page used to ship every active non-cabin item (~2,400 rows × 30+

@@ -2,7 +2,7 @@ import { notFound } from "next/navigation";
 import { getItemBom } from "@/lib/actions/item-bom";
 import { getOperationsForItem } from "@/lib/actions/operations";
 import {
-  getItemsWithStock,
+  getItemRefs,
   getCategories,
   getUnits,
 } from "@/lib/actions/inventory";
@@ -15,22 +15,15 @@ interface Props {
 export default async function ItemDetailPage({ params }: Props) {
   const { id } = await params;
 
-  const [bom, ops, items, categories, units] = await Promise.all([
+  const [bom, ops, itemRefs, categories, units] = await Promise.all([
     getItemBom(id),
     getOperationsForItem(id),
-    getItemsWithStock(),
+    getItemRefs(),
     getCategories(),
     getUnits(),
   ]);
 
   if (!bom) notFound();
-
-  // ItemFormModal (the inline "create loose part") only needs type + category
-  // to build its filtered category dropdowns.
-  const itemRefs = items.map((i) => ({
-    item_type: i.item_type,
-    category_id: i.category_id,
-  }));
 
   return (
     <ItemDetailClient

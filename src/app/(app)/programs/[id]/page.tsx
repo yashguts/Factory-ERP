@@ -5,7 +5,7 @@ import {
   getFamilyOptions,
 } from "@/lib/actions/operations";
 import {
-  getItemsWithStock,
+  getItemRefs,
   getCategories,
   getUnits,
 } from "@/lib/actions/inventory";
@@ -18,9 +18,9 @@ interface Props {
 export default async function ProgramDetailPage({ params }: Props) {
   const { id } = await params;
 
-  const [operation, items, categories, units] = await Promise.all([
+  const [operation, itemRefs, categories, units] = await Promise.all([
     getOperationDetail(id),
-    getItemsWithStock(),
+    getItemRefs(),
     getCategories(),
     getUnits(),
   ]);
@@ -33,11 +33,6 @@ export default async function ProgramDetailPage({ params }: Props) {
     getFamilyVariants(operation.family_key),
     getFamilyOptions(),
   ]);
-
-  const itemRefs = items.map((i) => ({
-    item_type: i.item_type,
-    category_id: i.category_id,
-  }));
 
   return (
     <ProgramDetailClient
