@@ -15,6 +15,7 @@ import {
   Boxes,
   Container,
   ClipboardCheck,
+  Search,
 } from "lucide-react";
 
 const navItems = [
@@ -50,6 +51,22 @@ export function Sidebar() {
         <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
           Elevator Manufacturing
         </p>
+      </div>
+
+      <div className="px-3 pt-3">
+        <button
+          type="button"
+          onClick={() =>
+            window.dispatchEvent(new CustomEvent("open-global-search"))
+          }
+          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-[var(--muted-foreground)] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+        >
+          <Search size={15} strokeWidth={1.75} />
+          <span className="flex-1 text-left">Search everything…</span>
+          <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--muted)]">
+            Ctrl K
+          </kbd>
+        </button>
       </div>
 
       <nav className="flex-1 px-3 py-3 space-y-0.5">
