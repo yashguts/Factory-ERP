@@ -37,7 +37,7 @@ const _getJobsUncached = async () => {
 };
 
 export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
-  revalidate: 60,
+  revalidate: 600,
   tags: ["jobs"],
 });
 

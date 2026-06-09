@@ -30,7 +30,7 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   return unstable_cache(
     _getMrpDataUncached,
     ["mrp-data", key],
-    { revalidate: 60, tags: ["jobs", "bom-lines", "items", "inventory-stock"] },
+    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock"] },
   )(cutoffDate);
 }
 
@@ -285,7 +285,7 @@ export async function getProductionPlan(
   return unstable_cache(
     _getProductionPlanUncached,
     ["production-plan", key],
-    { revalidate: 60, tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"] },
+    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"] },
   )(cutoffDate);
 }
 
@@ -544,7 +544,7 @@ export async function getMrpItemJobs(
   return unstable_cache(
     (id: string, date?: string) => _getMrpItemJobsUncached(id, date),
     ["mrp-item-jobs", key],
-    { revalidate: 60, tags: ["jobs", "bom-lines"] },
+    { revalidate: 1800, tags: ["jobs", "bom-lines"] },
   )(itemId, cutoffDate);
 }
 

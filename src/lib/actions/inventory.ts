@@ -136,7 +136,7 @@ const _getItemsWithStockUncached = async () => {
 export const getItemsWithStock = unstable_cache(
   _getItemsWithStockUncached,
   ["items-with-stock"],
-  { revalidate: 60, tags: ["items", "inventory-stock"] },
+  { revalidate: 600, tags: ["items", "inventory-stock"] },
 );
 
 /**

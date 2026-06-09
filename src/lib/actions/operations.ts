@@ -171,7 +171,7 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
 export const getOperations = unstable_cache(
   _getOperationsUncached,
   ["operations-list"],
-  { revalidate: 60, tags: ["operations"] },
+  { revalidate: 600, tags: ["operations"] },
 );
 
 const _getOperationDetailUncached = async (
@@ -223,7 +223,7 @@ export async function getOperationDetail(
   const cached = unstable_cache(
     () => _getOperationDetailUncached(id),
     ["operation-detail", id],
-    { revalidate: 60, tags: ["operations"] },
+    { revalidate: 600, tags: ["operations"] },
   );
   return cached();
 }
@@ -262,7 +262,7 @@ export async function getOperationsForItem(
   const cached = unstable_cache(
     () => _getOperationsForItemUncached(itemId),
     ["operations-for-item", itemId],
-    { revalidate: 60, tags: ["operations"] },
+    { revalidate: 600, tags: ["operations"] },
   );
   return cached();
 }
@@ -327,7 +327,7 @@ export async function getFamilyVariants(
   const cached = unstable_cache(
     () => _getFamilyVariantsUncached(familyKey),
     ["operation-family", familyKey],
-    { revalidate: 60, tags: ["operations"] },
+    { revalidate: 600, tags: ["operations"] },
   );
   return cached();
 }
@@ -377,7 +377,7 @@ const _getFamilyOptionsUncached = async (): Promise<FamilyOption[]> => {
 export const getFamilyOptions = unstable_cache(
   _getFamilyOptionsUncached,
   ["operation-family-options"],
-  { revalidate: 60, tags: ["operations"] },
+  { revalidate: 600, tags: ["operations"] },
 );
 
 /* ---------------------------- mutations ---------------------------- */

@@ -147,7 +147,7 @@ export async function getItemBom(itemId: string): Promise<ItemBomResult | null> 
   const cached = unstable_cache(
     () => _getItemBomUncached(itemId),
     ["item-bom", itemId],
-    { revalidate: 60, tags: ["bom-lines", "items"] },
+    { revalidate: 600, tags: ["bom-lines", "items"] },
   );
   return cached();
 }
@@ -515,7 +515,7 @@ const _getSubassembliesUncached = async (): Promise<SubassemblyRow[]> => {
 
 export async function getSubassemblies(): Promise<SubassemblyRow[]> {
   const cached = unstable_cache(_getSubassembliesUncached, ["subassemblies"], {
-    revalidate: 60,
+    revalidate: 600,
     tags: ["bom-lines", "items"],
   });
   return cached();

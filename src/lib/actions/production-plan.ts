@@ -80,7 +80,7 @@ const empty = (c: string | null): MakeProductionPlan => ({
 export async function getMakeProductionPlan(cutoffDate?: string): Promise<MakeProductionPlan> {
   const key = cutoffDate ?? "__all__";
   return unstable_cache(_getPlanUncached, ["make-production-plan", key], {
-    revalidate: 60,
+    revalidate: 1800,
     tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"],
   })(cutoffDate);
 }

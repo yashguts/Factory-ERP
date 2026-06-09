@@ -97,7 +97,7 @@ export async function getCabinTypeSummary(): Promise<CabinTypeSummary[]> {
   const cached = unstable_cache(
     _getCabinTypeSummaryUncached,
     ["cabin-type-summary"],
-    { revalidate: 60, tags: ["categories", "items"] },
+    { revalidate: 600, tags: ["categories", "items"] },
   );
   return cached();
 }
@@ -206,7 +206,7 @@ export async function getCabinTypeItems(typeId: string): Promise<CabinTypeItems>
   const cached = unstable_cache(
     () => _getCabinTypeItemsUncached(typeId),
     ["cabin-type-items", typeId],
-    { revalidate: 60, tags: ["categories", "items", "inventory-stock"] },
+    { revalidate: 600, tags: ["categories", "items", "inventory-stock"] },
   );
   return cached();
 }

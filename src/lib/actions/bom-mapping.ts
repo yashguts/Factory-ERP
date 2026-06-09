@@ -100,7 +100,7 @@ export const getUnmatchedCount = unstable_cache(
     return count ?? 0;
   },
   ["unmatched-count"],
-  { revalidate: 60, tags: ["bom-lines"] },
+  { revalidate: 600, tags: ["bom-lines"] },
 );
 
 /** Search inventory items by name/code/lookup_key */
