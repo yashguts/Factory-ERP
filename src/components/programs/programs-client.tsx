@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import {
   Plus,
@@ -34,6 +34,7 @@ import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import {
   getOperationDetail,
   setOperationAudited,
+  searchOperations,
   type OperationListRow,
   type OperationDetail,
   type FamilyOption,
@@ -103,6 +104,14 @@ export function ProgramsClient({
 }: Props) {
   const router = useRouter();
   const [search, setSearch] = useState("");
+  // Server-side text search: item-name search data is no longer shipped with
+  // the list, so a non-empty query is resolved by `searchOperations` (which
+  // searches program fields + every input/output item name). `matchIds` holds
+  // the set of operation IDs the active query matched; null = no active query.
+  const [matchIds, setMatchIds] = useState<Set<string> | null>(null);
+  const [searching, setSearching] = useState(false);
+  // Monotonic request id so a slow earlier search can't overwrite a newer one.
+  const searchSeq = useRef(0);
   const [machineFilter, setMachineFilter] = useState<MachineFilter>("all");
   const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
   const [labelFilter, setLabelFilter] = useState<LabelFilter>("all");
@@ -131,6 +140,32 @@ export function ProgramsClient({
     () => Object.values(auditedMap).filter(Boolean).length,
     [auditedMap],
   );
+
+  // Debounced server-side text search. Blank query clears the match set (the
+  // list shows everything, gated only by chip filters). The request-id guard
+  // discards out-of-order responses so the newest keystroke always wins.
+  useEffect(() => {
+    const q = search.trim();
+    if (!q) {
+      searchSeq.current += 1; // invalidate any in-flight search
+      setMatchIds(null);
+      setSearching(false);
+      return;
+    }
+    const seq = ++searchSeq.current;
+    setSearching(true);
+    const handle = setTimeout(async () => {
+      try {
+        const ids = await searchOperations(q);
+        if (seq === searchSeq.current) setMatchIds(new Set(ids));
+      } catch {
+        if (seq === searchSeq.current) setMatchIds(new Set()); // fail closed: no matches
+      } finally {
+        if (seq === searchSeq.current) setSearching(false);
+      }
+    }, 250);
+    return () => clearTimeout(handle);
+  }, [search]);
 
   const allCodes = useMemo(
     () => initialOperations.map((o) => o.code).filter((c): c is string => !!c),
@@ -184,8 +219,8 @@ export function ProgramsClient({
     return { ready, unmatched };
   }, [initialOperations]);
 
+  const hasQuery = search.trim().length > 0;
   const filtered = useMemo(() => {
-    const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return initialOperations.filter((op) => {
       if (machineFilter !== "all" && op.machine !== machineFilter) return false;
       if (labelFilter !== "all" && (op.program_label || "Unlabeled") !== labelFilter) return false;
@@ -197,12 +232,19 @@ export function ProgramsClient({
         if (matchFilter === "ready" && !m.fullyMatched) return false;
         if (matchFilter === "unmatched" && m.unmatched === 0) return false;
       }
-      if (tokens.length === 0) return true;
-      return tokens.every((t) => op.search_text.includes(t));
+      // Text search is resolved server-side: keep only ops the query matched.
+      // While the (debounced) search is still resolving, matchIds is null, so
+      // we don't prematurely show everything — fall through to empty.
+      if (hasQuery) {
+        if (!matchIds) return false;
+        return matchIds.has(op.id);
+      }
+      return true;
     });
   }, [
     initialOperations,
-    search,
+    hasQuery,
+    matchIds,
     machineFilter,
     labelFilter,
     auditFilter,
@@ -236,7 +278,7 @@ export function ProgramsClient({
   // When the user is actively searching/filtering, expand every family so the
   // matching variants are visible without manual clicking.
   const forceExpandAll =
-    search.trim().length > 0 || matchFilter !== "all" || auditFilter !== "all";
+    hasQuery || matchFilter !== "all" || auditFilter !== "all";
   const isExpanded = (key: string) => forceExpandAll || expanded.has(key);
   const toggleExpand = (key: string) =>
     setExpanded((prev) => {
@@ -536,7 +578,10 @@ export function ProgramsClient({
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <div className="relative max-w-sm flex-1 min-w-[220px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name, material or item..." className="w-full h-9 pl-9 pr-3 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors" />
+          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name, material or item..." className="w-full h-9 pl-9 pr-9 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors" />
+          {searching && (
+            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] animate-spin pointer-events-none" />
+          )}
         </div>
 
         {/* View toggle: group material variants by family, or flat list. */}
@@ -630,7 +675,11 @@ export function ProgramsClient({
             {filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
                 <TableCell colSpan={8} className="text-center py-12 text-[var(--muted-foreground)] text-sm">
-                  {initialOperations.length === 0 ? "No programs yet." : "No programs match your filters."}
+                  {initialOperations.length === 0
+                    ? "No programs yet."
+                    : hasQuery && (searching || !matchIds)
+                      ? "Searching…"
+                      : "No programs match your filters."}
                 </TableCell>
               </TableRow>
             ) : view === "flat" ? (
