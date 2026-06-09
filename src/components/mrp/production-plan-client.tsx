@@ -1,8 +1,5 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
 import {
   Table,
   TableHeader,
@@ -11,43 +8,20 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import { Button } from "@/components/ui/button";
+import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
-import {
-  ArrowLeft,
-  CalendarDays,
-  Factory,
-  Layers,
-  ShoppingCart,
-  AlertTriangle,
-} from "lucide-react";
+import { Factory, Layers, ShoppingCart, AlertTriangle } from "lucide-react";
+import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import type { ProductionPlan, PlanLeaf } from "@/lib/actions/mrp";
 
 export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [cutoff, setCutoff] = useState(plan.cutoffDate ?? "");
-  const dateRef = useRef<HTMLInputElement>(null);
-
-  const setDate = (d: string) => {
-    setCutoff(d);
-    startTransition(() =>
-      router.push(`/mrp/plan${d ? `?date=${d}` : ""}`),
-    );
-  };
-
   const rawShortfall = plan.rawMaterials.filter((r) => r.shortfall > 0).length;
 
   return (
     <div>
+      <MrpToolbar view="buy" date={plan.cutoffDate ?? ""} />
       {/* Header */}
       <div className="mb-4">
-        <Link
-          href="/mrp"
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to MRP
-        </Link>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Factory className="h-6 w-6 text-[var(--muted-foreground)]" />
           Raw Material Plan
@@ -55,7 +29,6 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         <p className="text-sm text-[var(--muted-foreground)] mt-1">
           Job demand exploded through programs &amp; parts lists down to the
           steel and bought parts to buy
-          {isPending ? " — refreshing…" : ""}
         </p>
       </div>
 
@@ -70,29 +43,6 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         </span>
       </div>
 
-      {/* Date filter */}
-      <div className="flex items-center gap-3 mb-4 p-3 card-surface">
-        <CalendarDays size={18} className="text-[var(--muted-foreground)] shrink-0" />
-        <span className="text-sm font-medium whitespace-nowrap">
-          Requirement Dispatch Date up to:
-        </span>
-        <input
-          ref={dateRef}
-          type="date"
-          value={cutoff}
-          onChange={(e) => setDate(e.target.value)}
-          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors [color-scheme:dark]"
-        />
-        {cutoff ? (
-          <Button variant="secondary" size="sm" onClick={() => setDate("")}>
-            Clear
-          </Button>
-        ) : (
-          <span className="text-xs text-[var(--muted-foreground)]">
-            Showing all jobs
-          </span>
-        )}
-      </div>
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">

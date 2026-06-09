@@ -1,8 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition, useRef } from "react";
-import { useRouter } from "next/navigation";
-import Link from "next/link";
+import { useState, useMemo } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -11,7 +9,8 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
-import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown, CalendarDays } from "lucide-react";
+import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import type { MrpRow } from "@/lib/actions/mrp";
 import type { ItemType } from "@/lib/supabase/types";
 import { MrpJobsPopover } from "@/components/mrp/mrp-jobs-popover";
@@ -45,8 +44,6 @@ interface Props {
 }
 
 export function MrpClient({ initialData, initialCutoffDate }: Props) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
   const [search, setSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>("all");
@@ -56,24 +53,8 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   const [sortKey, setSortKey] = useState<SortKey>("shortfall");
   const [sortDir, setSortDir] = useState<SortDir>("desc");
   const [page, setPage] = useState(1);
-  const [cutoffDate, setCutoffDate] = useState(initialCutoffDate ?? "");
-  const dateRef = useRef<HTMLInputElement>(null);
-
-  const handleDateChange = (date: string) => {
-    setCutoffDate(date);
-    const params = new URLSearchParams();
-    if (date) params.set("date", date);
-    startTransition(() => {
-      router.push(`/mrp${params.toString() ? `?${params}` : ""}`);
-    });
-  };
-
-  const clearDate = () => {
-    setCutoffDate("");
-    startTransition(() => {
-      router.push("/mrp");
-    });
-  };
+  // Date cutoff comes from the URL (?date=); the shared MrpToolbar drives changes.
+  const cutoffDate = initialCutoffDate ?? "";
 
   // Rows restricted to the active Make/Trade tab. All downstream filters
   // (search, type, shortfall) and the summary card totals are computed
@@ -195,24 +176,14 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
 
   return (
     <div>
+      <MrpToolbar view="requirements" date={cutoffDate} />
       {/* Header */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">MRP - Material Requirements</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {sorted.length} of {tabRows.length} items in this tab
-            {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
-            {isPending ? " — refreshing..." : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <Link href={`/mrp/make-plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
-            <Button variant="secondary">Programs to run →</Button>
-          </Link>
-          <Link href={`/mrp/plan${cutoffDate ? `?date=${cutoffDate}` : ""}`}>
-            <Button variant="secondary">Raw material plan →</Button>
-          </Link>
-        </div>
+      <div className="mb-4">
+        <h1 className="text-2xl font-bold tracking-tight">MRP - Material Requirements</h1>
+        <p className="text-sm text-[var(--muted-foreground)]">
+          {sorted.length} of {tabRows.length} items in this tab
+          {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
+        </p>
       </div>
 
       {/* Procurement Type Tabs — split MRP into procurement vs production
@@ -269,30 +240,6 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
           <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Shortfall Units</p>
           <p className="text-2xl font-bold tabular-nums text-[var(--destructive)]">{totals.totalShortfall.toLocaleString()}</p>
         </div>
-      </div>
-
-      {/* Date Filter Bar */}
-      <div className="flex items-center gap-3 mb-4 p-3 card-surface">
-        <CalendarDays size={18} className="text-[var(--muted-foreground)] shrink-0" />
-        <span className="text-sm font-medium whitespace-nowrap">Requirement Dispatch Date up to:</span>
-        <input
-          ref={dateRef}
-          type="date"
-          value={cutoffDate}
-          onChange={(e) => handleDateChange(e.target.value)}
-          onClick={() => { try { dateRef.current?.showPicker(); } catch {} }}
-          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors [color-scheme:dark]"
-        />
-        {cutoffDate && (
-          <Button variant="secondary" size="sm" onClick={clearDate}>
-            Clear
-          </Button>
-        )}
-        {!cutoffDate && (
-          <span className="text-xs text-[var(--muted-foreground)]">
-            All in-production jobs — pick a date to limit by requirement dispatch date
-          </span>
-        )}
       </div>
 
       {/* Filters Row */}

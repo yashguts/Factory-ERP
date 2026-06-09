@@ -1,18 +1,8 @@
 "use client";
 
-import { useState, useTransition } from "react";
-import Link from "next/link";
-import { useRouter } from "next/navigation";
-import {
-  ArrowLeft,
-  CalendarDays,
-  Hammer,
-  AlertTriangle,
-  Ban,
-  ChevronRight,
-} from "lucide-react";
-import { Button } from "@/components/ui/button";
+import { Hammer, AlertTriangle, Ban, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import type { MakeProductionPlan } from "@/lib/actions/production-plan";
 
 const MACHINE: Record<string, string> = {
@@ -23,25 +13,13 @@ const MACHINE: Record<string, string> = {
 };
 
 export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
-  const router = useRouter();
-  const [isPending, startTransition] = useTransition();
-  const [cutoff, setCutoff] = useState(plan.cutoffDate ?? "");
-  const setDate = (d: string) => {
-    setCutoff(d);
-    startTransition(() => router.push(`/mrp/make-plan${d ? `?date=${d}` : ""}`));
-  };
   const t = plan.totals;
 
   return (
     <div>
+      <MrpToolbar view="programs" date={plan.cutoffDate ?? ""} />
       {/* Header */}
       <div className="mb-4">
-        <Link
-          href="/mrp"
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to MRP
-        </Link>
         <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
           <Hammer className="h-6 w-6 text-[var(--muted-foreground)]" />
           Programs to Run
@@ -49,25 +27,8 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
         <p className="text-sm text-[var(--muted-foreground)] mt-1">
           Fewest audited-program runs to clear the Make shortfall — assemblies
           exploded to their cut parts, chosen to make the least excess (&quot;other
-          parts&quot;){isPending ? " — refreshing…" : ""}
+          parts&quot;)
         </p>
-      </div>
-
-      {/* Date filter */}
-      <div className="flex items-center gap-3 mb-4 p-3 card-surface">
-        <CalendarDays size={18} className="text-[var(--muted-foreground)] shrink-0" />
-        <span className="text-sm font-medium whitespace-nowrap">Requirement Dispatch Date up to:</span>
-        <input
-          type="date"
-          value={cutoff}
-          onChange={(e) => setDate(e.target.value)}
-          className="flex h-10 w-[200px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors [color-scheme:dark]"
-        />
-        {cutoff ? (
-          <Button variant="secondary" size="sm" onClick={() => setDate("")}>Clear</Button>
-        ) : (
-          <span className="text-xs text-[var(--muted-foreground)]">All in-production jobs</span>
-        )}
       </div>
 
       {/* Summary */}
