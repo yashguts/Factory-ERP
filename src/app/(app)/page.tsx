@@ -245,7 +245,7 @@ function DueJobsCard({
                     </span>
                   </div>
                   <div className="text-[11px] text-[var(--muted-foreground)]">
-                    Stage: {STAGE_LABEL[j.stage ?? ""] ?? j.stage ?? "—"}
+                    Sent: {STAGE_LABEL[j.stage ?? ""] ?? j.stage ?? "—"}
                   </div>
                 </div>
                 <span className={`text-xs font-medium ${ds.cls}`}>

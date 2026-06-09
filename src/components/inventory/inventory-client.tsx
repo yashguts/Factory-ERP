@@ -419,7 +419,9 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
                 <SortHeader label="Code" sortField="code" />
                 <SortHeader label="Name" sortField="name" />
                 <TableHead>Type</TableHead>
-                <TableHead>M/T</TableHead>
+                <TableHead title="M = Make (manufactured in-house) · T = Trade (purchased from suppliers)">
+                  M/T
+                </TableHead>
                 <SortHeader label="Category" sortField="category" />
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />

@@ -215,10 +215,11 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
     });
   };
 
-  const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
+  const SortHeader = ({ label, sortField, hint }: { label: string; sortField: SortKey; hint?: string }) => (
     <TableHead
       className="cursor-pointer select-none hover:bg-[var(--muted)] transition-colors"
       onClick={() => handleSort(sortField)}
+      title={hint}
     >
       <span className="inline-flex items-center gap-1">
         {label}
@@ -345,9 +346,21 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
-                <SortHeader label="Stage" sortField="stage" />
-                <SortHeader label="Req. Stage" sortField="req_stage" />
-                <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
+                <SortHeader
+                  label="Sent"
+                  sortField="stage"
+                  hint="Material already dispatched to site. Moves forward automatically when you record a dispatch on the job."
+                />
+                <SortHeader
+                  label="Required"
+                  sortField="req_stage"
+                  hint="What this job needs prepared next (set by the office). Drives the MRP requirement."
+                />
+                <SortHeader
+                  label="Req. Dispatch"
+                  sortField="req_dispatch"
+                  hint="Date the required material must go out. MRP's date filter uses this."
+                />
                 <SortHeader label="Status" sortField="status" />
                 <TableHead>Dispatch</TableHead>
               </TableRow>

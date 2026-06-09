@@ -75,17 +75,23 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
           className="h-9 w-[170px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] [color-scheme:dark]"
         />
         {date ? (
-          <button
-            type="button"
-            onClick={() => go("")}
-            className="inline-flex items-center gap-1 h-9 px-2.5 rounded-md border border-[var(--primary)]/40 bg-[var(--primary)]/5 text-sm cursor-pointer hover:bg-[var(--primary)]/10"
-            title="Clear date — show all in-production jobs"
-          >
-            up to <strong>{pretty}</strong>
-            <X className="h-3.5 w-3.5 ml-0.5 text-[var(--muted-foreground)]" />
-          </button>
+          <>
+            <span className="text-sm text-[var(--muted-foreground)]">
+              → counting jobs due on or before <strong className="text-[var(--foreground)]">{pretty}</strong>
+            </span>
+            <button
+              type="button"
+              onClick={() => go("")}
+              className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-[var(--border)] text-xs cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+              title="Remove the date limit"
+            >
+              <X className="h-3 w-3" /> Clear — all jobs
+            </button>
+          </>
         ) : (
-          <span className="text-xs text-[var(--muted-foreground)]">all in-production jobs</span>
+          <span className="text-sm text-[var(--muted-foreground)]">
+            → no date set: counting <strong className="text-[var(--foreground)]">every</strong> in-production job
+          </span>
         )}
         <div className="flex items-center gap-1 ml-auto">
           <span className="text-[11px] text-[var(--muted-foreground)] mr-1">Quick:</span>

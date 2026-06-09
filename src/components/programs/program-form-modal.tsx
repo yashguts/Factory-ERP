@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import {
   OperationLinePicker,
@@ -102,6 +103,7 @@ export function ProgramFormModal({
 }: Props) {
   const isEditing = !!operation;
   const isCloning = !operation && !!cloneSource;
+  const toast = useToast();
   // When cloning, treat the source's values as defaults — the form behaves
   // like a fresh create form, just pre-filled. Saving calls createOperation.
   const source = operation ?? cloneSource ?? null;
@@ -288,6 +290,9 @@ export function ProgramFormModal({
         setError(result.error);
         return;
       }
+      toast.success(
+        isEditing ? `Program "${name}" saved.` : `Program "${name}" created.`,
+      );
       onSaved(result.id);
     });
   };

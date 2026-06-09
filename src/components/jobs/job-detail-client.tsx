@@ -423,8 +423,8 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           label="Planned End"
           value={job.planned_end ? new Date(job.planned_end).toLocaleDateString("en-IN") : null}
         />
-        <MetaItem label="Stage" value={STAGE_LABELS[job.stage ?? "new"]} />
-        <MetaItem label="Req. Stage" value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null} />
+        <MetaItem label="Sent (dispatched)" value={STAGE_LABELS[job.stage ?? "new"]} />
+        <MetaItem label="Required" value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null} />
         <MetaItem
           label="Req. Dispatch Date"
           value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}

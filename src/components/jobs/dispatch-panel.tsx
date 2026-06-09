@@ -38,7 +38,11 @@ export function DispatchPanel({
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
-  const [openId, setOpenId] = useState<string | null>(null);
+  // The newest dispatch starts expanded so "what just went out" is visible
+  // immediately after recording one (the page refreshes into this state).
+  const [openId, setOpenId] = useState<string | null>(
+    summary.dispatches[0]?.id ?? null,
+  );
   const [busy, setBusy] = useState<string | null>(null);
 
   const phaseStat = (phase: "first" | "second"): Stat => {

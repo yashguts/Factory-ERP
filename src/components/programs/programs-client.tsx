@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
+import { useToast } from "@/components/ui/toast";
 import {
   Plus,
   Search,
@@ -104,6 +105,7 @@ export function ProgramsClient({
   itemRefs,
 }: Props) {
   const router = useRouter();
+  const toast = useToast();
   // List state mirrors into the URL so Back from a program restores the view.
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
@@ -315,7 +317,12 @@ export function ProgramsClient({
   const toggleAudit = async (id: string, next: boolean) => {
     setAuditedMap((m) => ({ ...m, [id]: next }));
     const res = await setOperationAudited(id, next);
-    if (!res.ok) setAuditedMap((m) => ({ ...m, [id]: !next }));
+    if (!res.ok) {
+      setAuditedMap((m) => ({ ...m, [id]: !next }));
+      toast.error("Could not update the audit status — try again.");
+    } else {
+      toast.success(next ? "Marked audited." : "Audit mark removed.");
+    }
   };
 
   // Clicking the tick: unmark immediately, but require confirmation before
