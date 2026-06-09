@@ -285,7 +285,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
         )}
         {!cutoffDate && (
           <span className="text-xs text-[var(--muted-foreground)]">
-            Showing all jobs (no date filter)
+            All in-production jobs — pick a date to limit by requirement dispatch date
           </span>
         )}
       </div>
