@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { Plus, Search, ClipboardCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -17,7 +18,9 @@ import type { CabinJobListRow } from "@/lib/actions/cabin-jobs";
 
 export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  useUrlListSync({ q: search }, { q: "" });
 
   const filtered = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);

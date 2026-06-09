@@ -130,13 +130,17 @@ export function ProgramDetailClient({
     <div>
       {/* Header */}
       <div className="mb-6">
-        <Link
-          href="/programs"
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2"
+        {/* Smart back: return to the (filtered) list view the user came from;
+            hardcoded /programs only on a direct deep-link with no history. */}
+        <button
+          onClick={() =>
+            window.history.length > 1 ? router.back() : router.push("/programs")
+          }
+          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2 cursor-pointer"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Back to Programs
-        </Link>
+        </button>
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <h1 className="text-2xl font-bold tracking-tight">{operation.name}</h1>

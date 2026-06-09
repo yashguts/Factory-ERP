@@ -2,6 +2,13 @@
 
 import { useState, useMemo, useTransition, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
+import {
+  readParam,
+  readIntParam,
+  hasNoListParams,
+  useUrlListSync,
+} from "@/lib/hooks/use-url-list-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -61,20 +68,42 @@ type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 50;
 
+const LIST_PARAM_KEYS = [
+  "q", "type", "cat", "sub", "stock", "behav", "sort", "dir", "page",
+] as const;
+
 export function InventoryClient({ initialRows, initialTotal, facets, categories, units, warehouses, initialEditItemId }: Props) {
   const [isPending, startTransition] = useTransition();
 
-  // Query state (drives the server fetch).
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
-  const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [subCategoryFilter, setSubCategoryFilter] = useState<string>("all");
-  const [stockFilter, setStockFilter] = useState<"all" | "low" | "zero" | "in_stock">("all");
-  const [behaviourFilter, setBehaviourFilter] = useState<"all" | "stocked" | "phantom" | "tooling">("all");
-  const [sortKey, setSortKey] = useState<SortKey>("code");
-  const [sortDir, setSortDir] = useState<SortDir>("asc");
-  const [page, setPage] = useState(1);
+  // Query state (drives the server fetch). Initialised from the URL so Back /
+  // reload / shared links land on the exact same view (see use-url-list-state).
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  const [debouncedSearch, setDebouncedSearch] = useState(() => readParam(sp, "q", ""));
+  const [typeFilter, setTypeFilter] = useState<ItemType | "all">(
+    () => readParam(sp, "type", "all", ["all", "raw_material", "sub_assembly", "finished_good", "mechanical_finished_stock", "door_panel"]) as ItemType | "all",
+  );
+  const [categoryFilter, setCategoryFilter] = useState<string>(() => readParam(sp, "cat", "all"));
+  const [subCategoryFilter, setSubCategoryFilter] = useState<string>(() => readParam(sp, "sub", "all"));
+  const [stockFilter, setStockFilter] = useState<"all" | "low" | "zero" | "in_stock">(
+    () => readParam(sp, "stock", "all", ["all", "low", "zero", "in_stock"]) as "all" | "low" | "zero" | "in_stock",
+  );
+  const [behaviourFilter, setBehaviourFilter] = useState<"all" | "stocked" | "phantom" | "tooling">(
+    () => readParam(sp, "behav", "all", ["all", "stocked", "phantom", "tooling"]) as "all" | "stocked" | "phantom" | "tooling",
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(
+    () => readParam(sp, "sort", "code", ["code", "name", "stock", "category", "cost"]) as SortKey,
+  );
+  const [sortDir, setSortDir] = useState<SortDir>(
+    () => readParam(sp, "dir", "asc", ["asc", "desc"]) as SortDir,
+  );
+  const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
+
+  // Mirror the state into the URL (shallow — no server round trip).
+  useUrlListSync(
+    { q: debouncedSearch, type: typeFilter, cat: categoryFilter, sub: subCategoryFilter, stock: stockFilter, behav: behaviourFilter, sort: sortKey, dir: sortDir, page },
+    { q: "", type: "all", cat: "all", sub: "all", stock: "all", behav: "all", sort: "code", dir: "asc", page: 1 },
+  );
 
   // Server-provided page data.
   const [rows, setRows] = useState<InventoryRow[]>(initialRows);
@@ -128,9 +157,11 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
     });
   }, [debouncedSearch, typeFilter, categoryFilter, subCategoryFilter, stockFilter, behaviourFilter, sortKey, sortDir, page]);
 
-  // Re-fetch when the query changes — but skip the very first run, since
-  // initialRows already match the default query (instant paint, no flash).
-  const firstRun = useRef(true);
+  // Re-fetch when the query changes — but skip the very first run when the
+  // view opened with default state, since initialRows already match the
+  // default query (instant paint, no flash). When the URL carried filters
+  // (Back navigation / shared link), fetch immediately so rows match them.
+  const firstRun = useRef(hasNoListParams(sp, LIST_PARAM_KEYS));
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
@@ -156,7 +187,15 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
       }
     });
     if (typeof window !== "undefined") {
-      window.history.replaceState(null, "", "/inventory");
+      // Strip only the edit param — keep any list filters in the URL.
+      const params = new URLSearchParams(window.location.search);
+      params.delete("edit");
+      const qs = params.toString();
+      window.history.replaceState(
+        window.history.state,
+        "",
+        qs ? `/inventory?${qs}` : "/inventory",
+      );
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEditItemId]);

@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import {
   Plus,
   Search,
@@ -103,7 +104,9 @@ export function ProgramsClient({
   itemRefs,
 }: Props) {
   const router = useRouter();
-  const [search, setSearch] = useState("");
+  // List state mirrors into the URL so Back from a program restores the view.
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   // Server-side text search: item-name search data is no longer shipped with
   // the list, so a non-empty query is resolved by `searchOperations` (which
   // searches program fields + every input/output item name). `matchIds` holds
@@ -112,11 +115,24 @@ export function ProgramsClient({
   const [searching, setSearching] = useState(false);
   // Monotonic request id so a slow earlier search can't overwrite a newer one.
   const searchSeq = useRef(0);
-  const [machineFilter, setMachineFilter] = useState<MachineFilter>("all");
-  const [auditFilter, setAuditFilter] = useState<AuditFilter>("all");
-  const [labelFilter, setLabelFilter] = useState<LabelFilter>("all");
-  const [matchFilter, setMatchFilter] = useState<MatchFilter>("all");
-  const [view, setView] = useState<ViewMode>("family");
+  const [machineFilter, setMachineFilter] = useState<MachineFilter>(
+    () => readParam(sp, "machine", "all", ["all", "cnc_laser", "cnc_punch", "cnc_cutting", "assembly_fit"]) as MachineFilter,
+  );
+  const [auditFilter, setAuditFilter] = useState<AuditFilter>(
+    () => readParam(sp, "audit", "all", ["all", "pending", "audited"]) as AuditFilter,
+  );
+  const [labelFilter, setLabelFilter] = useState<LabelFilter>(() => readParam(sp, "label", "all"));
+  const [matchFilter, setMatchFilter] = useState<MatchFilter>(
+    () => readParam(sp, "match", "all", ["all", "ready", "unmatched"]) as MatchFilter,
+  );
+  const [view, setView] = useState<ViewMode>(
+    () => readParam(sp, "view", "family", ["family", "flat"]) as ViewMode,
+  );
+
+  useUrlListSync(
+    { q: search, machine: machineFilter, audit: auditFilter, label: labelFilter, match: matchFilter, view },
+    { q: "", machine: "all", audit: "all", label: "all", match: "all", view: "family" },
+  );
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
   const [showCreate, setShowCreate] = useState(false);
   const [cloneSource, setCloneSource] = useState<OperationDetail | null>(null);

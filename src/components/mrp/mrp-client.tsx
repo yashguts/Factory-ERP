@@ -1,6 +1,12 @@
 "use client";
 
 import { useState, useMemo } from "react";
+import { useSearchParams } from "next/navigation";
+import {
+  readParam,
+  readIntParam,
+  useUrlListSync,
+} from "@/lib/hooks/use-url-list-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -44,17 +50,36 @@ interface Props {
 }
 
 export function MrpClient({ initialData, initialCutoffDate }: Props) {
-  const [search, setSearch] = useState("");
-  const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
-  const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>("all");
+  // Tab + filters live in the URL too (alongside ?date=), so switching to the
+  // Programs/Buy-list views and coming back — or pressing Back from a job —
+  // restores the exact same view.
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  const [typeFilter, setTypeFilter] = useState<ItemType | "all">(
+    () => readParam(sp, "type", "all", ["all", "raw_material", "sub_assembly", "finished_good", "mechanical_finished_stock", "door_panel"]) as ItemType | "all",
+  );
+  const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>(
+    () => readParam(sp, "show", "all", ["all", "shortfall", "excess", "zero"]) as ShortfallFilter,
+  );
   // Top-level Make/Trade split. Defaults to "trade" since procurement is
   // usually the actionable bottleneck — flip to "make" or "all" any time.
-  const [procurementTab, setProcurementTab] = useState<ProcurementTab>("trade");
-  const [sortKey, setSortKey] = useState<SortKey>("shortfall");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
+  const [procurementTab, setProcurementTab] = useState<ProcurementTab>(
+    () => readParam(sp, "tab", "trade", ["all", "trade", "make"]) as ProcurementTab,
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(
+    () => readParam(sp, "sort", "shortfall", ["code", "name", "category", "required", "stock", "shortfall", "jobs"]) as SortKey,
+  );
+  const [sortDir, setSortDir] = useState<SortDir>(
+    () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
+  );
+  const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
   // Date cutoff comes from the URL (?date=); the shared MrpToolbar drives changes.
   const cutoffDate = initialCutoffDate ?? "";
+
+  useUrlListSync(
+    { q: search, type: typeFilter, show: shortfallFilter, tab: procurementTab, sort: sortKey, dir: sortDir, page },
+    { q: "", type: "all", show: "all", tab: "trade", sort: "shortfall", dir: "desc", page: 1 },
+  );
 
   // Rows restricted to the active Make/Trade tab. All downstream filters
   // (search, type, shortfall) and the summary card totals are computed

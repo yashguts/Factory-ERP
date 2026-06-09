@@ -290,7 +290,9 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       {/* Back + Header */}
       <div className="mb-6">
         <button
-          onClick={() => router.push("/jobs")}
+          onClick={() =>
+            window.history.length > 1 ? router.back() : router.push("/jobs")
+          }
           className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3 cursor-pointer"
         >
           <ArrowLeft size={14} /> Back to Jobs

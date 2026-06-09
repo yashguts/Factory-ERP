@@ -8,7 +8,13 @@ import {
   useTransition,
 } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  readParam,
+  readIntParam,
+  hasNoListParams,
+  useUrlListSync,
+} from "@/lib/hooks/use-url-list-state";
 import { ArrowLeft, Search, Container, Plus, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -53,12 +59,19 @@ export function CabinTypeClient({
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
 
-  // Query state (drives the server fetch).
-  const [search, setSearch] = useState("");
-  const [debouncedSearch, setDebouncedSearch] = useState("");
-  const [subFilter, setSubFilter] = useState<string>("all");
-  const [page, setPage] = useState(1);
+  // Query state (drives the server fetch). Initialised from the URL so Back
+  // from an item restores the exact same view.
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  const [debouncedSearch, setDebouncedSearch] = useState(() => readParam(sp, "q", ""));
+  const [subFilter, setSubFilter] = useState<string>(() => readParam(sp, "sub", "all"));
+  const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
   const [showAdd, setShowAdd] = useState(false);
+
+  useUrlListSync(
+    { q: debouncedSearch, sub: subFilter, page },
+    { q: "", sub: "all", page: 1 },
+  );
 
   // Server-provided page data.
   const [rows, setRows] = useState<CabinTypeRow[]>(initialRows);
@@ -71,8 +84,14 @@ export function CabinTypeClient({
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to page 1 whenever the filters change.
+  // Reset to page 1 whenever the filters change — but not on mount, which
+  // would clobber a page number restored from the URL.
+  const filtersTouched = useRef(false);
   useEffect(() => {
+    if (!filtersTouched.current) {
+      filtersTouched.current = true;
+      return;
+    }
     setPage(1);
   }, [debouncedSearch, subFilter]);
 
@@ -106,9 +125,10 @@ export function CabinTypeClient({
     });
   }, [typeId, debouncedSearch, subFilter, page]);
 
-  // Re-fetch when the query changes — but skip the very first run, since
-  // initialRows already match the default query (instant paint, no flash).
-  const firstRun = useRef(true);
+  // Re-fetch when the query changes — but skip the very first run when the
+  // view opened with default state, since initialRows already match the
+  // default query. With URL-carried filters (Back / shared link), fetch now.
+  const firstRun = useRef(hasNoListParams(sp, ["q", "sub", "page"]));
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;

@@ -1,7 +1,12 @@
 "use client";
 
 import { useState, useMemo, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import {
+  readParam,
+  readIntParam,
+  useUrlListSync,
+} from "@/lib/hooks/use-url-list-state";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -69,14 +74,29 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
-  const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">("all");
-  const [stageFilter, setStageFilter] = useState<JobStage | "all">("all");
-  const [doorTypeFilter, setDoorTypeFilter] = useState<string>("all");
-  const [brandFilter, setBrandFilter] = useState<string>("all");
-  const [sortKey, setSortKey] = useState<SortKey>("job_number");
-  const [sortDir, setSortDir] = useState<SortDir>("desc");
-  const [page, setPage] = useState(1);
+  // List state lives in the URL too, so Back from a job restores the view.
+  const sp = useSearchParams();
+  const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
+    () => readParam(sp, "status", "all", ["all", "new", "in_production", "hold"]) as JobStatus | "all",
+  );
+  const [stageFilter, setStageFilter] = useState<JobStage | "all">(
+    () => readParam(sp, "stage", "all", ["all", "new", "first_phase", "full_material"]) as JobStage | "all",
+  );
+  const [doorTypeFilter, setDoorTypeFilter] = useState<string>(() => readParam(sp, "door", "all"));
+  const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
+  const [sortKey, setSortKey] = useState<SortKey>(
+    () => readParam(sp, "sort", "job_number", ["job_number", "customer", "status", "stage", "req_stage", "req_dispatch"]) as SortKey,
+  );
+  const [sortDir, setSortDir] = useState<SortDir>(
+    () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
+  );
+  const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
+
+  useUrlListSync(
+    { q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
+    { q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "job_number", dir: "desc", page: 1 },
+  );
 
   const doorTypes = useMemo(() => {
     const set = new Set<string>();

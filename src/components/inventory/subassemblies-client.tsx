@@ -2,7 +2,8 @@
 
 import { useState, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
+import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import {
   Search,
   Loader2,
@@ -23,7 +24,9 @@ interface Props {
 
 export function SubassembliesClient({ rows }: Props) {
   const router = useRouter();
-  const [filter, setFilter] = useState("");
+  const sp = useSearchParams();
+  const [filter, setFilter] = useState(() => readParam(sp, "q", ""));
+  useUrlListSync({ q: filter }, { q: "" });
 
   const filtered = filter.trim()
     ? rows.filter((r) => {
