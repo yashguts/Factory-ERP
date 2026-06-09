@@ -4,14 +4,9 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 
 const BUCKET = "gad-drawings";
-const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-]);
+// Size/MIME are validated client-side before the direct-to-storage upload
+// (see lib/storage/upload.ts); here we just sanity-check the filename extension.
+const ALLOWED_EXTENSION = /\.(pdf|png|jpe?g|webp)$/i;
 
 export interface GadDrawingInfo {
   url: string;
@@ -20,47 +15,30 @@ export interface GadDrawingInfo {
 }
 
 /**
- * Upload (or replace) the General Arrangement Drawing for a job.
+ * Record a GAD drawing the browser has ALREADY uploaded directly to Supabase
+ * Storage (see lib/storage/upload.ts). The 50 MB file never passes through this
+ * server function — only its storage object `path` does — which keeps us under
+ * serverless body limits and is faster.
  *
- * Accepts a FormData payload with:
- *   - jobId: string
- *   - file:  File (PDF or image)
- *
- * Stores the file at `{jobId}/{timestamp}-{originalName}` so a job
- * can keep its history if anyone ever wants it (only the latest is
- * referenced on jobs.gad_drawing_url though). Replacing a drawing
- * deletes the previous file to keep the bucket tidy.
+ * `path` looks like `{jobId}/{timestamp}-{name}`; we re-check it belongs to this
+ * job, point jobs.gad_drawing_url at it, and best-effort delete the previous file.
  */
-export async function uploadGadDrawing(
-  formData: FormData,
+export async function recordGadDrawing(
+  jobId: string,
+  path: string,
+  filename: string,
 ): Promise<GadDrawingInfo> {
-  const jobId = formData.get("jobId");
-  const file = formData.get("file");
-
-  if (typeof jobId !== "string" || !jobId) {
-    throw new Error("Missing jobId");
+  if (!jobId) throw new Error("Missing jobId");
+  if (!path || !path.startsWith(`${jobId}/`)) {
+    throw new Error("Invalid upload path");
   }
-  if (!(file instanceof File)) {
-    throw new Error("Missing file");
-  }
-  if (file.size === 0) {
-    throw new Error("File is empty");
-  }
-  if (file.size > MAX_SIZE_BYTES) {
-    throw new Error(
-      `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`,
-    );
-  }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error(
-      `Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`,
-    );
+  if (!ALLOWED_EXTENSION.test(filename)) {
+    throw new Error("Unsupported file type. Use PDF, PNG, JPG, or WebP.");
   }
 
   const supabase = await createClient();
 
-  // 1. Best-effort cleanup of the previous drawing for this job (so
-  //    the bucket doesn't accumulate orphans on every replace).
+  // Best-effort cleanup of the previous drawing so the bucket doesn't keep orphans.
   const { data: existingRow } = await supabase
     .from("jobs")
     .select("gad_drawing_url")
@@ -69,24 +47,11 @@ export async function uploadGadDrawing(
   const previousUrl = (existingRow?.gad_drawing_url as string | null) ?? null;
   if (previousUrl) {
     const previousPath = extractStoragePath(previousUrl);
-    if (previousPath) {
-      // ignore errors — best effort
+    if (previousPath && previousPath !== path) {
       await supabase.storage.from(BUCKET).remove([previousPath]);
     }
   }
 
-  // 2. Upload the new file under a job-scoped path.
-  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
-  const path = `${jobId}/${Date.now()}-${safeName}`;
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, file, {
-      contentType: file.type,
-      upsert: false,
-    });
-  if (uploadError) throw uploadError;
-
-  // 3. Build the public URL and record it on the jobs row.
   const {
     data: { publicUrl },
   } = supabase.storage.from(BUCKET).getPublicUrl(path);
@@ -96,7 +61,7 @@ export async function uploadGadDrawing(
     .from("jobs")
     .update({
       gad_drawing_url: publicUrl,
-      gad_drawing_filename: file.name,
+      gad_drawing_filename: filename,
       gad_drawing_uploaded_at: uploaded_at,
     })
     .eq("id", jobId);
@@ -106,7 +71,7 @@ export async function uploadGadDrawing(
   revalidatePath(`/jobs/${jobId}/edit`);
   revalidateTag("jobs");
 
-  return { url: publicUrl, filename: file.name, uploaded_at };
+  return { url: publicUrl, filename, uploaded_at };
 }
 
 /**

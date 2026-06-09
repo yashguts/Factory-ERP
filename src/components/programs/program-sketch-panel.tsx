@@ -10,10 +10,8 @@ import {
   Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  uploadProgramSketch,
-  deleteProgramSketch,
-} from "@/lib/actions/operations";
+import { recordProgramSketch, deleteProgramSketch } from "@/lib/actions/operations";
+import { uploadFileToBucket } from "@/lib/storage/upload";
 
 interface Props {
   operationId: string;
@@ -55,10 +53,8 @@ export function ProgramSketchPanel({
     startTransition(async () => {
       setError(null);
       try {
-        const fd = new FormData();
-        fd.append("operationId", operationId);
-        fd.append("file", file);
-        const result = await uploadProgramSketch(fd);
+        const { path } = await uploadFileToBucket("program-sketches", operationId, file);
+        const result = await recordProgramSketch(operationId, path, file.name);
         setUrl(result.url);
         setFilename(result.filename);
         setUploadedAt(result.uploaded_at);

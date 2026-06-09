@@ -535,14 +535,9 @@ export async function deleteOperation(
 /* ----------------------------- sketches ---------------------------- */
 
 const BUCKET = "program-sketches";
-const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-]);
+// Size/MIME are validated client-side before the direct-to-storage upload
+// (see lib/storage/upload.ts); here we just sanity-check the filename extension.
+const ALLOWED_EXTENSION = /\.(pdf|png|jpe?g|webp)$/i;
 
 export interface ProgramSketchInfo {
   url: string;
@@ -551,30 +546,22 @@ export interface ProgramSketchInfo {
 }
 
 /**
- * Upload (or replace) the sketch for an operation. Mirrors uploadGadDrawing:
- * stores at `{operationId}/{timestamp}-{name}` and deletes the previous file
- * on replace.
+ * Record a sketch the browser has ALREADY uploaded directly to Storage
+ * (see lib/storage/upload.ts). The file never passes through this server
+ * function — only its storage object `path` — keeping us under serverless body
+ * limits. Mirrors recordGadDrawing.
  */
-export async function uploadProgramSketch(
-  formData: FormData,
+export async function recordProgramSketch(
+  operationId: string,
+  path: string,
+  filename: string,
 ): Promise<ProgramSketchInfo> {
-  const operationId = formData.get("operationId");
-  const file = formData.get("file");
-
-  if (typeof operationId !== "string" || !operationId) {
-    throw new Error("Missing operationId");
+  if (!operationId) throw new Error("Missing operationId");
+  if (!path || !path.startsWith(`${operationId}/`)) {
+    throw new Error("Invalid upload path");
   }
-  if (!(file instanceof File)) throw new Error("Missing file");
-  if (file.size === 0) throw new Error("File is empty");
-  if (file.size > MAX_SIZE_BYTES) {
-    throw new Error(
-      `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`,
-    );
-  }
-  if (!ALLOWED_MIME_TYPES.has(file.type)) {
-    throw new Error(
-      `Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`,
-    );
+  if (!ALLOWED_EXTENSION.test(filename)) {
+    throw new Error("Unsupported file type. Use PDF, PNG, JPG, or WebP.");
   }
 
   const supabase = await createClient();
@@ -587,15 +574,10 @@ export async function uploadProgramSketch(
   const previousUrl = (existing?.sketch_url as string | null) ?? null;
   if (previousUrl) {
     const previousPath = extractStoragePath(previousUrl);
-    if (previousPath) await supabase.storage.from(BUCKET).remove([previousPath]);
+    if (previousPath && previousPath !== path) {
+      await supabase.storage.from(BUCKET).remove([previousPath]);
+    }
   }
-
-  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
-  const path = `${operationId}/${Date.now()}-${safeName}`;
-  const { error: uploadError } = await supabase.storage
-    .from(BUCKET)
-    .upload(path, file, { contentType: file.type, upsert: false });
-  if (uploadError) throw uploadError;
 
   const {
     data: { publicUrl },
@@ -606,14 +588,14 @@ export async function uploadProgramSketch(
     .from("operations")
     .update({
       sketch_url: publicUrl,
-      sketch_filename: file.name,
+      sketch_filename: filename,
       sketch_uploaded_at: uploaded_at,
     })
     .eq("id", operationId);
   if (updateError) throw updateError;
 
   revalidateOperations(operationId);
-  return { url: publicUrl, filename: file.name, uploaded_at };
+  return { url: publicUrl, filename, uploaded_at };
 }
 
 export async function deleteProgramSketch(operationId: string): Promise<void> {

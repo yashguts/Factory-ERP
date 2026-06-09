@@ -3,10 +3,8 @@
 import { useRef, useState, useTransition } from "react";
 import { Upload, FileText, ImageIcon, Trash2, ExternalLink, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import {
-  uploadGadDrawing,
-  deleteGadDrawing,
-} from "@/lib/actions/gad-drawings";
+import { recordGadDrawing, deleteGadDrawing } from "@/lib/actions/gad-drawings";
+import { uploadFileToBucket } from "@/lib/storage/upload";
 
 interface Props {
   jobId: string | null;
@@ -81,10 +79,8 @@ export function GadDrawingPanel({
           return;
         }
 
-        const fd = new FormData();
-        fd.append("jobId", id);
-        fd.append("file", file);
-        const result = await uploadGadDrawing(fd);
+        const { path } = await uploadFileToBucket("gad-drawings", id, file);
+        const result = await recordGadDrawing(id, path, file.name);
 
         setUrl(result.url);
         setFilename(result.filename);
