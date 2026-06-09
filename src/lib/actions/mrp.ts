@@ -64,18 +64,62 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   if (stageByJob.size === 0) return [];
   const prodJobIds = Array.from(stageByJob.keys());
 
+  // Dispatched-so-far per BOM line. Dispatch (any phase: first/second/full) is
+  // netted out of MRP demand, so already-shipped material stops showing as
+  // "required". Keyed by job_bom_line_id — the same definition the dispatch
+  // panel uses for "Remaining" (getJobDispatchSummary). Ad-hoc dispatch lines
+  // (null job_bom_line_id) aren't tied to a BOM line, so they don't reduce demand.
+  //
+  // This scans the whole job_dispatch_lines table, so it doesn't depend on the
+  // header -> lines chain below. Kick it off concurrently and await it just
+  // before we need it (when netting demand), saving one cross-region round-trip
+  // hop. Behaviour is identical — same rows, same accumulation.
+  const dispatchedByLinePromise = (async () => {
+    const dispatchedByLine = new Map<string, number>();
+    const PAGE_D = 1000;
+    let offsetD = 0;
+    while (true) {
+      const { data, error } = await supabase
+        .from("job_dispatch_lines")
+        .select("job_bom_line_id, qty")
+        .not("job_bom_line_id", "is", null)
+        .range(offsetD, offsetD + PAGE_D - 1);
+      if (error) throw error;
+      for (const d of data ?? []) {
+        const lineId = d.job_bom_line_id as string;
+        dispatchedByLine.set(
+          lineId,
+          (dispatchedByLine.get(lineId) ?? 0) + (Number(d.qty) || 0),
+        );
+      }
+      if (!data || data.length < PAGE_D) break;
+      offsetD += PAGE_D;
+    }
+    return dispatchedByLine;
+  })();
+
   // Header -> job map (drives both the stage scope below and job_count later).
   const headerToJob = new Map<string, string>();
-  for (let i = 0; i < prodJobIds.length; i += 200) {
-    const { data, error } = await supabase
-      .from("job_bom_headers")
-      .select("id, job_id")
-      .in("job_id", prodJobIds.slice(i, i + 200));
-    if (error) throw error;
-    for (const h of data ?? [])
-      headerToJob.set(h.id as string, h.job_id as string);
+  {
+    const chunks: string[][] = [];
+    for (let i = 0; i < prodJobIds.length; i += 200)
+      chunks.push(prodJobIds.slice(i, i + 200));
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase.from("job_bom_headers").select("id, job_id").in("job_id", ids),
+      ),
+    );
+    for (const { data, error } of results) {
+      if (error) throw error;
+      for (const h of data ?? [])
+        headerToJob.set(h.id as string, h.job_id as string);
+    }
   }
-  if (headerToJob.size === 0) return [];
+  if (headerToJob.size === 0) {
+    // Drain the in-flight dispatch query so we don't leave an unhandled rejection.
+    await dispatchedByLinePromise;
+    return [];
+  }
   const bomHeaderIds = Array.from(headerToJob.keys());
 
   // BOM lines for those headers. `category` lets us scope first-phase jobs to
@@ -97,33 +141,7 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
     offset += PAGE;
   }
 
-  // Dispatched-so-far per BOM line. Dispatch (any phase: first/second/full) is
-  // netted out of MRP demand, so already-shipped material stops showing as
-  // "required". Keyed by job_bom_line_id — the same definition the dispatch
-  // panel uses for "Remaining" (getJobDispatchSummary). Ad-hoc dispatch lines
-  // (null job_bom_line_id) aren't tied to a BOM line, so they don't reduce demand.
-  const dispatchedByLine = new Map<string, number>();
-  {
-    const PAGE_D = 1000;
-    let offsetD = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from("job_dispatch_lines")
-        .select("job_bom_line_id, qty")
-        .not("job_bom_line_id", "is", null)
-        .range(offsetD, offsetD + PAGE_D - 1);
-      if (error) throw error;
-      for (const d of data ?? []) {
-        const lineId = d.job_bom_line_id as string;
-        dispatchedByLine.set(
-          lineId,
-          (dispatchedByLine.get(lineId) ?? 0) + (Number(d.qty) || 0),
-        );
-      }
-      if (!data || data.length < PAGE_D) break;
-      offsetD += PAGE_D;
-    }
-  }
+  const dispatchedByLine = await dispatchedByLinePromise;
 
   // total = sum of NET required_quantity across all BOM lines for the item,
   // where net = required − dispatched (floored at 0). Lines fully dispatched
@@ -301,13 +319,44 @@ async function _getProductionPlanUncached(
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
 
+  // These four loads are independent of one another (category tree, program
+  // outputs, program inputs, assembly parts lists). Fetch them concurrently
+  // instead of one after another — same rows, just fewer sequential round-trips.
+  const [catData, outRows, inRows, bomRows] = await Promise.all([
+    supabase.from("item_categories").select("id, name, parent_id"),
+    // item -> the program that produces it + that output's qty/run. Includes
+    // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
+    // link to a phantom item, so a phantom loose-part child of an assembly still
+    // explodes through the program that cuts it down to its sheet.
+    fetchAllRows((off, page) =>
+      supabase
+        .from("operation_outputs")
+        .select("operation_id, item_id, qty_per_run")
+        .in("role", ["component", "cut_part"])
+        .not("item_id", "is", null)
+        .range(off, off + page - 1),
+    ),
+    // program -> its input lines (sheets/bought).
+    fetchAllRows((off, page) =>
+      supabase
+        .from("operation_inputs")
+        .select("operation_id, item_id, qty_per_run")
+        .not("item_id", "is", null)
+        .range(off, off + page - 1),
+    ),
+    // assembly parts lists.
+    fetchAllRows((off, page) =>
+      supabase
+        .from("item_bom_lines")
+        .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish")
+        .range(off, off + page - 1),
+    ),
+  ]);
+
   // Category tree -> resolve top-level category for buy-list filtering.
   const catById = new Map<string, { name: string | null; parent_id: string | null }>();
-  {
-    const { data } = await supabase.from("item_categories").select("id, name, parent_id");
-    for (const c of data ?? [])
-      catById.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
-  }
+  for (const c of catData.data ?? [])
+    catById.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
   const topCatOf = (catId: string | null | undefined): string => {
     if (!catId) return "(none)";
     let cid: string = catId;
@@ -322,18 +371,6 @@ async function _getProductionPlanUncached(
     return catById.get(cid)?.name ?? "(none)";
   };
 
-  // item -> the program that produces it + that output's qty/run. Includes
-  // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
-  // link to a phantom item, so a phantom loose-part child of an assembly still
-  // explodes through the program that cuts it down to its sheet.
-  const outRows = await fetchAllRows((off, page) =>
-    supabase
-      .from("operation_outputs")
-      .select("operation_id, item_id, qty_per_run")
-      .in("role", ["component", "cut_part"])
-      .not("item_id", "is", null)
-      .range(off, off + page - 1),
-  );
   const itemToProgram = new Map<string, { programId: string; outQty: number }>();
   for (const o of outRows) {
     if (!itemToProgram.has(o.item_id)) {
@@ -344,14 +381,6 @@ async function _getProductionPlanUncached(
     }
   }
 
-  // program -> its input lines (sheets/bought).
-  const inRows = await fetchAllRows((off, page) =>
-    supabase
-      .from("operation_inputs")
-      .select("operation_id, item_id, qty_per_run")
-      .not("item_id", "is", null)
-      .range(off, off + page - 1),
-  );
   const programInputs = new Map<string, { item_id: string; qty: number }[]>();
   for (const i of inRows) {
     const arr = programInputs.get(i.operation_id) ?? [];
@@ -359,13 +388,6 @@ async function _getProductionPlanUncached(
     programInputs.set(i.operation_id, arr);
   }
 
-  // assembly parts lists.
-  const bomRows = await fetchAllRows((off, page) =>
-    supabase
-      .from("item_bom_lines")
-      .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish")
-      .range(off, off + page - 1),
-  );
   const bomByParent = new Map<string, any[]>();
   for (const b of bomRows) {
     const arr = bomByParent.get(b.parent_item_id) ?? [];
@@ -481,15 +503,20 @@ async function _getProductionPlanUncached(
       })
       .sort((a, b) => b.shortfall - a.shortfall);
 
-  // Program names for the runs list.
+  // Program names for the runs list. Disjoint id chunks -> fetch concurrently.
   const usedIds = Array.from(programIdsUsed);
   const progNames = new Map<string, { code: string | null; name: string }>();
-  for (let i = 0; i < usedIds.length; i += 200) {
-    const { data } = await supabase
-      .from("operations")
-      .select("id, code, name")
-      .in("id", usedIds.slice(i, i + 200));
-    for (const p of data ?? []) progNames.set(p.id, { code: p.code ?? null, name: p.name });
+  {
+    const chunks: string[][] = [];
+    for (let i = 0; i < usedIds.length; i += 200)
+      chunks.push(usedIds.slice(i, i + 200));
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase.from("operations").select("id, code, name").in("id", ids),
+      ),
+    );
+    for (const { data } of results)
+      for (const p of data ?? []) progNames.set(p.id, { code: p.code ?? null, name: p.name });
   }
 
   return {
@@ -576,16 +603,41 @@ async function _getMrpItemJobsUncached(
   }
   if (allLines.length === 0) return [];
 
+  // The dispatched-qty batches and the header->job batches both depend only on
+  // `allLines` (not on each other), and the chunks within each are independent.
+  // Fire every chunk of both concurrently in one Promise.all, then fold the
+  // results. Same rows, same accumulation — purely fewer sequential round-trips.
+  const lineIds = allLines.map((l) => l.id);
+  const headerIds = Array.from(new Set(allLines.map((l) => l.job_bom_id)));
+
+  const dispatchChunks: string[][] = [];
+  for (let i = 0; i < lineIds.length; i += 200)
+    dispatchChunks.push(lineIds.slice(i, i + 200));
+  const headerChunks: string[][] = [];
+  for (let i = 0; i < headerIds.length; i += 200)
+    headerChunks.push(headerIds.slice(i, i + 200));
+
+  const [dispatchResults, headerResults] = await Promise.all([
+    Promise.all(
+      dispatchChunks.map((ids) =>
+        supabase
+          .from("job_dispatch_lines")
+          .select("job_bom_line_id, qty")
+          .in("job_bom_line_id", ids),
+      ),
+    ),
+    Promise.all(
+      headerChunks.map((ids) =>
+        supabase.from("job_bom_headers").select("id, job_id").in("id", ids),
+      ),
+    ),
+  ]);
+
   // Net out dispatched qty per BOM line (any phase), same as getMrpData, so a
   // fully-dispatched job stops appearing for this item and partials show only
   // the remaining qty.
   const dispatchedByLine = new Map<string, number>();
-  const lineIds = allLines.map((l) => l.id);
-  for (let i = 0; i < lineIds.length; i += 200) {
-    const { data, error } = await supabase
-      .from("job_dispatch_lines")
-      .select("job_bom_line_id, qty")
-      .in("job_bom_line_id", lineIds.slice(i, i + 200));
+  for (const { data, error } of dispatchResults) {
     if (error) throw error;
     for (const d of data ?? []) {
       const lid = d.job_bom_line_id as string;
@@ -594,13 +646,8 @@ async function _getMrpItemJobsUncached(
   }
 
   // 2) Resolve BOM headers → job_id (in batches).
-  const headerIds = Array.from(new Set(allLines.map((l) => l.job_bom_id)));
   const headerToJob = new Map<string, string>();
-  for (let i = 0; i < headerIds.length; i += 200) {
-    const { data, error } = await supabase
-      .from("job_bom_headers")
-      .select("id, job_id")
-      .in("id", headerIds.slice(i, i + 200));
+  for (const { data, error } of headerResults) {
     if (error) throw error;
     for (const h of data ?? []) headerToJob.set(h.id, h.job_id);
   }
@@ -633,15 +680,24 @@ async function _getMrpItemJobsUncached(
     customer_name: string | null;
     requirement_dispatch_date: string | null;
   }> = [];
-  for (let i = 0; i < jobIds.length; i += 200) {
-    let q = supabase
-      .from("jobs")
-      .select("id, job_number, customer_name, requirement_dispatch_date")
-      .in("id", jobIds.slice(i, i + 200));
-    if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
-    const { data, error } = await q;
-    if (error) throw error;
-    jobs = jobs.concat(data ?? []);
+  {
+    const jobChunks: string[][] = [];
+    for (let i = 0; i < jobIds.length; i += 200)
+      jobChunks.push(jobIds.slice(i, i + 200));
+    const jobResults = await Promise.all(
+      jobChunks.map((ids) => {
+        let q = supabase
+          .from("jobs")
+          .select("id, job_number, customer_name, requirement_dispatch_date")
+          .in("id", ids);
+        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        return q;
+      }),
+    );
+    for (const { data, error } of jobResults) {
+      if (error) throw error;
+      jobs = jobs.concat(data ?? []);
+    }
   }
 
   // 5) Merge and return, sorted by largest contribution first.

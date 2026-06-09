@@ -88,6 +88,50 @@ export async function getMakeProductionPlan(cutoffDate?: string): Promise<MakePr
 async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan> {
   const supabase = createCacheClient();
 
+  // (1) Make shortfall from the live MRP calc, (2) parts lists, and the category
+  // procurement tree are all independent of one another — fetch concurrently.
+  // `short` gates an early return, so we compute it from the resolved MRP after
+  // the join; the other two are cheap full-table reads we'd need regardless.
+  const partsOfPromise = (async () => {
+    const partsOf = new Map<string, { child: string; qty: number }[]>();
+    for (let off = 0; ; off += PAGE) {
+      const { data, error } = await supabase
+        .from("item_bom_lines")
+        .select("parent_item_id, child_item_id, qty")
+        .order("parent_item_id")
+        .range(off, off + PAGE - 1);
+      if (error) throw error;
+      for (const b of data ?? []) {
+        if (!b.child_item_id) continue;
+        const a = partsOf.get(b.parent_item_id as string) ?? [];
+        a.push({ child: b.child_item_id as string, qty: Number(b.qty) || 1 });
+        partsOf.set(b.parent_item_id as string, a);
+      }
+      if (!data || data.length < PAGE) break;
+    }
+    return partsOf;
+  })();
+
+  // 5) category procurement / names — independent full-table read.
+  const catProcPromise = (async () => {
+    const catProc = new Map<string, { name: string | null; procurement_type: string | null; parent_id: string | null }>();
+    const { data } = await supabase.from("item_categories").select("id, name, procurement_type, parent_id");
+    for (const c of data ?? []) catProc.set(c.id as string, { name: c.name as string, procurement_type: c.procurement_type as string | null, parent_id: (c.parent_id as string | null) ?? null });
+    return catProc;
+  })();
+
+  // active programs — independent full-table read (used in step 5 below).
+  const opsPromise = (async () => {
+    const ops = new Map<string, any>();
+    for (let off = 0; ; off += PAGE) {
+      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at").eq("is_active", true).order("id").range(off, off + PAGE - 1);
+      if (error) throw error;
+      for (const o of data ?? []) ops.set(o.id as string, o);
+      if (!data || data.length < PAGE) break;
+    }
+    return ops;
+  })();
+
   // 1) Make shortfall from the live MRP calc
   const mrp = await getMrpData(cutoffDate);
   const short = new Map<string, { shortfall: number; code: string; name: string; category: string }>();
@@ -95,25 +139,14 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     if (r.procurement_type === "make" && r.shortfall > 0)
       short.set(r.item_id, { shortfall: r.shortfall, code: r.item_code, name: r.item_name, category: r.category_name ?? "(none)" });
   }
-  if (short.size === 0) return empty(cutoffDate ?? null);
+  if (short.size === 0) {
+    // Drain the in-flight reads so we don't leave unhandled rejections.
+    await Promise.all([partsOfPromise, catProcPromise, opsPromise]);
+    return empty(cutoffDate ?? null);
+  }
 
   // 2) parts lists (item_bom_lines): parent -> [{child, qty}]
-  const partsOf = new Map<string, { child: string; qty: number }[]>();
-  for (let off = 0; ; off += PAGE) {
-    const { data, error } = await supabase
-      .from("item_bom_lines")
-      .select("parent_item_id, child_item_id, qty")
-      .order("parent_item_id")
-      .range(off, off + PAGE - 1);
-    if (error) throw error;
-    for (const b of data ?? []) {
-      if (!b.child_item_id) continue;
-      const a = partsOf.get(b.parent_item_id as string) ?? [];
-      a.push({ child: b.child_item_id as string, qty: Number(b.qty) || 1 });
-      partsOf.set(b.parent_item_id as string, a);
-    }
-    if (!data || data.length < PAGE) break;
-  }
+  const partsOf = await partsOfPromise;
 
   // 3) involved items = shortfall finished + all parts-list descendants
   const involved = new Set<string>(short.keys());
@@ -124,27 +157,38 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   }
   const invIds = [...involved];
 
-  // 4) item info, category procurement, stock — for involved items
+  // 4) item info + stock — both are id-chunk batches over the SAME involved ids
+  // and don't depend on each other, so fire every chunk of both concurrently.
   const itemInfo = new Map<string, any>();
-  for (let i = 0; i < invIds.length; i += 150) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, code, name, category_id, procurement_type, stock_behaviour, item_type")
-      .in("id", invIds.slice(i, i + 150));
-    if (error) throw error;
-    for (const it of data ?? []) itemInfo.set(it.id as string, it);
-  }
-  const catProc = new Map<string, { name: string | null; procurement_type: string | null; parent_id: string | null }>();
-  {
-    const { data } = await supabase.from("item_categories").select("id, name, procurement_type, parent_id");
-    for (const c of data ?? []) catProc.set(c.id as string, { name: c.name as string, procurement_type: c.procurement_type as string | null, parent_id: (c.parent_id as string | null) ?? null });
-  }
   const stock = new Map<string, number>();
-  for (let i = 0; i < invIds.length; i += 150) {
-    const { data, error } = await supabase.from("inventory").select("item_id, quantity").in("item_id", invIds.slice(i, i + 150));
-    if (error) throw error;
-    for (const v of data ?? []) stock.set(v.item_id as string, (stock.get(v.item_id as string) ?? 0) + Number(v.quantity || 0));
+  {
+    const chunks: string[][] = [];
+    for (let i = 0; i < invIds.length; i += 150) chunks.push(invIds.slice(i, i + 150));
+    const [itemResults, stockResults] = await Promise.all([
+      Promise.all(
+        chunks.map((ids) =>
+          supabase
+            .from("items")
+            .select("id, code, name, category_id, procurement_type, stock_behaviour, item_type")
+            .in("id", ids),
+        ),
+      ),
+      Promise.all(
+        chunks.map((ids) =>
+          supabase.from("inventory").select("item_id, quantity").in("item_id", ids),
+        ),
+      ),
+    ]);
+    for (const { data, error } of itemResults) {
+      if (error) throw error;
+      for (const it of data ?? []) itemInfo.set(it.id as string, it);
+    }
+    for (const { data, error } of stockResults) {
+      if (error) throw error;
+      for (const v of data ?? []) stock.set(v.item_id as string, (stock.get(v.item_id as string) ?? 0) + Number(v.quantity || 0));
+    }
   }
+  const catProc = await catProcPromise;
   const effProc = (id: string) => {
     const it = itemInfo.get(id) ?? {};
     return it.procurement_type ?? (it.category_id ? catProc.get(it.category_id)?.procurement_type : null) ?? null;
@@ -169,40 +213,52 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   const name = (id: string) => (itemInfo.get(id)?.name as string) ?? "";
   const isMakeLeaf = (id: string) => effProc(id) !== "trade"; // phantom/make/unknown -> make; trade -> buy
 
-  // 5) producers (component + cut_part) for involved items, split audited / pending
-  const ops = new Map<string, any>();
-  for (let off = 0; ; off += PAGE) {
-    const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at").eq("is_active", true).order("id").range(off, off + PAGE - 1);
-    if (error) throw error;
-    for (const o of data ?? []) ops.set(o.id as string, o);
-    if (!data || data.length < PAGE) break;
-  }
+  // 5) producers (component + cut_part) for involved items, split audited /
+  // pending. The active-programs list (kicked off up top) and the full-table
+  // output scan are independent of each other and of the involved set; the
+  // folding below applies the same `involved` filter and audited/pending split
+  // in DB row order (.order("id")), so the result is identical.
+  const [ops, outputRows] = await Promise.all([
+    opsPromise,
+    (async () => {
+      const rows: any[] = [];
+      for (let off = 0; ; off += PAGE) {
+        const { data, error } = await supabase
+          .from("operation_outputs")
+          .select("operation_id, item_id, qty_per_run, role")
+          .not("item_id", "is", null)
+          .gt("qty_per_run", 0)
+          .in("role", ["component", "cut_part"])
+          .order("id")
+          .range(off, off + PAGE - 1);
+        if (error) throw error;
+        rows.push(...(data ?? []));
+        if (!data || data.length < PAGE) break;
+      }
+      return rows;
+    })(),
+  ]);
   const aud = new Map<string, Map<string, number>>();
   const pend = new Map<string, Map<string, number>>();
-  for (let off = 0; ; off += PAGE) {
-    const { data, error } = await supabase
-      .from("operation_outputs")
-      .select("operation_id, item_id, qty_per_run, role")
-      .not("item_id", "is", null)
-      .gt("qty_per_run", 0)
-      .in("role", ["component", "cut_part"])
-      .order("id")
-      .range(off, off + PAGE - 1);
-    if (error) throw error;
-    for (const o of data ?? []) {
-      if (!involved.has(o.item_id as string)) continue;
-      const op = ops.get(o.operation_id as string);
-      if (!op) continue;
-      const m = op.audited_at ? aud : pend;
-      const inner = m.get(o.item_id as string) ?? new Map<string, number>();
-      inner.set(o.operation_id as string, (inner.get(o.operation_id as string) ?? 0) + Number(o.qty_per_run));
-      m.set(o.item_id as string, inner);
-    }
-    if (!data || data.length < PAGE) break;
+  for (const o of outputRows) {
+    if (!involved.has(o.item_id as string)) continue;
+    const op = ops.get(o.operation_id as string);
+    if (!op) continue;
+    const m = op.audited_at ? aud : pend;
+    const inner = m.get(o.item_id as string) ?? new Map<string, number>();
+    inner.set(o.operation_id as string, (inner.get(o.operation_id as string) ?? 0) + Number(o.qty_per_run));
+    m.set(o.item_id as string, inner);
   }
 
-  // 6) classify each finished item: leaves + makeable / blocked
-  const leavesOf = (f: string) => {
+  // 6) classify each finished item: leaves + makeable / blocked.
+  // partsOf is fully loaded and never mutated past this point, so leavesOf is a
+  // pure function of its argument — memoize it (it's called once per shortfall
+  // item AND again per makeable item). Callers only READ the returned set, so
+  // sharing the cached instance is safe.
+  const leavesCache = new Map<string, Set<string>>();
+  const leavesOf = (f: string): Set<string> => {
+    const cached = leavesCache.get(f);
+    if (cached) return cached;
     const seen = new Set<string>(), out = new Set<string>(), st = [f];
     while (st.length) {
       const it = st.pop() as string;
@@ -212,6 +268,7 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
       if (kids.length) for (const { child } of kids) st.push(child);
       else out.add(it);
     }
+    leavesCache.set(f, out);
     return out;
   };
   const statusOf = new Map<string, { kind: string; missing: string[] }>();
@@ -275,13 +332,22 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     for (const [part, qty] of outs) { const rem = remaining.get(part) ?? 0; if (rem > 0) remaining.set(part, Math.max(0, rem - qty * batch)); }
   }
 
-  // 9) full output bundles of the chosen programs -> "other parts"
+  // 9) full output bundles of the chosen programs -> "other parts".
+  // Disjoint operation_id chunks -> fetch concurrently; fullOut is keyed by
+  // operation_id so there are no cross-chunk collisions, and per-operation
+  // accumulation order is unchanged.
   const selIds = [...runs.keys()];
   const fullOut = new Map<string, Map<string, number>>();
-  for (let i = 0; i < selIds.length; i += 150) {
-    if (!selIds.length) break;
-    const { data } = await supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", selIds.slice(i, i + 150)).in("role", ["component", "cut_part"]).gt("qty_per_run", 0);
-    for (const o of data ?? []) { if (!o.item_id) continue; const m = fullOut.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); fullOut.set(o.operation_id as string, m); }
+  {
+    const chunks: string[][] = [];
+    for (let i = 0; i < selIds.length; i += 150) chunks.push(selIds.slice(i, i + 150));
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).in("role", ["component", "cut_part"]).gt("qty_per_run", 0),
+      ),
+    );
+    for (const { data } of results)
+      for (const o of data ?? []) { if (!o.item_id) continue; const m = fullOut.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); fullOut.set(o.operation_id as string, m); }
   }
 
   const plan: PlanProgram[] = [];
