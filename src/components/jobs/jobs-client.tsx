@@ -7,6 +7,7 @@ import {
   readIntParam,
   useUrlListSync,
 } from "@/lib/hooks/use-url-list-state";
+import { useToast } from "@/components/ui/toast";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -69,6 +70,7 @@ interface Props {
 
 export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {} }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [, startTransition] = useTransition();
   // Optimistic local copy so inline edits are instant
   const [jobs, setJobs] = useState(initialJobs);
@@ -190,6 +192,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   };
 
   const handleInlineUpdate = (jobId: string, data: Record<string, any>) => {
+    const jobNumber = jobs.find((j) => j.id === jobId)?.job_number ?? "";
     // Optimistic: update local state instantly so UI never blocks
     setJobs((prev) =>
       prev.map((j) => (j.id === jobId ? { ...j, ...data } : j)),
@@ -200,7 +203,11 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
       try {
         await updateJob(jobId, data);
       } catch {
-        // Revert on error — reload from server
+        // Revert on error — reload from server, and SAY so (silently losing
+        // the edit made people think the app "forgot" their change).
+        toast.error(
+          `Could not save the change to job ${jobNumber} — the row has been reset. Please try again.`,
+        );
         router.refresh();
       } finally {
         setSavingJobId(null);

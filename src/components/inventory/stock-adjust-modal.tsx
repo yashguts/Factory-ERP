@@ -5,6 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { useToast } from "@/components/ui/toast";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import type { TransactionType, Warehouse } from "@/lib/supabase/types";
@@ -203,6 +204,7 @@ export function StockAdjustModal({
   onClose,
   onSaved,
 }: StockAdjustModalProps) {
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -232,6 +234,9 @@ export function StockAdjustModal({
           quantity: form.quantity,
           notes: form.notes || undefined,
         });
+        toast.success(
+          `Stock adjustment recorded (${form.quantity.toLocaleString()}). Daily Changes keeps the full trail.`,
+        );
         onSaved();
         onClose();
       } catch (err) {

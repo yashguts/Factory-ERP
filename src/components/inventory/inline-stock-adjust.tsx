@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, useTransition } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PackagePlus } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import { recordTransaction } from "@/lib/actions/inventory";
 import type { Warehouse } from "@/lib/supabase/types";
 
@@ -20,6 +21,7 @@ interface InlineStockAdjustProps {
 }
 
 export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAdjustProps) {
+  const toast = useToast();
   const [isOpen, setIsOpen] = useState(false);
   const [direction, setDirection] = useState<"add" | "remove">("add");
   const [quantity, setQuantity] = useState<number>(0);
@@ -107,6 +109,9 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
         setIsOpen(false);
         setQuantity(0);
         setNotes("");
+        toast.success(
+          `Stock ${direction === "add" ? "+" : "−"}${quantity.toLocaleString()} ${item.uom?.abbreviation ?? ""} — ${item.name}`,
+        );
         onSuccess();
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to record transaction");

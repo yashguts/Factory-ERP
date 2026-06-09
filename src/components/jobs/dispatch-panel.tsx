@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Plus,
 } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import {
   deleteDispatch,
   type JobDispatchSummary,
@@ -35,6 +36,7 @@ export function DispatchPanel({
   onNewDispatch: () => void;
 }) {
   const router = useRouter();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [openId, setOpenId] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
@@ -64,9 +66,12 @@ export function DispatchPanel({
       const res = await deleteDispatch(id, jobId);
       setBusy(null);
       if (!res.ok) {
-        alert(res.error || "Could not undo the dispatch.");
+        toast.error(res.error || "Could not undo the dispatch.");
         return;
       }
+      toast.success(
+        "Dispatch removed. The job's stage was not changed — edit it on the job if needed.",
+      );
       router.refresh();
     });
   };

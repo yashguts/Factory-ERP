@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Trash2, Loader2, ArrowUpFromLine, ArrowDownToLine } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import { createItem, updateItem, deleteItem } from "@/lib/actions/inventory";
 import {
   getOperationsForItem,
@@ -105,6 +106,7 @@ export function ItemFormModal({
   // behaves like a fresh create form, but pre-filled. The user only
   // edits what's different.
   const seed = item ?? cloneSource ?? null;
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   // Optional free-text reason recorded in the inventory change log so the
@@ -317,11 +319,13 @@ export function ItemFormModal({
         return;
       }
       // Friendly confirmation so the user knows which path ran.
-      alert(
-        result.action === "hard_deleted"
-          ? `Item "${item.code}" permanently deleted.`
-          : `Item "${item.code}" had history (BOM lines or transactions), so it has been deactivated and hidden from the active list. Existing references are preserved.`,
-      );
+      if (result.action === "hard_deleted") {
+        toast.success(`Item "${item.code}" permanently deleted.`);
+      } else {
+        toast.info(
+          `Item "${item.code}" had history (BOM lines or transactions), so it was deactivated and hidden instead of deleted. References are preserved.`,
+        );
+      }
       onSaved();
       onClose();
     });
@@ -380,6 +384,11 @@ export function ItemFormModal({
             uom: uomAbbr,
           });
         }
+        toast.success(
+          isEditing
+            ? `Saved changes to ${form.name}.`
+            : `Item created — ${result.code} ${form.name}.`,
+        );
         onSaved();
         onClose();
       } catch (err) {

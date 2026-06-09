@@ -5,7 +5,8 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Search, Loader2, X, Plus, Truck } from "lucide-react";
+import { Search, Loader2, X, Plus, Truck, Info } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import {
   getJobDispatchSummary,
@@ -45,6 +46,7 @@ const SCOPE_LABEL: Record<PhaseScope, string> = {
 };
 
 export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
+  const toast = useToast();
   const [summary, setSummary] = useState<JobDispatchSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<PhaseScope>("first");
@@ -146,6 +148,9 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
         setError(res.error);
         return;
       }
+      toast.success(
+        `Dispatch recorded for Job ${jobNumber} — ${SCOPE_LABEL[scope]}, ${activeRows.length} item${activeRows.length === 1 ? "" : "s"}, ${totalQty.toLocaleString()} qty. See it in the Dispatch panel.`,
+      );
       onSaved();
       onClose();
     });
@@ -177,6 +182,13 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
               <option value="second">{SCOPE_LABEL.second}</option>
               <option value="full">{SCOPE_LABEL.full}</option>
             </Select>
+            <p className="text-[11px] text-[var(--muted-foreground)] mt-1">
+              {scope === "first"
+                ? "1st phase = structure material: rails, brackets, door frames, sills, linton, controller stand…"
+                : scope === "second"
+                  ? "2nd phase = finishing material: doors, cabin, COP/LOP and everything else."
+                  : "Everything still pending on this job's BOM."}
+            </p>
           </div>
         </div>
 
@@ -244,6 +256,15 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           </label>
           <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g., vehicle no., LR no., partial — balance next week" />
         </div>
+
+        {/* The rule is intentional (Phase 0): recording a dispatch never
+            touches stock. Saying it here removes the main post-save confusion. */}
+        <p className="flex items-start gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+          <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
+          This records what left the factory and updates the job&rsquo;s dispatch
+          status. It does <span className="font-semibold">not</span> deduct stock
+          from inventory.
+        </p>
 
         <div className="flex items-center justify-between gap-2 pt-3 border-t border-[var(--border)]">
           <span className="text-xs text-[var(--muted-foreground)]">

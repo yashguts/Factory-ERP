@@ -19,6 +19,7 @@ import {
   History,
   Search,
 } from "lucide-react";
+import { useToast } from "@/components/ui/toast";
 import {
   revertItemChange,
   reverseTransaction,
@@ -70,6 +71,7 @@ function formatStamp(iso: string, withDate?: boolean): string {
 
 export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
   const [editingNoteId, setEditingNoteId] = useState<string | null>(null);
@@ -140,9 +142,12 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
           : await reverseTransaction(row.id);
       setBusyId(null);
       if (!res.ok) {
-        alert(`Could not undo: ${res.error}`);
+        toast.error(`Could not undo: ${res.error}`);
         return;
       }
+      toast.success(
+        row.kind === "item" ? "Change undone." : "Stock move reversed with a counter-entry.",
+      );
       afterMutation();
     });
   };
@@ -161,10 +166,11 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
           : await updateTransactionNote(row.id, noteDraft);
       setBusyId(null);
       if (!res.ok) {
-        alert(`Could not save note: ${res.error}`);
+        toast.error(`Could not save note: ${res.error}`);
         return;
       }
       setEditingNoteId(null);
+      toast.success("Note saved.");
       afterMutation();
     });
   };
