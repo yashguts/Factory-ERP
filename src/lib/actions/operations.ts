@@ -122,18 +122,30 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
   // We only need item_id (to count matched lines) and role (to know which
   // unmapped outputs are real gaps) — NOT the joined item names. Dropping the
   // item:items(name) join is what keeps this read small enough to cache.
-  const { data, error } = await supabase
-    .from("operations")
-    .select(
-      `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
-       operation_inputs(item_id),
-       operation_outputs(item_id, role)`,
-    )
-    .eq("is_active", true)
-    .order("name");
-  if (error) throw error;
+  // Page past PostgREST's 1000-row cap — there are >1,000 active programs, so a
+  // single select would silently drop the tail (~41 programs went missing).
+  const PAGE = 1000;
+  let data: any[] = [];
+  let offset = 0;
+  for (;;) {
+    const { data: rows, error } = await supabase
+      .from("operations")
+      .select(
+        `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
+         operation_inputs(item_id),
+         operation_outputs(item_id, role)`,
+      )
+      .eq("is_active", true)
+      .order("name")
+      .order("id")
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    data = data.concat(rows ?? []);
+    if (!rows || rows.length < PAGE) break;
+    offset += PAGE;
+  }
 
-  return (data ?? []).map((row: any) => {
+  return data.map((row: any) => {
     const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
     const outs = Array.isArray(row.operation_outputs) ? row.operation_outputs : [];
     return {
@@ -181,9 +193,12 @@ export async function searchOperations(query: string): Promise<string[]> {
   const q = query?.trim();
   if (!q) return [];
   const supabase = createCacheClient();
-  const { data, error } = await supabase.rpc("search_operations", {
-    p_query: q,
-  });
+  const { data, error } = await supabase
+    .rpc("search_operations", { p_query: q })
+    // Lift PostgREST's 1000-row default cap: a broad query can match all ~1,040
+    // programs, and the client intersects these ids with its in-memory list — so
+    // we must return every match, not just the first 1000.
+    .range(0, 9999);
   if (error) throw error;
   return ((data ?? []) as { id: string }[]).map((r) => r.id);
 }
