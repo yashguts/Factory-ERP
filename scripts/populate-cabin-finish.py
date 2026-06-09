@@ -145,18 +145,17 @@ if not COMMIT:
     for u in updates[:6]: print("   ", u[1], "| family=", u[2], "| finish=", u[3])
     sys.exit(0)
 
-# ---------- write (grouped PATCH: one request per (family,finish) value) ----------
-print("\nWriting...")
-byval = collections.defaultdict(list)
-for _id, code, fam, fin in updates:
-    byval[(fam, fin)].append(_id)
+# ---------- write (concurrent per-item PATCH; idempotent, re-runnable) ----------
+print("\nWriting (concurrent)...")
+import concurrent.futures
+def patch_one(u):
+    _id, code, fam, fin = u
+    supa(f"items?id=eq.{_id}", method="PATCH", body={"family": fam, "finish": fin})
+    return 1
 done = 0
-for (fam, fin), ids in byval.items():
-    for i in range(0, len(ids), 100):
-        batch = ids[i:i+100]
-        flt = "id=in.(%s)" % ",".join(batch)
-        supa(f"items?{flt}", method="PATCH", body={"family": fam, "finish": fin})
-        done += len(batch)
-    if done % 1000 < 100:
-        print(f"  {done}/{len(updates)}")
+with concurrent.futures.ThreadPoolExecutor(max_workers=16) as ex:
+    for _ in ex.map(patch_one, updates):
+        done += 1
+        if done % 1000 == 0:
+            print(f"  {done}/{len(updates)}", flush=True)
 print(f"DONE: set family/finish on {done} items.")
