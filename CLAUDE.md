@@ -94,7 +94,12 @@ npx tsc --noEmit # type check only — fastest way to validate edits
 src/
   app/
     (app)/                  Route group with shared sidebar
-      page.tsx              Dashboard (mostly placeholders)
+      page.tsx              Dashboard — real "morning briefing" (2026-06-11):
+                            dispatches due 7 days (+overdue), Trade/Make
+                            shortfall cards (Suspense-streamed from getMrpData,
+                            deep-link to /mrp?tab=&show=shortfall), fix-it
+                            queue (unmatched BOM / needs-item / pending audit),
+                            today's activity. Data: lib/actions/dashboard.ts.
       inventory/
         page.tsx            Server component, loads items+categories+units+warehouses
         import/             Excel import flow
@@ -140,8 +145,14 @@ src/
     layout.tsx              Root layout (includes StaleDeployGuard)
     globals.css             CSS vars + Tailwind imports
   components/
-    ui/                     Reusable primitives (Button, Input, Select, Modal, Table)
-    layout/                 AppShell, Sidebar, StaleDeployGuard
+    ui/                     Reusable primitives (Button, Input, Select, Modal,
+                            Table, Toast). ToastProvider mounts in AppShell —
+                            use useToast() for ALL mutation feedback (success +
+                            error). Never window.alert.
+    layout/                 AppShell, Sidebar, StaleDeployGuard, GlobalSearch
+                            (Ctrl+K palette + sidebar button; one-round-trip
+                            search across jobs/items/programs via
+                            lib/actions/search.ts)
     inventory/              Inventory page + form modal + stock adjust + item detail
                             (Built-from/Assembly parts) + loose-part picker + sub-assemblies
     jobs/                   Job form, detail, BOM picker, GAD drawing panel, template picker
@@ -149,6 +160,13 @@ src/
     programs/               Programs list, form modal, detail, sketch panel, line picker
   lib/
     utils.ts                cn() utility
+    hooks/
+      use-url-list-state.ts URL-backed list state (readParam / readIntParam /
+                            hasNoListParams / useUrlListSync via shallow
+                            history.replaceState — no router round trip).
+                            EVERY list keeps search/filters/sort/page in the
+                            URL so Back restores the exact view. Follow this
+                            pattern for any new list UI.
     supabase/
       client.ts             Browser Supabase client (rarely used)
       server.ts             SSR Supabase client (cookies-aware) — for mutations
@@ -157,10 +175,18 @@ src/
     actions/                Server actions, one file per domain
       categories.ts         getAllCategories, resolveCategoryPaths, etc.
       items.ts              searchItems for the BOM picker (live search)
-      inventory.ts          getItemsWithStock, createItem, updateItem, deleteItem
+      inventory.ts          getItemsWithStock, createItem, updateItem, deleteItem.
+                            getItemRefs = light cached DISTINCT (item_type,
+                            category_id) pairs for ItemFormModal dropdowns —
+                            use it, NOT getItemsWithStock, on detail pages
+                            (getItemsWithStock's payload can exceed the 2MB
+                            unstable_cache cap and silently never cache).
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
+      dashboard.ts          getDashboardCounts — cheap cached counts powering
+                            the morning-briefing dashboard
+      search.ts             globalSearch — Ctrl+K fan-out (jobs+items+programs)
       dispatch.ts           Job dispatch: getJobDispatchSummary (required/sent/
                             left), createDispatch, deleteDispatch, status badges
       operations.ts         Programs CRUD, sketch upload, audit toggle
@@ -751,6 +777,19 @@ already wipes it.
   rows. Any read that can exceed that MUST page with `.range(off, off+PAGE-1)` in a
   loop (see `getItemsWithStock`, `mrp.ts`, and the cabin reads). This bit the cabin
   type pages once Side Panel/Front Wall grew past 1000 items.
+- **unstable_cache 2MB entry cap**: results bigger than ~2MB silently never cache —
+  the function re-runs on EVERY request and the page feels broken-slow.
+  `getItemsWithStock` (~2,400 rows × 30 fields) flirts with this; that's why detail
+  pages use `getItemRefs` instead (2026-06-11 perf fix). Don't add big-payload reads
+  to hot pages.
+- **Every route needs a `loading.tsx`**: without one, a soft navigation paints
+  NOTHING until the server responds — users read it as a freeze. All current routes
+  are covered; keep it that way for new routes.
+- **Jobs "Sent" / "Required" columns** (renamed 2026-06-11 from "Stage" /
+  "Req. Stage"): `jobs.stage` = material already dispatched (auto-advanced by
+  createDispatch), `jobs.requirement_stage` = what the job needs prepared (drives
+  MRP). DB column names are unchanged — only labels. If the team prefers the old
+  words, it's a one-line revert in jobs-client/job-detail-client/dashboard.
 
 ---
 
