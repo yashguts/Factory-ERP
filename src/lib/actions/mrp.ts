@@ -243,6 +243,9 @@ export interface PlanLeaf {
   code: string;
   name: string;
   uom: string | null;
+  type: string;
+  category: string; // top-level category
+  subCategory: string; // direct (sub-)category
   qty: number;
   in_stock: number;
   shortfall: number;
@@ -297,6 +300,27 @@ async function _getProductionPlanUncached(
     getItemsWithStock(),
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
+
+  // Category tree -> resolve top-level category for buy-list filtering.
+  const catById = new Map<string, { name: string | null; parent_id: string | null }>();
+  {
+    const { data } = await supabase.from("item_categories").select("id, name, parent_id");
+    for (const c of data ?? [])
+      catById.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
+  }
+  const topCatOf = (catId: string | null | undefined): string => {
+    if (!catId) return "(none)";
+    let cid: string = catId;
+    const seen = new Set<string>();
+    for (;;) {
+      if (seen.has(cid)) break;
+      seen.add(cid);
+      const parent = catById.get(cid)?.parent_id;
+      if (!parent) break;
+      cid = parent;
+    }
+    return catById.get(cid)?.name ?? "(none)";
+  };
 
   // item -> the program that produces it + that output's qty/run. Includes
   // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
@@ -447,6 +471,9 @@ async function _getProductionPlanUncached(
           code: it?.code ?? "—",
           name: it?.name ?? "(unknown item)",
           uom: it?.uom?.abbreviation ?? null,
+          type: (it?.item_type as string) ?? "—",
+          category: topCatOf(it?.category_id),
+          subCategory: it?.category?.name ?? "(none)",
           qty,
           in_stock,
           shortfall: Math.max(0, qty - in_stock),

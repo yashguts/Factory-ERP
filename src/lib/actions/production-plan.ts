@@ -20,7 +20,9 @@ import { getMrpData } from "@/lib/actions/mrp";
 export interface PlanCover {
   code: string;
   name: string;
-  category: string;
+  type: string;
+  category: string; // top-level category
+  subCategory: string; // direct (sub-)category
   need: number;
   make: number;
 }
@@ -36,7 +38,9 @@ export interface PlanProgram {
 export interface BlockedItem {
   code: string;
   name: string;
-  category: string;
+  type: string;
+  category: string; // top-level category
+  subCategory: string; // direct (sub-)category
   need: number;
   missing: { code: string; auditProgram: string | null }[];
 }
@@ -116,15 +120,15 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   for (let i = 0; i < invIds.length; i += 150) {
     const { data, error } = await supabase
       .from("items")
-      .select("id, code, name, category_id, procurement_type, stock_behaviour")
+      .select("id, code, name, category_id, procurement_type, stock_behaviour, item_type")
       .in("id", invIds.slice(i, i + 150));
     if (error) throw error;
     for (const it of data ?? []) itemInfo.set(it.id as string, it);
   }
-  const catProc = new Map<string, { name: string | null; procurement_type: string | null }>();
+  const catProc = new Map<string, { name: string | null; procurement_type: string | null; parent_id: string | null }>();
   {
-    const { data } = await supabase.from("item_categories").select("id, name, procurement_type");
-    for (const c of data ?? []) catProc.set(c.id as string, { name: c.name as string, procurement_type: c.procurement_type as string | null });
+    const { data } = await supabase.from("item_categories").select("id, name, procurement_type, parent_id");
+    for (const c of data ?? []) catProc.set(c.id as string, { name: c.name as string, procurement_type: c.procurement_type as string | null, parent_id: (c.parent_id as string | null) ?? null });
   }
   const stock = new Map<string, number>();
   for (let i = 0; i < invIds.length; i += 150) {
@@ -137,6 +141,21 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     return it.procurement_type ?? (it.category_id ? catProc.get(it.category_id)?.procurement_type : null) ?? null;
   };
   const catName = (id: string) => (itemInfo.get(id)?.category_id ? catProc.get(itemInfo.get(id).category_id)?.name : null) ?? "(none)";
+  const topCatName = (id: string) => {
+    const start = itemInfo.get(id)?.category_id as string | null | undefined;
+    if (!start) return "(none)";
+    let cid: string = start;
+    const seen = new Set<string>();
+    for (;;) {
+      if (seen.has(cid)) break;
+      seen.add(cid);
+      const parent = catProc.get(cid)?.parent_id;
+      if (!parent) break;
+      cid = parent;
+    }
+    return catProc.get(cid)?.name ?? "(none)";
+  };
+  const itemType = (id: string) => (itemInfo.get(id)?.item_type as string) ?? "—";
   const code = (id: string) => (itemInfo.get(id)?.code as string) ?? id;
   const name = (id: string) => (itemInfo.get(id)?.name as string) ?? "";
   const isMakeLeaf = (id: string) => effProc(id) !== "trade"; // phantom/make/unknown -> make; trade -> buy
@@ -250,7 +269,7 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     const fout = fullOut.get(op) ?? new Map<string, number>();
     const made = r * [...fout.values()].reduce((s, q) => s + q, 0);
     const coverParts = [...(progOut.get(op)?.keys() ?? [])].filter((p) => leafProduce.has(p));
-    const covers: PlanCover[] = coverParts.map((p) => ({ code: code(p), name: name(p), category: catName(p), need: Math.round(leafProduce.get(p)!), make: Math.round(r * (progOut.get(op)!.get(p) ?? 0)) }));
+    const covers: PlanCover[] = coverParts.map((p) => ({ code: code(p), name: name(p), type: itemType(p), category: topCatName(p), subCategory: catName(p), need: Math.round(leafProduce.get(p)!), make: Math.round(r * (progOut.get(op)!.get(p) ?? 0)) }));
     const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (progOut.get(op)!.get(p) ?? 0)), 0);
     plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers });
   }
@@ -265,7 +284,7 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
       const auditProgram = p ? ([...p.keys()].map((o) => ops.get(o)?.code as string).filter(Boolean).sort()[0] ?? null) : null;
       return { code: code(l), auditProgram };
     });
-    blocked.push({ code: s.code, name: s.name, category: s.category, need: Math.round(s.shortfall), missing });
+    blocked.push({ code: s.code, name: s.name, type: itemType(f), category: topCatName(f), subCategory: s.category, need: Math.round(s.shortfall), missing });
   }
   blocked.sort((a, b) => b.need - a.need);
 

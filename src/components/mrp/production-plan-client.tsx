@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   Table,
   TableHeader,
@@ -12,10 +13,15 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import { Factory, Layers, ShoppingCart, AlertTriangle } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
+import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
 import type { ProductionPlan, PlanLeaf } from "@/lib/actions/mrp";
 
 export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
-  const rawShortfall = plan.rawMaterials.filter((r) => r.shortfall > 0).length;
+  const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
+  const filterRows = [...plan.rawMaterials, ...plan.purchased].map((r) => ({ type: r.type, category: r.category, subCategory: r.subCategory }));
+  const rawMaterials = plan.rawMaterials.filter((r) => planMatches(r, filter));
+  const purchased = plan.purchased.filter((r) => planMatches(r, filter));
+  const rawShortfall = rawMaterials.filter((r) => r.shortfall > 0).length;
 
   return (
     <div>
@@ -46,17 +52,19 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
 
       {/* Summary */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <SummaryCard label="Raw materials" value={plan.rawMaterials.length} sub={`${rawShortfall} short`} />
-        <SummaryCard label="Purchased parts" value={plan.purchased.length} />
+        <SummaryCard label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
+        <SummaryCard label="Purchased parts" value={purchased.length} />
         <SummaryCard label="Program runs" value={plan.programRuns.length} />
         <SummaryCard label="Can't explode" value={plan.unresolved.length} tone={plan.unresolved.length > 0 ? "warn" : undefined} />
       </div>
+
+      <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
 
       <LeafTable
         title="Raw materials to buy"
         subtitle="sheets & materials consumed by the programs"
         icon={<Layers className="h-4 w-4" />}
-        rows={plan.rawMaterials}
+        rows={rawMaterials}
         empty="No raw-material demand — make items may be missing their program link."
       />
 
@@ -65,7 +73,7 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
           title="Purchased parts to buy"
           subtitle="trade items (operators, fixings, …)"
           icon={<ShoppingCart className="h-4 w-4" />}
-          rows={plan.purchased}
+          rows={purchased}
           empty="No purchased-part demand."
         />
       </div>

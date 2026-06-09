@@ -1,8 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Hammer, AlertTriangle, Ban, ChevronRight } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
+import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
 import type { MakeProductionPlan } from "@/lib/actions/production-plan";
 
 const MACHINE: Record<string, string> = {
@@ -14,6 +16,13 @@ const MACHINE: Record<string, string> = {
 
 export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   const t = plan.totals;
+  const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
+  const filterRows = [
+    ...plan.plan.flatMap((p) => p.covers.map((c) => ({ type: c.type, category: c.category, subCategory: c.subCategory }))),
+    ...plan.blocked.map((b) => ({ type: b.type, category: b.category, subCategory: b.subCategory })),
+  ];
+  const shownPrograms = plan.plan.filter((p) => p.covers.some((c) => planMatches(c, filter)));
+  const shownBlocked = plan.blocked.filter((b) => planMatches(b, filter));
 
   return (
     <div>
@@ -41,17 +50,19 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
         <Card label="Other parts" value={t.otherParts} sub={`${t.partsMade} made / ${t.partsNeeded} needed`} tone={t.otherParts ? "warn" : undefined} />
       </div>
 
+      <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
+
       {/* The plan */}
       <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
         <Hammer className="h-4 w-4" /> Run these audited programs
       </h2>
-      {plan.plan.length === 0 ? (
+      {shownPrograms.length === 0 ? (
         <div className="card-surface p-6 text-center text-sm text-[var(--muted-foreground)] mb-6">
-          No audited programs can make any of the current shortfall.
+          {plan.plan.length === 0 ? "No audited programs can make any of the current shortfall." : "No programs match the filter."}
         </div>
       ) : (
         <div className="space-y-2 mb-8">
-          {plan.plan.map((p) => (
+          {shownPrograms.map((p) => (
             <div key={p.code} className="card-surface p-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="neutral" className="font-mono text-[11px]">{MACHINE[p.machine] ?? p.machine}</Badge>
@@ -68,7 +79,7 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                     <ChevronRight className="h-3 w-3 shrink-0" />
                     <span className="font-mono">{c.code}</span>
                     <span className="truncate flex-1">{c.name}</span>
-                    <span className="italic shrink-0">{c.category}</span>
+                    <span className="italic shrink-0">{c.subCategory}</span>
                     <span className="tabular-nums shrink-0">need {c.need} · make {c.make}</span>
                   </div>
                 ))}
@@ -79,21 +90,21 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
       )}
 
       {/* Blocked */}
-      {plan.blocked.length > 0 && (
+      {shownBlocked.length > 0 && (
         <>
           <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-            <Ban className="h-4 w-4 text-[var(--warning)]" /> Still blocked ({plan.blocked.length}) — a required part has no audited program
+            <Ban className="h-4 w-4 text-[var(--warning)]" /> Still blocked ({shownBlocked.length}) — a required part has no audited program
           </h2>
           <div className="flex items-start gap-2 mb-3 px-4 py-2.5 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] text-xs">
             <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
             <span>Items whose parts need a program <strong>audited</strong> (shown) or <strong>created</strong> (no program). Audit those to unlock them, then re-run.</span>
           </div>
           <div className="card-surface divide-y divide-[var(--border)]">
-            {plan.blocked.map((b) => (
+            {shownBlocked.map((b) => (
               <div key={b.code} className="flex items-center gap-3 px-3 py-2 text-xs">
                 <span className="font-mono text-[var(--muted-foreground)] w-28 shrink-0">{b.code}</span>
                 <span className="truncate flex-1">{b.name}</span>
-                <span className="italic text-[var(--muted-foreground)] shrink-0">{b.category}</span>
+                <span className="italic text-[var(--muted-foreground)] shrink-0">{b.subCategory}</span>
                 <span className="tabular-nums shrink-0 w-16 text-right">need {b.need}</span>
                 <span className="shrink-0 w-[42%] text-right text-[var(--muted-foreground)] truncate">
                   {b.missing.map((m) => m.auditProgram ? `audit ${m.auditProgram}` : `${m.code}: no program`).join(", ")}
