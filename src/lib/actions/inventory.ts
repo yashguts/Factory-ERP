@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
 import type { ItemType, TransactionType, FieldChange, StockBehaviour } from "@/lib/supabase/types";
+import { nextCodeInSeries } from "@/lib/inventory/next-code";
+import { expandCategoryDescendants } from "@/lib/actions/categories";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -138,6 +140,257 @@ export const getItemsWithStock = unstable_cache(
   ["items-with-stock"],
   { revalidate: 600, tags: ["items", "inventory-stock"] },
 );
+
+/* ------------------------------------------------------------------ *
+ * Server-side inventory pagination (the /inventory list).
+ *
+ * The page used to ship every active non-cabin item (~2,400 rows × 30+
+ * fields) to the browser and filter/sort/paginate in JS. These helpers move
+ * all of that into one Postgres call (the search_inventory function), so the
+ * browser only ever receives one page (~50 rows) — fast regardless of host.
+ * getItemsWithStock above is kept as-is for the production plan, which needs
+ * the full list.
+ * ------------------------------------------------------------------ */
+
+/** Full item shape for the edit/clone form modal + the (legacy) full list. */
+export interface ItemWithStock {
+  id: string;
+  code: string;
+  name: string;
+  lookup_key: string | null;
+  description: string | null;
+  item_type: ItemType;
+  category_id: string | null;
+  uom_id: string;
+  minimum_stock: number;
+  reorder_point: number;
+  lead_time_days: number;
+  cost_price: number;
+  is_active: boolean;
+  stock_behaviour: StockBehaviour;
+  family: string | null;
+  finish: string | null;
+  procurement_type: "make" | "trade" | null;
+  category_procurement_type: "make" | "trade" | null;
+  effective_procurement_type: "make" | "trade" | null;
+  suppliers: string[];
+  category: {
+    id: string;
+    name: string;
+    parent_id?: string | null;
+    procurement_type?: "make" | "trade" | null;
+  } | null;
+  uom: { id: string; abbreviation: string } | null;
+  total_stock: number;
+}
+
+/** Lightweight row for the inventory table (one page worth). */
+export interface InventoryRow {
+  id: string;
+  code: string;
+  name: string;
+  description: string | null;
+  item_type: ItemType;
+  category_id: string | null;
+  category_name: string | null;
+  uom_abbreviation: string;
+  total_stock: number;
+  reorder_point: number;
+  cost_price: number;
+  stock_behaviour: StockBehaviour;
+  effective_procurement_type: "make" | "trade" | null;
+}
+
+export interface InventoryPageResult {
+  rows: InventoryRow[];
+  total: number;
+}
+
+export interface InventoryQuery {
+  search?: string;
+  type?: string; // ItemType | "all"
+  category?: string; // parent category id | "all"
+  sub?: string; // sub-category id | "all"
+  stock?: string; // "low" | "zero" | "in_stock" | "all"
+  behaviour?: string; // "stocked" | "phantom" | "tooling" | "all"
+  sort?: string; // code | name | stock | category | cost
+  dir?: string; // asc | desc
+  page?: number;
+  pageSize?: number;
+}
+
+/**
+ * One page of inventory rows + the full filtered count. Not cached: it's a
+ * single fast RPC and we want it live (fresh for every user, no cross-instance
+ * staleness — important for the multi-user/real-time goal).
+ */
+export async function getInventoryPage(
+  q: InventoryQuery,
+): Promise<InventoryPageResult> {
+  const pageSize = q.pageSize ?? 50;
+  const page = Math.max(1, q.page ?? 1);
+
+  // Resolve the category filter to a concrete id set: a chosen sub-category is
+  // exact; a chosen parent expands to all its descendants (matches the old UI).
+  let categoryIds: string[] | null = null;
+  if (q.sub && q.sub !== "all") categoryIds = [q.sub];
+  else if (q.category && q.category !== "all") {
+    categoryIds = await expandCategoryDescendants([q.category]);
+  }
+
+  const supabase = createCacheClient();
+  const { data, error } = await supabase.rpc("search_inventory", {
+    p_search: q.search?.trim() ? q.search.trim() : null,
+    p_type: q.type && q.type !== "all" ? q.type : null,
+    p_category_ids: categoryIds,
+    p_stock: q.stock && q.stock !== "all" ? q.stock : null,
+    p_behaviour: q.behaviour && q.behaviour !== "all" ? q.behaviour : null,
+    p_sort: q.sort ?? "code",
+    p_dir: q.dir ?? "asc",
+    p_limit: pageSize,
+    p_offset: (page - 1) * pageSize,
+  });
+  if (error) throw error;
+
+  const rows = (data ?? []) as Record<string, unknown>[];
+  const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
+  return {
+    total,
+    rows: rows.map((r) => ({
+      id: r.id as string,
+      code: r.code as string,
+      name: r.name as string,
+      description: (r.description as string | null) ?? null,
+      item_type: r.item_type as ItemType,
+      category_id: (r.category_id as string | null) ?? null,
+      category_name: (r.category_name as string | null) ?? null,
+      uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
+      total_stock: Number(r.total_stock ?? 0),
+      reorder_point: Number(r.reorder_point ?? 0),
+      cost_price: Number(r.cost_price ?? 0),
+      stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
+      effective_procurement_type:
+        (r.effective_procurement_type as "make" | "trade" | null) ?? null,
+    })),
+  };
+}
+
+/** Cached default first page (no filters) for an instant initial paint of
+ *  /inventory. Invalidated by the "items"/"inventory-stock" tags on any item or
+ *  stock mutation; live user-driven queries go through getInventoryPage. */
+export async function getInventoryFirstPage(): Promise<InventoryPageResult> {
+  return unstable_cache(
+    () => getInventoryPage({ page: 1, pageSize: 50 }),
+    ["inventory-first-page"],
+    { revalidate: 300, tags: ["items", "inventory-stock"] },
+  )();
+}
+
+/** Distinct (item_type, category_id) pairs — lets the category dropdowns scope
+ *  by the selected type without shipping every item. Small + cached. */
+export interface TypeCatFacet {
+  item_type: ItemType;
+  category_id: string;
+}
+export async function getItemTypeCategoryFacets(): Promise<TypeCatFacet[]> {
+  const cached = unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const { data, error } = await supabase.rpc("inventory_type_cat_facets");
+      if (error) throw error;
+      return (data ?? []).map((r: Record<string, unknown>) => ({
+        item_type: r.item_type as ItemType,
+        category_id: r.category_id as string,
+      }));
+    },
+    ["inventory-type-cat-facets"],
+    { revalidate: 300, tags: ["items", "categories"] },
+  );
+  return cached();
+}
+
+/** Next free code in a source item's series, for the Clone action — computed
+ *  server-side (scans only codes sharing the prefix) so the client doesn't need
+ *  the full code list. */
+export async function suggestNextCode(
+  sourceCode: string,
+): Promise<string | null> {
+  const parts = sourceCode.split("-");
+  if (parts.length < 2) return null;
+  const seqPart = parts[parts.length - 1];
+  if (!/^\d+$/.test(seqPart)) return null;
+  const prefix = parts.slice(0, -1).join("-") + "-";
+
+  const supabase = createCacheClient();
+  const { data, error } = await supabase
+    .from("items")
+    .select("code")
+    .ilike("code", `${prefix}%`)
+    .limit(5000);
+  if (error) throw error;
+  return nextCodeInSeries(
+    sourceCode,
+    (data ?? []).map((r) => r.code as string),
+  );
+}
+
+/** Full single item for the edit/clone modal (fetched on open, since the list
+ *  rows are now lightweight). Mirrors the getItemsWithStock row shape. */
+export async function getItemForEdit(
+  id: string,
+): Promise<ItemWithStock | null> {
+  if (!id) return null;
+  const supabase = createCacheClient();
+  const { data: item, error } = await supabase
+    .from("items")
+    .select(
+      `*,
+       category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
+       uom:units_of_measurement(id, abbreviation),
+       inventory(quantity, warehouse_id)`,
+    )
+    .eq("id", id)
+    .maybeSingle();
+  if (error) throw error;
+  if (!item) return null;
+
+  const itemPT = (item.procurement_type as "make" | "trade" | null) ?? null;
+  const cat = item.category as {
+    id: string;
+    name: string;
+    parent_id?: string | null;
+    procurement_type?: "make" | "trade" | null;
+  } | null;
+  const catPT = (cat?.procurement_type as "make" | "trade" | null) ?? null;
+  return {
+    id: item.id as string,
+    code: item.code as string,
+    name: item.name as string,
+    lookup_key: (item.lookup_key as string | null) ?? null,
+    description: (item.description as string | null) ?? null,
+    item_type: item.item_type as ItemType,
+    category_id: (item.category_id as string | null) ?? null,
+    uom_id: item.uom_id as string,
+    minimum_stock: Number(item.minimum_stock),
+    reorder_point: Number(item.reorder_point),
+    lead_time_days: Number(item.lead_time_days),
+    cost_price: Number(item.cost_price),
+    is_active: item.is_active as boolean,
+    stock_behaviour: (item.stock_behaviour as StockBehaviour) ?? "stocked",
+    family: (item.family as string | null) ?? null,
+    finish: (item.finish as string | null) ?? null,
+    procurement_type: itemPT,
+    category_procurement_type: catPT,
+    effective_procurement_type: (itemPT ?? catPT) as "make" | "trade" | null,
+    suppliers: Array.isArray(item.suppliers) ? (item.suppliers as string[]) : [],
+    category: cat,
+    uom: (item.uom as { id: string; abbreviation: string } | null) ?? null,
+    total_stock: ((item.inventory as { quantity: number }[]) ?? []).reduce(
+      (sum, inv) => sum + Number(inv.quantity),
+      0,
+    ),
+  };
+}
 
 /**
  * Result shape for create/update operations. Returning a discriminated

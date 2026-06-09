@@ -1,7 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition, useCallback, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useMemo, useTransition, useRef, useEffect, useCallback } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,41 +13,23 @@ import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, Hi
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
-import { nextCodeInSeries } from "@/lib/inventory/next-code";
+import {
+  getInventoryPage,
+  getItemForEdit,
+  suggestNextCode,
+  type InventoryRow,
+  type ItemWithStock,
+  type TypeCatFacet,
+} from "@/lib/actions/inventory";
 import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse } from "@/lib/supabase/types";
 
-interface ItemWithStock {
-  id: string;
-  code: string;
-  name: string;
-  lookup_key: string | null;
-  description: string | null;
-  item_type: ItemType;
-  category_id: string | null;
-  uom_id: string;
-  minimum_stock: number;
-  reorder_point: number;
-  lead_time_days: number;
-  cost_price: number;
-  is_active: boolean;
-  stock_behaviour: "stocked" | "phantom" | "tooling";
-  family: string | null;
-  finish: string | null;
-  procurement_type: "make" | "trade" | null;
-  category_procurement_type: "make" | "trade" | null;
-  effective_procurement_type: "make" | "trade" | null;
-  suppliers: string[];
-  category: {
-    id: string;
-    name: string;
-    procurement_type?: "make" | "trade" | null;
-  } | null;
-  uom: { id: string; abbreviation: string } | null;
-  total_stock: number;
-}
-
 interface Props {
-  initialItems: ItemWithStock[];
+  /** First page of rows, rendered server-side for instant paint. */
+  initialRows: InventoryRow[];
+  /** Total count matching the default (unfiltered) query. */
+  initialTotal: number;
+  /** Distinct (item_type, category_id) pairs, for scoping the category dropdowns. */
+  facets: TypeCatFacet[];
   categories: (ItemCategory & {
     procurement_type?: "make" | "trade" | null;
   })[];
@@ -79,100 +60,125 @@ type SortDir = "asc" | "desc";
 
 const PAGE_SIZE = 50;
 
-export function InventoryClient({ initialItems, categories, units, warehouses, initialEditItemId }: Props) {
-  const router = useRouter();
+export function InventoryClient({ initialRows, initialTotal, facets, categories, units, warehouses, initialEditItemId }: Props) {
   const [isPending, startTransition] = useTransition();
+
+  // Query state (drives the server fetch).
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">("all");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
+  const [subCategoryFilter, setSubCategoryFilter] = useState<string>("all");
   const [stockFilter, setStockFilter] = useState<"all" | "low" | "zero" | "in_stock">("all");
   const [behaviourFilter, setBehaviourFilter] = useState<"all" | "stocked" | "phantom" | "tooling">("all");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
   const [page, setPage] = useState(1);
+
+  // Server-provided page data.
+  const [rows, setRows] = useState<InventoryRow[]>(initialRows);
+  const [total, setTotal] = useState(initialTotal);
+
+  // Modal state.
   const [showItemForm, setShowItemForm] = useState(false);
   const [showStockAdjust, setShowStockAdjust] = useState(false);
   const [selectedItem, setSelectedItem] = useState<ItemWithStock | null>(null);
-  // When set, the form opens in "clone" mode pre-filled from this source.
   const [cloneSource, setCloneSource] = useState<ItemWithStock | null>(null);
+  const [suggestedCode, setSuggestedCode] = useState<string | null>(null);
 
-  // All existing codes — recomputed only when the items list changes,
-  // so the "next code in series" lookup is O(N) once per render cycle.
-  const allCodes = useMemo(
-    () => initialItems.map((i) => i.code),
-    [initialItems],
-  );
+  const resetPage = () => setPage(1);
 
-  const handleClone = useCallback(
-    (item: ItemWithStock) => {
-      setSelectedItem(null); // make sure we're not in edit mode
-      setCloneSource(item);
-      setShowItemForm(true);
-    },
-    [],
-  );
+  // Debounce the search box → debouncedSearch (which the fetch watches).
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 300);
+    return () => clearTimeout(t);
+  }, [search]);
 
-  // Deep-link from the Daily Changes page: `/inventory?edit=<id>` opens the
-  // matching item's edit modal, then strips the param so a refresh/back
-  // doesn't reopen it. Soft-deleted items aren't in the active list, so the
-  // modal simply won't open for those (undo the delete first).
+  // Fetch a page from the server for the current query. Stable per query state,
+  // so it doubles as the "reload after a mutation" function.
+  const runQuery = useCallback(() => {
+    startTransition(async () => {
+      const res = await getInventoryPage({
+        search: debouncedSearch,
+        type: typeFilter,
+        category: categoryFilter,
+        sub: subCategoryFilter,
+        stock: stockFilter,
+        behaviour: behaviourFilter,
+        sort: sortKey,
+        dir: sortDir,
+        page,
+        pageSize: PAGE_SIZE,
+      });
+      setRows(res.rows);
+      setTotal(res.total);
+    });
+  }, [debouncedSearch, typeFilter, categoryFilter, subCategoryFilter, stockFilter, behaviourFilter, sortKey, sortDir, page]);
+
+  // Re-fetch when the query changes — but skip the very first run, since
+  // initialRows already match the default query (instant paint, no flash).
+  const firstRun = useRef(true);
+  useEffect(() => {
+    if (firstRun.current) {
+      firstRun.current = false;
+      return;
+    }
+    runQuery();
+  }, [runQuery]);
+
+  // Deep-link from Daily Changes: `/inventory?edit=<id>` opens that item's edit
+  // modal, then strips the param. Soft-deleted items return null → no open.
   useEffect(() => {
     if (!initialEditItemId) return;
-    const target = initialItems.find((i) => i.id === initialEditItemId);
-    if (target) {
-      setSelectedItem(target);
-      setCloneSource(null);
-      setShowItemForm(true);
-    }
+    startTransition(async () => {
+      const full = await getItemForEdit(initialEditItemId);
+      if (full) {
+        setSelectedItem(full);
+        setCloneSource(null);
+        setSuggestedCode(null);
+        setShowItemForm(true);
+      }
+    });
     if (typeof window !== "undefined") {
       window.history.replaceState(null, "", "/inventory");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [initialEditItemId]);
 
-  // Build category tree for filter (supports 3 levels: parent → child → grandchild)
+  // Category tree for the filter (parent → all descendants), from the category list.
   const categoryTree = useMemo(() => {
     const parents = categories.filter((c) => !c.parent_id);
     return parents.map((p) => {
       const directChildren = categories.filter((c) => c.parent_id === p.id);
-      // Collect grandchildren (children of children)
       const grandchildren = directChildren.flatMap((child) =>
-        categories.filter((c) => c.parent_id === child.id)
+        categories.filter((c) => c.parent_id === child.id),
       );
-      // Sub-categories = direct children + grandchildren (all descendants)
-      const subCategories = [...directChildren, ...grandchildren];
-      return { ...p, subCategories };
+      return { ...p, subCategories: [...directChildren, ...grandchildren] };
     });
   }, [categories]);
 
-  // Build mapping: item_type → Set of parent category IDs that have items of that type
+  // item_type → Set of parent category IDs that contain items of that type,
+  // derived from the (small) facet pairs instead of the full item list.
   const typeToParentCatIds = useMemo(() => {
     const catToParent: Record<string, string> = {};
-    for (const cat of categories) {
-      if (!cat.parent_id) catToParent[cat.id] = cat.id;
-    }
-    for (const cat of categories) {
-      if (cat.parent_id && catToParent[cat.parent_id] !== undefined) {
-        catToParent[cat.id] = cat.parent_id;
-      }
-    }
-    for (const cat of categories) {
-      if (cat.parent_id && catToParent[cat.id] === undefined && catToParent[cat.parent_id] !== undefined) {
+    for (const cat of categories) if (!cat.parent_id) catToParent[cat.id] = cat.id;
+    for (const cat of categories)
+      if (cat.parent_id && catToParent[cat.parent_id] !== undefined) catToParent[cat.id] = cat.parent_id;
+    for (const cat of categories)
+      if (cat.parent_id && catToParent[cat.id] === undefined && catToParent[cat.parent_id] !== undefined)
         catToParent[cat.id] = catToParent[cat.parent_id];
-      }
-    }
+
     const map: Record<string, Set<string>> = {};
-    for (const item of initialItems) {
-      if (!item.category_id) continue;
-      const parentId = catToParent[item.category_id];
+    for (const f of facets) {
+      if (!f.category_id) continue;
+      const parentId = catToParent[f.category_id];
       if (!parentId) continue;
-      if (!map[item.item_type]) map[item.item_type] = new Set();
-      map[item.item_type].add(parentId);
+      if (!map[f.item_type]) map[f.item_type] = new Set();
+      map[f.item_type].add(parentId);
     }
     return map;
-  }, [initialItems, categories]);
+  }, [facets, categories]);
 
-  // Filter category tree by selected type
   const filteredCategoryTree = useMemo(() => {
     if (typeFilter === "all") return categoryTree;
     const allowedIds = typeToParentCatIds[typeFilter];
@@ -180,114 +186,13 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
     return categoryTree.filter((c) => allowedIds.has(c.id));
   }, [typeFilter, typeToParentCatIds, categoryTree]);
 
-  // Get sub-categories that belong to the selected parent
   const subCategoryOptions = useMemo(() => {
     if (categoryFilter === "all") return [];
     const parent = filteredCategoryTree.find((c) => c.id === categoryFilter);
-    if (parent) return parent.subCategories;
-    return [];
+    return parent ? parent.subCategories : [];
   }, [categoryFilter, filteredCategoryTree]);
 
-  const [subCategoryFilter, setSubCategoryFilter] = useState<string>("all");
-
-  // Filter items
-  // Multi-token fuzzy search: split the query on whitespace and require
-  // every token to appear somewhere in name/lookup_key/code/description.
-  // Order-independent — "rope wire 12mm" matches "Wire Rope 12mm".
-  const searchTokens = useMemo(() => {
-    return search
-      .trim()
-      .toLowerCase()
-      .split(/\s+/)
-      .filter(Boolean);
-  }, [search]);
-
-  const filtered = useMemo(() => {
-    return initialItems.filter((item) => {
-      if (searchTokens.length > 0) {
-        const haystack = [
-          item.lookup_key,
-          item.name,
-          item.code,
-          item.description,
-        ]
-          .filter(Boolean)
-          .join(" ")
-          .toLowerCase();
-        for (const token of searchTokens) {
-          if (!haystack.includes(token)) return false;
-        }
-      }
-
-      if (typeFilter !== "all" && item.item_type !== typeFilter) return false;
-
-      // Loose/phantom parts are internal build pieces (cut on programs, never
-      // stocked) — hide them from the general list by default. Still reachable
-      // via the explicit "Loose (phantom)" filter, Sub-assemblies, and the
-      // loose-part search.
-      if (behaviourFilter === "all") {
-        if (item.stock_behaviour === "phantom") return false;
-      } else if (item.stock_behaviour !== behaviourFilter) {
-        return false;
-      }
-
-      if (categoryFilter !== "all") {
-        if (subCategoryFilter !== "all") {
-          if (item.category_id !== subCategoryFilter) return false;
-        } else {
-          const parent = categoryTree.find((c) => c.id === categoryFilter);
-          if (parent) {
-            const validIds = new Set([parent.id, ...parent.subCategories.map((s) => s.id)]);
-            if (!item.category_id || !validIds.has(item.category_id)) return false;
-          }
-        }
-      }
-
-      if (stockFilter === "low") {
-        if (!(item.total_stock <= item.reorder_point && item.reorder_point > 0)) return false;
-      } else if (stockFilter === "zero") {
-        if (item.total_stock !== 0) return false;
-      } else if (stockFilter === "in_stock") {
-        if (item.total_stock <= 0) return false;
-      }
-
-      return true;
-    });
-  }, [initialItems, searchTokens, typeFilter, behaviourFilter, categoryFilter, subCategoryFilter, stockFilter, categoryTree]);
-
-  // Sort items
-  const sorted = useMemo(() => {
-    const copy = [...filtered];
-    copy.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "code":
-          cmp = a.code.localeCompare(b.code);
-          break;
-        case "name":
-          cmp = a.name.localeCompare(b.name);
-          break;
-        case "stock":
-          cmp = a.total_stock - b.total_stock;
-          break;
-        case "category":
-          cmp = (a.category?.name ?? "").localeCompare(b.category?.name ?? "");
-          break;
-        case "cost":
-          cmp = a.cost_price - b.cost_price;
-          break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return copy;
-  }, [filtered, sortKey, sortDir]);
-
-  // Pagination
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
-  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-
-  // Reset page when filters change
-  const resetPage = () => setPage(1);
+  const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -296,9 +201,36 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
       setSortKey(key);
       setSortDir("asc");
     }
+    resetPage();
   };
 
-  const refresh = () => startTransition(() => router.refresh());
+  // Open the edit/clone modal — the row is lightweight, so fetch the full item.
+  const openEdit = (id: string) => {
+    startTransition(async () => {
+      const full = await getItemForEdit(id);
+      if (full) {
+        setCloneSource(null);
+        setSuggestedCode(null);
+        setSelectedItem(full);
+        setShowItemForm(true);
+      }
+    });
+  };
+
+  const handleClone = (row: InventoryRow) => {
+    startTransition(async () => {
+      const [full, next] = await Promise.all([
+        getItemForEdit(row.id),
+        suggestNextCode(row.code),
+      ]);
+      if (full) {
+        setSelectedItem(null);
+        setCloneSource(full);
+        setSuggestedCode(next);
+        setShowItemForm(true);
+      }
+    });
+  };
 
   const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
     <TableHead
@@ -312,6 +244,9 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
     </TableHead>
   );
 
+  const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
+  const rangeEnd = Math.min(page * PAGE_SIZE, total);
+
   return (
     <div>
       {/* Header */}
@@ -319,8 +254,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {sorted.length} of {initialItems.length} items
-            {isPending ? " — refreshing..." : ""}
+            {total.toLocaleString()} items{isPending ? " — loading..." : ""}
           </p>
         </div>
         <div className="flex gap-2">
@@ -333,7 +267,7 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           <Button variant="secondary" onClick={() => setShowStockAdjust(true)}>
             Stock Adjustment
           </Button>
-          <Button onClick={() => { setSelectedItem(null); setCloneSource(null); setShowItemForm(true); }}>
+          <Button onClick={() => { setSelectedItem(null); setCloneSource(null); setSuggestedCode(null); setShowItemForm(true); }}>
             <Plus size={16} className="mr-2" />
             Add Item
           </Button>
@@ -342,7 +276,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
 
       {/* Filters Row */}
       <div className="flex flex-wrap gap-3 mb-4">
-        {/* Search */}
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <Input
@@ -353,7 +286,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           />
         </div>
 
-        {/* Type Filter */}
         <Select
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); setCategoryFilter("all"); setSubCategoryFilter("all"); resetPage(); }}
@@ -367,7 +299,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           <option value="door_panel">Door Panel</option>
         </Select>
 
-        {/* Category Filter */}
         <Select
           value={categoryFilter}
           onChange={(e) => { setCategoryFilter(e.target.value); setSubCategoryFilter("all"); resetPage(); }}
@@ -379,7 +310,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           ))}
         </Select>
 
-        {/* Sub-Category Filter (only shown when parent selected) */}
         {subCategoryOptions.length > 0 && (
           <Select
             value={subCategoryFilter}
@@ -393,7 +323,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           </Select>
         )}
 
-        {/* Stock Filter */}
         <Select
           value={stockFilter}
           onChange={(e) => { setStockFilter(e.target.value as typeof stockFilter); resetPage(); }}
@@ -405,7 +334,6 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
           <option value="zero">Zero Stock</option>
         </Select>
 
-        {/* Stock-behaviour filter */}
         <Select
           value={behaviourFilter}
           onChange={(e) => { setBehaviourFilter(e.target.value as typeof behaviourFilter); resetPage(); }}
@@ -419,13 +347,13 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
       </div>
 
       {/* Table */}
-      {paginated.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="card-surface p-12 text-center">
           <Package size={48} className="mx-auto mb-4 text-[var(--muted-foreground)] opacity-50" />
           <p className="text-[var(--muted-foreground)]">
-            {initialItems.length === 0
-              ? "No items yet. Add your first item to get started."
-              : "No items match your filters."}
+            {total === 0 && !isPending
+              ? "No items match your filters."
+              : "Loading..."}
           </p>
         </div>
       ) : (
@@ -446,13 +374,13 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginated.map((item) => {
+              {rows.map((item) => {
                 const isLow = item.total_stock <= item.reorder_point && item.reorder_point > 0;
                 return (
                   <TableRow
                     key={item.id}
                     className="cursor-pointer hover:bg-[var(--muted)]"
-                    onClick={() => { setSelectedItem(item); setShowItemForm(true); }}
+                    onClick={() => openEdit(item.id)}
                   >
                     <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
                       <Link
@@ -490,42 +418,20 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                     </TableCell>
                     <TableCell>
                       {item.effective_procurement_type === "make" ? (
-                        <Badge
-                          variant="blue"
-                          className="text-[10px] px-1.5"
-                          title={
-                            item.procurement_type
-                              ? "Make (per-item override)"
-                              : "Make (inherited from category)"
-                          }
-                        >
-                          M
-                        </Badge>
+                        <Badge variant="blue" className="text-[10px] px-1.5" title="Make">M</Badge>
                       ) : item.effective_procurement_type === "trade" ? (
-                        <Badge
-                          variant="amber"
-                          className="text-[10px] px-1.5"
-                          title={
-                            item.procurement_type
-                              ? "Trade (per-item override)"
-                              : "Trade (inherited from category)"
-                          }
-                        >
-                          T
-                        </Badge>
+                        <Badge variant="amber" className="text-[10px] px-1.5" title="Trade">T</Badge>
                       ) : (
-                        <span className="text-xs text-[var(--muted-foreground)]">
-                          —
-                        </span>
+                        <span className="text-xs text-[var(--muted-foreground)]">—</span>
                       )}
                     </TableCell>
-                    <TableCell className="text-sm">{item.category?.name ?? "-"}</TableCell>
+                    <TableCell className="text-sm">{item.category_name ?? "-"}</TableCell>
                     <TableCell className="text-right font-medium">
                       <span className={isLow ? "text-[var(--destructive)]" : ""}>
                         {Number(item.total_stock).toLocaleString()}
                       </span>{" "}
                       <span className="text-xs text-[var(--muted-foreground)]">
-                        {item.uom?.abbreviation}
+                        {item.uom_abbreviation}
                       </span>
                     </TableCell>
                     <TableCell className="text-right font-mono text-sm">
@@ -552,9 +458,15 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
                     </TableCell>
                     <TableCell className="w-10 px-1" onClick={(e) => e.stopPropagation()}>
                       <InlineStockAdjust
-                        item={item}
+                        item={{
+                          id: item.id,
+                          code: item.code,
+                          name: item.name,
+                          lookup_key: null,
+                          uom: item.uom_abbreviation ? { id: "", abbreviation: item.uom_abbreviation } : null,
+                        }}
                         warehouses={warehouses}
-                        onSuccess={refresh}
+                        onSuccess={runQuery}
                       />
                     </TableCell>
                   </TableRow>
@@ -569,26 +481,14 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-[var(--muted-foreground)]">
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length}
+            Showing {rangeStart}–{rangeEnd} of {total.toLocaleString()}
           </p>
           <div className="flex items-center gap-2">
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setPage(page - 1)}
-              disabled={page === 1}
-            >
+            <Button variant="secondary" size="sm" onClick={() => setPage(page - 1)} disabled={page <= 1}>
               <ChevronLeft size={16} />
             </Button>
-            <span className="text-sm font-medium">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setPage(page + 1)}
-              disabled={page === totalPages}
-            >
+            <span className="text-sm font-medium">{page} / {totalPages}</span>
+            <Button variant="secondary" size="sm" onClick={() => setPage(page + 1)} disabled={page >= totalPages}>
               <ChevronRight size={16} />
             </Button>
           </div>
@@ -600,28 +500,27 @@ export function InventoryClient({ initialItems, categories, units, warehouses, i
         <ItemFormModal
           item={selectedItem}
           cloneSource={cloneSource}
-          suggestedCode={
-            cloneSource ? nextCodeInSeries(cloneSource.code, allCodes) : null
-          }
+          suggestedCode={suggestedCode}
           categories={categories}
           units={units}
-          items={initialItems}
+          items={facets}
           onClose={() => {
             setShowItemForm(false);
             setCloneSource(null);
+            setSuggestedCode(null);
           }}
           onSaved={() => {
-            refresh();
+            runQuery();
             setCloneSource(null);
+            setSuggestedCode(null);
           }}
         />
       )}
       {showStockAdjust && (
         <StockAdjustModal
-          items={initialItems}
           warehouses={warehouses}
           onClose={() => setShowStockAdjust(false)}
-          onSaved={refresh}
+          onSaved={runQuery}
         />
       )}
     </div>

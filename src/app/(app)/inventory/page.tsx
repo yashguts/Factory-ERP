@@ -1,4 +1,10 @@
-import { getItemsWithStock, getCategories, getUnits, getWarehouses } from "@/lib/actions/inventory";
+import {
+  getInventoryFirstPage,
+  getItemTypeCategoryFacets,
+  getCategories,
+  getUnits,
+  getWarehouses,
+} from "@/lib/actions/inventory";
 import { InventoryClient } from "@/components/inventory/inventory-client";
 
 interface Props {
@@ -6,17 +12,23 @@ interface Props {
 }
 
 export default async function InventoryPage({ searchParams }: Props) {
-  const [params, items, categories, units, warehouses] = await Promise.all([
-    searchParams,
-    getItemsWithStock(),
-    getCategories(),
-    getUnits(),
-    getWarehouses(),
-  ]);
+  // Only the first page (~50 rows) + small lookup data are sent to the browser.
+  // Search / filter / sort / paging are done server-side via getInventoryPage.
+  const [params, firstPage, facets, categories, units, warehouses] =
+    await Promise.all([
+      searchParams,
+      getInventoryFirstPage(),
+      getItemTypeCategoryFacets(),
+      getCategories(),
+      getUnits(),
+      getWarehouses(),
+    ]);
 
   return (
     <InventoryClient
-      initialItems={items}
+      initialRows={firstPage.rows}
+      initialTotal={firstPage.total}
+      facets={facets}
       categories={categories}
       units={units}
       warehouses={warehouses}
