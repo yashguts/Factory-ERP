@@ -73,3 +73,16 @@ export function cabinInventoryType(jobType: string): string {
   if (jobType === "Front Wall RHS" || jobType === "Front Wall LHS") return "Front Wall";
   return jobType;
 }
+
+/**
+ * Cabin INVENTORY types whose items are fanned out by finish. For these, the New
+ * Cabin Job picker is two-step (base item -> finish) instead of one long list.
+ * Everything else (Platform, Canopy, Supports, Covers, ...) stays single-select.
+ */
+export const FINISH_SPLIT_INVENTORY_TYPES = ["Side Panel", "Front Wall", "Car Linton"] as const;
+
+export function isFinishSplitType(jobType: string): boolean {
+  return (FINISH_SPLIT_INVENTORY_TYPES as readonly string[]).includes(
+    cabinInventoryType(jobType),
+  );
+}

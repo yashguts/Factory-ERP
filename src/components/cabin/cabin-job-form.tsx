@@ -7,7 +7,8 @@ import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2 } from "luc
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { CabinItemPicker } from "@/components/cabin/cabin-item-picker";
-import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
+import { CabinBaseFinishPicker } from "@/components/cabin/cabin-base-finish-picker";
+import { CABIN_TYPES, isFinishSplitType } from "@/lib/cabin/cabin-types";
 import {
   createCabinJob,
   updateCabinJob,
@@ -288,6 +289,15 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
                                 {row.item_code}
                               </span>
                             </div>
+                          ) : isFinishSplitType(type) ? (
+                            <CabinBaseFinishPicker
+                              cabinType={type}
+                              itemId={row.item_id}
+                              itemCode={row.item_code}
+                              itemName={row.item_name}
+                              onPick={(it) => pickItem(type, row._key, it)}
+                              onClear={() => clearItem(type, row._key)}
+                            />
                           ) : (
                             <CabinItemPicker
                               cabinType={type}
