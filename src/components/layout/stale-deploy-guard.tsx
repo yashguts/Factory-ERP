@@ -18,29 +18,53 @@ import { AlertTriangle, X } from "lucide-react";
  * server actions throw rejected promises from event handlers — React
  * error boundaries don't catch those.
  */
+/** Reload at most once per 30s window — heals stale-chunk errors without
+ *  ever looping if the reload itself fails. */
+export function reloadOnceForStaleChunks(): boolean {
+  try {
+    const KEY = "stale-chunk-reload-at";
+    const last = Number(sessionStorage.getItem(KEY) ?? 0);
+    if (Date.now() - last < 30_000) return false;
+    sessionStorage.setItem(KEY, String(Date.now()));
+  } catch {
+    /* sessionStorage unavailable — still better to reload than crash */
+  }
+  window.location.reload();
+  return true;
+}
+
+/** True for errors caused by a redeploy deleting the old JS/CSS chunk files. */
+export function isStaleChunkError(msg: string): boolean {
+  return /ChunkLoadError|Loading chunk [\w-]+ failed|Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Failed to load resource: .*_next\/static/i.test(
+    msg,
+  );
+}
+
 export function StaleDeployGuard() {
   const [stale, setStale] = useState(false);
 
   useEffect(() => {
-    const matches = (val: unknown): boolean => {
-      const msg =
-        typeof val === "string"
-          ? val
-          : val instanceof Error
-            ? val.message
-            : "";
-      return /Server Action[^\n]*was not found on the server/i.test(msg);
+    const msgOf = (val: unknown): string =>
+      typeof val === "string" ? val : val instanceof Error ? val.message : "";
+    const isStaleAction = (val: unknown): boolean =>
+      /Server Action[^\n]*was not found on the server/i.test(msgOf(val));
+
+    const handle = (val: unknown) => {
+      if (isStaleAction(val)) {
+        setStale(true);
+        return;
+      }
+      // A redeploy removed the old JS files this tab still references —
+      // reloading is the complete fix, so do it automatically (once).
+      if (isStaleChunkError(msgOf(val))) {
+        if (!reloadOnceForStaleChunks()) setStale(true);
+      }
     };
 
-    const onRejection = (e: PromiseRejectionEvent) => {
-      if (matches(e.reason)) {
-        setStale(true);
-      }
-    };
+    const onRejection = (e: PromiseRejectionEvent) => handle(e.reason);
     const onError = (e: ErrorEvent) => {
-      if (matches(e.message) || matches(e.error)) {
-        setStale(true);
-      }
+      handle(e.message);
+      handle(e.error);
     };
 
     window.addEventListener("unhandledrejection", onRejection);
