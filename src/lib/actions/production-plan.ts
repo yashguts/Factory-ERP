@@ -56,6 +56,10 @@ export interface PlanProgram {
   name: string;
   machine: string;
   runs: number;
+  /** Machining time of ONE run in seconds (null = not captured on the program). */
+  machiningTimeSeconds: number | null;
+  /** runs x machiningTimeSeconds (null when the per-run time is unknown). */
+  machineSeconds: number | null;
   partsMade: number;
   extra: number;
   covers: PlanCover[];
@@ -88,6 +92,10 @@ export interface MakeProductionPlan {
     sheets: number;
     /** What the simple least-extra-parts pick would have consumed — shows the saving. */
     sheetsSimple: number;
+    /** Total machine time of the plan in seconds (runs x time/run, where known). */
+    machineSeconds: number;
+    /** Programs in the plan with no machining time captured (count 0 in the total). */
+    programsMissingTime: number;
   };
   plan: PlanProgram[];
   blocked: BlockedItem[];
@@ -107,7 +115,7 @@ function sheetThicknessMm(name: string): number | null {
 }
 const empty = (c: string | null, excluded: string[] = []): MakeProductionPlan => ({
   cutoffDate: c,
-  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0, sheets: 0, sheetsSimple: 0 },
+  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0, sheets: 0, sheetsSimple: 0, machineSeconds: 0, programsMissingTime: 0 },
   plan: [],
   blocked: [],
   excluded,
@@ -312,7 +320,7 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   const opsPromise = (async () => {
     const ops = new Map<string, any>();
     for (let off = 0; ; off += PAGE) {
-      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at").eq("is_active", true).order("id").range(off, off + PAGE - 1);
+      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at, machining_time_seconds").eq("is_active", true).order("id").range(off, off + PAGE - 1);
       if (error) throw error;
       for (const o of data ?? []) ops.set(o.id as string, o);
       if (!data || data.length < PAGE) break;
@@ -732,7 +740,8 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
         total: Math.ceil(perRun * r),
       }))
       .sort((a, b) => b.total - a.total);
-    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers, outputs, inputs });
+    const mts = (opi.machining_time_seconds as number | null) ?? null;
+    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, machiningTimeSeconds: mts, machineSeconds: mts != null ? Math.round(r * mts) : null, partsMade: Math.round(made), extra: Math.round(made - used), covers, outputs, inputs });
   }
 
   const blocked: BlockedItem[] = [];
@@ -764,6 +773,8 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
       otherParts: partsMade - partsNeeded,
       sheets: runsSheets,
       sheetsSimple,
+      machineSeconds: plan.reduce((s, p) => s + (p.machineSeconds ?? 0), 0),
+      programsMissingTime: plan.filter((p) => p.machineSeconds == null).length,
     },
     plan,
     blocked,

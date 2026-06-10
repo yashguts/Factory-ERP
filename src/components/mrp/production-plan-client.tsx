@@ -62,7 +62,7 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         <SummaryCard
           label="Programs to run"
           value={plan.programRuns.length}
-          sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time` : undefined}
+          sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
         />
         <SummaryCard label="Can't explode" value={plan.unresolved.length} tone={plan.unresolved.length > 0 ? "warn" : undefined} />
       </div>
@@ -180,6 +180,10 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
         <Clock className="h-4 w-4" />
         <h2 className="text-sm font-semibold">Program runs &amp; machine time</h2>
         <span className="text-xs text-[var(--muted-foreground)]">
+          · gross estimate (ignores stock) — the net shop workload is on{" "}
+          <Link href="/mrp/make-plan" className="text-[var(--primary)] hover:underline">
+            Make Plan
+          </Link>
           · tick programs to total a subset
         </span>
         <span className="ml-auto text-xs tabular-nums">

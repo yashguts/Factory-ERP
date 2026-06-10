@@ -6,6 +6,7 @@ import { Hammer, AlertTriangle, Ban, ChevronRight, Layers, Loader2, X } from "lu
 import { Badge } from "@/components/ui/badge";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
+import { formatDuration } from "@/lib/utils";
 import type { MakeProductionPlan, PlanProgram } from "@/lib/actions/production-plan";
 
 const MACHINE: Record<string, string> = {
@@ -99,12 +100,22 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
         <Card label="Shortfall items" value={t.shortfallItems} />
         <Card label="Makeable now" value={t.makeable} tone="ok" />
         <Card label="Blocked" value={t.blocked} tone={t.blocked ? "warn" : undefined} />
         <Card label="Programs to run" value={t.programs} />
         <Card label="Total runs" value={t.runs} />
+        <Card
+          label="Machine time"
+          value={formatDuration(t.machineSeconds ?? 0)}
+          sub={
+            (t.programsMissingTime ?? 0) > 0
+              ? `${t.programsMissingTime} program${t.programsMissingTime === 1 ? "" : "s"} missing time`
+              : "runs x time/run"
+          }
+          tone={(t.programsMissingTime ?? 0) > 0 ? "warn" : "ok"}
+        />
         <Card
           label="Sheets to cut"
           value={t.sheets ?? 0}
@@ -203,6 +214,16 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                 <span className="font-mono text-xs text-[var(--muted-foreground)]">{p.code}</span>
                 <span className="text-sm font-medium flex-1 min-w-[120px]">{p.name}</span>
                 <Badge variant="blue" className="shrink-0">Run ×{p.runs}</Badge>
+                <span
+                  className="text-[11px] shrink-0 tabular-nums font-medium"
+                  title={
+                    p.machiningTimeSeconds != null
+                      ? `${formatDuration(p.machiningTimeSeconds)} per run × ${p.runs} runs`
+                      : "No machining time captured on this program (Edit → Machining time / run)"
+                  }
+                >
+                  {p.machineSeconds != null ? formatDuration(p.machineSeconds) : "— time"}
+                </span>
                 <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 tabular-nums">
                   {p.partsMade} parts{p.extra > 0 ? ` · ${p.extra} extra` : " · no waste"}
                 </span>
@@ -313,12 +334,12 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   );
 }
 
-function Card({ label, value, sub, tone }: { label: string; value: number; sub?: string; tone?: "ok" | "warn" }) {
+function Card({ label, value, sub, tone }: { label: string; value: number | string; sub?: string; tone?: "ok" | "warn" }) {
   const color = tone === "ok" ? "text-emerald-600" : tone === "warn" ? "text-amber-600" : "text-[var(--foreground)]";
   return (
     <div className="card-surface p-3">
       <div className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">{label}</div>
-      <div className={`text-2xl font-bold tabular-nums ${color}`}>{value.toLocaleString()}</div>
+      <div className={`text-2xl font-bold tabular-nums ${color}`}>{typeof value === "number" ? value.toLocaleString() : value}</div>
       {sub && <div className="text-[10px] text-[var(--muted-foreground)] mt-0.5">{sub}</div>}
     </div>
   );
