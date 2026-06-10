@@ -381,6 +381,26 @@ is **unchanged** (locked); this only reads what a job asks for and explodes it.
   **steel + purchased buy-list**, netted vs stock. Program runs are rolled up at
   whole runs (nesting NOT optimised — it's a conservative estimate, validate by
   hand). Make items with no recipe surface under "cannot explode".
+- **Programs to run** `/mrp/make-plan` (`getMakeProductionPlan` in
+  `lib/actions/production-plan.ts`) — the OWNER-TUNED run optimiser. Do not
+  weaken these (2026-06-11, the owner asked for this to be the permanent way):
+  - **Objective: fewest raw SHEETS** (from each candidate's `operation_inputs`;
+    a program with no recorded inputs costs 1 sheet/run). Part count is only a
+    tie-break. Future wish: weight-based cost (sheet dims × thickness already
+    parseable from item names).
+  - **Selection**: dominance pruning (a program never better than another is
+    dropped) → portfolio of 5 deterministic greedy strategies (least-extras,
+    per-sheet, scarcity-weighted ×2, waste-penalised) → trim-to-fixpoint →
+    local search (remove-and-repair + add-and-trim). Winner = fewest sheets;
+    every candidate is coverage-verified (`coversDemand`); the ORIGINAL simple
+    greedy on the unpruned set is the baseline/fallback and powers the honest
+    "saves N vs simple pick" badge.
+  - **UI contract**: cards grouped by produced-part category; per program ALL
+    outputs as "makes ×N · M counted" (need allocated smallest-producer-first
+    so surplus shows on the dedicated nest — the 436A lesson); sheet inputs w/
+    thickness chip + "Sheets to cut" per-thickness summary (filter-aware);
+    per-program "Don't run" → `?exclude=CODE,..` recomputes server-side (part
+    of the cache key), banner restores.
 
 ### Storage
 
