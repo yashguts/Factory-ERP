@@ -535,6 +535,11 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   }
   const cost = (op: string) => sheetCost.get(op) ?? 1;
 
+  // The "simple pick" baseline = the ORIGINAL algorithm on the ORIGINAL
+  // candidate set (before dominance pruning), so "saves N vs simple pick"
+  // honestly measures everything the optimiser adds.
+  const progOutOriginal: OpOuts = new Map([...progOut.entries()].map(([k, v]) => [k, new Map(v)]));
+
   // Dominance preprocessing: if B makes >= of every needed part A makes, for
   // no more sheets, A can never be part of a best plan — drop it. (Strictness
   // / code tie-break keeps exactly one of identical twins.)
@@ -593,7 +598,11 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
     (op, _o, _r, u) => { const t = totalOut(op); return u / (cost(op) * (1 + (t - u) / t)); }, // per sheet, waste-penalised
   ];
 
-  const baseline = greedySelect(progOut, leafProduce, STRATEGIES[0]);
+  const baseline = greedySelect(progOutOriginal, leafProduce, (op, _o, _r, u) => {
+    let t = 0;
+    for (const q of progOutOriginal.get(op)?.values() ?? []) t += q;
+    return u / t;
+  });
   const sheetsSimple = reportedSheets(baseline, inputsOf);
   let runs: Runs = baseline;
   let runsSheets = sheetsSimple;
@@ -677,8 +686,11 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
         return { code: code(itemId), name: name(itemId), perRun, produced, used };
       })
       .sort((a, b) => b.produced - a.produced);
-    const coverParts = [...(progOut.get(op)?.keys() ?? [])].filter((p) => leafProduce.has(p));
-    const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (progOut.get(op)!.get(p) ?? 0)), 0);
+    // Fall back to the unpruned candidate set: the baseline (fallback) plan
+    // may legitimately contain a program that dominance pruning removed.
+    const opOuts = progOut.get(op) ?? progOutOriginal.get(op) ?? new Map<string, number>();
+    const coverParts = [...opOuts.keys()].filter((p) => leafProduce.has(p));
+    const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (opOuts.get(p) ?? 0)), 0);
     // Covers = the NEEDED parts this program actually outputs (its true outputs), each
     // annotated with the finished item(s) it feeds. We deliberately DON'T relabel a shared
     // sub-part as the finished items that consume it — that made a generic cut part (e.g. a
@@ -686,7 +698,7 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
     // them, with their full shortfall, which is what confused the plan readers.
     const covers: PlanCover[] = coverParts
       .map((p) => {
-        const perRun = progOut.get(op)!.get(p) ?? 0;
+        const perRun = opOuts.get(p) ?? 0;
         const qty = Math.min(leafProduce.get(p) ?? 0, r * perRun);
         const feeds: PlanFeed[] = [...(finishedByLeaf.get(p) ?? [])]
           .filter((f) => f !== p) // a finished item is its own leaf — that's "direct", not "feeds"
