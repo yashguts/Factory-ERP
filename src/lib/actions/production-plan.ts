@@ -153,26 +153,82 @@ function greedySelect(
   return runs;
 }
 
-/** Cancel runs that other selected programs' co-products already cover (most sheet-expensive first). */
+/** Cancel runs that other selected programs' co-products already cover
+ *  (most sheet-expensive first), repeated to FIXPOINT — removing one
+ *  program's runs can make another's removable. */
 function trimRuns(runs: Runs, progOut: OpOuts, leafProduce: Map<string, number>, sheetCost: Map<string, number>): Runs {
   const produced = new Map<string, number>();
   for (const [op, r] of runs) for (const [part, qty] of progOut.get(op) ?? []) produced.set(part, (produced.get(part) ?? 0) + qty * r);
-  const order = [...runs.keys()].sort((a, b) => (sheetCost.get(b) ?? 1) - (sheetCost.get(a) ?? 1));
-  for (const op of order) {
-    const outs = progOut.get(op) ?? new Map<string, number>();
-    while ((runs.get(op) ?? 0) > 0) {
-      let removable = true;
-      for (const [part, qty] of outs) {
-        const need = leafProduce.get(part) ?? 0;
-        if (need > 0 && (produced.get(part) ?? 0) - qty < need) { removable = false; break; }
+  for (let pass = 0; pass < 20; pass++) {
+    let changed = false;
+    const order = [...runs.keys()].sort((a, b) => (sheetCost.get(b) ?? 1) - (sheetCost.get(a) ?? 1));
+    for (const op of order) {
+      const outs = progOut.get(op) ?? new Map<string, number>();
+      while ((runs.get(op) ?? 0) > 0) {
+        let removable = true;
+        for (const [part, qty] of outs) {
+          const need = leafProduce.get(part) ?? 0;
+          if (need > 0 && (produced.get(part) ?? 0) - qty < need) { removable = false; break; }
+        }
+        if (!removable) break;
+        runs.set(op, runs.get(op)! - 1);
+        changed = true;
+        for (const [part, qty] of outs) produced.set(part, (produced.get(part) ?? 0) - qty);
       }
-      if (!removable) break;
-      runs.set(op, runs.get(op)! - 1);
-      for (const [part, qty] of outs) produced.set(part, (produced.get(part) ?? 0) - qty);
+      if ((runs.get(op) ?? 0) === 0) runs.delete(op);
     }
-    if ((runs.get(op) ?? 0) === 0) runs.delete(op);
+    if (!changed) break;
   }
   return runs;
+}
+
+/**
+ * Remove-and-repair local search: try dropping one run (or all runs) of each
+ * selected program, patch any coverage deficit with the cheapest-per-sheet
+ * greedy over ALL candidates, re-trim, and keep the move when total sheets
+ * strictly drop. This is what un-sticks the greedy's early over-commitments —
+ * e.g. a dedicated bracket nest whose part later arrives as co-product of
+ * programs we must run anyway.
+ */
+function localSearch(
+  start: Runs,
+  progOut: OpOuts,
+  leafProduce: Map<string, number>,
+  sheetCost: Map<string, number>,
+  inputsOf: Map<string, Map<string, number>>,
+): Runs {
+  let best = start;
+  let bestSheets = reportedSheets(best, inputsOf);
+  for (let iter = 0; iter < 20; iter++) {
+    let improved = false;
+    const ops = [...best.keys()].sort((a, b) => (sheetCost.get(b) ?? 1) - (sheetCost.get(a) ?? 1));
+    outer: for (const op of ops) {
+      const r = best.get(op)!;
+      for (const removeAll of r > 1 ? [false, true] : [true]) {
+        const cand: Runs = new Map(best);
+        if (removeAll) cand.delete(op);
+        else cand.set(op, r - 1);
+        // Patch whatever the removal uncovered.
+        const produced = new Map<string, number>();
+        for (const [o2, r2] of cand) for (const [part, qty] of progOut.get(o2) ?? []) produced.set(part, (produced.get(part) ?? 0) + qty * r2);
+        const deficit = new Map<string, number>();
+        for (const [part, need] of leafProduce) {
+          const d = need - (produced.get(part) ?? 0);
+          if (d > 0) deficit.set(part, d);
+        }
+        if (deficit.size > 0) {
+          const patch = greedySelect(progOut, deficit, (u, o2) => u / (sheetCost.get(o2) ?? 1));
+          for (const [o2, r2] of patch) cand.set(o2, (cand.get(o2) ?? 0) + r2);
+        }
+        trimRuns(cand, progOut, leafProduce, sheetCost);
+        if (!coversDemand(cand, progOut, leafProduce)) continue;
+        const s = reportedSheets(cand, inputsOf);
+        if (s < bestSheets) { best = cand; bestSheets = s; improved = true; break outer; }
+      }
+    }
+    if (!improved) break;
+  }
+  return best;
 }
 
 function coversDemand(runs: Runs, progOut: OpOuts, leafProduce: Map<string, number>): boolean {
@@ -487,6 +543,14 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
     const s = reportedSheets(cand, inputsOf);
     if (s < runsSheets || (s === runsSheets && totalRunsOf(cand) < totalRunsOf(runs))) { runs = cand; runsSheets = s; }
   }
+  // Polish the winner: remove-and-repair until no move saves a sheet.
+  {
+    const polished = localSearch(new Map(runs), progOut, leafProduce, sheetCost, inputsOf);
+    if (coversDemand(polished, progOut, leafProduce)) {
+      const s = reportedSheets(polished, inputsOf);
+      if (s < runsSheets || (s === runsSheets && totalRunsOf(polished) < totalRunsOf(runs))) { runs = polished; runsSheets = s; }
+    }
+  }
 
   // 9) full output bundles of the chosen programs -> "other parts".
   // Disjoint operation_id chunks -> fetch concurrently; fullOut is keyed by
@@ -526,10 +590,29 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   }
 
   const plan: PlanProgram[] = [];
-  // Global need allocation for the outputs view: walk programs in display
-  // order and hand each part's remaining need out once, so "counted" never
-  // double-counts a part produced by two programs.
-  const remainingNeed = new Map(leafProduce);
+  // Global need allocation for the outputs view: each part's need is handed
+  // out ONCE across all selected programs (no double counting), crediting the
+  // SMALLEST contributors first. Co-products of programs we must run anyway
+  // get credit before a dedicated nest, so any surplus shows on the program
+  // whose run count is actually the decision (e.g. "makes ×350 · 326 counted").
+  const allocated = new Map<string, Map<string, number>>(); // op -> part -> used
+  {
+    const producersByPart = new Map<string, { op: string; produced: number }[]>();
+    for (const [op, r] of runs)
+      for (const [part, perRun] of fullOut.get(op) ?? [])
+        producersByPart.set(part, [...(producersByPart.get(part) ?? []), { op, produced: perRun * r }]);
+    for (const [part, producers] of producersByPart) {
+      let rem = leafProduce.get(part) ?? 0;
+      producers.sort((a, b) => a.produced - b.produced);
+      for (const pr of producers) {
+        const used = Math.min(pr.produced, rem);
+        rem -= used;
+        const m = allocated.get(pr.op) ?? new Map<string, number>();
+        m.set(part, Math.round(used));
+        allocated.set(pr.op, m);
+      }
+    }
+  }
   for (const [op, r] of [...runs.entries()].sort((a, b) => b[1] - a[1])) {
     const opi = ops.get(op);
     const fout = fullOut.get(op) ?? new Map<string, number>();
@@ -537,9 +620,7 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
     const outputs: PlanOutput[] = [...fout.entries()]
       .map(([itemId, perRun]) => {
         const produced = Math.round(perRun * r);
-        const rem = remainingNeed.get(itemId) ?? 0;
-        const used = Math.min(produced, Math.round(rem));
-        if (rem > 0) remainingNeed.set(itemId, Math.max(0, rem - used));
+        const used = allocated.get(op)?.get(itemId) ?? 0;
         return { code: code(itemId), name: name(itemId), perRun, produced, used };
       })
       .sort((a, b) => b.produced - a.produced);
