@@ -35,6 +35,13 @@ export interface PlanCover {
   subCategory: string; // direct (sub-)category (of the produced part)
   feeds: PlanFeed[]; // finished items this part is a sub-component of (empty when produced directly)
 }
+export interface PlanInput {
+  code: string;
+  name: string; // raw sheet name, e.g. "1250x2500x3.0mm MS/GI" — encodes size + thickness
+  thicknessMm: number | null; // parsed from the name; null when not parseable
+  perRun: number; // sheets consumed per program run
+  total: number; // perRun × runs — what the operator actually has to load
+}
 export interface PlanProgram {
   code: string;
   name: string;
@@ -43,6 +50,8 @@ export interface PlanProgram {
   partsMade: number;
   extra: number;
   covers: PlanCover[];
+  /** Raw material consumed (usually one sheet item) — tells the floor which thickness to cut. */
+  inputs: PlanInput[];
 }
 export interface BlockedItem {
   code: string;
@@ -70,6 +79,15 @@ export interface MakeProductionPlan {
 }
 
 const PAGE = 1000;
+
+/** Sheet thickness from names like "1250x2500x3.0mm MS/GI" / "2500X1250X1.2mm SS/Grade 430"
+ *  (third dimension), falling back to any standalone "N mm" token. */
+function sheetThicknessMm(name: string): number | null {
+  const dims = /\d{3,4}\s*[xX]\s*\d{3,4}\s*[xX]\s*(\d+(?:\.\d+)?)\s*mm/.exec(name);
+  if (dims) return parseFloat(dims[1]);
+  const loose = /(\d+(?:\.\d+)?)\s*mm\b/i.exec(name);
+  return loose ? parseFloat(loose[1]) : null;
+}
 const empty = (c: string | null): MakeProductionPlan => ({
   cutoffDate: c,
   totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0 },
@@ -338,16 +356,38 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   // accumulation order is unchanged.
   const selIds = [...runs.keys()];
   const fullOut = new Map<string, Map<string, number>>();
+  const inputsOf = new Map<string, Map<string, number>>(); // op -> input item -> qty/run
   {
     const chunks: string[][] = [];
     for (let i = 0; i < selIds.length; i += 150) chunks.push(selIds.slice(i, i + 150));
-    const results = await Promise.all(
-      chunks.map((ids) =>
-        supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).in("role", ["component", "cut_part"]).gt("qty_per_run", 0),
+    const [outResults, inResults] = await Promise.all([
+      Promise.all(
+        chunks.map((ids) =>
+          supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).in("role", ["component", "cut_part"]).gt("qty_per_run", 0),
+        ),
       ),
-    );
-    for (const { data } of results)
+      Promise.all(
+        chunks.map((ids) =>
+          supabase.from("operation_inputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).gt("qty_per_run", 0),
+        ),
+      ),
+    ]);
+    for (const { data } of outResults)
       for (const o of data ?? []) { if (!o.item_id) continue; const m = fullOut.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); fullOut.set(o.operation_id as string, m); }
+    for (const { data } of inResults)
+      for (const o of data ?? []) { if (!o.item_id) continue; const m = inputsOf.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); inputsOf.set(o.operation_id as string, m); }
+  }
+
+  // Input items (raw sheets) usually aren't in the parts-list `involved` set —
+  // fetch code/name for any we haven't loaded yet.
+  {
+    const missingIds = [...new Set([...inputsOf.values()].flatMap((m) => [...m.keys()]))].filter((id) => !itemInfo.has(id));
+    const chunks: string[][] = [];
+    for (let i = 0; i < missingIds.length; i += 150) chunks.push(missingIds.slice(i, i + 150));
+    const results = await Promise.all(
+      chunks.map((ids) => supabase.from("items").select("id, code, name, category_id, item_type").in("id", ids)),
+    );
+    for (const { data } of results) for (const it of data ?? []) itemInfo.set(it.id as string, it);
   }
 
   const plan: PlanProgram[] = [];
@@ -389,7 +429,16 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
         };
       })
       .sort((a, b) => b.qty - a.qty);
-    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers });
+    const inputs: PlanInput[] = [...(inputsOf.get(op) ?? new Map<string, number>())]
+      .map(([itemId, perRun]) => ({
+        code: code(itemId),
+        name: name(itemId),
+        thicknessMm: sheetThicknessMm(name(itemId)),
+        perRun,
+        total: Math.ceil(perRun * r),
+      }))
+      .sort((a, b) => b.total - a.total);
+    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers, inputs });
   }
 
   const blocked: BlockedItem[] = [];

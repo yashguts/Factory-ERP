@@ -1,11 +1,11 @@
 "use client";
 
 import { useState } from "react";
-import { Hammer, AlertTriangle, Ban, ChevronRight } from "lucide-react";
+import { Hammer, AlertTriangle, Ban, ChevronRight, Layers } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
-import type { MakeProductionPlan } from "@/lib/actions/production-plan";
+import type { MakeProductionPlan, PlanProgram } from "@/lib/actions/production-plan";
 
 const MACHINE: Record<string, string> = {
   cnc_punch: "Punch",
@@ -33,6 +33,37 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
     planMatches(c, filter) || c.feeds.some((f) => planMatches(f, filter));
   const shownPrograms = plan.plan.filter((p) => p.covers.some(coverMatches));
   const shownBlocked = plan.blocked.filter((b) => planMatches(b, filter));
+
+  // Group programs by the category of their main produced part (covers are
+  // qty-sorted, so [0] is the dominant one). Sections A→Z; within a section
+  // the server's most-runs-first order is kept.
+  const sections: { category: string; programs: PlanProgram[] }[] = [];
+  {
+    const byCat = new Map<string, PlanProgram[]>();
+    for (const p of shownPrograms) {
+      const cat = p.covers[0]?.category ?? "(none)";
+      const arr = byCat.get(cat) ?? [];
+      arr.push(p);
+      byCat.set(cat, arr);
+    }
+    for (const [category, programs] of [...byCat.entries()].sort((a, b) => a[0].localeCompare(b[0])))
+      sections.push({ category, programs });
+  }
+
+  // "Which thickness sheet is to be cut how much" — totals across the SHOWN
+  // programs (so the summary follows the filters). Aggregated per sheet item.
+  const sheetTotals: { code: string; name: string; thicknessMm: number | null; total: number }[] = [];
+  {
+    const agg = new Map<string, { name: string; thicknessMm: number | null; total: number }>();
+    for (const p of shownPrograms)
+      for (const i of p.inputs ?? []) {
+        const cur = agg.get(i.code) ?? { name: i.name, thicknessMm: i.thicknessMm, total: 0 };
+        cur.total += i.total;
+        agg.set(i.code, cur);
+      }
+    for (const [code, v] of agg) sheetTotals.push({ code, ...v });
+    sheetTotals.sort((a, b) => (a.thicknessMm ?? 99) - (b.thicknessMm ?? 99) || b.total - a.total);
+  }
 
   return (
     <div>
@@ -62,7 +93,37 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
 
-      {/* The plan */}
+      {/* Sheets summary — which thickness, how many, across the shown programs */}
+      {sheetTotals.length > 0 && (
+        <div className="card-surface p-4 mb-6">
+          <h2 className="text-sm font-semibold mb-1 flex items-center gap-2">
+            <Layers className="h-4 w-4" /> Sheets to cut
+          </h2>
+          <p className="text-[11px] text-[var(--muted-foreground)] mb-2">
+            Total raw sheets the programs below will consume
+            {filter.type !== "all" || filter.category !== "all" || filter.sub !== "all"
+              ? " (follows the active filter)"
+              : ""}{" "}
+            — whole runs, so treat as the upper estimate.
+          </p>
+          <div className="divide-y divide-[var(--border)]">
+            {sheetTotals.map((s) => (
+              <div key={s.code} className="flex items-center gap-3 py-1.5 text-xs">
+                <Badge variant="amber" className="shrink-0 w-16 justify-center tabular-nums">
+                  {s.thicknessMm != null ? `${s.thicknessMm} mm` : "? mm"}
+                </Badge>
+                <span className="font-mono text-[var(--muted-foreground)] shrink-0">{s.code}</span>
+                <span className="truncate flex-1">{s.name}</span>
+                <span className="tabular-nums font-semibold shrink-0">
+                  {s.total.toLocaleString()} sheet{s.total === 1 ? "" : "s"}
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* The plan, grouped by the category of what each program makes */}
       <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
         <Hammer className="h-4 w-4" /> Run these audited programs
       </h2>
@@ -71,8 +132,15 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
           {plan.plan.length === 0 ? "No audited programs can make any of the current shortfall." : "No programs match the filter."}
         </div>
       ) : (
-        <div className="space-y-2 mb-8">
-          {shownPrograms.map((p) => (
+        <div className="mb-8">
+          {sections.map((sec) => (
+            <div key={sec.category} className="mb-5">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-1.5 flex items-center gap-2">
+                {sec.category}
+                <span className="font-normal normal-case">· {sec.programs.length} program{sec.programs.length === 1 ? "" : "s"}</span>
+              </h3>
+              <div className="space-y-2">
+                {sec.programs.map((p) => (
             <div key={p.code} className="card-surface p-3">
               <div className="flex items-center gap-2 flex-wrap">
                 <Badge variant="neutral" className="font-mono text-[11px]">{MACHINE[p.machine] ?? p.machine}</Badge>
@@ -83,6 +151,23 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                   {p.partsMade} parts{p.extra > 0 ? ` · ${p.extra} extra` : " · no waste"}
                 </span>
               </div>
+              {(p.inputs ?? []).length > 0 && (
+                <div className="mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-[var(--muted-foreground)]">
+                  <Layers className="h-3 w-3 shrink-0" />
+                  {p.inputs.map((i) => (
+                    <span key={i.code} className="inline-flex items-center gap-1.5">
+                      {i.thicknessMm != null && (
+                        <Badge variant="amber" className="tabular-nums">{i.thicknessMm} mm</Badge>
+                      )}
+                      <span className="truncate max-w-[340px]">{i.name}</span>
+                      <span className="tabular-nums font-semibold text-[var(--foreground)]">
+                        × {i.total.toLocaleString()} sheet{i.total === 1 ? "" : "s"}
+                      </span>
+                      {i.perRun !== 1 && <span>({i.perRun}/run)</span>}
+                    </span>
+                  ))}
+                </div>
+              )}
               <div className="mt-2 pl-1 space-y-1.5">
                 {p.covers.map((c) => (
                   <div key={c.code} className="text-xs">
@@ -110,6 +195,9 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                       </div>
                     )}
                   </div>
+                ))}
+              </div>
+            </div>
                 ))}
               </div>
             </div>
