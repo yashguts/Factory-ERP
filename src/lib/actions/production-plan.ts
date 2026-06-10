@@ -42,6 +42,15 @@ export interface PlanInput {
   perRun: number; // sheets consumed per program run
   total: number; // perRun × runs — what the operator actually has to load
 }
+export interface PlanOutput {
+  code: string;
+  name: string;
+  perRun: number;
+  /** Units this plan's runs will produce (perRun × runs). */
+  produced: number;
+  /** Units of those counted toward the requirement (globally allocated — never double-counted across programs). */
+  used: number;
+}
 export interface PlanProgram {
   code: string;
   name: string;
@@ -50,6 +59,8 @@ export interface PlanProgram {
   partsMade: number;
   extra: number;
   covers: PlanCover[];
+  /** EVERY part the program's runs produce, with produced vs counted-toward-requirement. */
+  outputs: PlanOutput[];
   /** Raw material consumed (usually one sheet item) — tells the floor which thickness to cut. */
   inputs: PlanInput[];
 }
@@ -73,9 +84,15 @@ export interface MakeProductionPlan {
     partsMade: number;
     partsNeeded: number;
     otherParts: number;
+    /** Raw sheets the chosen plan consumes (programs with recorded sheet inputs). */
+    sheets: number;
+    /** What the simple least-extra-parts pick would have consumed — shows the saving. */
+    sheetsSimple: number;
   };
   plan: PlanProgram[];
   blocked: BlockedItem[];
+  /** Program codes the user excluded ("don't run this") — the plan above is computed without them. */
+  excluded: string[];
 }
 
 const PAGE = 1000;
@@ -88,22 +105,103 @@ function sheetThicknessMm(name: string): number | null {
   const loose = /(\d+(?:\.\d+)?)\s*mm\b/i.exec(name);
   return loose ? parseFloat(loose[1]) : null;
 }
-const empty = (c: string | null): MakeProductionPlan => ({
+const empty = (c: string | null, excluded: string[] = []): MakeProductionPlan => ({
   cutoffDate: c,
-  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0 },
+  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0, sheets: 0, sheetsSimple: 0 },
   plan: [],
   blocked: [],
+  excluded,
 });
 
-export async function getMakeProductionPlan(cutoffDate?: string): Promise<MakeProductionPlan> {
-  const key = cutoffDate ?? "__all__";
+/* ------------------------------------------------------------------ *
+ * Program-run selection. Two greedy strategies over the same demand:
+ *  - least-extra-parts (the original): best useful:produced ratio per round.
+ *  - least-sheets: best useful-parts-per-SHEET per round (a program that
+ *    covers the same demand with fewer raw sheets wins).
+ * Both get a reverse "trim" pass (most-expensive program first, cancel runs
+ * that other programs' co-products already cover), then whichever covers
+ * the demand with fewer sheets is used. Coverage is re-verified — on any
+ * discrepancy we fall back to the original selection.
+ * ------------------------------------------------------------------ */
+
+type OpOuts = Map<string, Map<string, number>>; // op -> part -> qty per run
+type Runs = Map<string, number>;
+
+function greedySelect(
+  progOut: OpOuts,
+  leafProduce: Map<string, number>,
+  score: (usefulPerRun: number, op: string) => number,
+): Runs {
+  const remaining = new Map(leafProduce);
+  const runs: Runs = new Map();
+  for (;;) {
+    let best: string | null = null, bestScore = -1, bestUseful = -1;
+    for (const [op, outs] of progOut) {
+      let u = 0;
+      for (const [part, qty] of outs) u += Math.min(remaining.get(part) ?? 0, qty);
+      if (u <= 0) continue;
+      const s = score(u, op);
+      if (s > bestScore || (s === bestScore && u > bestUseful)) { bestScore = s; bestUseful = u; best = op; }
+    }
+    if (!best) break;
+    const outs = progOut.get(best)!;
+    let batch = Infinity;
+    for (const [part, qty] of outs) { const rem = remaining.get(part) ?? 0; if (rem > 0) batch = Math.min(batch, Math.ceil(rem / qty)); }
+    runs.set(best, (runs.get(best) ?? 0) + batch);
+    for (const [part, qty] of outs) { const rem = remaining.get(part) ?? 0; if (rem > 0) remaining.set(part, Math.max(0, rem - qty * batch)); }
+  }
+  return runs;
+}
+
+/** Cancel runs that other selected programs' co-products already cover (most sheet-expensive first). */
+function trimRuns(runs: Runs, progOut: OpOuts, leafProduce: Map<string, number>, sheetCost: Map<string, number>): Runs {
+  const produced = new Map<string, number>();
+  for (const [op, r] of runs) for (const [part, qty] of progOut.get(op) ?? []) produced.set(part, (produced.get(part) ?? 0) + qty * r);
+  const order = [...runs.keys()].sort((a, b) => (sheetCost.get(b) ?? 1) - (sheetCost.get(a) ?? 1));
+  for (const op of order) {
+    const outs = progOut.get(op) ?? new Map<string, number>();
+    while ((runs.get(op) ?? 0) > 0) {
+      let removable = true;
+      for (const [part, qty] of outs) {
+        const need = leafProduce.get(part) ?? 0;
+        if (need > 0 && (produced.get(part) ?? 0) - qty < need) { removable = false; break; }
+      }
+      if (!removable) break;
+      runs.set(op, runs.get(op)! - 1);
+      for (const [part, qty] of outs) produced.set(part, (produced.get(part) ?? 0) - qty);
+    }
+    if ((runs.get(op) ?? 0) === 0) runs.delete(op);
+  }
+  return runs;
+}
+
+function coversDemand(runs: Runs, progOut: OpOuts, leafProduce: Map<string, number>): boolean {
+  const produced = new Map<string, number>();
+  for (const [op, r] of runs) for (const [part, qty] of progOut.get(op) ?? []) produced.set(part, (produced.get(part) ?? 0) + qty * r);
+  for (const [part, need] of leafProduce) if ((produced.get(part) ?? 0) < need - 1e-9) return false;
+  return true;
+}
+
+/** Reported sheet total: only REAL recorded sheet inputs, per-item ceil like the UI. */
+function reportedSheets(runs: Runs, inputsOf: Map<string, Map<string, number>>): number {
+  let s = 0;
+  for (const [op, r] of runs) for (const [, perRun] of inputsOf.get(op) ?? []) s += Math.ceil(perRun * r);
+  return s;
+}
+
+export async function getMakeProductionPlan(
+  cutoffDate?: string,
+  excludeCodes?: string[],
+): Promise<MakeProductionPlan> {
+  const excl = [...new Set((excludeCodes ?? []).map((c) => c.trim()).filter(Boolean))].sort();
+  const key = `${cutoffDate ?? "__all__"}|${excl.join("§")}`;
   return unstable_cache(_getPlanUncached, ["make-production-plan", key], {
     revalidate: 1800,
     tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"],
-  })(cutoffDate);
+  })(cutoffDate, excl);
 }
 
-async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan> {
+async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []): Promise<MakeProductionPlan> {
   const supabase = createCacheClient();
 
   // (1) Make shortfall from the live MRP calc, (2) parts lists, and the category
@@ -160,7 +258,7 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   if (short.size === 0) {
     // Drain the in-flight reads so we don't leave unhandled rejections.
     await Promise.all([partsOfPromise, catProcPromise, opsPromise]);
-    return empty(cutoffDate ?? null);
+    return empty(cutoffDate ?? null, excludeCodes);
   }
 
   // 2) parts lists (item_bom_lines): parent -> [{child, qty}]
@@ -256,10 +354,17 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
       return rows;
     })(),
   ]);
+  // "Don't run this" exclusions: drop the program from the producer pool
+  // entirely so the selection (and the blocked classification) recompute
+  // as if it didn't exist.
+  const excludedIds = new Set(
+    [...ops.values()].filter((o: any) => excludeCodes.includes(o.code as string)).map((o: any) => o.id as string),
+  );
   const aud = new Map<string, Map<string, number>>();
   const pend = new Map<string, Map<string, number>>();
   for (const o of outputRows) {
     if (!involved.has(o.item_id as string)) continue;
+    if (excludedIds.has(o.operation_id as string)) continue;
     const op = ops.get(o.operation_id as string);
     if (!op) continue;
     const m = op.audited_at ? aud : pend;
@@ -330,24 +435,57 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
     else if (isMakeLeaf(it)) leafProduce.set(it, (leafProduce.get(it) ?? 0) + prod);
   }
 
-  // 8) least-waste greedy
-  const progOut = new Map<string, Map<string, number>>();
+  // 8) candidate programs for the needed parts
+  const progOut: OpOuts = new Map();
   for (const part of leafProduce.keys()) for (const [op, qty] of aud.get(part) ?? []) { const m = progOut.get(op) ?? new Map<string, number>(); m.set(part, qty); progOut.set(op, m); }
-  const remaining = new Map(leafProduce);
-  const runs = new Map<string, number>();
-  for (;;) {
-    let best: string | null = null, bestRatio = -1, bestUseful = -1;
-    for (const [op, outs] of progOut) {
-      let u = 0, t = 0;
-      for (const [part, qty] of outs) { t += qty; u += Math.min(remaining.get(part) ?? 0, qty); }
-      if (u > 0 && (u / t > bestRatio || (u / t === bestRatio && u > bestUseful))) { bestRatio = u / t; bestUseful = u; best = op; }
-    }
-    if (!best) break;
-    const outs = progOut.get(best)!;
-    let batch = Infinity;
-    for (const [part, qty] of outs) { const rem = remaining.get(part) ?? 0; if (rem > 0) batch = Math.min(batch, Math.ceil(rem / qty)); }
-    runs.set(best, (runs.get(best) ?? 0) + batch);
-    for (const [part, qty] of outs) { const rem = remaining.get(part) ?? 0; if (rem > 0) remaining.set(part, Math.max(0, rem - qty * batch)); }
+
+  // Sheet cost per CANDIDATE program (operation_inputs) — the sheet-aware
+  // selection needs it for every candidate, not just the chosen ones. A
+  // program with no recorded inputs counts as 1 sheet/run so a data gap
+  // doesn't make it look free.
+  const inputsOf = new Map<string, Map<string, number>>(); // op -> input item -> qty/run
+  {
+    const candIds = [...progOut.keys()];
+    const chunks: string[][] = [];
+    for (let i = 0; i < candIds.length; i += 150) chunks.push(candIds.slice(i, i + 150));
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase.from("operation_inputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).gt("qty_per_run", 0),
+      ),
+    );
+    for (const { data } of results)
+      for (const o of data ?? []) { if (!o.item_id) continue; const m = inputsOf.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); inputsOf.set(o.operation_id as string, m); }
+  }
+  const sheetCost = new Map<string, number>();
+  for (const op of progOut.keys()) {
+    const ins = inputsOf.get(op);
+    sheetCost.set(op, ins && ins.size ? [...ins.values()].reduce((s, q) => s + q, 0) : 1);
+  }
+
+  // Selection: the original least-extra-parts greedy is the BASELINE (and the
+  // fallback); a sheet-aware greedy plus a trim pass on both compete. The
+  // covering plan that consumes the fewest sheets wins (ties: fewer runs).
+  const totalRunsOf = (r: Runs) => [...r.values()].reduce((s, x) => s + x, 0);
+  const baseline = greedySelect(progOut, leafProduce, (u, op) => {
+    let t = 0;
+    for (const q of progOut.get(op)!.values()) t += q;
+    return u / t;
+  });
+  const sheetsSimple = reportedSheets(baseline, inputsOf);
+  let runs: Runs = baseline;
+  let runsSheets = sheetsSimple;
+  for (const cand of [
+    trimRuns(new Map(baseline), progOut, leafProduce, sheetCost),
+    trimRuns(
+      greedySelect(progOut, leafProduce, (u, op) => u / (sheetCost.get(op) ?? 1)),
+      progOut,
+      leafProduce,
+      sheetCost,
+    ),
+  ]) {
+    if (!coversDemand(cand, progOut, leafProduce)) continue;
+    const s = reportedSheets(cand, inputsOf);
+    if (s < runsSheets || (s === runsSheets && totalRunsOf(cand) < totalRunsOf(runs))) { runs = cand; runsSheets = s; }
   }
 
   // 9) full output bundles of the chosen programs -> "other parts".
@@ -356,32 +494,29 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   // accumulation order is unchanged.
   const selIds = [...runs.keys()];
   const fullOut = new Map<string, Map<string, number>>();
-  const inputsOf = new Map<string, Map<string, number>>(); // op -> input item -> qty/run
   {
     const chunks: string[][] = [];
     for (let i = 0; i < selIds.length; i += 150) chunks.push(selIds.slice(i, i + 150));
-    const [outResults, inResults] = await Promise.all([
-      Promise.all(
-        chunks.map((ids) =>
-          supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).in("role", ["component", "cut_part"]).gt("qty_per_run", 0),
-        ),
+    const results = await Promise.all(
+      chunks.map((ids) =>
+        supabase.from("operation_outputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).in("role", ["component", "cut_part"]).gt("qty_per_run", 0),
       ),
-      Promise.all(
-        chunks.map((ids) =>
-          supabase.from("operation_inputs").select("operation_id, item_id, qty_per_run").in("operation_id", ids).gt("qty_per_run", 0),
-        ),
-      ),
-    ]);
-    for (const { data } of outResults)
+    );
+    for (const { data } of results)
       for (const o of data ?? []) { if (!o.item_id) continue; const m = fullOut.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); fullOut.set(o.operation_id as string, m); }
-    for (const { data } of inResults)
-      for (const o of data ?? []) { if (!o.item_id) continue; const m = inputsOf.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); inputsOf.set(o.operation_id as string, m); }
   }
 
-  // Input items (raw sheets) usually aren't in the parts-list `involved` set —
-  // fetch code/name for any we haven't loaded yet.
+  // Input items (raw sheets) and co-product outputs aren't always in the
+  // parts-list `involved` set — fetch code/name for any we haven't loaded yet.
   {
-    const missingIds = [...new Set([...inputsOf.values()].flatMap((m) => [...m.keys()]))].filter((id) => !itemInfo.has(id));
+    const missingIds = [
+      ...new Set(
+        selIds.flatMap((op) => [
+          ...(inputsOf.get(op)?.keys() ?? []),
+          ...(fullOut.get(op)?.keys() ?? []),
+        ]),
+      ),
+    ].filter((id) => !itemInfo.has(id));
     const chunks: string[][] = [];
     for (let i = 0; i < missingIds.length; i += 150) chunks.push(missingIds.slice(i, i + 150));
     const results = await Promise.all(
@@ -391,10 +526,23 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   }
 
   const plan: PlanProgram[] = [];
+  // Global need allocation for the outputs view: walk programs in display
+  // order and hand each part's remaining need out once, so "counted" never
+  // double-counts a part produced by two programs.
+  const remainingNeed = new Map(leafProduce);
   for (const [op, r] of [...runs.entries()].sort((a, b) => b[1] - a[1])) {
     const opi = ops.get(op);
     const fout = fullOut.get(op) ?? new Map<string, number>();
     const made = r * [...fout.values()].reduce((s, q) => s + q, 0);
+    const outputs: PlanOutput[] = [...fout.entries()]
+      .map(([itemId, perRun]) => {
+        const produced = Math.round(perRun * r);
+        const rem = remainingNeed.get(itemId) ?? 0;
+        const used = Math.min(produced, Math.round(rem));
+        if (rem > 0) remainingNeed.set(itemId, Math.max(0, rem - used));
+        return { code: code(itemId), name: name(itemId), perRun, produced, used };
+      })
+      .sort((a, b) => b.produced - a.produced);
     const coverParts = [...(progOut.get(op)?.keys() ?? [])].filter((p) => leafProduce.has(p));
     const used = coverParts.reduce((s, p) => s + Math.min(leafProduce.get(p)!, r * (progOut.get(op)!.get(p) ?? 0)), 0);
     // Covers = the NEEDED parts this program actually outputs (its true outputs), each
@@ -438,7 +586,7 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
         total: Math.ceil(perRun * r),
       }))
       .sort((a, b) => b.total - a.total);
-    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers, inputs });
+    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, partsMade: Math.round(made), extra: Math.round(made - used), covers, outputs, inputs });
   }
 
   const blocked: BlockedItem[] = [];
@@ -459,8 +607,20 @@ async function _getPlanUncached(cutoffDate?: string): Promise<MakeProductionPlan
   const partsNeeded = Math.round([...leafProduce.values()].reduce((s, q) => s + q, 0));
   return {
     cutoffDate: cutoffDate ?? null,
-    totals: { shortfallItems: short.size, makeable: makeable.length, blocked: blocked.length, programs: runs.size, runs: [...runs.values()].reduce((s, r) => s + r, 0), partsMade, partsNeeded, otherParts: partsMade - partsNeeded },
+    totals: {
+      shortfallItems: short.size,
+      makeable: makeable.length,
+      blocked: blocked.length,
+      programs: runs.size,
+      runs: [...runs.values()].reduce((s, r) => s + r, 0),
+      partsMade,
+      partsNeeded,
+      otherParts: partsMade - partsNeeded,
+      sheets: runsSheets,
+      sheetsSimple,
+    },
     plan,
     blocked,
+    excluded: excludeCodes,
   };
 }

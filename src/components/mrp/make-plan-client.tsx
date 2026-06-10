@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { Hammer, AlertTriangle, Ban, ChevronRight, Layers } from "lucide-react";
+import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
+import { Hammer, AlertTriangle, Ban, ChevronRight, Layers, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
@@ -16,7 +17,23 @@ const MACHINE: Record<string, string> = {
 
 export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   const t = plan.totals;
+  const router = useRouter();
+  const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
+
+  // "Don't run this": exclusions live in the URL (?exclude=...) so the SERVER
+  // recomputes the whole plan without those programs — other programs pick up
+  // the parts they covered, or the item moves to "blocked".
+  const excluded = plan.excluded ?? [];
+  const goWithExclusions = (excl: string[]) => {
+    const params = new URLSearchParams();
+    if (plan.cutoffDate) params.set("date", plan.cutoffDate);
+    if (excl.length) params.set("exclude", excl.join(","));
+    const qs = params.toString();
+    startTransition(() => router.push(`/mrp/make-plan${qs ? `?${qs}` : ""}`));
+  };
+  const excludeProgram = (code: string) => goWithExclusions([...excluded, code]);
+  const restoreProgram = (code: string) => goWithExclusions(excluded.filter((c) => c !== code));
   // Filter options come from both the produced part AND every finished item it feeds, so a
   // program that only cuts a shared sub-part stays findable under that part's assembly.
   const filterRows = [
@@ -82,16 +99,55 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
         <Card label="Shortfall items" value={t.shortfallItems} />
         <Card label="Makeable now" value={t.makeable} tone="ok" />
         <Card label="Blocked" value={t.blocked} tone={t.blocked ? "warn" : undefined} />
         <Card label="Programs to run" value={t.programs} />
         <Card label="Total runs" value={t.runs} />
+        <Card
+          label="Sheets to cut"
+          value={t.sheets ?? 0}
+          sub={
+            (t.sheetsSimple ?? 0) > (t.sheets ?? 0)
+              ? `saves ${(t.sheetsSimple - t.sheets).toLocaleString()} vs simple pick`
+              : undefined
+          }
+          tone={(t.sheetsSimple ?? 0) > (t.sheets ?? 0) ? "ok" : undefined}
+        />
         <Card label="Other parts" value={t.otherParts} sub={`${t.partsMade} made / ${t.partsNeeded} needed`} tone={t.otherParts ? "warn" : undefined} />
       </div>
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
+
+      {/* Excluded programs — restore individually or all at once */}
+      {excluded.length > 0 && (
+        <div className="flex items-center gap-2 flex-wrap mb-4 px-4 py-2.5 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-xs">
+          <Ban className="h-4 w-4 shrink-0 text-[var(--warning)]" />
+          <span className="font-medium">
+            Plan recalculated without {excluded.length} program{excluded.length === 1 ? "" : "s"}:
+          </span>
+          {excluded.map((code) => (
+            <button
+              key={code}
+              type="button"
+              onClick={() => restoreProgram(code)}
+              title="Bring this program back into the plan"
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full border border-[var(--border)] bg-[var(--card)] font-mono cursor-pointer hover:bg-[var(--muted)]"
+            >
+              {code} <X className="h-3 w-3" />
+            </button>
+          ))}
+          <button
+            type="button"
+            onClick={() => goWithExclusions([])}
+            className="ml-auto font-medium text-[var(--primary)] hover:underline cursor-pointer"
+          >
+            Restore all
+          </button>
+          {isPending && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+        </div>
+      )}
 
       {/* Sheets summary — which thickness, how many, across the shown programs */}
       {sheetTotals.length > 0 && (
@@ -150,6 +206,15 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                 <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 tabular-nums">
                   {p.partsMade} parts{p.extra > 0 ? ` · ${p.extra} extra` : " · no waste"}
                 </span>
+                <button
+                  type="button"
+                  onClick={() => excludeProgram(p.code)}
+                  disabled={isPending}
+                  title="Don't run this program — the plan recalculates without it (other programs cover its parts, or they show as blocked)"
+                  className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[11px] text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+                >
+                  <Ban className="h-3 w-3" /> Don&rsquo;t run
+                </button>
               </div>
               {(p.inputs ?? []).length > 0 && (
                 <div className="mt-1.5 flex items-center gap-x-3 gap-y-1 flex-wrap text-[11px] text-[var(--muted-foreground)]">
@@ -168,34 +233,48 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                   ))}
                 </div>
               )}
+              {/* EVERY part this program's runs produce: how many made, and how
+                  many of those the requirement actually counts. "not needed"
+                  rows are the waste to judge a program by. */}
               <div className="mt-2 pl-1 space-y-1.5">
-                {p.covers.map((c) => (
-                  <div key={c.code} className="text-xs">
-                    <div className="flex items-center gap-2">
-                      <ChevronRight className="h-3 w-3 shrink-0 text-[var(--muted-foreground)]" />
-                      <span className="font-mono text-[var(--muted-foreground)]">{c.code}</span>
-                      <span className="truncate flex-1">{c.name}</span>
-                      {c.direct ? (
-                        <Badge variant="neutral" className="shrink-0">finished item</Badge>
-                      ) : (
-                        <span className="italic text-[var(--muted-foreground)] shrink-0">sub-part</span>
-                      )}
-                      <span className="tabular-nums shrink-0 text-[var(--muted-foreground)]">makes ×{c.qty}</span>
-                    </div>
-                    {c.feeds.length > 0 && (
-                      <div className="pl-6 mt-0.5 text-[11px] text-[var(--muted-foreground)] leading-snug">
-                        ↳ goes into{" "}
-                        {c.feeds.slice(0, 6).map((f, i) => (
-                          <span key={f.code}>
-                            {i > 0 && ", "}
-                            {f.name} <span className="tabular-nums">(need {f.need})</span>
+                {(p.outputs ?? []).map((o) => {
+                  const cover = p.covers.find((c) => c.code === o.code);
+                  const unneeded = o.used === 0;
+                  return (
+                    <div key={o.code} className="text-xs">
+                      <div className="flex items-center gap-2">
+                        <ChevronRight className="h-3 w-3 shrink-0 text-[var(--muted-foreground)]" />
+                        <span className="font-mono text-[var(--muted-foreground)]">{o.code}</span>
+                        <span className={`truncate flex-1 ${unneeded ? "text-[var(--muted-foreground)]" : ""}`}>{o.name}</span>
+                        {cover?.direct ? (
+                          <Badge variant="neutral" className="shrink-0">finished item</Badge>
+                        ) : unneeded ? (
+                          <Badge variant="amber" className="shrink-0">not needed</Badge>
+                        ) : (
+                          <span className="italic text-[var(--muted-foreground)] shrink-0">sub-part</span>
+                        )}
+                        <span className="tabular-nums shrink-0">
+                          <span className="text-[var(--muted-foreground)]">makes ×{o.produced} · </span>
+                          <span className={unneeded ? "text-amber-600 font-medium" : "text-emerald-700 font-medium"}>
+                            {o.used} counted
                           </span>
-                        ))}
-                        {c.feeds.length > 6 && ` +${c.feeds.length - 6} more`}
+                        </span>
                       </div>
-                    )}
-                  </div>
-                ))}
+                      {cover && cover.feeds.length > 0 && (
+                        <div className="pl-6 mt-0.5 text-[11px] text-[var(--muted-foreground)] leading-snug">
+                          ↳ goes into{" "}
+                          {cover.feeds.slice(0, 6).map((f, i) => (
+                            <span key={f.code}>
+                              {i > 0 && ", "}
+                              {f.name} <span className="tabular-nums">(need {f.need})</span>
+                            </span>
+                          ))}
+                          {cover.feeds.length > 6 && ` +${cover.feeds.length - 6} more`}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
               </div>
             </div>
                 ))}
