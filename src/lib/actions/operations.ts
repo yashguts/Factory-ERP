@@ -68,6 +68,8 @@ export interface OperationDetail {
   family_key: string | null;
   material_label: string | null;
   audited_at: string | null;
+  /** Machining time of one run in seconds (from the set-up schedule). */
+  machining_time_seconds: number | null;
   description: string | null;
   sketch_url: string | null;
   sketch_filename: string | null;
@@ -233,6 +235,7 @@ const _getOperationDetailUncached = async (
     family_key: data.family_key ?? null,
     material_label: data.material_label ?? null,
     audited_at: data.audited_at ?? null,
+    machining_time_seconds: data.machining_time_seconds ?? null,
     description: data.description ?? null,
     sketch_url: data.sketch_url ?? null,
     sketch_filename: data.sketch_filename ?? null,
@@ -419,6 +422,7 @@ export async function createOperation(input: {
   material_label?: string | null;
   description?: string | null;
   notes?: string | null;
+  machining_time_seconds?: number | null;
   inputs?: OperationLineInput[];
   outputs?: OperationLineInput[];
 }): Promise<OperationSaveResult> {
@@ -439,6 +443,7 @@ export async function createOperation(input: {
       material_label: input.material_label?.trim() || null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
+      machining_time_seconds: input.machining_time_seconds ?? null,
     })
     .select("id")
     .single();
@@ -467,6 +472,7 @@ export async function updateOperation(
     material_label?: string | null;
     description?: string | null;
     notes?: string | null;
+    machining_time_seconds?: number | null;
     inputs?: OperationLineInput[];
     outputs?: OperationLineInput[];
   },
@@ -489,6 +495,7 @@ export async function updateOperation(
       material_label: input.material_label?.trim() || null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
+      machining_time_seconds: input.machining_time_seconds ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

@@ -276,8 +276,22 @@ export interface ProductionPlan {
   purchased: PlanLeaf[];
   /** Make items with no program and no parts list — can't explode (flag). */
   unresolved: { item_id: string; code: string; name: string; qty: number }[];
-  /** Program run counts (for reference / shop scheduling). */
-  programRuns: { program_id: string; code: string | null; name: string; runs: number }[];
+  /** Program run counts + machine time (for reference / shop scheduling). */
+  programRuns: ProgramRunPlan[];
+}
+
+export interface ProgramRunPlan {
+  program_id: string;
+  code: string | null;
+  name: string;
+  runs: number;
+  /** Machining time of ONE run in seconds (null = not captured on the program). */
+  machining_time_seconds: number | null;
+  /** runs × machining_time_seconds (null when the per-run time is unknown). */
+  machine_seconds: number | null;
+  /** The program's input sheet (first non-trade input) for per-spec rollups. */
+  sheet_code: string | null;
+  sheet_name: string | null;
 }
 
 async function fetchAllRows(
@@ -503,21 +517,44 @@ async function _getProductionPlanUncached(
       })
       .sort((a, b) => b.shortfall - a.shortfall);
 
-  // Program names for the runs list. Disjoint id chunks -> fetch concurrently.
+  // Program names + machining time for the runs list. Disjoint id chunks ->
+  // fetch concurrently.
   const usedIds = Array.from(programIdsUsed);
-  const progNames = new Map<string, { code: string | null; name: string }>();
+  const progNames = new Map<
+    string,
+    { code: string | null; name: string; machining_time_seconds: number | null }
+  >();
   {
     const chunks: string[][] = [];
     for (let i = 0; i < usedIds.length; i += 200)
       chunks.push(usedIds.slice(i, i + 200));
     const results = await Promise.all(
       chunks.map((ids) =>
-        supabase.from("operations").select("id, code, name").in("id", ids),
+        supabase
+          .from("operations")
+          .select("id, code, name, machining_time_seconds")
+          .in("id", ids),
       ),
     );
     for (const { data } of results)
-      for (const p of data ?? []) progNames.set(p.id, { code: p.code ?? null, name: p.name });
+      for (const p of data ?? [])
+        progNames.set(p.id, {
+          code: p.code ?? null,
+          name: p.name,
+          machining_time_seconds: p.machining_time_seconds ?? null,
+        });
   }
+
+  // A program's "sheet" = its first non-trade input (the raw material it
+  // nests on); used by the plan UI to roll machine time up per sheet spec.
+  const sheetOf = (pid: string): { code: string | null; name: string | null } => {
+    const inputs = programInputs.get(pid) ?? [];
+    const pick =
+      inputs.find((i) => itemById.get(i.item_id)?.effective_procurement_type !== "trade") ??
+      inputs[0];
+    const it = pick ? itemById.get(pick.item_id) : null;
+    return { code: it?.code ?? null, name: it?.name ?? null };
+  };
 
   return {
     cutoffDate: cutoffDate ?? null,
@@ -530,13 +567,22 @@ async function _getProductionPlanUncached(
       })
       .sort((a, b) => b.qty - a.qty),
     programRuns: Array.from(programRuns.entries())
-      .map(([pid, runs]) => ({
-        program_id: pid,
-        code: progNames.get(pid)?.code ?? null,
-        name: progNames.get(pid)?.name ?? "(program)",
-        runs: Math.ceil(runs - 1e-9),
-      }))
-      .sort((a, b) => b.runs - a.runs),
+      .map(([pid, runs]) => {
+        const wholeRuns = Math.ceil(runs - 1e-9);
+        const mts = progNames.get(pid)?.machining_time_seconds ?? null;
+        const sheet = sheetOf(pid);
+        return {
+          program_id: pid,
+          code: progNames.get(pid)?.code ?? null,
+          name: progNames.get(pid)?.name ?? "(program)",
+          runs: wholeRuns,
+          machining_time_seconds: mts,
+          machine_seconds: mts != null ? wholeRuns * mts : null,
+          sheet_code: sheet.code,
+          sheet_name: sheet.name,
+        };
+      })
+      .sort((a, b) => (b.machine_seconds ?? 0) - (a.machine_seconds ?? 0) || b.runs - a.runs),
   };
 }
 

@@ -15,11 +15,12 @@ import {
   Layers,
   CheckCircle2,
   AlertTriangle,
+  Clock,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration } from "@/lib/utils";
 import {
   Table,
   TableHeader,
@@ -153,6 +154,15 @@ export function ProgramDetailClient({
               <Badge variant={operation.machine === "assembly_fit" ? "purple" : operation.machine === "cnc_laser" ? "cyan" : "blue"}>
                 {OPERATION_MACHINE_LABELS[operation.machine]}
               </Badge>
+              {operation.machining_time_seconds != null && (
+                <Badge
+                  variant="neutral"
+                  title="Machining time per run (from the set-up schedule)"
+                >
+                  <Clock className="h-3 w-3 mr-1" />
+                  {formatDuration(operation.machining_time_seconds)} / run
+                </Badge>
+              )}
             </div>
             {operation.description && (
               <p className="text-sm text-[var(--muted-foreground)] mt-2 max-w-2xl">

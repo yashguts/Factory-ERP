@@ -371,6 +371,8 @@ export interface Operation {
   /** Set when the program has been reviewed/signed off; null = pending. */
   audited_at: string | null;
   audited_by: string | null;
+  /** Machining time of one run in seconds (from the set-up schedule). */
+  machining_time_seconds: number | null;
   created_at: string;
   updated_at: string;
 }

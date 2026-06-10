@@ -19,6 +19,7 @@ import {
   type FamilyOption,
 } from "@/lib/actions/operations";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
+import { formatDuration, parseDuration } from "@/lib/utils";
 import {
   OPERATION_MACHINES,
   OPERATION_MACHINE_LABELS,
@@ -117,6 +118,11 @@ export function ProgramFormModal({
   );
   const [description, setDescription] = useState(source?.description ?? "");
   const [notes, setNotes] = useState(source?.notes ?? "");
+  const [machiningTime, setMachiningTime] = useState(
+    source?.machining_time_seconds
+      ? formatDuration(source.machining_time_seconds)
+      : "",
+  );
   // Family groups material/finish variants of the same base program; material
   // is this variant's finish (MS, SS, SS Rose Gold, …). Both optional.
   const [familyKey, setFamilyKey] = useState(source?.family_key ?? "");
@@ -270,6 +276,13 @@ export function ProgramFormModal({
       setError("Program name is required.");
       return;
     }
+    const parsedTime = parseDuration(machiningTime);
+    if (parsedTime === undefined) {
+      setError(
+        'Machining time must be "h:mm:ss", "mm:ss" or decimal minutes (e.g. 7:03 or 7.05).',
+      );
+      return;
+    }
     startTransition(async () => {
       const payload = {
         name,
@@ -279,6 +292,7 @@ export function ProgramFormModal({
         material_label: materialLabel.trim() || null,
         description: description.trim() || null,
         notes: notes.trim() || null,
+        machining_time_seconds: parsedTime,
         inputs: rowsToLines(inputs),
         outputs: rowsToLines(outputs),
       };
@@ -369,7 +383,20 @@ export function ProgramFormModal({
               ))}
             </Select>
           </div>
-          <p className="col-span-2 text-xs text-[var(--muted-foreground)] mt-7">
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Machining time / run
+              <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                (h:mm:ss or min)
+              </span>
+            </label>
+            <Input
+              value={machiningTime}
+              onChange={(e) => setMachiningTime(e.target.value)}
+              placeholder="e.g., 0:07:03 or 7.05"
+            />
+          </div>
+          <p className="text-xs text-[var(--muted-foreground)] mt-7">
             {copy.typeHint}
           </p>
         </div>
