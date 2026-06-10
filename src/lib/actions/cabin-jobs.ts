@@ -219,7 +219,7 @@ export async function searchCabinBases(
     const cur =
       byFam.get(fam) ??
       { uom: (flatten<any>(it.uom)?.abbreviation as string) ?? "", finishes: new Set<string>() };
-    cur.finishes.add((it.finish as string | null) ?? " "); // null = the "no finish" variant
+    cur.finishes.add((it.finish as string | null) ?? " "); // null = the "no finish" variant
     byFam.set(fam, cur);
   }
   return [...byFam.entries()]
