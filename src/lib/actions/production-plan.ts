@@ -127,11 +127,14 @@ const empty = (c: string | null, excluded: string[] = []): MakeProductionPlan =>
 type OpOuts = Map<string, Map<string, number>>; // op -> part -> qty per run
 type Runs = Map<string, number>;
 
-function greedySelect(
-  progOut: OpOuts,
-  leafProduce: Map<string, number>,
-  score: (usefulPerRun: number, op: string) => number,
-): Runs {
+type ScoreFn = (
+  op: string,
+  outs: Map<string, number>,
+  remaining: Map<string, number>,
+  useful: number,
+) => number;
+
+function greedySelect(progOut: OpOuts, leafProduce: Map<string, number>, score: ScoreFn): Runs {
   const remaining = new Map(leafProduce);
   const runs: Runs = new Map();
   for (;;) {
@@ -140,7 +143,7 @@ function greedySelect(
       let u = 0;
       for (const [part, qty] of outs) u += Math.min(remaining.get(part) ?? 0, qty);
       if (u <= 0) continue;
-      const s = score(u, op);
+      const s = score(op, outs, remaining, u);
       if (s > bestScore || (s === bestScore && u > bestUseful)) { bestScore = s; bestUseful = u; best = op; }
     }
     if (!best) break;
@@ -199,7 +202,7 @@ function localSearch(
 ): Runs {
   let best = start;
   let bestSheets = reportedSheets(best, inputsOf);
-  for (let iter = 0; iter < 20; iter++) {
+  for (let iter = 0; iter < 25; iter++) {
     let improved = false;
     const ops = [...best.keys()].sort((a, b) => (sheetCost.get(b) ?? 1) - (sheetCost.get(a) ?? 1));
     outer: for (const op of ops) {
@@ -217,13 +220,26 @@ function localSearch(
           if (d > 0) deficit.set(part, d);
         }
         if (deficit.size > 0) {
-          const patch = greedySelect(progOut, deficit, (u, o2) => u / (sheetCost.get(o2) ?? 1));
+          const patch = greedySelect(progOut, deficit, (o2, _outs, _rem, u) => u / (sheetCost.get(o2) ?? 1));
           for (const [o2, r2] of patch) cand.set(o2, (cand.get(o2) ?? 0) + r2);
         }
         trimRuns(cand, progOut, leafProduce, sheetCost);
         if (!coversDemand(cand, progOut, leafProduce)) continue;
         const s = reportedSheets(cand, inputsOf);
         if (s < bestSheets) { best = cand; bestSheets = s; improved = true; break outer; }
+      }
+    }
+    if (!improved) {
+      // Add-and-trim: sometimes ADDING one run of a rich nest lets several
+      // other programs cancel runs for a net sheet saving — a move the
+      // remove-repair direction can't discover.
+      for (const op of progOut.keys()) {
+        const cand: Runs = new Map(best);
+        cand.set(op, (cand.get(op) ?? 0) + 1);
+        trimRuns(cand, progOut, leafProduce, sheetCost);
+        if (!coversDemand(cand, progOut, leafProduce)) continue;
+        const s = reportedSheets(cand, inputsOf);
+        if (s < bestSheets) { best = cand; bestSheets = s; improved = true; break; }
       }
     }
     if (!improved) break;
@@ -517,39 +533,76 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
     const ins = inputsOf.get(op);
     sheetCost.set(op, ins && ins.size ? [...ins.values()].reduce((s, q) => s + q, 0) : 1);
   }
+  const cost = (op: string) => sheetCost.get(op) ?? 1;
 
-  // Selection: the original least-extra-parts greedy is the BASELINE (and the
-  // fallback); a sheet-aware greedy plus a trim pass on both compete. The
-  // covering plan that consumes the fewest sheets wins (ties: fewer runs).
+  // Dominance preprocessing: if B makes >= of every needed part A makes, for
+  // no more sheets, A can never be part of a best plan — drop it. (Strictness
+  // / code tie-break keeps exactly one of identical twins.)
+  {
+    const opsList = [...progOut.keys()];
+    const codeOf = (id: string) => (ops.get(id)?.code as string) ?? id;
+    for (const a of opsList) {
+      const oa = progOut.get(a);
+      if (!oa) continue;
+      for (const b of opsList) {
+        if (a === b || !progOut.has(b) || !progOut.has(a)) continue;
+        if (cost(a) < cost(b)) continue;
+        const ob = progOut.get(b)!;
+        let dominated = true;
+        let strictlyWorse = cost(a) > cost(b);
+        for (const [part, qa] of oa) {
+          const qb = ob.get(part) ?? 0;
+          if (qb < qa) { dominated = false; break; }
+          if (qb > qa) strictlyWorse = true;
+        }
+        if (ob.size > oa.size) strictlyWorse = true;
+        if (dominated && (strictlyWorse || codeOf(a) > codeOf(b))) { progOut.delete(a); break; }
+      }
+    }
+  }
+
+  // How many candidate programs can make each part — scarce parts get extra
+  // weight so flexible programs aren't burned early on parts anyone can make.
+  const nProducers = new Map<string, number>();
+  for (const outs of progOut.values())
+    for (const part of outs.keys()) nProducers.set(part, (nProducers.get(part) ?? 0) + 1);
+
+  // Selection portfolio: five deterministic greedy strategies, each trimmed
+  // and polished by the remove/repair/add local search; the covering plan
+  // with the fewest sheets wins (ties: fewer runs). The original
+  // least-extra-parts greedy stays the baseline + fallback.
   const totalRunsOf = (r: Runs) => [...r.values()].reduce((s, x) => s + x, 0);
-  const baseline = greedySelect(progOut, leafProduce, (u, op) => {
+  const totalOut = (op: string) => {
     let t = 0;
-    for (const q of progOut.get(op)!.values()) t += q;
-    return u / t;
-  });
+    for (const q of progOut.get(op)?.values() ?? []) t += q;
+    return t;
+  };
+  const scarceUseful = (outs: Map<string, number>, rem: Map<string, number>) => {
+    let w = 0;
+    for (const [part, qty] of outs) {
+      const r = rem.get(part) ?? 0;
+      if (r > 0) w += Math.min(r, qty) * (1 + 1 / (nProducers.get(part) ?? 1));
+    }
+    return w;
+  };
+  const STRATEGIES: ScoreFn[] = [
+    (op, _o, _r, u) => u / totalOut(op), // least extra parts (original)
+    (op, _o, _r, u) => u / cost(op), // most covered demand per sheet
+    (op, outs, rem) => scarceUseful(outs, rem) / cost(op), // scarcity-weighted per sheet
+    (op, outs, rem) => scarceUseful(outs, rem) / totalOut(op), // scarcity-weighted per part
+    (op, _o, _r, u) => { const t = totalOut(op); return u / (cost(op) * (1 + (t - u) / t)); }, // per sheet, waste-penalised
+  ];
+
+  const baseline = greedySelect(progOut, leafProduce, STRATEGIES[0]);
   const sheetsSimple = reportedSheets(baseline, inputsOf);
   let runs: Runs = baseline;
   let runsSheets = sheetsSimple;
-  for (const cand of [
-    trimRuns(new Map(baseline), progOut, leafProduce, sheetCost),
-    trimRuns(
-      greedySelect(progOut, leafProduce, (u, op) => u / (sheetCost.get(op) ?? 1)),
-      progOut,
-      leafProduce,
-      sheetCost,
-    ),
-  ]) {
+  for (const strategy of STRATEGIES) {
+    let cand = trimRuns(greedySelect(progOut, leafProduce, strategy), progOut, leafProduce, sheetCost);
+    cand = localSearch(cand, progOut, leafProduce, sheetCost, inputsOf);
     if (!coversDemand(cand, progOut, leafProduce)) continue;
     const s = reportedSheets(cand, inputsOf);
     if (s < runsSheets || (s === runsSheets && totalRunsOf(cand) < totalRunsOf(runs))) { runs = cand; runsSheets = s; }
-  }
-  // Polish the winner: remove-and-repair until no move saves a sheet.
-  {
-    const polished = localSearch(new Map(runs), progOut, leafProduce, sheetCost, inputsOf);
-    if (coversDemand(polished, progOut, leafProduce)) {
-      const s = reportedSheets(polished, inputsOf);
-      if (s < runsSheets || (s === runsSheets && totalRunsOf(polished) < totalRunsOf(runs))) { runs = polished; runsSheets = s; }
-    }
   }
 
   // 9) full output bundles of the chosen programs -> "other parts".
