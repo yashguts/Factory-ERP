@@ -50,6 +50,26 @@
   have reorder points set today). VERIFICATION TRAP (cost an hour): Claude-in-
   Chrome tabs are HIDDEN → hydration+effects stall → deep links look broken when
   they aren't. Screenshot first to foreground the tab; see memory env_preview_caveat.
+- **Demand Flow Type manual marking** (5342be5): clicking the Demand badge on any
+  /inventory row opens a menu — Auto (computed) / Jobs (direct) / Formula / No
+  link. Stored in items.demand_override (migration 019, NULL = auto); RPC returns
+  coalesce(override, computed) + demand_overridden, so filter/counts follow.
+  Manual marks render with a pencil ✎ + dashed border; every change hits
+  item_change_log (Daily Changes + undo verified live end-to-end).
+- **Steel scrap on Programs to Run** (c1acf4e): an agent scanned ALL 347 sketch
+  PDFs (TruTops SET-UP SCHEDULE; parser at pdf-dxf-pilot/extract_times.py +
+  download_sketches.py, data at scripts/sketch-extract.json — all rerunnable).
+  operations gained sheet_weight_kg / scrap_percent / scrap_weight_kg (migration
+  020, applied by scripts/apply-sketch-extract.js); machining_time_seconds now
+  set on all 347 sketch programs (40 filled, 1 corrected, 306 already exact —
+  the existing values clearly came from these PDFs). /mrp/make-plan shows a
+  "Steel scrap" summary card (plan-wide ~11.7%, 1,384 of 11,789 kg on today's
+  plan) + per-program chips (green <8% / amber / red >15%). Display only — the
+  locked optimizer untouched. Worst nests (audited!): CNC-106-SW-HARDWARE 36.5%,
+  CNC-401-CRAIL-BRACKET-A 28.1%, CNC-172-HOME-GOVENOR-ARG 23.1% — overlaps the
+  redesign shortlist (open thread 3); scrap data now ranks it by kg. NOTE: ~53
+  programs in the plan have NO sketch attached → no time/scrap ("— time — scrap"
+  chips); attaching their TruTops reports is the natural data-capture ask.
 
 ## MRP math audit (2026-06-11) — VERDICT: numbers trustworthy for purchasing
 
