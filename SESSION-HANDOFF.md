@@ -81,11 +81,13 @@ today — close when convenient):
    then batch GEO→DXF is easy. Also on offer: full parts-index extraction from
    all 294 sketch PDFs; and a DXF+qty → nesting-drawing generator (ILP-adjacent,
    verified offline). See memory reference_program_sketch_pdfs.
-8. **Branches**: `feature/mrp-net-dispatch` (pushed by the parallel session —
-   status unknown, check before assuming), `feature/perf-mumbai` (parked).
-9. Housekeeping: stale `.git/worktrees/{cabin-review,perf-mrp-review}` cause
-   permission-denied noise on every git op (locked by something; harmless).
-   Untracked scratch: `pdf-dxf-pilot/`, `scripts/*.json`, `a_copy.xlsx`.
+8. ~~Branches~~ RESOLVED 2026-06-11: `feature/mrp-net-dispatch` (5008303,
+   dispatch netting) is fully merged into main. `feature/perf-mumbai` still
+   parked with one commit (Mumbai region pin + direct-to-storage uploads).
+9. ~~Housekeeping~~ RESOLVED 2026-06-11: stale worktree metadata
+   (`cabin-review`, `perf-mrp-review`) and three leftover clean/merged
+   workflow worktrees deleted; git ops are quiet again. Still untracked
+   scratch: `pdf-dxf-pilot/`, `scripts/*.json`, `a_copy.xlsx`.
 
 ## Working agreements (hard-won today)
 
