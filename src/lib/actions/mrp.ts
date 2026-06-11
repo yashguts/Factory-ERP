@@ -627,18 +627,20 @@ async function _getMrpItemJobsUncached(
 ): Promise<MrpJobBreakdown[]> {
   const supabase = createCacheClient();
 
-  // 1) Fetch BOM lines referencing this item with qty > 0.
+  // 1) Fetch BOM lines referencing this item with qty > 0. `category` lets us
+  // apply the same requirement-stage scoping as getMrpData below.
   const PAGE = 1000;
   let allLines: Array<{
     id: string;
     job_bom_id: string;
     required_quantity: number;
+    category: string | null;
   }> = [];
   let offset = 0;
   while (true) {
     const { data, error } = await supabase
       .from("job_bom_lines")
-      .select("id, job_bom_id, required_quantity")
+      .select("id, job_bom_id, required_quantity, category")
       .eq("item_id", itemId)
       .gt("required_quantity", 0)
       .range(offset, offset + PAGE - 1);
@@ -698,7 +700,55 @@ async function _getMrpItemJobsUncached(
     for (const h of data ?? []) headerToJob.set(h.id, h.job_id);
   }
 
-  // 3) Aggregate per job_id.
+  // 3) Fetch job metadata FIRST — the popover must tell the same story as the
+  // table, so it applies getMrpData's exact job filters: status=in_production
+  // and (optionally) the dispatch-date cutoff. requirement_stage comes along
+  // for the stage scoping below.
+  const candidateJobIds = Array.from(new Set(headerToJob.values()));
+  const jobMeta = new Map<
+    string,
+    {
+      job_number: string;
+      customer_name: string | null;
+      requirement_dispatch_date: string | null;
+      requirement_stage: string;
+    }
+  >();
+  {
+    const jobChunks: string[][] = [];
+    for (let i = 0; i < candidateJobIds.length; i += 200)
+      jobChunks.push(candidateJobIds.slice(i, i + 200));
+    const jobResults = await Promise.all(
+      jobChunks.map((ids) => {
+        let q = supabase
+          .from("jobs")
+          .select(
+            "id, job_number, customer_name, requirement_dispatch_date, requirement_stage",
+          )
+          .in("id", ids)
+          .eq("status", "in_production");
+        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        return q;
+      }),
+    );
+    for (const { data, error } of jobResults) {
+      if (error) throw error;
+      for (const job of data ?? [])
+        jobMeta.set(job.id as string, {
+          job_number: job.job_number as string,
+          customer_name: (job.customer_name as string | null) ?? null,
+          requirement_dispatch_date:
+            (job.requirement_dispatch_date as string | null) ?? null,
+          requirement_stage:
+            (job.requirement_stage as string | null) ?? "full_material",
+        });
+    }
+  }
+  if (jobMeta.size === 0) return [];
+
+  // 4) Aggregate per job — same demand rules as getMrpData: only qualifying
+  // jobs; "new" requirement contributes nothing; "first_phase" counts only
+  // first-phase sections; dispatched qty netted out per line.
   const byJob = new Map<
     string,
     { line_count: number; total_quantity: number }
@@ -706,6 +756,15 @@ async function _getMrpItemJobsUncached(
   for (const line of allLines) {
     const jobId = headerToJob.get(line.job_bom_id);
     if (!jobId) continue;
+    const meta = jobMeta.get(jobId);
+    if (!meta) continue; // not in production / outside the date range
+    const stage = meta.requirement_stage;
+    if (stage === "new") continue;
+    if (
+      stage === "first_phase" &&
+      dispatchPhaseOf((line.category as string) ?? "") !== "first"
+    )
+      continue;
     const net = Math.max(
       0,
       (Number(line.required_quantity) || 0) - (dispatchedByLine.get(line.id) ?? 0),
@@ -718,46 +777,20 @@ async function _getMrpItemJobsUncached(
   }
   if (byJob.size === 0) return [];
 
-  // 4) Fetch job metadata (optionally filtered by cutoff date).
-  const jobIds = Array.from(byJob.keys());
-  let jobs: Array<{
-    id: string;
-    job_number: string;
-    customer_name: string | null;
-    requirement_dispatch_date: string | null;
-  }> = [];
-  {
-    const jobChunks: string[][] = [];
-    for (let i = 0; i < jobIds.length; i += 200)
-      jobChunks.push(jobIds.slice(i, i + 200));
-    const jobResults = await Promise.all(
-      jobChunks.map((ids) => {
-        let q = supabase
-          .from("jobs")
-          .select("id, job_number, customer_name, requirement_dispatch_date")
-          .in("id", ids);
-        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
-        return q;
-      }),
-    );
-    for (const { data, error } of jobResults) {
-      if (error) throw error;
-      jobs = jobs.concat(data ?? []);
-    }
-  }
-
   // 5) Merge and return, sorted by largest contribution first.
-  const out: MrpJobBreakdown[] = jobs.map((job) => {
-    const agg = byJob.get(job.id)!;
-    return {
-      job_id: job.id,
-      job_number: job.job_number,
-      customer_name: job.customer_name,
-      requirement_dispatch_date: job.requirement_dispatch_date,
-      line_count: agg.line_count,
-      total_quantity: agg.total_quantity,
-    };
-  });
+  const out: MrpJobBreakdown[] = Array.from(byJob.entries()).map(
+    ([jobId, agg]) => {
+      const meta = jobMeta.get(jobId)!;
+      return {
+        job_id: jobId,
+        job_number: meta.job_number,
+        customer_name: meta.customer_name,
+        requirement_dispatch_date: meta.requirement_dispatch_date,
+        line_count: agg.line_count,
+        total_quantity: agg.total_quantity,
+      };
+    },
+  );
   out.sort((a, b) => b.line_count - a.line_count);
   return out;
 }
