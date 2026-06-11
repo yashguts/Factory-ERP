@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Hammer, AlertTriangle, Ban, ChevronRight, Layers, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
 import { formatDuration } from "@/lib/utils";
@@ -21,6 +22,8 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
+  // "Search by sheet": narrow the plan to programs that consume a chosen raw sheet.
+  const [sheetFilter, setSheetFilter] = useState<string>("all");
 
   // "Don't run this": exclusions live in the URL (?exclude=...) so the SERVER
   // recomputes the whole plan without those programs — other programs pick up
@@ -49,7 +52,23 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   // A program shows if any of its outputs match, OR any finished item those outputs feed matches.
   const coverMatches = (c: MakeProductionPlan["plan"][number]["covers"][number]) =>
     planMatches(c, filter) || c.feeds.some((f) => planMatches(f, filter));
-  const shownPrograms = plan.plan.filter((p) => p.covers.some(coverMatches));
+  // Distinct raw sheets used anywhere in the plan, for the "Search by sheet"
+  // dropdown — sorted by thickness then code (same order as the summary).
+  const sheetOptions = (() => {
+    const m = new Map<string, { code: string; name: string; thicknessMm: number | null }>();
+    for (const p of plan.plan)
+      for (const i of p.inputs ?? [])
+        if (!m.has(i.code)) m.set(i.code, { code: i.code, name: i.name, thicknessMm: i.thicknessMm });
+    return [...m.values()].sort(
+      (a, b) => (a.thicknessMm ?? 99) - (b.thicknessMm ?? 99) || a.code.localeCompare(b.code),
+    );
+  })();
+  const sheetMatches = (p: PlanProgram) =>
+    sheetFilter === "all" || (p.inputs ?? []).some((i) => i.code === sheetFilter);
+
+  const shownPrograms = plan.plan.filter((p) => p.covers.some(coverMatches) && sheetMatches(p));
+  // The sheet filter is program-scoped (it has no meaning for blocked items),
+  // so blocked rows only follow the type/category/sub filter.
   const shownBlocked = plan.blocked.filter((b) => planMatches(b, filter));
 
   // Group programs by the category of their main produced part (covers are
@@ -130,6 +149,41 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
       </div>
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
+
+      {/* Search by sheet — narrows the plan to programs that cut a chosen raw sheet. */}
+      {sheetOptions.length > 0 && (
+        <div className="flex flex-wrap items-center gap-2 mb-4 -mt-1">
+          <span className="text-xs text-[var(--muted-foreground)] inline-flex items-center gap-1">
+            <Layers className="h-3.5 w-3.5" /> Search by sheet
+          </span>
+          <Select
+            value={sheetFilter}
+            onChange={(e) => setSheetFilter(e.target.value)}
+            className="w-auto min-w-[280px]"
+          >
+            <option value="all">All sheets ({sheetOptions.length})</option>
+            {sheetOptions.map((s) => (
+              <option key={s.code} value={s.code}>
+                {s.thicknessMm != null ? `${s.thicknessMm} mm · ` : ""}{s.code} · {s.name}
+              </option>
+            ))}
+          </Select>
+          {sheetFilter !== "all" && (
+            <>
+              <span className="text-xs text-[var(--muted-foreground)] tabular-nums">
+                {shownPrograms.length} program{shownPrograms.length === 1 ? "" : "s"}
+              </span>
+              <button
+                type="button"
+                onClick={() => setSheetFilter("all")}
+                className="text-xs text-[var(--primary)] hover:underline cursor-pointer"
+              >
+                Clear sheet
+              </button>
+            </>
+          )}
+        </div>
+      )}
 
       {/* Excluded programs — restore individually or all at once */}
       {excluded.length > 0 && (
