@@ -60,6 +60,12 @@ export interface PlanProgram {
   machiningTimeSeconds: number | null;
   /** runs x machiningTimeSeconds (null when the per-run time is unknown). */
   machineSeconds: number | null;
+  /** Scrap share of one sheet for this nest, from the TruTops report (null = not captured). */
+  scrapPercent: number | null;
+  /** runs x sheet weight — total steel this program's runs load (null = not captured). */
+  materialKg: number | null;
+  /** runs x scrap weight — steel wasted by this program's runs (null = not captured). */
+  scrapKg: number | null;
   partsMade: number;
   extra: number;
   covers: PlanCover[];
@@ -96,6 +102,12 @@ export interface MakeProductionPlan {
     machineSeconds: number;
     /** Programs in the plan with no machining time captured (count 0 in the total). */
     programsMissingTime: number;
+    /** Total steel the plan loads, kg (runs x sheet weight, where captured). */
+    materialKg: number;
+    /** Total steel the plan scraps, kg (runs x scrap weight, where captured). */
+    scrapKg: number;
+    /** Programs in the plan with no scrap data captured (count 0 in the totals). */
+    programsMissingScrap: number;
   };
   plan: PlanProgram[];
   blocked: BlockedItem[];
@@ -115,7 +127,7 @@ function sheetThicknessMm(name: string): number | null {
 }
 const empty = (c: string | null, excluded: string[] = []): MakeProductionPlan => ({
   cutoffDate: c,
-  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0, sheets: 0, sheetsSimple: 0, machineSeconds: 0, programsMissingTime: 0 },
+  totals: { shortfallItems: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, partsMade: 0, partsNeeded: 0, otherParts: 0, sheets: 0, sheetsSimple: 0, machineSeconds: 0, programsMissingTime: 0, materialKg: 0, scrapKg: 0, programsMissingScrap: 0 },
   plan: [],
   blocked: [],
   excluded,
@@ -329,7 +341,7 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   const opsPromise = (async () => {
     const ops = new Map<string, any>();
     for (let off = 0; ; off += PAGE) {
-      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at, machining_time_seconds").eq("is_active", true).order("id").range(off, off + PAGE - 1);
+      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at, machining_time_seconds, sheet_weight_kg, scrap_percent, scrap_weight_kg").eq("is_active", true).order("id").range(off, off + PAGE - 1);
       if (error) throw error;
       for (const o of data ?? []) ops.set(o.id as string, o);
       if (!data || data.length < PAGE) break;
@@ -750,7 +762,16 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
       }))
       .sort((a, b) => b.total - a.total);
     const mts = (opi.machining_time_seconds as number | null) ?? null;
-    plan.push({ code: opi.code, name: opi.name, machine: opi.machine, runs: r, machiningTimeSeconds: mts, machineSeconds: mts != null ? Math.round(r * mts) : null, partsMade: Math.round(made), extra: Math.round(made - used), covers, outputs, inputs });
+    const sheetKg = (opi.sheet_weight_kg as number | null) ?? null;
+    const scrapKgPerRun = (opi.scrap_weight_kg as number | null) ?? null;
+    plan.push({
+      code: opi.code, name: opi.name, machine: opi.machine, runs: r,
+      machiningTimeSeconds: mts, machineSeconds: mts != null ? Math.round(r * mts) : null,
+      scrapPercent: (opi.scrap_percent as number | null) ?? null,
+      materialKg: sheetKg != null ? Math.round(r * sheetKg * 10) / 10 : null,
+      scrapKg: scrapKgPerRun != null ? Math.round(r * scrapKgPerRun * 10) / 10 : null,
+      partsMade: Math.round(made), extra: Math.round(made - used), covers, outputs, inputs,
+    });
   }
 
   const blocked: BlockedItem[] = [];
@@ -784,6 +805,9 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
       sheetsSimple,
       machineSeconds: plan.reduce((s, p) => s + (p.machineSeconds ?? 0), 0),
       programsMissingTime: plan.filter((p) => p.machineSeconds == null).length,
+      materialKg: Math.round(plan.reduce((s, p) => s + (p.materialKg ?? 0), 0) * 10) / 10,
+      scrapKg: Math.round(plan.reduce((s, p) => s + (p.scrapKg ?? 0), 0) * 10) / 10,
+      programsMissingScrap: plan.filter((p) => p.scrapKg == null).length,
     },
     plan,
     blocked,

@@ -119,7 +119,7 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
       </div>
 
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-8 gap-3 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-9 gap-3 mb-6">
         <Card label="Shortfall items" value={t.shortfallItems} />
         <Card label="Makeable now" value={t.makeable} tone="ok" />
         <Card label="Blocked" value={t.blocked} tone={t.blocked ? "warn" : undefined} />
@@ -144,6 +144,22 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
               : undefined
           }
           tone={(t.sheetsSimple ?? 0) > (t.sheets ?? 0) ? "ok" : undefined}
+        />
+        <Card
+          label="Steel scrap"
+          value={
+            (t.materialKg ?? 0) > 0
+              ? `${(((t.scrapKg ?? 0) / t.materialKg) * 100).toFixed(1)}%`
+              : "—"
+          }
+          sub={
+            (t.materialKg ?? 0) > 0
+              ? `${Math.round(t.scrapKg ?? 0).toLocaleString()} kg of ${Math.round(t.materialKg ?? 0).toLocaleString()} kg loaded${
+                  (t.programsMissingScrap ?? 0) > 0 ? ` · ${t.programsMissingScrap} w/o data` : ""
+                }`
+              : "no scrap data on these programs"
+          }
+          tone={(t.materialKg ?? 0) > 0 && (t.scrapKg ?? 0) / t.materialKg > 0.12 ? "warn" : undefined}
         />
         <Card label="Other parts" value={t.otherParts} sub={`${t.partsMade} made / ${t.partsNeeded} needed`} tone={t.otherParts ? "warn" : undefined} />
       </div>
@@ -277,6 +293,24 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
                   }
                 >
                   {p.machineSeconds != null ? formatDuration(p.machineSeconds) : "— time"}
+                </span>
+                <span
+                  className={`text-[11px] shrink-0 tabular-nums font-medium ${
+                    p.scrapPercent == null
+                      ? "text-[var(--muted-foreground)]"
+                      : p.scrapPercent > 15
+                        ? "text-red-600"
+                        : p.scrapPercent > 8
+                          ? "text-amber-600"
+                          : "text-emerald-600"
+                  }`}
+                  title={
+                    p.scrapPercent != null
+                      ? `Sheet scrap from the machine report: ${p.scrapPercent}% — ${p.scrapKg ?? "?"} kg wasted of ${p.materialKg ?? "?"} kg loaded across ${p.runs} run${p.runs === 1 ? "" : "s"}. A redesigned nest lowers this.`
+                      : "No scrap data captured from this program's sketch PDF"
+                  }
+                >
+                  {p.scrapPercent != null ? `${p.scrapPercent}% scrap` : "— scrap"}
                 </span>
                 <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 tabular-nums">
                   {p.partsMade} parts{p.extra > 0 ? ` · ${p.extra} extra` : " · no waste"}
