@@ -24,6 +24,7 @@ import {
   searchAuditedPrograms,
   recordRun,
   updateRunCount,
+  updateRunDate,
   deleteRun,
   type AuditedProgramHit,
   type DailyRunRow,
@@ -224,6 +225,29 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
   const [busy, setBusy] = useState(false);
   const dirty = count !== row.runs_count && count > 0;
 
+  // Pre-filled per-entry date: shows exactly which day this entry belongs to,
+  // and changing it MOVES the entry to that day (it leaves the current list).
+  const changeDate = (newDate: string) => {
+    if (!newDate || newDate === row.run_date) return;
+    if (
+      !window.confirm(
+        `Move "${row.name}" from ${prettyDate(row.run_date)} to ${prettyDate(newDate)}?`,
+      )
+    )
+      return;
+    setBusy(true);
+    startTransition(async () => {
+      const res = await updateRunDate(row.id, newDate);
+      setBusy(false);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(`${row.code ?? row.name} moved to ${prettyDate(newDate)}.`);
+      onChanged();
+    });
+  };
+
   const saveCount = () => {
     setBusy(true);
     startTransition(async () => {
@@ -276,6 +300,14 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
           ? formatDuration(row.runs_count * row.machining_time_seconds)
           : "—"}
       </span>
+      <input
+        type="date"
+        value={row.run_date}
+        onChange={(e) => changeDate(e.target.value)}
+        disabled={busy}
+        title="The day this entry belongs to — change it to move the entry to another date"
+        className="h-8 px-2 text-xs rounded-md border border-[var(--border)] bg-[var(--background)] cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+      />
       <div className="flex items-center gap-1 shrink-0">
         <span className="text-[11px] text-[var(--muted-foreground)]">×</span>
         <input

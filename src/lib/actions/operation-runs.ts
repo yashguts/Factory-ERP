@@ -24,6 +24,7 @@ export interface DailyRunRow {
   name: string;
   machine: string;
   machining_time_seconds: number | null;
+  run_date: string;
   runs_count: number;
   note: string | null;
   created_at: string;
@@ -35,7 +36,7 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
   const { data, error } = await supabase
     .from("operation_runs")
     .select(
-      `id, operation_id, runs_count, note, created_at,
+      `id, operation_id, run_date, runs_count, note, created_at,
        operation:operations(code, name, machine, machining_time_seconds)`,
     )
     .eq("run_date", date)
@@ -51,6 +52,7 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
       name: (op?.name as string) ?? "(deleted program)",
       machine: (op?.machine as string) ?? "",
       machining_time_seconds: (op?.machining_time_seconds as number | null) ?? null,
+      run_date: r.run_date as string,
       runs_count: Number(r.runs_count),
       note: (r.note as string | null) ?? null,
       created_at: r.created_at as string,
@@ -145,6 +147,28 @@ export async function updateRunCount(
     .update({ runs_count: count })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  revalidatePath("/program-runs");
+  return { ok: true, id };
+}
+
+/** Move a run entry to a different date (fixes "recorded under the wrong day"). */
+export async function updateRunDate(
+  id: string,
+  run_date: string,
+): Promise<RunResult> {
+  if (!run_date) return { ok: false, error: "Pick a date." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("operation_runs")
+    .update({ run_date })
+    .eq("id", id);
+  if (error) {
+    const msg =
+      (error as any).code === "23505"
+        ? "That program already has an entry on the chosen date — adjust that entry's count instead."
+        : error.message;
+    return { ok: false, error: msg };
+  }
   revalidatePath("/program-runs");
   return { ok: true, id };
 }
