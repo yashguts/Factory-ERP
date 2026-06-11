@@ -42,6 +42,15 @@ export function MrpJobsPopover({
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const hasFetched = useRef(false);
 
+  // The component is NOT remounted when the date filter changes (same route,
+  // router.push) — drop the cached breakdown so the next hover refetches with
+  // the new cutoff instead of showing the previous date's job list.
+  useEffect(() => {
+    hasFetched.current = false;
+    setData(null);
+    setError(null);
+  }, [itemId, cutoffDate]);
+
   const fetchData = useCallback(async () => {
     if (hasFetched.current) return;
     hasFetched.current = true;

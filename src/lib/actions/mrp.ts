@@ -333,10 +333,11 @@ async function _getProductionPlanUncached(
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
 
-  // These four loads are independent of one another (category tree, program
-  // outputs, program inputs, assembly parts lists). Fetch them concurrently
-  // instead of one after another — same rows, just fewer sequential round-trips.
-  const [catData, outRows, inRows, bomRows] = await Promise.all([
+  // These five loads are independent of one another (category tree, program
+  // outputs, program inputs, assembly parts lists, program audit status).
+  // Fetch them concurrently instead of one after another — same rows, just
+  // fewer sequential round-trips.
+  const [catData, outRows, inRows, bomRows, opRows] = await Promise.all([
     supabase.from("item_categories").select("id, name, parent_id"),
     // item -> the program that produces it + that output's qty/run. Includes
     // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
@@ -365,6 +366,14 @@ async function _getProductionPlanUncached(
         .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish")
         .range(off, off + page - 1),
     ),
+    // program audit status — the buy list prefers AUDITED producers.
+    fetchAllRows((off, page) =>
+      supabase
+        .from("operations")
+        .select("id, audited_at")
+        .eq("is_active", true)
+        .range(off, off + page - 1),
+    ),
   ]);
 
   // Category tree -> resolve top-level category for buy-list filtering.
@@ -385,13 +394,31 @@ async function _getProductionPlanUncached(
     return catById.get(cid)?.name ?? "(none)";
   };
 
-  const itemToProgram = new Map<string, { programId: string; outQty: number }>();
+  // item -> producing program. Many items have several producers (328 at last
+  // audit), and the previous "first row wins" over an unordered scan made the
+  // buy list NONDETERMINISTIC and could pick an unaudited program. Now:
+  // audited beats pending, ties broken by lowest operation id — stable across
+  // cache refreshes with identical data.
+  const auditedOp = new Map<string, boolean>();
+  for (const o of opRows) auditedOp.set(o.id as string, o.audited_at != null);
+  const itemToProgram = new Map<
+    string,
+    { programId: string; outQty: number; audited: boolean }
+  >();
   for (const o of outRows) {
-    if (!itemToProgram.has(o.item_id)) {
-      itemToProgram.set(o.item_id, {
-        programId: o.operation_id,
-        outQty: Number(o.qty_per_run) || 1,
-      });
+    if (!auditedOp.has(o.operation_id)) continue; // inactive program
+    const cand = {
+      programId: o.operation_id as string,
+      outQty: Number(o.qty_per_run) || 1,
+      audited: auditedOp.get(o.operation_id) === true,
+    };
+    const cur = itemToProgram.get(o.item_id);
+    if (
+      !cur ||
+      (cand.audited && !cur.audited) ||
+      (cand.audited === cur.audited && cand.programId < cur.programId)
+    ) {
+      itemToProgram.set(o.item_id, cand);
     }
   }
 

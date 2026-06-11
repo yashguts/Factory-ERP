@@ -262,10 +262,19 @@ function coversDemand(runs: Runs, progOut: OpOuts, leafProduce: Map<string, numb
   return true;
 }
 
-/** Reported sheet total: only REAL recorded sheet inputs, per-item ceil like the UI. */
+/** Reported sheet total, per-item ceil like the UI. A program with NO recorded
+ *  inputs counts as 1 sheet/run — same as the selection's sheetCost default —
+ *  so a data gap can never make a program look FREE to the optimiser. */
 function reportedSheets(runs: Runs, inputsOf: Map<string, Map<string, number>>): number {
   let s = 0;
-  for (const [op, r] of runs) for (const [, perRun] of inputsOf.get(op) ?? []) s += Math.ceil(perRun * r);
+  for (const [op, r] of runs) {
+    const ins = inputsOf.get(op);
+    if (!ins || ins.size === 0) {
+      s += r;
+      continue;
+    }
+    for (const [, perRun] of ins) s += Math.ceil(perRun * r);
+  }
   return s;
 }
 
