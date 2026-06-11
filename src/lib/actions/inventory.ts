@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource } from "@/lib/supabase/types";
+import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource, DemandOverride } from "@/lib/supabase/types";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
 import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
@@ -271,6 +271,8 @@ export interface InventoryRow {
   stock_behaviour: StockBehaviour;
   effective_procurement_type: "make" | "trade" | null;
   demand_source: DemandSource;
+  /** True when demand_source comes from a manual marking, not the computation. */
+  demand_overridden: boolean;
 }
 
 /* Category ids (incl. descendants) that the job form's BOM sections pick from.
@@ -369,8 +371,52 @@ export async function getInventoryPage(
       effective_procurement_type:
         (r.effective_procurement_type as "make" | "trade" | null) ?? null,
       demand_source: (r.demand_source as DemandSource) ?? "none",
+      demand_overridden: Boolean(r.demand_overridden),
     })),
   };
+}
+
+/**
+ * Manually mark an item's Demand Flow Type (the inline editor on the
+ * inventory list's Demand badge). `value = null` restores the automatic
+ * classification. Logged to item_change_log so Daily Changes shows it
+ * and one-click undo works.
+ */
+export async function setItemDemandOverride(
+  itemId: string,
+  value: DemandOverride | null,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  const supabase = await createClient();
+
+  const { data: existing, error: exErr } = await supabase
+    .from("items")
+    .select("id, code, name, demand_override")
+    .eq("id", itemId)
+    .single();
+  if (exErr || !existing) return { ok: false, error: "Item not found." };
+
+  const oldValue = (existing.demand_override as DemandOverride | null) ?? null;
+  if (oldValue === value) return { ok: true };
+
+  const { error } = await supabase
+    .from("items")
+    .update({ demand_override: value })
+    .eq("id", itemId);
+  if (error) return { ok: false, error: error.message };
+
+  await logItemChange(supabase, {
+    item_id: itemId,
+    item_code: existing.code as string,
+    item_name: existing.name as string,
+    action: "update",
+    changes: [{ field: "demand_override", old: oldValue, new: value }],
+    note: value
+      ? "Demand flow type marked manually"
+      : "Demand flow type reset to automatic",
+  });
+
+  revalidateTag("items");
+  return { ok: true };
 }
 
 /** Global Make / Trade / All counts for the inventory tab bar. Whole active

@@ -24,13 +24,15 @@ import {
   getInventoryPage,
   getItemForEdit,
   suggestNextCode,
+  setItemDemandOverride,
   type InventoryRow,
   type InventoryTabCounts,
   type ItemWithStock,
   type TypeCatFacet,
 } from "@/lib/actions/inventory";
-import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse } from "@/lib/supabase/types";
+import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse, DemandOverride } from "@/lib/supabase/types";
 import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
+import { useToast } from "@/components/ui/toast";
 
 interface Props {
   /** First page of rows, rendered server-side for instant paint. */
@@ -68,6 +70,14 @@ const TYPE_BADGE_VARIANT: Record<ItemType, "blue" | "purple" | "green" | "amber"
 
 type SortKey = "code" | "name" | "stock" | "category" | "cost";
 type SortDir = "asc" | "desc";
+
+/** Menu options for the inline Demand Flow Type editor (null = automatic). */
+const DEMAND_CHOICES: { value: DemandOverride | null; label: string; hint: string }[] = [
+  { value: null, label: "Auto (computed)", hint: "Classify from job-form categories, job BOMs, programs and parts lists" },
+  { value: "jobs", label: "Jobs (direct)", hint: "Job orders capture this item directly" },
+  { value: "formula", label: "Formula", hint: "A program or parts list derives its requirement" },
+  { value: "none", label: "No link", hint: "Nothing generates a requirement for it" },
+];
 
 const PAGE_SIZE = 50;
 
@@ -124,6 +134,10 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
   const [selectedItem, setSelectedItem] = useState<ItemWithStock | null>(null);
   const [cloneSource, setCloneSource] = useState<ItemWithStock | null>(null);
   const [suggestedCode, setSuggestedCode] = useState<string | null>(null);
+
+  // Inline Demand Flow Type editor: which row's menu is open.
+  const [demandMenuFor, setDemandMenuFor] = useState<string | null>(null);
+  const toast = useToast();
 
   const resetPage = () => setPage(1);
 
@@ -295,6 +309,25 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         setSuggestedCode(next);
         setShowItemForm(true);
       }
+    });
+  };
+
+  // Save a manual Demand Flow Type mark (or null = back to automatic), then
+  // refresh the page so the badge/filter reflect the effective value.
+  const applyDemandOverride = (item: InventoryRow, value: DemandOverride | null) => {
+    setDemandMenuFor(null);
+    startTransition(async () => {
+      const res = await setItemDemandOverride(item.id, value);
+      if (!res.ok) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success(
+        value
+          ? `${item.code} marked "${DEMAND_CHOICES.find((c) => c.value === value)?.label}"`
+          : `${item.code} is back to automatic classification`,
+      );
+      runQuery();
     });
   };
 
@@ -542,21 +575,67 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                         <span className="text-xs text-[var(--muted-foreground)]">—</span>
                       )}
                     </TableCell>
-                    <TableCell>
-                      {item.demand_source === "jobs" ? (
-                        <Badge variant="blue" className="text-[10px] px-1.5" title="Direct demand — pickable on the job form's BOM sections, or already on a job BOM">
-                          Jobs
-                        </Badge>
-                      ) : item.demand_source === "formula" ? (
-                        <Badge variant="purple" className="text-[10px] px-1.5" title="Dependent demand — consumed by a program or listed in an item's parts list">
-                          Formula
-                        </Badge>
-                      ) : item.demand_source === "none" ? (
-                        <Badge variant="amber" className="text-[10px] px-1.5" title="No demand link — nothing generates a requirement for this item yet. Give it a parts-list/program link on its item page, or set a minimum stock.">
-                          No link
-                        </Badge>
-                      ) : (
-                        <span className="text-xs text-[var(--muted-foreground)]" title="Tooling — not planned, by design">—</span>
+                    <TableCell className="relative" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        type="button"
+                        onClick={() => setDemandMenuFor(demandMenuFor === item.id ? null : item.id)}
+                        className="cursor-pointer"
+                        title={
+                          (item.demand_overridden ? "Marked manually — " : "") +
+                          (item.demand_source === "jobs"
+                            ? "Direct demand — pickable on the job form's BOM sections, or already on a job BOM."
+                            : item.demand_source === "formula"
+                              ? "Dependent demand — consumed by a program or listed in an item's parts list."
+                              : item.demand_source === "none"
+                                ? "No demand link — nothing generates a requirement for this item yet."
+                                : "Tooling — not planned, by design.") +
+                          " Click to change."
+                        }
+                      >
+                        {item.demand_source === "jobs" ? (
+                          <Badge variant="blue" className={`text-[10px] px-1.5 ${item.demand_overridden ? "border-dashed" : ""}`}>
+                            Jobs{item.demand_overridden ? " ✎" : ""}
+                          </Badge>
+                        ) : item.demand_source === "formula" ? (
+                          <Badge variant="purple" className={`text-[10px] px-1.5 ${item.demand_overridden ? "border-dashed" : ""}`}>
+                            Formula{item.demand_overridden ? " ✎" : ""}
+                          </Badge>
+                        ) : item.demand_source === "none" ? (
+                          <Badge variant="amber" className={`text-[10px] px-1.5 ${item.demand_overridden ? "border-dashed" : ""}`}>
+                            No link{item.demand_overridden ? " ✎" : ""}
+                          </Badge>
+                        ) : (
+                          <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                        )}
+                      </button>
+                      {demandMenuFor === item.id && (
+                        <>
+                          <div className="fixed inset-0 z-40" onClick={() => setDemandMenuFor(null)} />
+                          <div className="absolute left-0 top-full mt-1 z-50 w-56 rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg py-1">
+                            <p className="px-3 py-1.5 text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                              Demand flow type
+                            </p>
+                            {DEMAND_CHOICES.map((choice) => {
+                              const isCurrent = item.demand_overridden
+                                ? choice.value === item.demand_source
+                                : choice.value === null;
+                              return (
+                                <button
+                                  key={choice.label}
+                                  type="button"
+                                  onClick={() => applyDemandOverride(item, choice.value)}
+                                  title={choice.hint}
+                                  className={`w-full text-left px-3 py-1.5 text-sm cursor-pointer hover:bg-[var(--muted)] ${
+                                    isCurrent ? "font-semibold text-[var(--primary)]" : ""
+                                  }`}
+                                >
+                                  {choice.label}
+                                  {isCurrent ? " ✓" : ""}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{item.category_name ?? "-"}</TableCell>

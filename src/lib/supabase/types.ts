@@ -18,6 +18,8 @@ export type StockBehaviour = "stocked" | "phantom" | "tooling";
  * - tooling: stock_behaviour = tooling — not planned, by design
  */
 export type DemandSource = "jobs" | "formula" | "none" | "tooling";
+/** Manual Demand Flow Type marking on an item; NULL = automatic (computed). */
+export type DemandOverride = "jobs" | "formula" | "none";
 /**
  * What a program OUTPUT line represents:
  * - component: a real (stocked) item — links/should-link to inventory
@@ -68,6 +70,8 @@ export interface Item {
   family: string | null;
   /** This variant's finish/material (MS, SS, SS Champagne…). NULL = no finish. */
   finish: string | null;
+  /** Manual Demand Flow Type marking; NULL = automatic (computed). */
+  demand_override: DemandOverride | null;
   created_at: string;
   updated_at: string;
 }
