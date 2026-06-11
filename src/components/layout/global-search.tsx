@@ -11,6 +11,7 @@ import {
   CornerDownLeft,
 } from "lucide-react";
 import { globalSearch, type GlobalSearchResult } from "@/lib/actions/search";
+import { Badge } from "@/components/ui/badge";
 
 /**
  * Ctrl+K / Cmd+K command palette: search jobs, items and programs from any
@@ -26,6 +27,8 @@ interface FlatRow {
   title: string;
   meta: string;
   href: string;
+  /** Make/Trade marker — items only. */
+  mt?: "make" | "trade" | null;
 }
 
 export function GlobalSearch() {
@@ -111,6 +114,7 @@ export function GlobalSearch() {
         title: it.name,
         meta: it.code,
         href: `/inventory/${it.id}`,
+        mt: it.effective_procurement_type,
       });
     }
     for (const p of results.programs) {
@@ -215,6 +219,15 @@ export function GlobalSearch() {
                     <span className="flex-1 min-w-0">
                       <span className="block text-sm truncate">{row.title}</span>
                     </span>
+                    {row.mt && (
+                      <Badge
+                        variant={row.mt === "make" ? "blue" : "amber"}
+                        className="text-[10px] px-1.5 shrink-0"
+                        title={row.mt === "make" ? "Make — manufactured in-house" : "Trade — purchased from suppliers"}
+                      >
+                        {row.mt === "make" ? "M" : "T"}
+                      </Badge>
+                    )}
                     {row.meta && (
                       <span className="font-mono text-[11px] text-[var(--muted-foreground)] shrink-0">
                         {row.meta}

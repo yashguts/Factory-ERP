@@ -19,6 +19,8 @@ export interface SearchableItem {
   /** Finish-variant grouping (for BOM finish-rule resolution). */
   family: string | null;
   finish: string | null;
+  /** Make/Trade: item override, else the category default. */
+  effective_procurement_type: "make" | "trade" | null;
 }
 
 /**
@@ -61,8 +63,8 @@ export async function searchItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name, lookup_key, family, finish,
-      category:item_categories!items_category_id_fkey(name),
+      `id, code, name, lookup_key, family, finish, procurement_type,
+      category:item_categories!items_category_id_fkey(name, procurement_type),
       uom:units_of_measurement(abbreviation),
       inventory(quantity)`,
     )
@@ -138,6 +140,9 @@ export async function searchItems(
       (sum, r) => sum + Number(r.quantity ?? 0),
       0,
     );
+    const catProcurement = Array.isArray(row.category)
+      ? (row.category[0]?.procurement_type ?? null)
+      : (row.category?.procurement_type ?? null);
     return {
       id: row.id as string,
       code: row.code as string,
@@ -152,6 +157,9 @@ export async function searchItems(
       total_stock,
       family: (row.family as string | null) ?? null,
       finish: (row.finish as string | null) ?? null,
+      effective_procurement_type:
+        ((row.procurement_type ?? catProcurement) as "make" | "trade" | null) ??
+        null,
     };
   });
 }

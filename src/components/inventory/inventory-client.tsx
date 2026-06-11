@@ -25,6 +25,7 @@ import {
   getItemForEdit,
   suggestNextCode,
   type InventoryRow,
+  type InventoryTabCounts,
   type ItemWithStock,
   type TypeCatFacet,
 } from "@/lib/actions/inventory";
@@ -36,6 +37,8 @@ interface Props {
   initialRows: InventoryRow[];
   /** Total count matching the default (unfiltered) query. */
   initialTotal: number;
+  /** Global Make / Trade / All counts for the tab bar (not filter-reactive). */
+  tabCounts: InventoryTabCounts;
   /** Distinct (item_type, category_id) pairs, for scoping the category dropdowns. */
   facets: TypeCatFacet[];
   categories: (ItemCategory & {
@@ -69,10 +72,10 @@ type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
 
 const LIST_PARAM_KEYS = [
-  "q", "type", "cat", "sub", "stock", "behav", "sort", "dir", "page",
+  "q", "type", "cat", "sub", "stock", "behav", "mt", "demand", "sort", "dir", "page",
 ] as const;
 
-export function InventoryClient({ initialRows, initialTotal, facets, categories, units, warehouses, initialEditItemId }: Props) {
+export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, categories, units, warehouses, initialEditItemId }: Props) {
   const [isPending, startTransition] = useTransition();
 
   // Query state (drives the server fetch). Initialised from the URL so Back /
@@ -91,6 +94,12 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
   const [behaviourFilter, setBehaviourFilter] = useState<"all" | "stocked" | "phantom" | "tooling">(
     () => readParam(sp, "behav", "all", ["all", "stocked", "phantom", "tooling"]) as "all" | "stocked" | "phantom" | "tooling",
   );
+  const [mtTab, setMtTab] = useState<"all" | "make" | "trade">(
+    () => readParam(sp, "mt", "all", ["all", "make", "trade"]) as "all" | "make" | "trade",
+  );
+  const [demandFilter, setDemandFilter] = useState<"all" | "jobs" | "formula" | "none">(
+    () => readParam(sp, "demand", "all", ["all", "jobs", "formula", "none"]) as "all" | "jobs" | "formula" | "none",
+  );
   const [sortKey, setSortKey] = useState<SortKey>(
     () => readParam(sp, "sort", "code", ["code", "name", "stock", "category", "cost"]) as SortKey,
   );
@@ -101,8 +110,8 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
 
   // Mirror the state into the URL (shallow — no server round trip).
   useUrlListSync(
-    { q: debouncedSearch, type: typeFilter, cat: categoryFilter, sub: subCategoryFilter, stock: stockFilter, behav: behaviourFilter, sort: sortKey, dir: sortDir, page },
-    { q: "", type: "all", cat: "all", sub: "all", stock: "all", behav: "all", sort: "code", dir: "asc", page: 1 },
+    { q: debouncedSearch, type: typeFilter, cat: categoryFilter, sub: subCategoryFilter, stock: stockFilter, behav: behaviourFilter, mt: mtTab, demand: demandFilter, sort: sortKey, dir: sortDir, page },
+    { q: "", type: "all", cat: "all", sub: "all", stock: "all", behav: "all", mt: "all", demand: "all", sort: "code", dir: "asc", page: 1 },
   );
 
   // Server-provided page data.
@@ -139,6 +148,8 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
         sub: subCategoryFilter,
         stock: stockFilter,
         behaviour: behaviourFilter,
+        procurement: mtTab,
+        demand: demandFilter,
         sort: sortKey,
         dir: sortDir,
         page,
@@ -155,7 +166,7 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
       setRows(res.rows);
       setTotal(res.total);
     });
-  }, [debouncedSearch, typeFilter, categoryFilter, subCategoryFilter, stockFilter, behaviourFilter, sortKey, sortDir, page]);
+  }, [debouncedSearch, typeFilter, categoryFilter, subCategoryFilter, stockFilter, behaviourFilter, mtTab, demandFilter, sortKey, sortDir, page]);
 
   // Re-fetch when the query changes — but skip the very first run when the
   // view opened with default state, since initialRows already match the
@@ -329,6 +340,40 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
         </div>
       </div>
 
+      {/* Make / Trade tabs — same pattern as the MRP page so the split reads
+          the same everywhere. Counts are the global universe, not the current
+          filter result (mirrors MRP). */}
+      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
+        {([
+          { key: "all", label: "All", count: tabCounts.all },
+          { key: "make", label: "Make · Manufactured", count: tabCounts.make },
+          { key: "trade", label: "Trade · Purchased", count: tabCounts.trade },
+        ] as const).map((t) => {
+          const active = mtTab === t.key;
+          return (
+            <button
+              key={t.key}
+              type="button"
+              onClick={() => { setMtTab(t.key); resetPage(); }}
+              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${
+                active
+                  ? "border-[var(--primary)] text-[var(--primary)]"
+                  : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
+              }`}
+            >
+              {t.label}
+              <span className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded-full ${
+                active
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)]"
+              }`}>
+                {t.count.toLocaleString()}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
       {/* Filters Row */}
       <div className="flex flex-wrap gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
@@ -399,6 +444,18 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
           <option value="phantom">Loose (phantom)</option>
           <option value="tooling">Tooling</option>
         </Select>
+
+        <Select
+          value={demandFilter}
+          onChange={(e) => { setDemandFilter(e.target.value as typeof demandFilter); resetPage(); }}
+          className="w-[170px]"
+          title="How the item gets its material requirement"
+        >
+          <option value="all">All Demand</option>
+          <option value="jobs">Jobs (direct)</option>
+          <option value="formula">Formula (program/parts)</option>
+          <option value="none">No link</option>
+        </Select>
       </div>
 
       {/* Table */}
@@ -421,6 +478,9 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
                 <TableHead>Type</TableHead>
                 <TableHead title="M = Make (manufactured in-house) · T = Trade (purchased from suppliers)">
                   M/T
+                </TableHead>
+                <TableHead title="How the item gets its requirement: Jobs = picked on job BOMs · Formula = consumed by a program or parts list · No link = in no plan yet">
+                  Demand
                 </TableHead>
                 <SortHeader label="Category" sortField="category" />
                 <SortHeader label="Stock" sortField="stock" />
@@ -480,6 +540,23 @@ export function InventoryClient({ initialRows, initialTotal, facets, categories,
                         <Badge variant="amber" className="text-[10px] px-1.5" title="Trade">T</Badge>
                       ) : (
                         <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      {item.demand_source === "jobs" ? (
+                        <Badge variant="blue" className="text-[10px] px-1.5" title="Direct demand — pickable on the job form's BOM sections, or already on a job BOM">
+                          Jobs
+                        </Badge>
+                      ) : item.demand_source === "formula" ? (
+                        <Badge variant="purple" className="text-[10px] px-1.5" title="Dependent demand — consumed by a program or listed in an item's parts list">
+                          Formula
+                        </Badge>
+                      ) : item.demand_source === "none" ? (
+                        <Badge variant="amber" className="text-[10px] px-1.5" title="No demand link — nothing generates a requirement for this item yet. Give it a parts-list/program link on its item page, or set a minimum stock.">
+                          No link
+                        </Badge>
+                      ) : (
+                        <span className="text-xs text-[var(--muted-foreground)]" title="Tooling — not planned, by design">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{item.category_name ?? "-"}</TableCell>

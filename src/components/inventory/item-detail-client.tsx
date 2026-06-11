@@ -184,6 +184,11 @@ export function ItemDetailClient({
             <h1 className="text-2xl font-bold tracking-tight">{item.name}</h1>
             <div className="flex items-center gap-2 mt-1.5 flex-wrap">
               <span className="font-mono text-xs text-[var(--muted-foreground)]">{item.code}</span>
+              {item.effective_procurement_type === "make" ? (
+                <Badge variant="blue" title="Make — manufactured in-house">Make</Badge>
+              ) : item.effective_procurement_type === "trade" ? (
+                <Badge variant="amber" title="Trade — purchased from suppliers">Trade</Badge>
+              ) : null}
               <Badge variant={IDENTITY.variant}>
                 <IDENTITY.Icon className="h-3 w-3 mr-1" />
                 {IDENTITY.label}

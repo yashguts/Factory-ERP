@@ -8,6 +8,17 @@ export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mech
  */
 export type StockBehaviour = "stocked" | "phantom" | "tooling";
 /**
+ * How an item gets its material requirement (computed by search_inventory,
+ * never stored):
+ * - jobs:    independent demand — its category is pickable on the job form's
+ *            BOM sections, or it already appears on a job BOM line
+ * - formula: dependent demand — consumed by a program (operation_inputs) or
+ *            a child in an item parts list (item_bom_lines)
+ * - none:    no path to demand at all — needs a formula or a min-stock rule
+ * - tooling: stock_behaviour = tooling — not planned, by design
+ */
+export type DemandSource = "jobs" | "formula" | "none" | "tooling";
+/**
  * What a program OUTPUT line represents:
  * - component: a real (stocked) item — links/should-link to inventory
  * - cut_part: intentional phantom — cut & fitted into an assembly, never stocked

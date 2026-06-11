@@ -3,9 +3,10 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import type { ItemType, TransactionType, FieldChange, StockBehaviour } from "@/lib/supabase/types";
+import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource } from "@/lib/supabase/types";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
-import { expandCategoryDescendants } from "@/lib/actions/categories";
+import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
+import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -269,7 +270,25 @@ export interface InventoryRow {
   cost_price: number;
   stock_behaviour: StockBehaviour;
   effective_procurement_type: "make" | "trade" | null;
+  demand_source: DemandSource;
 }
+
+/* Category ids (incl. descendants) that the job form's BOM sections pick from.
+ * BOM_SECTIONS lives in TypeScript, so we resolve it here and hand the id set
+ * to search_inventory — that's what makes an item "Jobs"-classified even if no
+ * job has used it yet. Cached on the categories tag: renaming a category in
+ * the DB re-resolves within 5 minutes. */
+const getJobBoundCategoryIds = unstable_cache(
+  async (): Promise<string[]> => {
+    const paths = [
+      ...new Set(BOM_SECTIONS.flatMap((s) => s.defaultItemCategories ?? [])),
+    ];
+    const roots = await resolveCategoryPaths(paths);
+    return roots.length > 0 ? expandCategoryDescendants(roots) : [];
+  },
+  ["job-bound-category-ids"],
+  { revalidate: 300, tags: ["categories"] },
+);
 
 export interface InventoryPageResult {
   rows: InventoryRow[];
@@ -283,6 +302,8 @@ export interface InventoryQuery {
   sub?: string; // sub-category id | "all"
   stock?: string; // "low" | "zero" | "in_stock" | "all"
   behaviour?: string; // "stocked" | "phantom" | "tooling" | "all"
+  procurement?: string; // "make" | "trade" | "all"
+  demand?: string; // "jobs" | "formula" | "none" | "all"
   sort?: string; // code | name | stock | category | cost
   dir?: string; // asc | desc
   page?: number;
@@ -308,6 +329,8 @@ export async function getInventoryPage(
     categoryIds = await expandCategoryDescendants([q.category]);
   }
 
+  const boundCategoryIds = await getJobBoundCategoryIds();
+
   const supabase = createCacheClient();
   const { data, error } = await supabase.rpc("search_inventory", {
     p_search: q.search?.trim() ? q.search.trim() : null,
@@ -319,6 +342,10 @@ export async function getInventoryPage(
     p_dir: q.dir ?? "asc",
     p_limit: pageSize,
     p_offset: (page - 1) * pageSize,
+    p_procurement:
+      q.procurement && q.procurement !== "all" ? q.procurement : null,
+    p_demand: q.demand && q.demand !== "all" ? q.demand : null,
+    p_bound_category_ids: boundCategoryIds.length > 0 ? boundCategoryIds : null,
   });
   if (error) throw error;
 
@@ -341,8 +368,52 @@ export async function getInventoryPage(
       stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
       effective_procurement_type:
         (r.effective_procurement_type as "make" | "trade" | null) ?? null,
+      demand_source: (r.demand_source as DemandSource) ?? "none",
     })),
   };
+}
+
+/** Global Make / Trade / All counts for the inventory tab bar. Whole active
+ *  non-cabin universe (phantoms excluded, same as the list's default view) —
+ *  intentionally NOT reactive to search/filters, mirroring the MRP tabs. */
+export interface InventoryTabCounts {
+  all: number;
+  make: number;
+  trade: number;
+}
+export async function getInventoryTabCounts(): Promise<InventoryTabCounts> {
+  return unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const run = async (proc: "make" | "trade" | null) => {
+        const { data, error } = await supabase.rpc("search_inventory", {
+          p_search: null,
+          p_type: null,
+          p_category_ids: null,
+          p_stock: null,
+          p_behaviour: null,
+          p_sort: "code",
+          p_dir: "asc",
+          p_limit: 1,
+          p_offset: 0,
+          p_procurement: proc,
+          p_demand: null,
+          p_bound_category_ids: null,
+        });
+        if (error) throw error;
+        const rows = (data ?? []) as Record<string, unknown>[];
+        return rows.length > 0 ? Number(rows[0].total_count) : 0;
+      };
+      const [all, make, trade] = await Promise.all([
+        run(null),
+        run("make"),
+        run("trade"),
+      ]);
+      return { all, make, trade };
+    },
+    ["inventory-tab-counts"],
+    { revalidate: 300, tags: ["items", "inventory-stock"] },
+  )();
 }
 
 /** Cached default first page (no filters) for an instant initial paint of

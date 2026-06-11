@@ -9,6 +9,7 @@ import {
 import { Search, X, Loader2, AlertTriangle } from "lucide-react";
 import { searchItems } from "@/lib/actions/items";
 import type { SearchableItem } from "@/lib/actions/items";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 
@@ -309,6 +310,15 @@ export function ItemRow({
                         : "text-[var(--muted-foreground)]",
                     )}
                   >
+                    {item.effective_procurement_type && (
+                      <Badge
+                        variant={item.effective_procurement_type === "make" ? "blue" : "amber"}
+                        className="text-[10px] px-1.5"
+                        title={item.effective_procurement_type === "make" ? "Make — manufactured in-house" : "Trade — purchased from suppliers"}
+                      >
+                        {item.effective_procurement_type === "make" ? "M" : "T"}
+                      </Badge>
+                    )}
                     <span className="font-mono">{item.code}</span>
                     {item.category_name && (
                       <span className="italic">{item.category_name}</span>
