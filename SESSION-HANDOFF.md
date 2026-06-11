@@ -36,6 +36,20 @@
   owner-approved rules — see memory project_cabin_side_panels).
 - **MRP popover consistency fix** (f371490): hover now applies the table's exact
   rules (in_production + cutoff + stage scoping + dispatch netting).
+- **Inventory demand visibility** (8a0f50d, 2026-06-11 evening, owner-requested):
+  /inventory got MRP-style All/Make/Trade tabs + a "Demand" column & filter
+  classifying every item by how it gets requirements — Jobs (category bound to a
+  job-form BOM section or already on a job BOM) / Formula (program input or
+  parts-list child) / No link / "—" for tooling. Computed in the search_inventory
+  RPC (migration 018: 3 new defaulted params incl. p_bound_category_ids resolved
+  app-side from BOM_SECTIONS). Owner picked 3-bucket model. M/T badge added to
+  item detail header, Ctrl+K results, BOM-picker dropdown. Verified live: counts
+  All 2,601/Make 1,556/Trade 1,044; Make+No-link=133, Trade+No-link=436 (exact
+  SQL match). **The "No link" lists are the team's action queue** — those items
+  can never appear in any plan until linked (or given a min stock; note 0 of them
+  have reorder points set today). VERIFICATION TRAP (cost an hour): Claude-in-
+  Chrome tabs are HIDDEN → hydration+effects stall → deep links look broken when
+  they aren't. Screenshot first to foreground the tab; see memory env_preview_caveat.
 
 ## MRP math audit (2026-06-11) — VERDICT: numbers trustworthy for purchasing
 
