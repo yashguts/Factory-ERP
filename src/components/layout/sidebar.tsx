@@ -13,6 +13,7 @@ import {
   Container,
   ClipboardCheck,
   Search,
+  PlayCircle,
 } from "lucide-react";
 
 const navItems = [
@@ -22,6 +23,7 @@ const navItems = [
   { href: "/inventory/changes", label: "Daily Changes", icon: History },
   { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
   { href: "/programs", label: "Programs", icon: Cog },
+  { href: "/program-runs", label: "Daily Program Runs", icon: PlayCircle },
   { href: "/jobs", label: "Job Orders", icon: ClipboardList },
   { href: "/mrp", label: "MRP", icon: Calculator },
 ];

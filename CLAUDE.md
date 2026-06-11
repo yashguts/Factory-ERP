@@ -116,6 +116,15 @@ src/
         page.tsx            Programs list (server component)
         [id]/page.tsx       Program detail
         loading.tsx         Skeleton
+      program-runs/
+        page.tsx            Daily Program Runs — factory logbook of which
+                            AUDITED programs ran per day (?date=). Record
+                            (program, day, count, note); per-day machine-time
+                            totals from machining_time_seconds. NO inventory
+                            effects (future phase). Table: operation_runs
+                            (UNIQUE op+date; FK blocks deleting programs with
+                            run history). Actions: lib/actions/operation-runs.ts.
+        loading.tsx         Skeleton
       inventory/
         changes/page.tsx    Inventory Daily Changes (item edits + stock moves)
         [id]/page.tsx       Item detail (identity + Built-from + Assembly parts)
@@ -181,6 +190,9 @@ src/
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
+      operation-runs.ts     Daily Program Runs logbook: getRunsForDate,
+                            searchAuditedPrograms (audited-only!), recordRun,
+                            updateRunCount, deleteRun — no inventory effects
       search.ts             globalSearch — Ctrl+K fan-out (jobs+items+programs)
       dispatch.ts           Job dispatch: getJobDispatchSummary (required/sent/
                             left), createDispatch, deleteDispatch, status badges
