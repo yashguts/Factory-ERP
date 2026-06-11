@@ -94,12 +94,11 @@ npx tsc --noEmit # type check only — fastest way to validate edits
 src/
   app/
     (app)/                  Route group with shared sidebar
-      page.tsx              Dashboard — real "morning briefing" (2026-06-11):
-                            dispatches due 7 days (+overdue), Trade/Make
-                            shortfall cards (Suspense-streamed from getMrpData,
-                            deep-link to /mrp?tab=&show=shortfall), fix-it
-                            queue (unmatched BOM / needs-item / pending audit),
-                            today's activity. Data: lib/actions/dashboard.ts.
+      page.tsx              Redirects / → /jobs. (The morning-briefing
+                            dashboard was built 2026-06-11 and REMOVED the
+                            same day at the owner's request, along with the
+                            BOM and Settings placeholder pages — don't
+                            rebuild without asking.)
       inventory/
         page.tsx            Server component, loads items+categories+units+warehouses
         import/             Excel import flow
@@ -139,8 +138,6 @@ src/
         page.tsx            Cabin Jobs list (job # + cabin items by type)
         new/page.tsx        New cabin job form
         [id]/page.tsx       Edit cabin job
-      bom/page.tsx          Standalone BOM (placeholder)
-      settings/page.tsx     Placeholder
       layout.tsx            AppShell wrapper
     layout.tsx              Root layout (includes StaleDeployGuard)
     globals.css             CSS vars + Tailwind imports
@@ -184,8 +181,6 @@ src/
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
-      dashboard.ts          getDashboardCounts — cheap cached counts powering
-                            the morning-briefing dashboard
       search.ts             globalSearch — Ctrl+K fan-out (jobs+items+programs)
       dispatch.ts           Job dispatch: getJobDispatchSummary (required/sent/
                             left), createDispatch, deleteDispatch, status badges

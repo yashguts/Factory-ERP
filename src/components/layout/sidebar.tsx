@@ -5,11 +5,8 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import {
   Package,
-  Layers,
   ClipboardList,
   Calculator,
-  Home,
-  Settings,
   History,
   Cog,
   Boxes,
@@ -19,17 +16,14 @@ import {
 } from "lucide-react";
 
 const navItems = [
-  { href: "/", label: "Dashboard", icon: Home },
   { href: "/inventory", label: "Inventory", icon: Package },
   { href: "/cabin-inventory", label: "Cabin Inventory", icon: Container },
   { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
   { href: "/inventory/changes", label: "Daily Changes", icon: History },
   { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
-  { href: "/bom", label: "Bill of Materials", icon: Layers },
   { href: "/programs", label: "Programs", icon: Cog },
   { href: "/jobs", label: "Job Orders", icon: ClipboardList },
   { href: "/mrp", label: "MRP", icon: Calculator },
-  { href: "/settings", label: "Settings", icon: Settings },
 ];
 
 export function Sidebar() {
