@@ -96,11 +96,16 @@ today — close when convenient):
   the stage flips — e.g. ~1,856 units Wire Rope Main currently not counted.
 
 ## Open threads, in rough priority order
-2. **6 sheets/day available**: owner should have Sudhir audit these 9 pending
-   programs (ILP-proven saving): CNC-103E-R1-SAFETY-1242X150-LASER,
-   CNC-248C-AT-LDP-NV-1000X2000-MS, CNC-232D-AT-LDP-MV-700X2000-SS-ROSE,
-   CNC-261-MT-LP-PV-RH-800, CNC-129, CNC-131A, CNC-147-FIRE-DO, CNC-233D,
-   CNC-262. Planner picks them up automatically once audited.
+2. **6 sheets/day available**: have Sudhir audit these pending programs
+   (ILP-proven saving; refreshed 2026-06-11 22:30 against the live 381-run plan —
+   exact optimum drops to 375): CNC-103E-R1-SAFETY-1242X150-LASER (x4!),
+   CNC-146B-ACO-LDP-NV-1000-2000-FIRE-D (x7!), CNC-248C-AT-LDP-NV-1000X2000-MS,
+   CNC-232D-AT-LDP-MV-700X2000-SS-ROSE, CNC-261-MT-LP-PV-RH-800, CNC-262-MT-CP-PV-LH-800,
+   CNC-131A, CNC-147A/147B-FIRE-D, CNC-235-AT-CDP-LV-700X2000-MS, CNC-241A-AT-CDP-LV-800X2000-SS-ROSE.
+   The list shifts with demand — refresh anytime: `pdf-dxf-pilot/ilp/scrape_demand.py`
+   (pulls live demand) then `deep_analysis.py` (venv .venvs/pdfdxf). The owner
+   challenged the 381-run plan on 2026-06-11 evening; ILP PROVED 381 optimal for
+   audited-only — the planner is not the bottleneck, audit coverage is.
 3. **Nest redesign shortlist** (~22 sheets/day theoretical): worst last-run
    waste: CNC-170-HOME-COUNTER-850, CNC-128A ACO LDP MV SS, CNC-163A SAFETY
    HOME 720, CNC-105-POST-SUPPORT-COLLAPSIBLE, CNC-LC-100/LC101 family.
