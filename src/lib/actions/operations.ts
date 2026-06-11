@@ -648,7 +648,7 @@ export async function uploadProgramSketch(
     .eq("id", operationId);
   if (updateError) throw updateError;
 
-  revalidateOperations(operationId);
+  revalidateProgramOnly(operationId);
   return { url: publicUrl, filename: file.name, uploaded_at };
 }
 
@@ -677,7 +677,7 @@ export async function deleteProgramSketch(operationId: string): Promise<void> {
     .eq("id", operationId);
   if (error) throw error;
 
-  revalidateOperations(operationId);
+  revalidateProgramOnly(operationId);
 }
 
 /* ----------------------------- helpers ----------------------------- */
@@ -690,6 +690,20 @@ function revalidateOperations(id?: string) {
   if (id) revalidatePath(`/programs/${id}`);
   // Item modal shows produced-by / consumed-by badges sourced from here.
   revalidatePath("/inventory");
+}
+
+/**
+ * Lighter revalidation for changes that DON'T touch any recipe/inventory link —
+ * currently the sketch attach/replace/remove. Mirrors auditOperation: refresh the
+ * programs views only, and deliberately skip revalidatePath("/inventory"), whose
+ * ~12.6k-item page regen is what made the sketch upload slow (and crashed
+ * auditOperation -> 503). A sketch has no produced-by/consumed-by effect, so the
+ * inventory page never needs rebuilding for it.
+ */
+function revalidateProgramOnly(id?: string) {
+  revalidateTag("operations");
+  revalidatePath("/programs");
+  if (id) revalidatePath(`/programs/${id}`);
 }
 
 /**
