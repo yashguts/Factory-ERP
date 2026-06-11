@@ -199,12 +199,14 @@ export async function searchCabinBases(
   // No inventory join here: the base list only shows the finish count (stock
   // appears in the finish step). The join made every keystroke pull up to
   // 1,000 rows with stock arrays — the main reason these searches felt broken.
+  // NOTE: items with NO family (manually added, e.g. "P6C 500") are included
+  // and grouped under their own NAME as a single-finish base — otherwise
+  // hand-added panels are unfindable in cabin jobs.
   let q = supabase
     .from("items")
-    .select(`family, finish, uom:units_of_measurement(abbreviation)`)
+    .select(`name, family, finish, uom:units_of_measurement(abbreviation)`)
     .eq("is_active", true)
-    .in("category_id", subtree.ids)
-    .not("family", "is", null);
+    .in("category_id", subtree.ids);
   for (const token of query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
     const safe = token.replace(/[%,()]/g, ""); // PostgREST-special chars
     if (!safe) continue;
@@ -215,7 +217,7 @@ export async function searchCabinBases(
 
   const byFam = new Map<string, { uom: string; finishes: Set<string> }>();
   for (const it of (data ?? []) as any[]) {
-    const fam = it.family as string;
+    const fam = (it.family as string | null) ?? (it.name as string);
     const cur =
       byFam.get(fam) ??
       { uom: (flatten<any>(it.uom)?.abbreviation as string) ?? "", finishes: new Set<string>() };
@@ -250,12 +252,16 @@ export async function getCabinBaseFinishes(
   if (!family) return [];
   const { ids } = await getCabinSubtree(cabinType);
   if (ids.length === 0) return [];
+  // A "base" is either a real family OR a family-less item listed under its
+  // own name (see searchCabinBases) — match both. Strip double quotes so the
+  // quoted PostgREST values can't break.
+  const safe = family.replace(/"/g, "");
   const { data, error } = await supabase
     .from("items")
     .select(`id, code, name, finish, uom:units_of_measurement(abbreviation), inventory(quantity)`)
     .eq("is_active", true)
     .in("category_id", ids)
-    .eq("family", family);
+    .or(`family.eq."${safe}",and(family.is.null,name.eq."${safe}")`);
   if (error) throw error;
   return ((data ?? []) as any[])
     .map((it) => ({
