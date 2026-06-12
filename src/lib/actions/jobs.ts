@@ -58,34 +58,33 @@ const _getJobsImportMetaUncached = async (): Promise<
   Record<string, JobImportMeta>
 > => {
   const supabase = createCacheClient();
-  const PAGE = 1000;
+
+  // Headers and lines are independent reads — fetch both (all pages, in
+  // parallel bursts via fetchAllRanged) concurrently, then join in memory.
+  const [headerRows, lineRows] = await Promise.all([
+    fetchAllRanged<{ id: string; job_id: string }>((from, to, withCount) =>
+      supabase
+        .from("job_bom_headers")
+        .select("id, job_id", withCount ? { count: "exact" } : {})
+        .range(from, to),
+    ),
+    fetchAllRanged<{ job_bom_id: string }>((from, to, withCount) =>
+      supabase
+        .from("job_bom_lines")
+        .select("job_bom_id", withCount ? { count: "exact" } : {})
+        .range(from, to),
+    ),
+  ]);
 
   // header id -> job id
   const headerToJob = new Map<string, string>();
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("job_bom_headers")
-      .select("id, job_id")
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    for (const h of (data ?? []) as { id: string; job_id: string }[])
-      headerToJob.set(h.id, h.job_id);
-    if (!data || data.length < PAGE) break;
-  }
+  for (const h of headerRows) headerToJob.set(h.id, h.job_id);
 
   // count BOM lines per job
   const counts: Record<string, number> = {};
-  for (let offset = 0; ; offset += PAGE) {
-    const { data, error } = await supabase
-      .from("job_bom_lines")
-      .select("job_bom_id")
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    for (const row of (data ?? []) as { job_bom_id: string }[]) {
-      const jid = headerToJob.get(row.job_bom_id);
-      if (jid) counts[jid] = (counts[jid] ?? 0) + 1;
-    }
-    if (!data || data.length < PAGE) break;
+  for (const row of lineRows) {
+    const jid = headerToJob.get(row.job_bom_id);
+    if (jid) counts[jid] = (counts[jid] ?? 0) + 1;
   }
 
   // door-system signal: prefer Car Header System, fall back to Landing
