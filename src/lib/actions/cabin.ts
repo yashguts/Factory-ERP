@@ -13,12 +13,6 @@ export interface CabinTypeSummary {
   itemCount: number;
 }
 
-const chunk = <T,>(a: T[], n: number): T[][] => {
-  const o: T[][] = [];
-  for (let i = 0; i < a.length; i += n) o.push(a.slice(i, i + n));
-  return o;
-};
-
 const _getCabinTypeSummaryUncached = async (): Promise<CabinTypeSummary[]> => {
   const supabase = createCacheClient();
 
@@ -59,37 +53,28 @@ const _getCabinTypeSummaryUncached = async (): Promise<CabinTypeSummary[]> => {
   const typeToCatIds = new Map<string, string[]>(
     types.map((t) => [t.id as string, descendants(t.id as string)]),
   );
-  const allCabinCatIds = [...new Set([...typeToCatIds.values()].flat())];
-
-  const countByCat = new Map<string, number>();
-  const PAGE = 1000;
-  for (const cc of chunk(allCabinCatIds, 150)) {
-    // Page past PostgREST's 1000-row cap so big types (e.g. Side Panel) count fully.
-    let offset = 0;
-    while (true) {
-      const { data: its } = await supabase
+  // One COUNT-ONLY query per type (parallel, head:true → zero rows shipped).
+  // The old approach fetched every item row (Side Panel 2000+, Front Wall
+  // 3900+) page by sequential page just to count them — thousands of rows and
+  // many round-trips for 11 numbers.
+  const counts = await Promise.all(
+    types.map(async (t) => {
+      const ids = typeToCatIds.get(t.id as string) ?? [];
+      if (ids.length === 0) return 0;
+      const { count, error } = await supabase
         .from("items")
-        .select("category_id")
+        .select("id", { count: "exact", head: true })
         .eq("is_active", true)
-        .in("category_id", cc)
-        .order("id")
-        .range(offset, offset + PAGE - 1);
-      for (const it of its ?? []) {
-        const c = it.category_id as string | null;
-        if (c) countByCat.set(c, (countByCat.get(c) ?? 0) + 1);
-      }
-      if (!its || its.length < PAGE) break;
-      offset += PAGE;
-    }
-  }
+        .in("category_id", ids);
+      if (error) throw error;
+      return count ?? 0;
+    }),
+  );
 
-  return types.map((t) => ({
+  return types.map((t, i) => ({
     id: t.id as string,
     name: t.name as string,
-    itemCount: (typeToCatIds.get(t.id as string) ?? []).reduce(
-      (a, cid) => a + (countByCat.get(cid) ?? 0),
-      0,
-    ),
+    itemCount: counts[i],
   }));
 };
 

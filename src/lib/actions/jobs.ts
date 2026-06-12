@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage } from "@/lib/supabase/types";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 export interface BomLineInput {
   category: string;
@@ -15,25 +16,13 @@ export interface BomLineInput {
 
 const _getJobsUncached = async () => {
   const supabase = createCacheClient();
-
-  const PAGE = 1000;
-  let allJobs: any[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await supabase
+  return fetchAllRanged<any>((from, to, withCount) =>
+    supabase
       .from("jobs")
-      .select("*")
+      .select("*", withCount ? { count: "exact" } : {})
       .order("created_at", { ascending: false })
-      .range(offset, offset + PAGE - 1);
-
-    if (error) throw error;
-    allJobs = allJobs.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  return allJobs;
+      .range(from, to),
+  );
 };
 
 export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {

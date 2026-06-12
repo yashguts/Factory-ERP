@@ -3,6 +3,7 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { getMrpData } from "@/lib/actions/mrp";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 /**
  * Make-shortfall PRODUCTION PLAN: the fewest "other parts" (least over-production)
@@ -311,20 +312,18 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   // the join; the other two are cheap full-table reads we'd need regardless.
   const partsOfPromise = (async () => {
     const partsOf = new Map<string, { child: string; qty: number }[]>();
-    for (let off = 0; ; off += PAGE) {
-      const { data, error } = await supabase
+    const rows = await fetchAllRanged<any>((from, to, withCount) =>
+      supabase
         .from("item_bom_lines")
-        .select("parent_item_id, child_item_id, qty")
+        .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
         .order("parent_item_id")
-        .range(off, off + PAGE - 1);
-      if (error) throw error;
-      for (const b of data ?? []) {
-        if (!b.child_item_id) continue;
-        const a = partsOf.get(b.parent_item_id as string) ?? [];
-        a.push({ child: b.child_item_id as string, qty: Number(b.qty) || 1 });
-        partsOf.set(b.parent_item_id as string, a);
-      }
-      if (!data || data.length < PAGE) break;
+        .range(from, to),
+    );
+    for (const b of rows) {
+      if (!b.child_item_id) continue;
+      const a = partsOf.get(b.parent_item_id as string) ?? [];
+      a.push({ child: b.child_item_id as string, qty: Number(b.qty) || 1 });
+      partsOf.set(b.parent_item_id as string, a);
     }
     return partsOf;
   })();
@@ -340,12 +339,18 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   // active programs — independent full-table read (used in step 5 below).
   const opsPromise = (async () => {
     const ops = new Map<string, any>();
-    for (let off = 0; ; off += PAGE) {
-      const { data, error } = await supabase.from("operations").select("id, name, code, machine, audited_at, machining_time_seconds, sheet_weight_kg, scrap_percent, scrap_weight_kg").eq("is_active", true).order("id").range(off, off + PAGE - 1);
-      if (error) throw error;
-      for (const o of data ?? []) ops.set(o.id as string, o);
-      if (!data || data.length < PAGE) break;
-    }
+    const rows = await fetchAllRanged<any>((from, to, withCount) =>
+      supabase
+        .from("operations")
+        .select(
+          "id, name, code, machine, audited_at, machining_time_seconds, sheet_weight_kg, scrap_percent, scrap_weight_kg",
+          withCount ? { count: "exact" } : {},
+        )
+        .eq("is_active", true)
+        .order("id")
+        .range(from, to),
+    );
+    for (const o of rows) ops.set(o.id as string, o);
     return ops;
   })();
 
@@ -437,23 +442,16 @@ async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []
   // in DB row order (.order("id")), so the result is identical.
   const [ops, outputRows] = await Promise.all([
     opsPromise,
-    (async () => {
-      const rows: any[] = [];
-      for (let off = 0; ; off += PAGE) {
-        const { data, error } = await supabase
-          .from("operation_outputs")
-          .select("operation_id, item_id, qty_per_run, role")
-          .not("item_id", "is", null)
-          .gt("qty_per_run", 0)
-          .in("role", ["component", "cut_part"])
-          .order("id")
-          .range(off, off + PAGE - 1);
-        if (error) throw error;
-        rows.push(...(data ?? []));
-        if (!data || data.length < PAGE) break;
-      }
-      return rows;
-    })(),
+    fetchAllRanged<any>((from, to, withCount) =>
+      supabase
+        .from("operation_outputs")
+        .select("operation_id, item_id, qty_per_run, role", withCount ? { count: "exact" } : {})
+        .not("item_id", "is", null)
+        .gt("qty_per_run", 0)
+        .in("role", ["component", "cut_part"])
+        .order("id")
+        .range(from, to),
+    ),
   ]);
   // "Don't run this" exclusions: drop the program from the producer pool
   // entirely so the selection (and the blocked classification) recompute

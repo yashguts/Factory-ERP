@@ -4,6 +4,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { getItemsWithStock } from "@/lib/actions/inventory";
 import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 export interface MrpRow {
   item_id: string;
@@ -42,24 +43,18 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   // first-phase job pulls only its first-phase material.
   const stageByJob = new Map<string, string>();
   {
-    const PAGE = 1000;
-    let offset = 0;
-    while (true) {
-      let q = supabase
-        .from("jobs")
-        .select("id, requirement_stage")
-        .eq("status", "in_production");
-      if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
-      const { data, error } = await q.range(offset, offset + PAGE - 1);
-      if (error) throw error;
-      for (const j of data ?? [])
-        stageByJob.set(
-          j.id as string,
-          (j.requirement_stage as string | null) ?? "full_material",
-        );
-      if (!data || data.length < PAGE) break;
-      offset += PAGE;
-    }
+    const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null }>(
+      (from, to, withCount) => {
+        let q = supabase
+          .from("jobs")
+          .select("id, requirement_stage", withCount ? { count: "exact" } : {})
+          .eq("status", "in_production");
+        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        return q.range(from, to);
+      },
+    );
+    for (const j of jobs)
+      stageByJob.set(j.id, j.requirement_stage ?? "full_material");
   }
   if (stageByJob.size === 0) return [];
   const prodJobIds = Array.from(stageByJob.keys());
@@ -76,24 +71,19 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   // hop. Behaviour is identical — same rows, same accumulation.
   const dispatchedByLinePromise = (async () => {
     const dispatchedByLine = new Map<string, number>();
-    const PAGE_D = 1000;
-    let offsetD = 0;
-    while (true) {
-      const { data, error } = await supabase
-        .from("job_dispatch_lines")
-        .select("job_bom_line_id, qty")
-        .not("job_bom_line_id", "is", null)
-        .range(offsetD, offsetD + PAGE_D - 1);
-      if (error) throw error;
-      for (const d of data ?? []) {
-        const lineId = d.job_bom_line_id as string;
-        dispatchedByLine.set(
-          lineId,
-          (dispatchedByLine.get(lineId) ?? 0) + (Number(d.qty) || 0),
-        );
-      }
-      if (!data || data.length < PAGE_D) break;
-      offsetD += PAGE_D;
+    const rows = await fetchAllRanged<{ job_bom_line_id: string; qty: number }>(
+      (from, to, withCount) =>
+        supabase
+          .from("job_dispatch_lines")
+          .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
+          .not("job_bom_line_id", "is", null)
+          .range(from, to),
+    );
+    for (const d of rows) {
+      dispatchedByLine.set(
+        d.job_bom_line_id,
+        (dispatchedByLine.get(d.job_bom_line_id) ?? 0) + (Number(d.qty) || 0),
+      );
     }
     return dispatchedByLine;
   })();
@@ -124,22 +114,19 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
 
   // BOM lines for those headers. `category` lets us scope first-phase jobs to
   // their first-phase sections (dispatchPhaseOf).
-  const PAGE = 1000;
-  let allLines: any[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("job_bom_lines")
-      .select("id, item_id, required_quantity, job_bom_id, category")
-      .in("job_bom_id", bomHeaderIds)
-      .not("item_id", "is", null)
-      .gt("required_quantity", 0)
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    allLines = allLines.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
+  const allLines: any[] = await fetchAllRanged(
+    (from, to, withCount) =>
+      supabase
+        .from("job_bom_lines")
+        .select(
+          "id, item_id, required_quantity, job_bom_id, category",
+          withCount ? { count: "exact" } : {},
+        )
+        .in("job_bom_id", bomHeaderIds)
+        .not("item_id", "is", null)
+        .gt("required_quantity", 0)
+        .range(from, to),
+  );
 
   const dispatchedByLine = await dispatchedByLinePromise;
 
@@ -294,22 +281,6 @@ export interface ProgramRunPlan {
   sheet_name: string | null;
 }
 
-async function fetchAllRows(
-  build: (offset: number, page: number) => PromiseLike<{ data: any[] | null; error: any }>,
-): Promise<any[]> {
-  const PAGE = 1000;
-  let all: any[] = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await build(offset, PAGE);
-    if (error) throw error;
-    all = all.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
-  return all;
-}
-
 export async function getProductionPlan(
   cutoffDate?: string,
 ): Promise<ProductionPlan> {
@@ -343,36 +314,36 @@ async function _getProductionPlanUncached(
     // both 'component' outputs (stocked make-items) and 'cut_part' outputs that
     // link to a phantom item, so a phantom loose-part child of an assembly still
     // explodes through the program that cuts it down to its sheet.
-    fetchAllRows((off, page) =>
+    fetchAllRanged<any>((from, to, withCount) =>
       supabase
         .from("operation_outputs")
-        .select("operation_id, item_id, qty_per_run")
+        .select("operation_id, item_id, qty_per_run", withCount ? { count: "exact" } : {})
         .in("role", ["component", "cut_part"])
         .not("item_id", "is", null)
-        .range(off, off + page - 1),
+        .range(from, to),
     ),
     // program -> its input lines (sheets/bought).
-    fetchAllRows((off, page) =>
+    fetchAllRanged<any>((from, to, withCount) =>
       supabase
         .from("operation_inputs")
-        .select("operation_id, item_id, qty_per_run")
+        .select("operation_id, item_id, qty_per_run", withCount ? { count: "exact" } : {})
         .not("item_id", "is", null)
-        .range(off, off + page - 1),
+        .range(from, to),
     ),
     // assembly parts lists.
-    fetchAllRows((off, page) =>
+    fetchAllRanged<any>((from, to, withCount) =>
       supabase
         .from("item_bom_lines")
-        .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish")
-        .range(off, off + page - 1),
+        .select("parent_item_id, child_item_id, child_family, qty, finish_rule, pinned_finish", withCount ? { count: "exact" } : {})
+        .range(from, to),
     ),
     // program audit status — the buy list prefers AUDITED producers.
-    fetchAllRows((off, page) =>
+    fetchAllRanged<any>((from, to, withCount) =>
       supabase
         .from("operations")
-        .select("id, audited_at")
+        .select("id, audited_at", withCount ? { count: "exact" } : {})
         .eq("is_active", true)
-        .range(off, off + page - 1),
+        .range(from, to),
     ),
   ]);
 
@@ -656,26 +627,22 @@ async function _getMrpItemJobsUncached(
 
   // 1) Fetch BOM lines referencing this item with qty > 0. `category` lets us
   // apply the same requirement-stage scoping as getMrpData below.
-  const PAGE = 1000;
-  let allLines: Array<{
+  const allLines = await fetchAllRanged<{
     id: string;
     job_bom_id: string;
     required_quantity: number;
     category: string | null;
-  }> = [];
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
+  }>((from, to, withCount) =>
+    supabase
       .from("job_bom_lines")
-      .select("id, job_bom_id, required_quantity, category")
+      .select(
+        "id, job_bom_id, required_quantity, category",
+        withCount ? { count: "exact" } : {},
+      )
       .eq("item_id", itemId)
       .gt("required_quantity", 0)
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    allLines = allLines.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
+      .range(from, to),
+  );
   if (allLines.length === 0) return [];
 
   // The dispatched-qty batches and the header->job batches both depend only on

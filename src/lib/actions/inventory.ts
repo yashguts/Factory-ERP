@@ -7,6 +7,7 @@ import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSour
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
 import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -57,31 +58,27 @@ const _getItemsWithStockUncached = async () => {
   }
   const cabinIds = [...cabinCatIds];
 
-  const PAGE = 1000;
-  let allItems: any[] = [];
-  let offset = 0;
-
-  while (true) {
-    let q = supabase
-      .from("items")
-      .select(`
+  const allItems: any[] = await fetchAllRanged(
+    (from, to, withCount) => {
+      let q = supabase
+        .from("items")
+        .select(
+          `
         *,
         category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
         uom:units_of_measurement(id, abbreviation),
         inventory(quantity, warehouse_id)
-      `)
-      .eq("is_active", true);
-    // Exclude the whole Cabin subtree at the DB (keep items with no category).
-    if (cabinIds.length > 0) {
-      q = q.or(`category_id.is.null,category_id.not.in.(${cabinIds.join(",")})`);
-    }
-    const { data, error } = await q.order("code").range(offset, offset + PAGE - 1);
-
-    if (error) throw error;
-    allItems = allItems.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
+      `,
+          withCount ? { count: "exact" } : {},
+        )
+        .eq("is_active", true);
+      // Exclude the whole Cabin subtree at the DB (keep items with no category).
+      if (cabinIds.length > 0) {
+        q = q.or(`category_id.is.null,category_id.not.in.(${cabinIds.join(",")})`);
+      }
+      return q.order("code").range(from, to);
+    },
+  );
 
   return allItems
     .filter(
@@ -180,22 +177,18 @@ const _getItemRefsUncached = async () => {
     }
   }
 
-  const PAGE = 1000;
   const pairs = new Set<string>();
-  let offset = 0;
-  while (true) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("item_type, category_id")
-      .eq("is_active", true)
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    for (const r of data ?? []) {
-      if (r.category_id && cabinCatIds.has(r.category_id as string)) continue;
-      pairs.add(`${r.item_type}|${r.category_id ?? ""}`);
-    }
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
+  const facetRows = await fetchAllRanged<{ item_type: string; category_id: string | null }>(
+    (from, to, withCount) =>
+      supabase
+        .from("items")
+        .select("item_type, category_id", withCount ? { count: "exact" } : {})
+        .eq("is_active", true)
+        .range(from, to),
+  );
+  for (const r of facetRows) {
+    if (r.category_id && cabinCatIds.has(r.category_id)) continue;
+    pairs.add(`${r.item_type}|${r.category_id ?? ""}`);
   }
 
   return [...pairs].map((p) => {
