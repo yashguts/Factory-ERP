@@ -128,6 +128,34 @@ today — close when convenient):
    workflow worktrees deleted; git ops are quiet again. Still untracked
    scratch: `pdf-dxf-pilot/`, `scripts/*.json`, `a_copy.xlsx`.
 
+## Perf deep-dive (2026-06-12 ~01:00) — THE structural finding
+
+- **Proven root cause of "ERP is slow": Netlify runs the server functions in
+  us-east-2 (Ohio); Supabase is ap-south-1 (Mumbai). `/api/diag` (new endpoint)
+  measures it: ~270–335 ms PER DB QUERY.** DB itself is healthy (pg_stat: worst
+  query family mean 45 ms). Pages chain 10–40 dependent queries → 3–14 s.
+  - **THE FIX (owner one-click, not doable via MCP): Netlify app →
+    lt-factory-erp → Project configuration → Functions → region → pick Mumbai
+    (ap-south-1) or nearest Asia option, save, redeploy. Verify in seconds via
+    https://lt-factory-erp.netlify.app/api/diag (region + ping should drop to
+    ~10–20 ms).** Plan is Pro, so the setting should be available. If it isn't:
+    the Vercel-Mumbai migration is already prepped on `feature/perf-mumbai`.
+- Shipped meanwhile (7040b20 + 99b653b): `lib/supabase/fetch-all.ts`
+  (fetchAllRanged — first page with exact count, remaining pages in ONE parallel
+  burst) replacing every hot-path serial pager: mrp.ts (jobs/dispatch/BOM lines/
+  per-item popover + the 4 full-table reads in /mrp/plan; local fetchAllRows
+  helper deleted), production-plan.ts (parts lists/programs/outputs),
+  inventory.ts (getItemsWithStock + facets), jobs.ts (list + import-meta),
+  cabin.ts (type counts → parallel COUNT-only head queries, was fetching 6k+
+  rows to count them). Output verified IDENTICAL vs old code (make-plan totals
+  field-for-field; all 11 cabin counts). Left alone: next-code series scans in
+  create-item paths (mutation-time one-offs).
+- OPEN ANOMALY for daylight: /mrp/make-plan recomputes ~5–6 s on every request
+  even warm, though the plan payload is only ~0.8 MB (under the 2 MB
+  unstable_cache cap) and revalidate=1800. Suspect the cache write/read on the
+  Netlify runtime — worth instrumenting AFTER the region flip (which makes each
+  recompute cheap anyway).
+
 ## Working agreements (hard-won today)
 
 - TWO sessions may push to main concurrently — ALWAYS `git pull --rebase` before
