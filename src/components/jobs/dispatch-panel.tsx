@@ -53,6 +53,19 @@ export function DispatchPanel({
   const first = phaseStat("first");
   const second = phaseStat("second");
 
+  // What still needs to leave the factory, grouped by dispatch phase.
+  const pending = summary.lines
+    .filter((l) => l.remaining > 0)
+    .sort(
+      (a, b) =>
+        a.category.localeCompare(b.category) ||
+        (a.item_name ?? "").localeCompare(b.item_name ?? ""),
+    );
+  const pendingFirst = pending.filter((l) => l.phase === "first");
+  const pendingSecond = pending.filter((l) => l.phase === "second");
+  const hasBom = summary.lines.length > 0;
+  const [openRemaining, setOpenRemaining] = useState(pending.length > 0);
+
   const label = (s: Stat) =>
     !s ? "—" : s.done === 0 ? "Pending" : s.done >= s.total ? "Dispatched" : `Partial (${s.done}/${s.total})`;
   const cls = (s: Stat) =>
@@ -100,6 +113,85 @@ export function DispatchPanel({
           <Plus className="h-3.5 w-3.5 mr-1" /> Mark dispatched
         </Button>
       </div>
+
+      {/* Remaining to dispatch — what still needs to be sent, with quantities */}
+      {hasBom &&
+        (pending.length === 0 ? (
+          <p className="text-sm font-medium text-green-600 mb-3">
+            All materials dispatched ✓
+          </p>
+        ) : (
+          <div className="border border-[var(--border)] rounded-md mb-3">
+            <button
+              type="button"
+              onClick={() => setOpenRemaining((o) => !o)}
+              className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium cursor-pointer"
+            >
+              {openRemaining ? (
+                <ChevronDown className="h-3.5 w-3.5" />
+              ) : (
+                <ChevronRight className="h-3.5 w-3.5" />
+              )}
+              <span className="text-amber-600">
+                Remaining to dispatch — {pending.length} item
+                {pending.length === 1 ? "" : "s"}
+              </span>
+              <span className="text-xs text-[var(--muted-foreground)]">
+                first: {pendingFirst.length} · second: {pendingSecond.length}
+              </span>
+            </button>
+            {openRemaining && (
+              <div className="px-3 pb-2 border-t border-[var(--border)]">
+                {([
+                  ["First phase", pendingFirst],
+                  ["Second phase", pendingSecond],
+                ] as const).map(([title, rows]) =>
+                  rows.length === 0 ? null : (
+                    <div key={title} className="pt-2">
+                      <div className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)] mb-1">
+                        {title} · {rows.length}
+                      </div>
+                      <div className="divide-y divide-[var(--border)]">
+                        {rows.map((l) => (
+                          <div
+                            key={l.job_bom_line_id}
+                            className="flex justify-between gap-2 py-1 text-sm"
+                          >
+                            <span className="truncate">
+                              {l.item_name ?? "(item)"}
+                              {l.item_code && (
+                                <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
+                                  {l.item_code}
+                                </span>
+                              )}
+                              {l.category && (
+                                <span className="ml-2 text-[11px] italic text-[var(--muted-foreground)]">
+                                  {l.category}
+                                </span>
+                              )}
+                            </span>
+                            <span className="whitespace-nowrap text-right">
+                              <span className="font-medium text-amber-600">
+                                {l.remaining.toLocaleString()}
+                                {l.uom ? ` ${l.uom}` : ""}
+                              </span>
+                              {l.dispatched > 0 && (
+                                <span className="ml-2 text-[11px] text-[var(--muted-foreground)]">
+                                  sent {l.dispatched.toLocaleString()} of{" "}
+                                  {l.required.toLocaleString()}
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  ),
+                )}
+              </div>
+            )}
+          </div>
+        ))}
 
       {summary.dispatches.length === 0 ? (
         <p className="text-sm text-[var(--muted-foreground)]">
