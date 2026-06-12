@@ -41,6 +41,107 @@ export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
   tags: ["jobs"],
 });
 
+/**
+ * Lightweight per-job metadata for the "Import from Existing Job" picker:
+ * how many BOM lines the job has, and its door system derived from the
+ * Car Header System BOM item (falling back to the Landing Header System).
+ * Returned keyed by job id. Cached like getJobs; invalidated on job/BOM edits.
+ */
+export interface JobImportMeta {
+  items: number;
+  door: string | null;
+}
+
+/** ACO / AT (LHS|RHS) / AFF / MT (LHS|RHS) / Swing / Collapsible, from a header-system item name. */
+function deriveDoorSystem(name: string): string {
+  const n = name.toUpperCase();
+  const hand = n.includes("LHS") ? " (LHS)" : n.includes("RHS") ? " (RHS)" : "";
+  if (n.includes("AFF")) return "AFF";
+  if (n.includes("MANUAL TELESCOPIC") || /\bMT\b/.test(n)) return `MT${hand}`;
+  if (n.includes("SWING")) return `Swing${hand}`;
+  if (n.includes("COLLAPSIBLE")) return `Collapsible${hand}`;
+  if (/\bAT\b/.test(n)) return `AT${hand}`;
+  if (n.includes("ACO") || /\bCO\b/.test(n)) return "ACO";
+  return "";
+}
+
+const _getJobsImportMetaUncached = async (): Promise<
+  Record<string, JobImportMeta>
+> => {
+  const supabase = createCacheClient();
+  const PAGE = 1000;
+
+  // header id -> job id
+  const headerToJob = new Map<string, string>();
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("job_bom_headers")
+      .select("id, job_id")
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    for (const h of (data ?? []) as { id: string; job_id: string }[])
+      headerToJob.set(h.id, h.job_id);
+    if (!data || data.length < PAGE) break;
+  }
+
+  // count BOM lines per job
+  const counts: Record<string, number> = {};
+  for (let offset = 0; ; offset += PAGE) {
+    const { data, error } = await supabase
+      .from("job_bom_lines")
+      .select("job_bom_id")
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    for (const row of (data ?? []) as { job_bom_id: string }[]) {
+      const jid = headerToJob.get(row.job_bom_id);
+      if (jid) counts[jid] = (counts[jid] ?? 0) + 1;
+    }
+    if (!data || data.length < PAGE) break;
+  }
+
+  // door-system signal: prefer Car Header System, fall back to Landing
+  const doorByJob: Record<string, { car?: string; landing?: string }> = {};
+  {
+    const { data, error } = await supabase
+      .from("job_bom_lines")
+      .select("job_bom_id, category, item:items(name)")
+      .in("category", ["Car Header System", "Landing Header System"]);
+    if (error) throw error;
+    for (const row of (data ?? []) as Array<{
+      job_bom_id: string;
+      category: string;
+      item: { name: string } | { name: string }[] | null;
+    }>) {
+      const jid = headerToJob.get(row.job_bom_id);
+      const itemObj = Array.isArray(row.item) ? row.item[0] : row.item;
+      const name = itemObj?.name;
+      if (!jid || !name) continue;
+      const slot = (doorByJob[jid] ??= {});
+      if (row.category === "Car Header System") slot.car ??= name;
+      else slot.landing ??= name;
+    }
+  }
+
+  const out: Record<string, JobImportMeta> = {};
+  for (const jid of new Set([
+    ...Object.keys(counts),
+    ...Object.keys(doorByJob),
+  ])) {
+    const src = doorByJob[jid]?.car ?? doorByJob[jid]?.landing ?? null;
+    out[jid] = {
+      items: counts[jid] ?? 0,
+      door: src ? deriveDoorSystem(src) || null : null,
+    };
+  }
+  return out;
+};
+
+export const getJobsImportMeta = unstable_cache(
+  _getJobsImportMetaUncached,
+  ["jobs-import-meta"],
+  { revalidate: 600, tags: ["jobs", "bom-lines"] },
+);
+
 export async function getJobDetail(jobId: string) {
   const supabase = await createClient();
 

@@ -5,7 +5,8 @@ import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Search, Loader2 } from "lucide-react";
-import { getJobs } from "@/lib/actions/jobs";
+import { getJobs, getJobsImportMeta } from "@/lib/actions/jobs";
+import type { JobImportMeta } from "@/lib/actions/jobs";
 import type { Job } from "@/lib/supabase/types";
 
 interface Props {
@@ -21,6 +22,7 @@ interface Props {
  */
 export function JobTemplatePickerModal({ onPick, onClose }: Props) {
   const [jobs, setJobs] = useState<Job[]>([]);
+  const [meta, setMeta] = useState<Record<string, JobImportMeta>>({});
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [search, setSearch] = useState("");
@@ -29,8 +31,14 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
     let cancelled = false;
     (async () => {
       try {
-        const data = (await getJobs()) as Job[];
-        if (!cancelled) setJobs(data);
+        const [data, metaData] = await Promise.all([
+          getJobs() as Promise<Job[]>,
+          getJobsImportMeta(),
+        ]);
+        if (!cancelled) {
+          setJobs(data);
+          setMeta(metaData);
+        }
       } catch (e) {
         if (!cancelled)
           setError(e instanceof Error ? e.message : "Failed to load jobs");
@@ -57,13 +65,14 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
         job.location,
         job.spec_string,
         job.brand,
+        meta[job.id]?.door,
       ]
         .filter(Boolean)
         .join(" ")
         .toLowerCase();
       return tokens.every((t) => haystack.includes(t));
     });
-  }, [jobs, search]);
+  }, [jobs, search, meta]);
 
   return (
     <Modal
@@ -122,9 +131,22 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
                     </span>
                   )}
                 </div>
-                <div className="text-xs text-[var(--muted-foreground)] mt-0.5 truncate">
-                  {[job.customer_name, job.location].filter(Boolean).join(" · ") ||
-                    "No customer / location"}
+                <div className="flex items-baseline justify-between gap-3 mt-0.5">
+                  <span className="text-xs text-[var(--muted-foreground)] truncate">
+                    {[job.customer_name, job.location].filter(Boolean).join(" · ") ||
+                      "No customer / location"}
+                  </span>
+                  <span className="flex items-center gap-1.5 shrink-0">
+                    {meta[job.id]?.door && (
+                      <span className="text-[10px] font-medium rounded-full px-1.5 py-0.5 border border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]">
+                        {meta[job.id].door}
+                      </span>
+                    )}
+                    <span className="text-[10px] text-[var(--muted-foreground)] whitespace-nowrap">
+                      {meta[job.id]?.items ?? 0} item
+                      {(meta[job.id]?.items ?? 0) === 1 ? "" : "s"}
+                    </span>
+                  </span>
                 </div>
               </button>
             ))}
