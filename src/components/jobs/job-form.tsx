@@ -614,7 +614,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <span className="text-xs text-[var(--muted-foreground)]">
             {totalPickedItems} item{totalPickedItems !== 1 ? "s" : ""}
           </span>
-          {mode === "create" && (
+          {(mode === "create" || totalPickedItems === 0) && (
             <Button
               size="sm"
               variant="secondary"
