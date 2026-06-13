@@ -51,12 +51,44 @@ Two layers, both feeding AI Auto-Fill:
 - **Backtest re-validated** (post floors→stops): section-F1 0.96, item-hit 84%, qty±10% 85.5%,
   keep-rate 71.7%, vs 55.7% gate-only baseline. No regression.
 
+## PASS 2 — DONE (2026-06-13): deterministic quantity rules encoded
+- **`deterministicQty()` scaffold added to `predict-core.ts`** — a per-item-name/section classifier
+  that OVERRIDES the retrieved median for evidence-backed counts. Pure function; drafts only; never
+  writes ERP data. Wired as a no-op first and backtest-confirmed identical before any rule went live.
+- **Rules KEPT** (each backtested individually, kept only on no-regression):
+  - **A — limit-switch set = 6** (`Final Limit Switch N/C`, `Limit Switch Bkt STD/GOODS`; excludes
+    `Bkt Home`=1). Fixed a real bug: the bracket section was floor-scaled (a 7-stop job predicted ~21).
+  - **B — landing-side door parts = L** (Landing Panel/Header, Door Post/Frame, Linton, Magnet Bkt,
+    Gate Lock). Verified in DB: qty−floors ≈ 0, sd 0.28–0.77. The strongest rule.
+  - **C1 — sill ANGLE = L** (`Sill Angle …`; qty−floors ≈ 0 across every angle SKU).
+  - **D — car/machine singletons = 1**, restricted to the 7 sections that are 1 in EVERY job (Machine,
+    Machine Beam, Counter Frame, CONT. STAND, STA. CAM, Danger Plate, Safety Tips Plate).
+- **Rules TESTED & REJECTED / SKIPPED (don't re-litigate):**
+  - **C2 — `Alluminium Sill = L+1`**: REGRESSED keep-rate 72.0→71.9. Stored aluminium sill is too
+    noisy (off-by-one floors, per-opening entry, goods multi-leaf). Left to retrieval. (Code comments it.)
+  - **E — never-present-section suppression**: UNNECESSARY. The only cabin/electrical categories in
+    the data are `Cabin Rubber Pad` + `CABIN GLASS` (both legitimate). No controller/COP/LOP/ARD/
+    cabin-shell categories exist, so the engine structurally cannot suggest them. No code added.
+  - **Safety / Governor / Car Door Panel / Car Header EXCLUDED from the =1 rule** — they legitimately
+    exceed 1 (Safety/Governor double on heavy goods; Car Panel up to 8 on CO/goods; Car Header ×2 goods).
+- **Result: keep-rate 71.7→72.0, qty±10% 85.5→85.9, no drive type regressed** (MRL/BELT/HOME/MR all
+  up or flat; item-hit & section-F1 unchanged — these rules only touch quantities). Modest because
+  retrieval was already strong on qty; the larger win is the bug fix + ~700 landing/singleton lines now
+  EXACT and high-confidence (better engineer trust), plus the deterministic scaffold for the next lever.
+- **Corpus-coverage survey (settles "expand the corpus"):** every drawing in the system has already
+  been read (per-drive drawing counts ≈ studied counts: MRL 61, HOME 24, MR 15, BELT 11, HYD 1, CANTI 1).
+  Under-covered types are **data-limited, not reading-limited** — HYD has only 2 jobs total. The pool
+  grows only as the business books new jobs, which the flywheel absorbs with zero retrain. No reading TODO.
+
 ## CONTINUATION CHECKLIST (next passes)
-1. **Encode the 10 SAFE deterministic rules** from AI-DRAWING-RULEBOOK.md Part 6 into
-   `predict-core.ts` — ONE AT A TIME, re-running `scripts/backtest-bom-predict.ts` after each and
-   KEEPING ONLY changes that beat 71.7% (never regress). Drafts only; never writes ERP data.
-   Highest value: landing-qty=L & sill=L+1 (already via scaling), door-token propagation for
-   sparse-neighbour cases, name composition, never-present list (suppress false sections).
+1. **[PARTIALLY DONE — see PASS 2]** Remaining SAFE rules from AI-DRAWING-RULEBOOK.md Part 6 are the
+   **name-composition** ones (§6.1 #3 door-token propagation, #8 dual-DBG/rail-reorder): let the engine
+   COMPOSE the right SKU name from spec and resolve it to an item_id when no neighbour carries it. This
+   is the **highest-value next lever** — it attacks item-HIT (84.3%), a bigger ceiling than qty (85.9%) —
+   but it's architecturally heavier (needs an item-resolution step) and the current retrieval-only
+   backtest can't score composed hits without it. Design that first. (§6.1 #7 drive-classification-from-
+   BOM-tokens is corpus *labeling*, not predict-time; #9 UoM tagging is an MRP concern, not keep-rate.)
+   Same discipline: ONE AT A TIME, re-run `scripts/backtest-bom-predict.ts`, keep only no-regression.
 5. **Honest nightly learning**: the flywheel already accrues corrections. A periodic (NOT literally
    nightly — overfits on tiny data) re-derivation of the rulebook from the growing corpus is the
    mechanism; cadence ≈ weekly/as enough new audited jobs land. Decide with owner whether to

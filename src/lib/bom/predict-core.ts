@@ -29,7 +29,7 @@ export const TUNING = {
 const FLOOR_SCALED = new Set<string>([
   "RAIL", "Landing Door Panel", "Landing Header System", "Door Post / Frame",
   "Door Sill", "Gate Lock", "MAIN BRACKET", "COUNTER BRACKET", "RAIL CLIP",
-  "Linton Panel", "LIMIT SWITCH BRACKET", "MAGNET WITH BRACKET",
+  "Linton Panel", "MAGNET WITH BRACKET",
   "TROUGHING 50", "TROUGHING 100",
 ]);
 
@@ -79,7 +79,7 @@ export interface PredictedLine {
   item_name: string;
   uom: string;
   suggestedQty: number;
-  qtyMethod: "floor-scaled" | "as-is";
+  qtyMethod: "floor-scaled" | "as-is" | "rule";
   confidence: number; // 0..1
   confidenceBand: "high" | "medium" | "low";
   supportingJobs: string[];
@@ -196,6 +196,61 @@ function band(c: number): "high" | "medium" | "low" {
 
 const SECTION_META = new Map(BOM_SECTIONS.map((s) => [s.category, s]));
 
+// ── Deterministic quantity rules (rulebook Part 6.1) ─────────────────────────
+// High-confidence, evidence-backed counts that OVERRIDE the retrieved median for
+// items whose quantity is a known function of the served-landing count L (= the
+// target's total stops, post-migration 024) or a fixed per-config constant.
+// Returns null to fall back to retrieval. Each rule is gated by the leave-one-out
+// backtest (scripts/backtest-bom-predict.ts) and kept only if it doesn't regress
+// the 71.7% keep-rate. itemName is the ground-truth match key — DB typos are
+// load-bearing (see rulebook appendix: Alluminium, Pannel, …).
+//
+// Landing-side door parts that count once per served landing (rulebook §1.1).
+const LANDING_SECTIONS = new Set<string>([
+  "Landing Door Panel", "Landing Header System", "Door Post / Frame",
+  "Linton Panel", "MAGNET WITH BRACKET", "Gate Lock",
+]);
+
+// Single-car / single-machine parts: exactly 1 in EVERY studied job (zero
+// exceptions in the corpus). Safety/Governor (double on heavy goods), Car Door
+// Panel (CO 2-leaf, up to 8) and Car Header (×2 on goods) are deliberately
+// EXCLUDED — they legitimately exceed 1.
+const CAR_SINGLETON_SECTIONS = new Set<string>([
+  "Machine", "Machine Beam", "Counter Frame", "CONT. STAND",
+  "STA. CAM", "Danger Plate", "Safety Tips Plate",
+]);
+
+function deterministicQty(itemName: string, section: string, L: number | null): number | null {
+  const n = itemName.toLowerCase();
+
+  // Rule A (§6.1 #5) — the terminal limit-switch set is a hard 6, NEVER stop-
+  // scaled. `Final Limit Switch N/C` (121 lines) and `Limit Switch Bkt STD/GOODS`
+  // (113 lines) are 6 in every job, 2-stop to 14-stop. Exclude `Bkt Home` (=1).
+  if (/^final limit switch/.test(n)) return 6;
+  if (/limit switch bkt/.test(n) && !n.includes("home")) return 6;
+
+  // Rule D (§6.1 #4) — single-car/single-machine parts = 1 (independent of stops).
+  if (CAR_SINGLETON_SECTIONS.has(section)) return 1;
+
+  if (L == null || L <= 0) return null; // landing-scaled rules need the stop count
+
+  // Rule C1 (§6.1 #2) — the sill ANGLE is one per served landing (qty−floors ≈ 0
+  // across every angle SKU). Distinct from the finished aluminium sill.
+  if (/sill angle/.test(n)) return L;
+
+  // NOTE: a hard `Alluminium Sill = L + 1` (rulebook §6.1 #2) was TESTED and
+  // REJECTED — it regressed keep-rate 72.0%→71.9%. The stored aluminium sill is
+  // too noisy (off-by-one floors, per-opening entry, goods multi-leaf) for the
+  // +1 to beat retrieval. Left to the retrieval median. Revisit if the data cleans up.
+
+  // Rule B (§6.1 #1, the strongest rule) — every landing-side door part counts
+  // once per served landing L. Measured qty−floors ≈ 0 (sd 0.28–0.77) across all
+  // six sections. The single most reliable quantity in the whole corpus.
+  if (LANDING_SECTIONS.has(section)) return L;
+
+  return null;
+}
+
 export function aggregateDraft(
   target: BomTargetSpec,
   neighbours: { job: TrainingJob; meta: NeighbourMeta }[],
@@ -272,7 +327,11 @@ export function aggregateDraft(
       const cSupport = neff / (neff + 2);
       let conf = cSection * cItem * cQty * cSupport;
       if (completenessSource === "gate-fallback") conf *= 0.7;
-      const qty = Number.isInteger(g.item.required_quantity) ? Math.round(m) : Math.round(m * 10) / 10;
+      const medianQty = Number.isInteger(g.item.required_quantity) ? Math.round(m) : Math.round(m * 10) / 10;
+      // A deterministic rule, when it fires, replaces the retrieved median.
+      const det = deterministicQty(g.item.item_name, section, target.floors ?? null);
+      const qty = det ?? medianQty;
+      if (det != null) conf = Math.max(conf, 0.85); // hard rule fired — trust it
       draft.push({
         section,
         phase: (meta?.phase as string) ?? "Additional Items",
@@ -281,7 +340,7 @@ export function aggregateDraft(
         item_name: g.item.item_name,
         uom: g.item.uom,
         suggestedQty: qty > 0 ? qty : g.item.required_quantity,
-        qtyMethod: floorScaled ? "floor-scaled" : "as-is",
+        qtyMethod: det != null ? "rule" : floorScaled ? "floor-scaled" : "as-is",
         confidence: conf,
         confidenceBand: band(conf),
         supportingJobs: [...new Set(g.jobs)],
