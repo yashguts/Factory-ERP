@@ -322,7 +322,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                 onClick={() => scrollTo(b.key)}
                 title={`${b.title} · ${b.total} ${b.total === 1 ? "job" : "jobs"}`}
                 className={cn(
-                  "group flex w-[60px] shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
+                  "group flex w-[74px] shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
                   isOverdue ? "hover:bg-red-50" : "hover:bg-[var(--muted)]",
                 )}
               >
@@ -371,6 +371,24 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                 >
                   {b.axisLabel}
                 </span>
+
+                {/* Per-type counts for this week (order/colours match the legend) */}
+                <div className="grid grid-cols-2 gap-x-2 gap-y-0.5 text-[10px] font-medium leading-none tabular-nums">
+                  {([
+                    ["bg-blue-500", b.first],
+                    ["bg-purple-500", b.second],
+                    ["bg-emerald-500", b.fully],
+                    ["bg-amber-500", b.dues],
+                  ] as const).map(([dot, n], i) => (
+                    <span
+                      key={i}
+                      className={cn("inline-flex items-center gap-1", n === 0 && "opacity-25")}
+                    >
+                      <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", dot)} />
+                      {n}
+                    </span>
+                  ))}
+                </div>
               </button>
             );
           })}
