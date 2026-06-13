@@ -166,9 +166,11 @@ untouched; capture-on-save is void+catch (never blocks a save). Branch
   autofill, with discrepancy detection — verified live (BBSR-314). Existing drawings
   studied via PARALLEL AGENTS reading PDFs (Read-tool vision, zero API cost).
   **Batch-1 (18 jobs, all drive types) → `AI-DRAWING-STUDY-BATCH1.md`.** VERIFIED
-  rules-to-revisit needing OWNER decisions (NOT auto-applied): (1) `jobs.floors` is
-  off-by-one = landings-above-ground; total stops = floors+1 (BOM has floors+1 landing
-  doors — verified; live MRP safe, but AI floor-scaling should use stops=floors+1);
+  rules-to-revisit needing OWNER decisions: (1) ~~`jobs.floors` off-by-one~~ RESOLVED
+  2026-06-13 (owner): `floors` is now TOTAL STOPS. Form dropdown changed G+N → plain
+  Stops (1,2,3…), all 132 jobs migrated +1 (migration 024), spec_string → "N Stops/…",
+  detail label "Stops", importer +1. Fixes the AI floor-scaling at the source (floors=stops
+  everywhere, no predict-core change needed). Live MRP was already safe;
   (2) `drive_type` overloaded (topology×suspension×frame — BELT=MRL+belt, CANTI=frame,
   an "MR" is really MRL) → consider splitting, BOM tokens are ground truth; (3) capacity
   wrong-class (5001 "6PASS"=4000KG goods; 4847 "6PASS"=16-pass) → cross-check Machine
