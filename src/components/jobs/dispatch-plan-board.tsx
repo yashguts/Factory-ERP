@@ -93,6 +93,12 @@ interface PlanJob {
   job_number: string;
   customer_name: string | null;
   phase: Phase;
+  /**
+   * Full material is required but the first phase has already gone out
+   * (stage advanced to first_phase) — i.e. only the second phase is left.
+   * Flagged with a small "1st phase sent" tag for quick visual scanning.
+   */
+  secondPhase: boolean;
 }
 
 interface Bucket {
@@ -143,6 +149,7 @@ export function DispatchPlanBoard({ jobs }: Props) {
         job_number: job.job_number,
         customer_name: job.customer_name,
         phase,
+        secondPhase: phase === "full" && job.stage === "first_phase",
       };
 
       if (!date) unscheduled.push(pj);
@@ -380,7 +387,14 @@ export function DispatchPlanBoard({ jobs }: Props) {
                     href={`/jobs/${job.id}`}
                     className="group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--muted)] cursor-pointer"
                   >
-                    <span className="font-mono text-sm font-semibold shrink-0">{job.job_number}</span>
+                    <span className="flex shrink-0 flex-col leading-none">
+                      {job.secondPhase && (
+                        <span className="mb-0.5 inline-flex w-fit items-center rounded border border-blue-200 bg-blue-50 px-1 py-px text-[9px] font-semibold uppercase tracking-wide text-blue-700">
+                          1st phase sent
+                        </span>
+                      )}
+                      <span className="font-mono text-sm font-semibold">{job.job_number}</span>
+                    </span>
                     <span
                       className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]"
                       title={job.customer_name ?? ""}
