@@ -38,6 +38,7 @@ export async function autofillFromDrawing(
   try {
     let spec: SpecSuggestion | null = null;
     let drawingRead = false;
+    let drawingNote: string | null = null;
 
     const vision = await extractSpecFromPdf(jobId);
     if (vision.ok) {
@@ -50,6 +51,10 @@ export async function autofillFromDrawing(
         door_finish: s.door_finish,
         brand: s.brand,
       };
+    } else if (vision.reason !== "not_configured") {
+      // The drawing couldn't be read (e.g. it took too long and was bounded out).
+      // Not fatal — we still predict the BOM from the typed spec; surface why.
+      drawingNote = vision.error;
     }
 
     // Build the retrieval target: drawing values where read, else the typed spec.
@@ -100,7 +105,7 @@ export async function autofillFromDrawing(
           supportingJobs: l.supportingJobs,
         })),
         neighbours: pred.prediction.neighbours.map((n) => ({ job_number: n.job_number, sim: n.sim })),
-        warnings: pred.prediction.warnings,
+        warnings: drawingNote ? [drawingNote, ...pred.prediction.warnings] : pred.prediction.warnings,
         overallConfidence: pred.prediction.overallConfidence,
       },
     };

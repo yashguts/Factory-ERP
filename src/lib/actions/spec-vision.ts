@@ -73,6 +73,16 @@ export interface Discrepancy {
 
 const MODEL = "claude-opus-4-8";
 
+// Reading a (often multi-sheet, "merged") GA PDF can run long, and the autofill
+// runs inside a synchronous serverless function with a hard execution cap. If the
+// vision call isn't bounded, a slow read lets the platform KILL the whole function
+// before it can return — the client then sees Next.js's "An unexpected response was
+// received from the server." We bound the call below that cap and fall back to the
+// typed spec (the BOM still gets predicted), so the action always returns cleanly.
+// Tunable: keep comfortably under the function timeout, leaving room for the BOM
+// prediction that runs after.
+const VISION_TIMEOUT_MS = 22_000;
+
 const CONF = (vt: "string" | "integer") => ({
   type: "object",
   additionalProperties: false,
@@ -165,26 +175,41 @@ const USER_PROMPT =
   "This is the GA drawing for one elevator job. Read it COMPLETELY and call report_drawing with the full spec, all dimensions, and every other labelled value in additional_details — each with a confidence and (for core fields) a one-line rationale of where you read it.";
 
 async function callVision(b64: string, apiKey: string): Promise<RichDrawing | { error: string }> {
-  const resp = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model: MODEL,
-      max_tokens: 4096,
-      system: SYSTEM_PROMPT,
-      tool_choice: { type: "tool", name: "report_drawing" },
-      tools: [{ name: "report_drawing", description: "Report the complete elevator drawing record.", input_schema: SCHEMA }],
-      messages: [
-        {
-          role: "user",
-          content: [
-            { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-            { type: "text", text: USER_PROMPT },
-          ],
-        },
-      ],
-    }),
-  });
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), VISION_TIMEOUT_MS);
+  let resp: Response;
+  try {
+    resp = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+      body: JSON.stringify({
+        model: MODEL,
+        max_tokens: 4096,
+        system: SYSTEM_PROMPT,
+        tool_choice: { type: "tool", name: "report_drawing" },
+        tools: [{ name: "report_drawing", description: "Report the complete elevator drawing record.", input_schema: SCHEMA }],
+        messages: [
+          {
+            role: "user",
+            content: [
+              { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
+              { type: "text", text: USER_PROMPT },
+            ],
+          },
+        ],
+      }),
+      signal: ctrl.signal,
+    });
+  } catch {
+    // Aborted (too slow) or a network error — the caller falls back to the typed spec.
+    return {
+      error: ctrl.signal.aborted
+        ? "Reading the drawing took too long, so the spec was filled from what you typed — re-run AI Auto-fill to try the drawing again."
+        : "Couldn't reach the drawing-reading service — used the typed spec.",
+    };
+  } finally {
+    clearTimeout(timer);
+  }
   if (!resp.ok) {
     if (resp.status === 429) return { error: "AI is busy — try again in a moment." };
     if (resp.status === 401) return { error: "AI key rejected — check the Anthropic API key." };
