@@ -57,8 +57,8 @@ function isUnderDispatch(r: Row): boolean {
 const revisedRequiredFor = (r: Row) => r.dispatched + r.qty;
 
 const SCOPE_LABEL: Record<PhaseScope, string> = {
-  first: "First phase only",
-  second: "Second phase only",
+  first: "1st phase only",
+  second: "2nd phase only",
   full: "Entire job",
 };
 
@@ -224,7 +224,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
             {/* header */}
             <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 bg-[var(--muted)]/50 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
               <span>Item</span>
-              <span className="w-44 text-right">Required · Sent · Left</span>
+              <span className="w-52 text-right">Remaining</span>
               <span className="w-28 text-right">Dispatch now</span>
             </div>
             <div className="max-h-[45vh] overflow-y-auto divide-y divide-[var(--border)]">
@@ -359,14 +359,23 @@ function DispatchRow({
         )}
       </div>
 
-      <div className="w-44 text-right text-xs tabular-nums">
+      <div className="w-52 text-right text-xs tabular-nums">
         {row.required != null ? (
-          <span className="text-[var(--muted-foreground)]">
-            {row.required.toLocaleString()} · {row.dispatched.toLocaleString()} ·{" "}
-            <span className={row.remaining ? "text-amber-600 font-medium" : "text-green-600 font-medium"}>
-              {(row.remaining ?? 0).toLocaleString()}
+          <>
+            <span
+              className={
+                row.remaining
+                  ? "text-amber-600 font-medium"
+                  : "text-green-600 font-medium"
+              }
+            >
+              {(row.remaining ?? 0).toLocaleString()} remaining
             </span>
-          </span>
+            <span className="block text-[10px] text-[var(--muted-foreground)]">
+              {row.required.toLocaleString()} required ·{" "}
+              {row.dispatched.toLocaleString()} dispatched
+            </span>
+          </>
         ) : (
           <span className="text-[var(--muted-foreground)] italic">ad-hoc</span>
         )}
@@ -411,14 +420,14 @@ function DispatchRow({
                 <>
                   Requirement revised to{" "}
                   <b>{revisedTo.toLocaleString()}</b> — the other{" "}
-                  {dropped.toLocaleString()} won&rsquo;t appear in MRP.
+                  {dropped.toLocaleString()} leaves MRP.
                 </>
               ) : (
                 <>
-                  Sending {row.qty.toLocaleString()} of{" "}
-                  {(row.remaining as number).toLocaleString()} left;{" "}
-                  <b>{dropped.toLocaleString()} stays required</b> in MRP — tick
-                  if it&rsquo;s no longer needed.
+                  Dispatching {row.qty.toLocaleString()} of{" "}
+                  {(row.remaining as number).toLocaleString()} remaining. Tick if
+                  the other <b>{dropped.toLocaleString()}</b> is no longer needed
+                  (revise the requirement).
                 </>
               )}
             </span>

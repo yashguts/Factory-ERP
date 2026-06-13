@@ -17,14 +17,45 @@ import {
   type JobDispatchSummary,
   type PhaseScope,
 } from "@/lib/actions/dispatch";
+import {
+  dispatchStat,
+  toneText,
+  type DispatchStat,
+} from "@/lib/dispatch-status";
 
 const SCOPE_LABEL: Record<PhaseScope, string> = {
-  first: "First phase",
-  second: "Second phase",
+  first: "1st phase",
+  second: "2nd phase",
   full: "Entire job",
 };
 
-type Stat = { total: number; done: number } | null;
+/** One phase's dispatch status with a slim progress bar (lines done / total). */
+function PhaseStatus({ name, stat }: { name: string; stat: DispatchStat | null }) {
+  return (
+    <span className="inline-flex items-center gap-1.5 text-xs">
+      <span className="text-[var(--muted-foreground)]">{name}:</span>
+      <span className={`font-medium ${toneText(stat?.tone)}`}>
+        {stat ? stat.label : "—"}
+      </span>
+      {stat && (
+        <span className="inline-block w-14 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden">
+          <span
+            className="block h-full rounded-full transition-all"
+            style={{
+              width: `${stat.total ? (stat.done / stat.total) * 100 : 0}%`,
+              backgroundColor:
+                stat.tone === "done"
+                  ? "#16a34a"
+                  : stat.tone === "partial"
+                    ? "#d97706"
+                    : "var(--muted-foreground)",
+            }}
+          />
+        </span>
+      )}
+    </span>
+  );
+}
 
 export function DispatchPanel({
   jobId,
@@ -45,13 +76,8 @@ export function DispatchPanel({
   );
   const [busy, setBusy] = useState<string | null>(null);
 
-  const phaseStat = (phase: "first" | "second"): Stat => {
-    const ls = summary.lines.filter((l) => l.phase === phase);
-    if (ls.length === 0) return null;
-    return { total: ls.length, done: ls.filter((l) => l.remaining <= 0).length };
-  };
-  const first = phaseStat("first");
-  const second = phaseStat("second");
+  const first = dispatchStat(summary.lines.filter((l) => l.phase === "first"));
+  const second = dispatchStat(summary.lines.filter((l) => l.phase === "second"));
 
   // What still needs to leave the factory, grouped by dispatch phase.
   const pending = summary.lines
@@ -65,15 +91,6 @@ export function DispatchPanel({
   const pendingSecond = pending.filter((l) => l.phase === "second");
   const hasBom = summary.lines.length > 0;
   const [openRemaining, setOpenRemaining] = useState(pending.length > 0);
-
-  const label = (s: Stat) =>
-    !s ? "—" : s.done === 0 ? "Pending" : s.done >= s.total ? "Dispatched" : `Partial (${s.done}/${s.total})`;
-  const cls = (s: Stat) =>
-    !s || s.done === 0
-      ? "text-[var(--muted-foreground)]"
-      : s.done >= s.total
-        ? "text-green-600"
-        : "text-amber-600";
 
   const onDelete = (id: string) => {
     if (!window.confirm("Undo this dispatch? The recorded items will be removed (inventory is not affected)."))
@@ -100,14 +117,8 @@ export function DispatchPanel({
           <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
             <Truck className="h-4 w-4" /> Dispatch
           </h3>
-          <span className="text-xs">
-            First phase:{" "}
-            <span className={`font-medium ${cls(first)}`}>{label(first)}</span>
-          </span>
-          <span className="text-xs">
-            Second phase:{" "}
-            <span className={`font-medium ${cls(second)}`}>{label(second)}</span>
-          </span>
+          <PhaseStatus name="1st phase" stat={first} />
+          <PhaseStatus name="2nd phase" stat={second} />
         </div>
         <Button size="sm" onClick={onNewDispatch}>
           <Plus className="h-3.5 w-3.5 mr-1" /> Mark dispatched
@@ -137,14 +148,14 @@ export function DispatchPanel({
                 {pending.length === 1 ? "" : "s"}
               </span>
               <span className="text-xs text-[var(--muted-foreground)]">
-                first: {pendingFirst.length} · second: {pendingSecond.length}
+                1st phase: {pendingFirst.length} · 2nd phase: {pendingSecond.length}
               </span>
             </button>
             {openRemaining && (
               <div className="px-3 pb-2 border-t border-[var(--border)]">
                 {([
-                  ["First phase", pendingFirst],
-                  ["Second phase", pendingSecond],
+                  ["1st phase", pendingFirst],
+                  ["2nd phase", pendingSecond],
                 ] as const).map(([title, rows]) =>
                   rows.length === 0 ? null : (
                     <div key={title} className="pt-2">
@@ -173,14 +184,12 @@ export function DispatchPanel({
                             <span className="whitespace-nowrap text-right">
                               <span className="font-medium text-amber-600">
                                 {l.remaining.toLocaleString()}
-                                {l.uom ? ` ${l.uom}` : ""}
+                                {l.uom ? ` ${l.uom}` : ""} remaining
                               </span>
-                              {l.dispatched > 0 && (
-                                <span className="ml-2 text-[11px] text-[var(--muted-foreground)]">
-                                  sent {l.dispatched.toLocaleString()} of{" "}
-                                  {l.required.toLocaleString()}
-                                </span>
-                              )}
+                              <span className="ml-2 text-[11px] text-[var(--muted-foreground)]">
+                                {l.required.toLocaleString()} required,{" "}
+                                {l.dispatched.toLocaleString()} dispatched
+                              </span>
                             </span>
                           </div>
                         ))}
