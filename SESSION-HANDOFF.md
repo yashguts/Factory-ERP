@@ -160,6 +160,21 @@ untouched; capture-on-save is void+catch (never blocks a save). Branch
 - **OPEN follow-ups:** a visible keep-rate dashboard (data accrues now, no UI yet);
   goods-vs-passenger already hard-partitioned in similarity; validate the exact
   Claude vision request shape (model id, document block) on the first keyed run.
+- **DEEP-STUDY PROGRAM (owner "god mode", 99% over months).** Phase 1 shipped: RICH
+  full-drawing extraction (drive/floors/capacity/door/finish/brand + 11 dims + ~49
+  details per drawing) stored in `job_drawing_extractions` (migration 023) on every
+  autofill, with discrepancy detection — verified live (BBSR-314). Existing drawings
+  studied via PARALLEL AGENTS reading PDFs (Read-tool vision, zero API cost).
+  **Batch-1 (18 jobs, all drive types) → `AI-DRAWING-STUDY-BATCH1.md`.** VERIFIED
+  rules-to-revisit needing OWNER decisions (NOT auto-applied): (1) `jobs.floors` is
+  off-by-one = landings-above-ground; total stops = floors+1 (BOM has floors+1 landing
+  doors — verified; live MRP safe, but AI floor-scaling should use stops=floors+1);
+  (2) `drive_type` overloaded (topology×suspension×frame — BELT=MRL+belt, CANTI=frame,
+  an "MR" is really MRL) → consider splitting, BOM tokens are ground truth; (3) capacity
+  wrong-class (5001 "6PASS"=4000KG goods; 4847 "6PASS"=16-pass) → cross-check Machine
+  Unit token + goods flag; (4) rope/belt qty are METRES not pieces; (5) ~5 partial BOMs.
+  Strongest pattern: landing qty = stop count (~15/18). Next batches: fix the workflow
+  to also STORE the stage-1 rich extractions (pipeline returned only the map stage).
 
 ## Perf deep-dive (2026-06-12 ~01:00) — THE structural finding
 
