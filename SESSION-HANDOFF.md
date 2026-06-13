@@ -128,6 +128,39 @@ today — close when convenient):
    workflow worktrees deleted; git ops are quiet again. Still untracked
    scratch: `pdf-dxf-pilot/`, `scripts/*.json`, `a_copy.xlsx`.
 
+## AI Auto-fill (2026-06-13) — SHIPPED, additive, flywheel live
+
+Upload a drawing → "AI Auto-fill" on the job edit form → review a pre-filled
+draft (spec + BOM) with per-line confidence + provenance → edit → Save. Engineer
+audits instead of types. **Additive only** — applies through the EXISTING picker
+via the same path as "Import from Job"; locked createJob/updateJob/saveBomSection
+untouched; capture-on-save is void+catch (never blocks a save). Branch
+`feature/ai-autofill` merged to main (05c89fe + d9b02f2).
+- **Two stages:** (1) drawing→spec = Claude vision, `lib/actions/spec-vision.ts`,
+  raw fetch (no SDK dep), reads `ANTHROPIC_API_KEY`; absent → graceful "not
+  configured" and the feature still works from the typed spec. (2) spec→BOM =
+  pure k-NN retrieval, `lib/bom/predict-core.ts` + `actions/bom-predict.ts`,
+  label-noise aware (learns section presence only from RAIL-complete jobs),
+  gate-correct, floor-scaled qty, per-line confidence. excludeJobId drops the
+  edited job from its own corpus (verified live — was self-matching BBSR-314).
+- **PROVEN accuracy** (leave-one-out, same core, `scripts/backtest-bom-predict.ts`,
+  no key): section F1 0.95, item-hit 84%, qty-within-10% 85%, **BOM keep-rate
+  71%** vs 56% gate-only baseline. Verified the live UI no-key flow end-to-end
+  (63 lines suggested, 42 pre-checked, apply fills picker, "Unsaved" pill).
+- **Flywheel (migrations 021/022, LIVE):** `jobs.bom_completeness` (RAIL rule,
+  gate-correct: 86 complete / 42 partial — HYD jobs correctly complete);
+  `job_field_suggestions` logs suggestion-vs-saved per field; `ai_accuracy_snapshots`
+  + `nightly_ai_maintenance()` on **pg_cron 01:00 IST** re-tags labels + records
+  keep-rate. Retrieval reads live audited jobs each call → pool grows with zero
+  retrain. Caveat: rubber-stamping (applying without correcting) would let it
+  learn from its own output — keep the engineer genuinely auditing.
+- **OWNER ACTION to switch on drawing-reading:** add env var
+  `ANTHROPIC_API_KEY` in Netlify (Site config → Environment variables) → redeploy.
+  Verify with one drawing together — vision is the ONE piece untested without a key.
+- **OPEN follow-ups:** a visible keep-rate dashboard (data accrues now, no UI yet);
+  goods-vs-passenger already hard-partitioned in similarity; validate the exact
+  Claude vision request shape (model id, document block) on the first keyed run.
+
 ## Perf deep-dive (2026-06-12 ~01:00) — THE structural finding
 
 - **Proven root cause of "ERP is slow": Netlify runs the server functions in
