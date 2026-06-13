@@ -56,7 +56,7 @@ export async function autofillFromDrawing(
     brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
   };
 
-  const pred = await predictBomFromSpec(target);
+  const pred = await predictBomFromSpec(target, jobId);
   if (!pred.ok) {
     // If the drawing was read but the BOM couldn't be predicted, still return the spec.
     if (spec) {

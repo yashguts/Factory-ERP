@@ -127,16 +127,22 @@ export async function getTrainingCorpus(): Promise<TrainingJob[]> {
   })();
 }
 
-/** Predict a draft BOM for a target spec. Read-only; the engineer applies + saves. */
-export async function predictBomFromSpec(target: BomTargetSpec): Promise<BomPredictResult> {
+/**
+ * Predict a draft BOM for a target spec. Read-only; the engineer applies + saves.
+ * `excludeJobId` drops the job being edited from the corpus so it never matches
+ * itself (matches the leave-one-out backtest; keeps confidence honest).
+ */
+export async function predictBomFromSpec(
+  target: BomTargetSpec,
+  excludeJobId?: string | null,
+): Promise<BomPredictResult> {
   if (!target.drive_type && target.floors == null && !target.capacity) {
     return { ok: false, error: "Enter at least the drive type, floors, or capacity first." };
   }
   try {
-    const corpus = await getTrainingCorpus();
+    let corpus = await getTrainingCorpus();
+    if (excludeJobId) corpus = corpus.filter((j) => j.id !== excludeJobId);
     if (corpus.length === 0) return { ok: false, error: "No past jobs to learn from yet." };
-    // Exclude an exact same-spec job from being its own neighbour is unnecessary here
-    // (we predict for a NEW spec); the corpus is the full history.
     const prediction = predictFromCorpus(target, corpus);
     return { ok: true, prediction };
   } catch {
