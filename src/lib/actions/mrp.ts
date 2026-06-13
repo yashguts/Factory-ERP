@@ -53,8 +53,10 @@ async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
         return q.range(from, to);
       },
     );
+    // No Required set ⇒ treat as "new" (counts nothing), never "full". A blank
+    // requirement must not silently pull a job's entire BOM into demand.
     for (const j of jobs)
-      stageByJob.set(j.id, j.requirement_stage ?? "full_material");
+      stageByJob.set(j.id, j.requirement_stage ?? "new");
   }
   if (stageByJob.size === 0) return [];
   const prodJobIds = Array.from(stageByJob.keys());
@@ -734,7 +736,7 @@ async function _getMrpItemJobsUncached(
           requirement_dispatch_date:
             (job.requirement_dispatch_date as string | null) ?? null,
           requirement_stage:
-            (job.requirement_stage as string | null) ?? "full_material",
+            (job.requirement_stage as string | null) ?? "new",
         });
     }
   }

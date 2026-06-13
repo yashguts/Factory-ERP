@@ -407,12 +407,11 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <select
-                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${job.requirement_stage ? STAGE_SELECT_COLORS[job.requirement_stage] : "bg-transparent text-[var(--muted-foreground)]"}`}
-                      value={job.requirement_stage ?? ""}
-                      onChange={(e) => handleInlineUpdate(job.id, { requirement_stage: e.target.value || null })}
+                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STAGE_SELECT_COLORS[job.requirement_stage ?? "new"]}`}
+                      value={job.requirement_stage ?? "new"}
+                      onChange={(e) => handleInlineUpdate(job.id, { requirement_stage: e.target.value as JobStage })}
                       disabled={savingJobId === job.id}
                     >
-                      <option value="">—</option>
                       {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
                         <option key={s} value={s}>{STAGE_LABELS[s]}</option>
                       ))}

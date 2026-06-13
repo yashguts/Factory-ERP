@@ -66,7 +66,7 @@ interface JobDetailsPanelProps {
   mobileError: string | null;
   location: string;
   stage: JobStage;
-  requirementStage: JobStage | "";
+  requirementStage: JobStage;
   requirementDispatchDate: string;
 
   setJobNumber: (v: string) => void;
@@ -74,7 +74,7 @@ interface JobDetailsPanelProps {
   setMobileNumber: (v: string) => void;
   setLocation: (v: string) => void;
   setStage: (v: JobStage) => void;
-  setRequirementStage: (v: JobStage | "") => void;
+  setRequirementStage: (v: JobStage) => void;
   setRequirementDispatchDate: (v: string) => void;
 
   setJobSaved: (v: boolean) => void;
@@ -193,15 +193,14 @@ export function JobDetailsPanel({
             ))}
           </Select>
         </Field>
-        <Field label="Requirement Stage *">
+        <Field label="Requirement Stage">
           <Select
             value={requirementStage}
             onChange={(e) => {
-              setRequirementStage(e.target.value as JobStage | "");
+              setRequirementStage(e.target.value as JobStage);
               setJobSaved(false);
             }}
           >
-            <option value="">---</option>
             {STAGE_OPTIONS.map((o) => (
               <option key={o.value} value={o.value}>
                 {o.label}

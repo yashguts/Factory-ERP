@@ -101,8 +101,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [mobileNumber, setMobileNumber] = useState(job?.mobile_number ?? "");
   const [location, setLocation] = useState(job?.location ?? "");
   const [stage, setStage] = useState<JobStage>(job?.stage ?? "new");
-  const [requirementStage, setRequirementStage] = useState<JobStage | "">(
-    job?.requirement_stage ?? "",
+  // New jobs start at "new" (not pulled into MRP until advanced). There is no
+  // blank option — "Required" is always one of the three stages.
+  const [requirementStage, setRequirementStage] = useState<JobStage>(
+    job?.requirement_stage ?? "new",
   );
   const [requirementDispatchDate, setRequirementDispatchDate] = useState(
     job?.requirement_dispatch_date ?? "",
@@ -188,7 +190,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     if (!customerName.trim()) missing.push("Customer Name");
     if (!location.trim()) missing.push("Location");
     if (!stage) missing.push("Stage");
-    if (!requirementStage) missing.push("Requirement Stage");
+    // requirement_stage no longer needs a presence check — the blank option was
+    // removed, so it's always one of new / first_phase / full_material.
     if (!requirementDispatchDate) missing.push("Req. Dispatch Date");
     if (!floors) missing.push("Floors");
     if (!driveType) missing.push("Drive Type");
@@ -199,7 +202,6 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     customerName,
     location,
     stage,
-    requirementStage,
     requirementDispatchDate,
     floors,
     driveType,
@@ -561,7 +563,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       capacity: capacity || null,
       structure_included: structureIncluded,
       stage,
-      requirement_stage: requirementStage || null,
+      requirement_stage: requirementStage,
       requirement_dispatch_date: requirementDispatchDate || null,
     };
   }
