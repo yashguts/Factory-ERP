@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 /* ------------------------------------------------------------------ *
  * Job dispatch.
@@ -343,18 +344,25 @@ export async function getJobsDispatchStatus(
   );
   const headerIds = (headers ?? []).map((h: any) => h.id as string);
 
-  const { data: bl } =
+  // Page this read: across many dispatched jobs the BOM-line total can exceed the
+  // 1000-row PostgREST cap, which silently truncated the set and made jobs whose
+  // un-dispatched lines fell past the cutoff look fully dispatched (CLAUDE.md §8).
+  const bl =
     headerIds.length > 0
-      ? await supabase
-          .from("job_bom_lines")
-          .select("id, job_bom_id, required_quantity")
-          .in("job_bom_id", headerIds)
-          .not("category", "is", null)
-      : { data: [] as any[] };
+      ? await fetchAllRanged<{ id: string; job_bom_id: string; required_quantity: number }>(
+          (from, to, withCount) =>
+            supabase
+              .from("job_bom_lines")
+              .select("id, job_bom_id, required_quantity", withCount ? { count: "exact" } : {})
+              .in("job_bom_id", headerIds)
+              .not("category", "is", null)
+              .range(from, to),
+        )
+      : [];
 
   const requiredByLine = new Map<string, number>();
   const linesByJob = new Map<string, string[]>();
-  for (const l of bl ?? []) {
+  for (const l of bl) {
     const job = headerToJob.get(l.job_bom_id as string);
     if (!job) continue;
     requiredByLine.set(l.id as string, Number(l.required_quantity ?? 0));
@@ -363,12 +371,17 @@ export async function getJobsDispatchStatus(
     linesByJob.set(job, arr);
   }
 
-  const { data: dl } = await supabase
-    .from("job_dispatch_lines")
-    .select("job_bom_line_id, qty")
-    .in("dispatch_id", dispIds);
+  // Page this read too — dispatch lines climb past 1000 as more jobs ship.
+  const dl = await fetchAllRanged<{ job_bom_line_id: string | null; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("job_dispatch_lines")
+        .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
+        .in("dispatch_id", dispIds)
+        .range(from, to),
+  );
   const dispatchedByLine = new Map<string, number>();
-  for (const d of dl ?? []) {
+  for (const d of dl) {
     if (d.job_bom_line_id)
       dispatchedByLine.set(
         d.job_bom_line_id as string,
