@@ -35,7 +35,7 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   )(cutoffDate);
 }
 
-async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
+export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
   const supabase = createCacheClient();
 
   // Demand comes ONLY from jobs in production (exclude new/hold), optionally within
