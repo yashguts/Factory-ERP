@@ -88,16 +88,16 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const [doorTypeFilter, setDoorTypeFilter] = useState<string>(() => readParam(sp, "door", "all"));
   const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
   const [sortKey, setSortKey] = useState<SortKey>(
-    () => readParam(sp, "sort", "job_number", ["job_number", "customer", "status", "stage", "req_stage", "req_dispatch"]) as SortKey,
+    () => readParam(sp, "sort", "req_dispatch", ["job_number", "customer", "status", "stage", "req_stage", "req_dispatch"]) as SortKey,
   );
   const [sortDir, setSortDir] = useState<SortDir>(
-    () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
+    () => readParam(sp, "dir", "asc", ["asc", "desc"]) as SortDir,
   );
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
     { q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
-    { q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "job_number", dir: "desc", page: 1 },
+    { q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "req_dispatch", dir: "asc", page: 1 },
   );
 
   const doorTypes = useMemo(() => {
@@ -152,6 +152,18 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const sorted = useMemo(() => {
     const copy = [...filtered];
     copy.sort((a, b) => {
+      // Dispatch date: undated jobs always sink to the bottom, regardless of
+      // sort direction — otherwise blanks would crowd the top of an ascending
+      // list and bury the soonest-due jobs.
+      if (sortKey === "req_dispatch") {
+        const da = a.requirement_dispatch_date ?? "";
+        const db = b.requirement_dispatch_date ?? "";
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        const cmp = da.localeCompare(db);
+        return sortDir === "asc" ? cmp : -cmp;
+      }
       let cmp = 0;
       switch (sortKey) {
         case "job_number":
@@ -168,9 +180,6 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
           break;
         case "req_stage":
           cmp = (a.requirement_stage ?? "").localeCompare(b.requirement_stage ?? "");
-          break;
-        case "req_dispatch":
-          cmp = (a.requirement_dispatch_date ?? "").localeCompare(b.requirement_dispatch_date ?? "");
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
