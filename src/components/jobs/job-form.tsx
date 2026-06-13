@@ -1,9 +1,9 @@
 "use client";
 
-import { useState, useCallback, useTransition, useMemo, useEffect } from "react";
+import { useState, useCallback, useTransition, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Loader2, Plus, Check, Copy, Columns2, PanelRightClose } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, Check, Copy, Columns2, PanelRightClose, Sparkles } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
@@ -11,6 +11,10 @@ import { ItemPickerSection } from "@/components/jobs/item-picker-section";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import { JobTemplatePickerModal } from "@/components/jobs/job-template-picker-modal";
+import { AutofillReviewModal, type ApplyPayload } from "@/components/jobs/autofill-review-modal";
+import type { AppliedSuggestion, AutofillResult } from "@/components/jobs/autofill-types";
+import { autofillFromDrawing, captureSuggestionOutcome } from "@/lib/actions/job-autofill";
+import { useToast } from "@/components/ui/toast";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import {
   JobDetailsPanel,
@@ -278,6 +282,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [importing, setImporting] = useState(false);
 
+  // ── AI Auto-fill (additive: produces a draft the engineer applies) ──
+  const toast = useToast();
+  const [autofillOpen, setAutofillOpen] = useState(false);
+  const [autofilling, setAutofilling] = useState(false);
+  const [autofillResult, setAutofillResult] = useState<AutofillResult | null>(null);
+  // The suggestions last applied — graded against the saved BOM on Save.
+  const suggestionTrace = useRef<AppliedSuggestion[]>([]);
+
   const handlePickTemplate = useCallback(
     async (jobId: string, jobNumber: string) => {
       setImporting(true);
@@ -341,6 +353,96 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     },
     [],
   );
+
+  // Run AI auto-fill for the saved job: reads the drawing (if a key is set)
+  // for the spec, then predicts the BOM from your similar past jobs. Read-only
+  // — opens a review modal; nothing is saved until the engineer applies + Saves.
+  const runAutofill = useCallback(() => {
+    if (!savedJobId) return;
+    setAutofilling(true);
+    startTransition(async () => {
+      try {
+        const res = await autofillFromDrawing(savedJobId, {
+          floors: typeof floors === "number" ? floors : null,
+          drive_type: driveType || null,
+          capacity: capacity || null,
+        });
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        setAutofillResult(res.data);
+        setAutofillOpen(true);
+      } finally {
+        setAutofilling(false);
+      }
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedJobId, floors, driveType, capacity]);
+
+  // Apply the reviewed draft into the EXISTING form state only — spec setters +
+  // picker state + ad-hoc sections. Calls nothing in jobs.ts; the job is NOT
+  // mutated by applying. The engineer then uses the normal Save buttons.
+  const applyAutofill = useCallback(
+    (p: ApplyPayload) => {
+      if (p.spec.floors != null) setFloors(p.spec.floors);
+      if (p.spec.drive_type) setDriveType(p.spec.drive_type);
+      if (p.spec.capacity) setCapacity(p.spec.capacity);
+      markSpecChanged();
+
+      // Any suggested category not in BOM_SECTIONS must be registered as an
+      // ad-hoc section, or visibleSections won't render it and collectBomLines
+      // would silently drop it on save.
+      const known = new Set(BOM_SECTIONS.map((s) => s.category));
+      const newAdHoc: AdHocSection[] = [];
+      for (const cat of Object.keys(p.sections)) {
+        if (!known.has(cat)) newAdHoc.push({ category: cat, categoryPath: cat });
+      }
+      if (newAdHoc.length) {
+        setAdHocSections((prev) => {
+          const have = new Set(prev.map((s) => s.category));
+          return [...prev, ...newAdHoc.filter((s) => !have.has(s.category))];
+        });
+      }
+
+      setPickerState((prev) => {
+        const next = { ...prev };
+        for (const [cat, rows] of Object.entries(p.sections)) next[cat] = rows;
+        return next;
+      });
+      setSavedPhases({});
+      setJobSaved(false);
+      suggestionTrace.current = p.applied;
+      setAutofillOpen(false);
+
+      const n = Object.values(p.sections).reduce((a, r) => a + r.length, 0) + Object.keys(p.spec).length;
+      toast.info(`Applied ${n} suggestions — review, edit, then Save.`);
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [],
+  );
+
+  // Fire-and-forget learning signal: how the applied suggestions fared vs the
+  // saved BOM. A plain function (not useCallback) so it can reference
+  // visibleSections/collectBomLines declared lower without a TDZ. Never blocks
+  // or fails a save (void + caught).
+  function captureOutcome(jobId: string) {
+    if (!suggestionTrace.current.length) return;
+    const finalSpec = buildJobData() as unknown as Record<string, string | number | null>;
+    const finalLines = collectBomLines(visibleSections).map((l) => ({
+      category: l.category,
+      item_id: l.item_id ?? null,
+      required_quantity: l.required_quantity ?? 0,
+    }));
+    void captureSuggestionOutcome(
+      jobId,
+      job?.gad_drawing_url ?? null,
+      suggestionTrace.current,
+      finalSpec,
+      finalLines,
+    ).catch(() => {});
+    suggestionTrace.current = [];
+  }
 
   const setPickerItems = useCallback(
     (category: string, items: PickedItem[]) => {
@@ -547,6 +649,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         const allSaved: Record<string, boolean> = {};
         for (const p of sectionsByPhase.keys()) allSaved[p] = true;
         setSavedPhases(allSaved);
+        captureOutcome(jobId); // learning signal — never blocks the save
         // Refresh Router Cache so navigating to detail/edit shows fresh data
         router.refresh();
       } catch (err: any) {
@@ -565,6 +668,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         const categories = visibleSections.map((s) => s.category);
         const lines = collectBomLines(visibleSections);
         await saveBomSection(jobId, categories, lines);
+        captureOutcome(jobId); // learning signal — never blocks the save
         // Invalidate client-side Router Cache so detail page shows fresh data
         router.refresh();
         router.push(`/jobs/${jobId}`);
@@ -630,6 +734,22 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               Import from Job
             </Button>
           )}
+          {savedJobId && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={runAutofill}
+              disabled={isPending || autofilling}
+              title="AI fills the spec (from the drawing) + the BOM (from your most similar past jobs) as a draft to review"
+            >
+              {autofilling ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Sparkles className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              AI Auto-fill
+            </Button>
+          )}
           <Button
             size="sm"
             variant="secondary"
@@ -662,6 +782,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         <JobTemplatePickerModal
           onPick={handlePickTemplate}
           onClose={() => setTemplateModalOpen(false)}
+        />
+      )}
+
+      {autofillOpen && autofillResult && (
+        <AutofillReviewModal
+          result={autofillResult}
+          onApply={applyAutofill}
+          onClose={() => setAutofillOpen(false)}
         />
       )}
 
