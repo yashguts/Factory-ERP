@@ -34,10 +34,27 @@ interface Row {
   dispatched: number;
   remaining: number | null;
   qty: number; // dispatch now
+  // When sending less than what's left, the user ticks this to say "the rest
+  // isn't needed" — revising the BOM requirement down instead of a partial.
+  closeLine: boolean;
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
 const makeKey = () => Math.random().toString(36).slice(2);
+
+/** A real BOM line being sent for LESS than what's left — the only case where
+ *  "partial vs requirement revised" is an open question. */
+function isUnderDispatch(r: Row): boolean {
+  return (
+    r.job_bom_line_id != null &&
+    r.remaining != null &&
+    r.qty > 0 &&
+    r.qty < r.remaining
+  );
+}
+/** If the user closes the line, the requirement is revised to what's actually
+ *  been provided (prior dispatched + this dispatch). */
+const revisedRequiredFor = (r: Row) => r.dispatched + r.qty;
 
 const SCOPE_LABEL: Record<PhaseScope, string> = {
   first: "First phase only",
@@ -72,6 +89,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           dispatched: l.dispatched,
           remaining: l.remaining,
           qty: l.remaining, // default: dispatch what's left
+          closeLine: false,
         })),
     [],
   );
@@ -119,6 +137,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
         dispatched: 0,
         remaining: null,
         qty: 1,
+        closeLine: false,
       },
     ]);
 
@@ -142,6 +161,9 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           item_id: r.item_id,
           category: r.category,
           qty: r.qty,
+          // Only a ticked, genuinely-under-dispatched line revises the BOM.
+          revised_required:
+            r.closeLine && isUnderDispatch(r) ? revisedRequiredFor(r) : null,
         })),
       });
       if (!res.ok) {
@@ -232,6 +254,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
                       })
                     }
                     onQty={(q) => updateRow(row._key, { qty: q })}
+                    onClose={(v) => updateRow(row._key, { closeLine: v })}
                     onRemove={() => removeRow(row._key)}
                   />
                 ))
@@ -292,18 +315,26 @@ function DispatchRow({
   onPick,
   onClear,
   onQty,
+  onClose,
   onRemove,
 }: {
   row: Row;
   onPick: (it: SearchableItem) => void;
   onClear: () => void;
   onQty: (q: number) => void;
+  onClose: (v: boolean) => void;
   onRemove: () => void;
 }) {
   const overdraw = row.remaining != null && row.qty > row.remaining;
   const fullyDone = row.remaining === 0 && row.qty === 0;
+  // Sending less than what's left: is the rest still needed (partial) or not
+  // (revise the requirement)? This is the case the UI must make explicit.
+  const under = isUnderDispatch(row);
+  const dropped = under ? (row.remaining as number) - row.qty : 0;
+  const revisedTo = revisedRequiredFor(row);
   return (
-    <div className={`grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 items-center ${fullyDone ? "opacity-55" : ""}`}>
+    <div className={fullyDone ? "opacity-55" : ""}>
+      <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 items-center">
       <div className="min-w-0">
         {row.item_id ? (
           <div className="flex items-center gap-2 min-w-0">
@@ -364,6 +395,36 @@ function DispatchRow({
           <X className="h-3.5 w-3.5" />
         </button>
       </div>
+      </div>
+
+      {under && (
+        <div className="px-3 pb-2 -mt-0.5">
+          <label className="inline-flex items-start gap-1.5 text-[11px] cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={row.closeLine}
+              onChange={(e) => onClose(e.target.checked)}
+              className="mt-px cursor-pointer accent-[var(--primary)]"
+            />
+            <span className={row.closeLine ? "text-green-700 font-medium" : "text-[var(--muted-foreground)]"}>
+              {row.closeLine ? (
+                <>
+                  Requirement revised to{" "}
+                  <b>{revisedTo.toLocaleString()}</b> — the other{" "}
+                  {dropped.toLocaleString()} won&rsquo;t appear in MRP.
+                </>
+              ) : (
+                <>
+                  Sending {row.qty.toLocaleString()} of{" "}
+                  {(row.remaining as number).toLocaleString()} left;{" "}
+                  <b>{dropped.toLocaleString()} stays required</b> in MRP — tick
+                  if it&rsquo;s no longer needed.
+                </>
+              )}
+            </span>
+          </label>
+        </div>
+      )}
     </div>
   );
 }

@@ -189,6 +189,13 @@ export interface DispatchLineInput {
   category: string | null;
   label?: string | null;
   qty: number;
+  /**
+   * When set, the BOM line's required_quantity is REVISED to this value (a true
+   * correction — "we only ever needed 7, not 10"), so the dropped amount leaves
+   * MRP. Left undefined for an ordinary partial dispatch, where the un-sent
+   * balance stays required. Only meaningful for real BOM lines (job_bom_line_id).
+   */
+  revised_required?: number | null;
 }
 
 export async function createDispatch(input: {
@@ -237,6 +244,29 @@ export async function createDispatch(input: {
     // Best-effort rollback so we never leave an empty dispatch header behind.
     await supabase.from("job_dispatches").delete().eq("id", head.id);
     return { ok: false, error: le.message };
+  }
+
+  // Requirement revisions: when a line was marked "the rest isn't needed", lower
+  // the BOM line's required_quantity to the actually-needed amount so the dropped
+  // balance leaves MRP (and the dispatch panel shows it as fully met). An ordinary
+  // partial dispatch carries no revised_required and is untouched — its balance
+  // stays required. Best-effort: the dispatch is already recorded, so a failed
+  // revision shouldn't fail the whole save.
+  const revisions = lines.filter(
+    (l) =>
+      l.job_bom_line_id &&
+      l.revised_required != null &&
+      Number.isFinite(l.revised_required),
+  );
+  if (revisions.length > 0) {
+    await Promise.all(
+      revisions.map((l) =>
+        supabase
+          .from("job_bom_lines")
+          .update({ required_quantity: Math.max(0, Number(l.revised_required)) })
+          .eq("id", l.job_bom_line_id as string),
+      ),
+    );
   }
 
   // Advance the job's Stage to reflect the dispatch (first → First Phase;
