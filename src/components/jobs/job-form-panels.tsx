@@ -263,7 +263,7 @@ export function ElevatorSpecPanel({
         </p>
       </div>
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <Field label="Floors (Stops) *">
+        <Field label="Stops *">
           <Select
             value={floors}
             onChange={(e) => {
@@ -274,7 +274,7 @@ export function ElevatorSpecPanel({
             <option value="">Select</option>
             {STOPS_OPTIONS.map((n) => (
               <option key={n} value={n}>
-                G+{n}
+                {n}
               </option>
             ))}
           </Select>

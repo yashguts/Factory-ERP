@@ -398,7 +398,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       {/* Metadata Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 card-surface">
         <MetaItem label="Spec" value={job.spec_string} />
-        <MetaItem label="Floors" value={job.floors?.toString()} />
+        <MetaItem label="Stops" value={job.floors?.toString()} />
         <MetaItem label="Door Type" value={job.door_type} />
         <MetaItem label="Drive Type" value={job.drive_type} />
         <MetaItem label="Capacity" value={job.capacity} />

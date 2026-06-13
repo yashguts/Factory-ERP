@@ -14,8 +14,11 @@ export function parseSpecString(spec: string): {
   const match = normalized.match(/^G\+(\d+)\/?([A-Z]*)\/?([A-Z]*)\/?(.*)$/);
   if (!match) return { floors: null, doorType: null, driveType: null, capacity: null };
 
+  // `floors` is stored as TOTAL STOPS now. The Excel spec uses "G+N" notation,
+  // so total stops = N + 1 (Ground + N landings).
+  const n = parseInt(match[1], 10);
   return {
-    floors: parseInt(match[1], 10) || null,
+    floors: Number.isFinite(n) ? n + 1 : null,
     doorType: match[2] || null,
     driveType: match[3] || null,
     capacity: match[4] || null,

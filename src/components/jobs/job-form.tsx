@@ -541,7 +541,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   // ── Helpers ───────────────────────────────────────────────────────
   function buildSpecString(): string | null {
     const parts = [];
-    if (floors) parts.push(`G+${floors}`);
+    // `floors` now stores TOTAL STOPS (not the old "G+N"); show "N Stops".
+    if (floors) parts.push(`${floors} Stops`);
     if (driveType) parts.push(driveType);
     if (capacity) parts.push(capacity);
     return parts.join("/") || null;
