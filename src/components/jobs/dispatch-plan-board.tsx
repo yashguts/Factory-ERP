@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { CalendarClock, AlertTriangle, Check } from "lucide-react";
+import { CalendarClock, AlertTriangle } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type { Job, JobStage } from "@/lib/supabase/types";
@@ -385,33 +385,26 @@ export function DispatchPlanBoard({ jobs }: Props) {
                   <Link
                     key={job.id}
                     href={`/jobs/${job.id}`}
-                    className="group grid grid-cols-[7rem_1fr_auto] items-end gap-x-3 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--muted)] cursor-pointer"
+                    className="group flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-[var(--muted)] cursor-pointer"
                   >
-                    {/* Job number, with a reserved slot above it so flagged and
-                        unflagged rows stay exactly the same height. */}
-                    <span className="flex flex-col items-start gap-0.5 leading-none">
-                      <span className="flex h-[15px] items-center">
-                        {job.secondPhase && (
-                          <span
-                            title="First phase already dispatched — second phase pending"
-                            className="inline-flex items-center gap-0.5 rounded border border-blue-200 bg-blue-50 px-1 py-0.5 text-[10px] font-medium leading-none text-blue-700"
-                          >
-                            <Check size={9} strokeWidth={3} />
-                            1st phase
-                          </span>
-                        )}
-                      </span>
-                      <span className="whitespace-nowrap font-mono text-sm font-semibold">
-                        {job.job_number}
-                      </span>
+                    <span className="shrink-0 whitespace-nowrap font-mono text-sm font-semibold">
+                      {job.job_number}
                     </span>
+                    {job.secondPhase && (
+                      <span
+                        title="First phase already dispatched — second phase pending"
+                        className="shrink-0 whitespace-nowrap text-[11px] font-medium text-blue-600"
+                      >
+                        (✓ 1st phase)
+                      </span>
+                    )}
                     <span
-                      className="min-w-0 truncate pb-px text-sm text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]"
+                      className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)] group-hover:text-[var(--foreground)]"
                       title={job.customer_name ?? ""}
                     >
                       {job.customer_name || "—"}
                     </span>
-                    <Badge variant={meta.variant} className="mb-px shrink-0">
+                    <Badge variant={meta.variant} className="shrink-0">
                       {meta.short}
                     </Badge>
                   </Link>
