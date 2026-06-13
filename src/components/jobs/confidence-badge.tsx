@@ -10,7 +10,9 @@ const MAP: Record<Confidence, { variant: "green" | "amber" | "red"; label: strin
 };
 
 export function ConfidenceBadge({ level, title }: { level: Confidence; title?: string }) {
-  const m = MAP[level];
+  // Fall back gracefully if an unexpected value slips through (e.g. the vision
+  // model returns a confidence outside the enum) — never crash the render.
+  const m = MAP[level] ?? { variant: "amber" as const, label: String(level || "—") };
   return (
     <Badge variant={m.variant} className="text-[10px] px-1.5" title={title}>
       {m.label}

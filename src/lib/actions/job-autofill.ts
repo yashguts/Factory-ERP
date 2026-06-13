@@ -31,74 +31,83 @@ export async function autofillFromDrawing(
   jobId: string,
   typedSpec: BomTargetSpec,
 ): Promise<AutofillActionResult> {
-  let spec: SpecSuggestion | null = null;
-  let drawingRead = false;
+  // Whole-body guard: an unexpected throw here would otherwise reject the server
+  // action, and the form's transition has no catch — so it would surface as the
+  // route-level error boundary ("Something went wrong"). Returning the message
+  // (not throwing) keeps it readable in prod (Next.js strips thrown messages).
+  try {
+    let spec: SpecSuggestion | null = null;
+    let drawingRead = false;
 
-  const vision = await extractSpecFromPdf(jobId);
-  if (vision.ok) {
-    drawingRead = true;
-    const s = vision.spec;
-    spec = {
-      floors: s.floors,
-      drive_type: s.drive_type,
-      capacity: s.capacity,
-      door_finish: s.door_finish,
-      brand: s.brand,
-    };
-  }
-
-  // Build the retrieval target: drawing values where read, else the typed spec.
-  const target: BomTargetSpec = {
-    floors: (spec?.floors.value as number | null) ?? typedSpec.floors ?? null,
-    drive_type: (spec?.drive_type.value as string | null) ?? typedSpec.drive_type ?? null,
-    capacity: (spec?.capacity.value as string | null) ?? typedSpec.capacity ?? null,
-    door_finish: (spec?.door_finish.value as string | null) ?? typedSpec.door_finish ?? null,
-    brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
-  };
-
-  const pred = await predictBomFromSpec(target, jobId);
-  if (!pred.ok) {
-    // If the drawing was read but the BOM couldn't be predicted, still return the spec.
-    if (spec) {
-      return {
-        ok: true,
-        data: {
-          drawingRead,
-          specSource: "drawing",
-          spec,
-          bom: [],
-          neighbours: [],
-          warnings: [pred.error],
-          overallConfidence: 0,
-        },
+    const vision = await extractSpecFromPdf(jobId);
+    if (vision.ok) {
+      drawingRead = true;
+      const s = vision.spec;
+      spec = {
+        floors: s.floors,
+        drive_type: s.drive_type,
+        capacity: s.capacity,
+        door_finish: s.door_finish,
+        brand: s.brand,
       };
     }
-    return { ok: false, error: pred.error };
-  }
 
-  return {
-    ok: true,
-    data: {
-      drawingRead,
-      specSource: spec ? "drawing" : target.drive_type || target.floors != null || target.capacity ? "typed" : "none",
-      spec,
-      bom: pred.prediction.draft.map((l) => ({
-        section: l.section,
-        phase: l.phase,
-        item_id: l.item_id,
-        item_code: l.item_code,
-        item_name: l.item_name,
-        uom: l.uom,
-        suggestedQty: l.suggestedQty,
-        confidence: l.confidence,
-        confidenceBand: l.confidenceBand,
-        supportingJobs: l.supportingJobs,
-      })),
-      neighbours: pred.prediction.neighbours.map((n) => ({ job_number: n.job_number, sim: n.sim })),
-      warnings: pred.prediction.warnings,
-      overallConfidence: pred.prediction.overallConfidence,
-    },
-  };
+    // Build the retrieval target: drawing values where read, else the typed spec.
+    const target: BomTargetSpec = {
+      floors: (spec?.floors.value as number | null) ?? typedSpec.floors ?? null,
+      drive_type: (spec?.drive_type.value as string | null) ?? typedSpec.drive_type ?? null,
+      capacity: (spec?.capacity.value as string | null) ?? typedSpec.capacity ?? null,
+      door_finish: (spec?.door_finish.value as string | null) ?? typedSpec.door_finish ?? null,
+      brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
+    };
+
+    const pred = await predictBomFromSpec(target, jobId);
+    if (!pred.ok) {
+      // If the drawing was read but the BOM couldn't be predicted, still return the spec.
+      if (spec) {
+        return {
+          ok: true,
+          data: {
+            drawingRead,
+            specSource: "drawing",
+            spec,
+            bom: [],
+            neighbours: [],
+            warnings: [pred.error],
+            overallConfidence: 0,
+          },
+        };
+      }
+      return { ok: false, error: pred.error };
+    }
+
+    return {
+      ok: true,
+      data: {
+        drawingRead,
+        specSource: spec ? "drawing" : target.drive_type || target.floors != null || target.capacity ? "typed" : "none",
+        spec,
+        bom: pred.prediction.draft.map((l) => ({
+          section: l.section,
+          phase: l.phase,
+          item_id: l.item_id,
+          item_code: l.item_code,
+          item_name: l.item_name,
+          uom: l.uom,
+          suggestedQty: l.suggestedQty,
+          confidence: l.confidence,
+          confidenceBand: l.confidenceBand,
+          supportingJobs: l.supportingJobs,
+        })),
+        neighbours: pred.prediction.neighbours.map((n) => ({ job_number: n.job_number, sim: n.sim })),
+        warnings: pred.prediction.warnings,
+        overallConfidence: pred.prediction.overallConfidence,
+      },
+    };
+  } catch (e) {
+    console.error("autofillFromDrawing failed:", e);
+    return { ok: false, error: e instanceof Error ? e.message : "Auto-fill failed unexpectedly." };
+  }
 }
 
 /**

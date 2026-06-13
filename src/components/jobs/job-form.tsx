@@ -375,6 +375,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         }
         setAutofillResult(res.data);
         setAutofillOpen(true);
+      } catch (err: unknown) {
+        // Never let a failed action bubble to the route error boundary — toast it.
+        toast.error(err instanceof Error ? err.message : "Auto-fill failed — please try again.");
       } finally {
         setAutofilling(false);
       }
