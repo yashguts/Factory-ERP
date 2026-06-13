@@ -18,6 +18,7 @@ import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
 import type { JobDispatchSummary } from "@/lib/actions/dispatch";
+import { dispatchStat, toneChip } from "@/lib/dispatch-status";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -77,7 +78,7 @@ interface Props {
   dispatch: JobDispatchSummary;
 }
 
-type SortKey = "code" | "name" | "category" | "required" | "issued";
+type SortKey = "code" | "name" | "category" | "required" | "dispatched";
 type SortDir = "asc" | "desc";
 type ViewTab = "sections" | "items";
 
@@ -92,6 +93,26 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   const hasItemBom = bomLines.some((l) => l.item_id != null);
   const hasSectionBom = bomSectionLines.length > 0 || bomLines.some((l) => l.category != null);
   const [viewTab, setViewTab] = useState<ViewTab>("sections");
+
+  // Live dispatch progress from recorded dispatches, keyed for the BOM views:
+  // per BOM line (id -> dispatched qty) and per section (category -> status).
+  // Same numbers the Dispatch panel shows — presentation only.
+  const dispByLine = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const l of dispatch.lines) m.set(l.job_bom_line_id, l.dispatched);
+    return m;
+  }, [dispatch]);
+  const sectionStat = useMemo(() => {
+    const byCat = new Map<string, { remaining: number }[]>();
+    for (const l of dispatch.lines) {
+      const arr = byCat.get(l.category) ?? [];
+      arr.push({ remaining: l.remaining });
+      byCat.set(l.category, arr);
+    }
+    const m = new Map<string, ReturnType<typeof dispatchStat>>();
+    for (const [cat, lines] of byCat.entries()) m.set(cat, dispatchStat(lines));
+    return m;
+  }, [dispatch]);
 
   // Split-screen with the GAD drawing on the right. Auto-on if a
   // drawing is already attached so the user sees it immediately.
@@ -253,14 +274,14 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         case "required":
           cmp = a.required_quantity - b.required_quantity;
           break;
-        case "issued":
-          cmp = a.issued_quantity - b.issued_quantity;
+        case "dispatched":
+          cmp = (dispByLine.get(a.id) ?? 0) - (dispByLine.get(b.id) ?? 0);
           break;
       }
       return sortDir === "asc" ? cmp : -cmp;
     });
     return copy;
-  }, [filteredBom, sortKey, sortDir]);
+  }, [filteredBom, sortKey, sortDir, dispByLine]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortDir(sortDir === "asc" ? "desc" : "asc");
@@ -524,6 +545,17 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                           >
                             {dispatchPhaseOf(sec.category) === "first" ? "1st phase" : "2nd phase"}
                           </span>
+                          {(() => {
+                            const st = sectionStat.get(sec.category);
+                            return st ? (
+                              <span
+                                className={`text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border ${toneChip(st.tone)}`}
+                                title="Dispatch progress"
+                              >
+                                {st.label}
+                              </span>
+                            ) : null;
+                          })()}
                         </h4>
                         <div className="grid grid-cols-1 gap-y-1">
                           {sec.lines.map((line, li) => (
@@ -570,13 +602,14 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                     <SortHeader label="Item" sortField="name" />
                     <SortHeader label="Category" sortField="category" />
                     <SortHeader label="Required" sortField="required" />
-                    <SortHeader label="Issued" sortField="issued" />
+                    <SortHeader label="Dispatched" sortField="dispatched" />
                     <TableHead>Remaining</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sortedBom.map((line) => {
-                    const remaining = line.required_quantity - line.issued_quantity;
+                    const dispatched = dispByLine.get(line.id) ?? 0;
+                    const remaining = line.required_quantity - dispatched;
                     return (
                       <TableRow key={line.id}>
                         <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
@@ -598,7 +631,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                           {Number(line.required_quantity).toLocaleString()}{" "}
                           <span className="text-xs text-[var(--muted-foreground)]">{line.item?.uom?.abbreviation}</span>
                         </TableCell>
-                        <TableCell className="text-right text-sm">{Number(line.issued_quantity).toLocaleString()}</TableCell>
+                        <TableCell className="text-right text-sm">{dispatched.toLocaleString()}</TableCell>
                         <TableCell className="text-right font-medium">
                           <span className={remaining > 0 ? "text-amber-600" : "text-green-600"}>
                             {remaining > 0 ? remaining.toLocaleString() : "Done"}
