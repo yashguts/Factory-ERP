@@ -356,6 +356,7 @@ export async function getJobsDispatchStatus(
               .select("id, job_bom_id, required_quantity", withCount ? { count: "exact" } : {})
               .in("job_bom_id", headerIds)
               .not("category", "is", null)
+              .order("id")
               .range(from, to),
         )
       : [];
@@ -378,6 +379,7 @@ export async function getJobsDispatchStatus(
         .from("job_dispatch_lines")
         .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
         .in("dispatch_id", dispIds)
+        .order("id")
         .range(from, to),
   );
   const dispatchedByLine = new Map<string, number>();
