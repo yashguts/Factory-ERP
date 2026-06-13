@@ -40,23 +40,23 @@ Two layers, both feeding AI Auto-Fill:
 2. **Retrieval** (k-NN over the corpus) for everything the rules don't cover. Improves as audited
    jobs accumulate.
 
-## CURRENT PASS (this session)
-- Reading **ALL ~109 drawings** via a parallel-agent workflow (read-only; agents use the Read tool
-  on locally-downloaded PDFs in `scripts/_drawing_pdfs/<jobId>.pdf` — zero API cost). Each agent:
-  reads the PDF → rich extract → SELECTs the entered BOM (read-only) → maps → writes
-  `scripts/_study/<jobId>.json`. Then per-drive-type synthesis → merged **AI-DRAWING-RULEBOOK.md**.
-- Workflow run id recorded in the session; resume with `{scriptPath, resumeFromRunId}` if it fails
-  (cached agents return instantly).
+## PASS 1 — DONE (2026-06-13)
+- **Full read DONE**: all **112** drawings read by parallel agents (workflow wf_834ef3d1-4f0,
+  122 agents, 9.2M tokens, read-only). Per-job studies in `scripts/_study/<jobId>.json` (112 files).
+- **Corpus loaded DONE**: 112 rich extractions in `job_drawing_extractions`
+  (schema_version `rich_v1_backfill`) via `scripts/load-study-corpus.mjs`. AI understanding store, not business data.
+- **Rulebook DONE**: `AI-DRAWING-RULEBOOK.md` (779 lines) — cross-cutting rules, 6 per-drive sections,
+  token grammar, quantity decision table, 6 data-quality gates, and an honest confidence split
+  (10 rules SAFE to encode now; some ESTIMATE-only; HYD/MRL-BELT draft-only, n≈1).
+- **Backtest re-validated** (post floors→stops): section-F1 0.96, item-hit 84%, qty±10% 85.5%,
+  keep-rate 71.7%, vs 55.7% gate-only baseline. No regression.
 
-## CONTINUATION CHECKLIST (do these, in order, until done)
-1. **Finish the full read** (any drawings still unread → run the same workflow over them).
-2. **Bulk-load the corpus**: read `scripts/_study/*.json` → insert rich extractions into
-   `job_drawing_extractions` (AI understanding store; NOT business data). Clean jsonb inserts.
-3. **Build AI-DRAWING-RULEBOOK.md**: the comprehensive, structured rules + mappings + per-drive
-   logic with support counts (merge all batches). This IS "the book of rules."
-4. **Encode the safe deterministic rules** into `predict-core.ts` (drafts only; never writes data),
-   then **re-run the backtest** (`scripts/backtest-bom-predict.ts`) — only keep changes that beat
-   the current numbers (gate against regression).
+## CONTINUATION CHECKLIST (next passes)
+1. **Encode the 10 SAFE deterministic rules** from AI-DRAWING-RULEBOOK.md Part 6 into
+   `predict-core.ts` — ONE AT A TIME, re-running `scripts/backtest-bom-predict.ts` after each and
+   KEEPING ONLY changes that beat 71.7% (never regress). Drafts only; never writes ERP data.
+   Highest value: landing-qty=L & sill=L+1 (already via scaling), door-token propagation for
+   sparse-neighbour cases, name composition, never-present list (suppress false sections).
 5. **Honest nightly learning**: the flywheel already accrues corrections. A periodic (NOT literally
    nightly — overfits on tiny data) re-derivation of the rulebook from the growing corpus is the
    mechanism; cadence ≈ weekly/as enough new audited jobs land. Decide with owner whether to
