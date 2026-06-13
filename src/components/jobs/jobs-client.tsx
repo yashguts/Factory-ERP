@@ -18,6 +18,7 @@ import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, 
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
+import { cn } from "@/lib/utils";
 import { updateJob } from "@/lib/actions/jobs";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
@@ -78,6 +79,11 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
   // List state lives in the URL too, so Back from a job restores the view.
   const sp = useSearchParams();
+  // Tab: active jobs vs. fully-dispatched ones (a job leaves "Active" once every
+  // BOM line is fully dispatched — dispatchStatus === "full").
+  const [view, setView] = useState<"active" | "dispatched">(
+    () => readParam(sp, "view", "active", ["active", "dispatched"]) as "active" | "dispatched",
+  );
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
     () => readParam(sp, "status", "all", ["all", "new", "in_production", "hold"]) as JobStatus | "all",
@@ -96,9 +102,20 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
-    { q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "req_dispatch", dir: "asc", page: 1 },
+    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
+    { view: "active", q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "req_dispatch", dir: "asc", page: 1 },
   );
+
+  // Tab buckets (computed across ALL jobs, independent of the other filters, so
+  // the counts on the tabs always reflect the true split).
+  const { activeCount, dispatchedCount } = useMemo(() => {
+    let a = 0, d = 0;
+    for (const j of jobs) {
+      if ((dispatchStatus[j.id] ?? "none") === "full") d++;
+      else a++;
+    }
+    return { activeCount: a, dispatchedCount: d };
+  }, [jobs, dispatchStatus]);
 
   const doorTypes = useMemo(() => {
     const set = new Set<string>();
@@ -126,6 +143,10 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
 
   const filtered = useMemo(() => {
     return jobs.filter((job) => {
+      // Tab gate: the "Fully Dispatched" tab shows only fully-dispatched jobs;
+      // the "Active" tab shows everything else (never-dispatched + partial).
+      const isFull = (dispatchStatus[job.id] ?? "none") === "full";
+      if (view === "dispatched" ? !isFull : isFull) return false;
       if (searchTokens.length > 0) {
         const haystack = [
           job.job_number,
@@ -147,7 +168,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       return true;
     });
-  }, [jobs, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
+  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -244,7 +265,8 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
         <div>
           <h1 className="text-2xl font-bold tracking-tight">Job Orders</h1>
           <p className="text-sm text-[var(--muted-foreground)]">
-            {sorted.length} of {jobs.length} jobs
+            {sorted.length} of {view === "dispatched" ? dispatchedCount : activeCount}{" "}
+            {view === "dispatched" ? "fully dispatched" : "active"} jobs
             {savingJobId ? " — saving..." : ""}
           </p>
         </div>
@@ -275,6 +297,38 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
           </span>
         </Link>
       )}
+
+      {/* Tabs: Active vs. Fully Dispatched */}
+      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
+        {([
+          { key: "active", label: "Active", count: activeCount },
+          { key: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
+        ] as const).map((t) => (
+          <button
+            key={t.key}
+            type="button"
+            onClick={() => { setView(t.key); resetPage(); }}
+            className={cn(
+              "inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer",
+              view === t.key
+                ? "border-[var(--primary)] text-[var(--foreground)]"
+                : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
+            )}
+          >
+            {t.label}
+            <span
+              className={cn(
+                "text-[11px] rounded-full px-1.5 py-0.5",
+                view === t.key
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "bg-[var(--muted)] text-[var(--muted-foreground)]",
+              )}
+            >
+              {t.count}
+            </span>
+          </button>
+        ))}
+      </div>
 
       {/* Filters */}
       <div className="flex flex-wrap gap-3 mb-4">
@@ -344,7 +398,9 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
           <p className="text-[var(--muted-foreground)]">
             {initialJobs.length === 0
               ? "No jobs yet. Import from Excel to get started."
-              : "No jobs match your filters."}
+              : view === "dispatched" && dispatchedCount === 0
+                ? "No fully dispatched jobs yet — a job moves here once every BOM line has been dispatched."
+                : "No jobs match your filters."}
           </p>
         </div>
       ) : (
