@@ -38,12 +38,19 @@ type PlanState =
   | "second_sent" // 2nd phase / full dispatched (dues may remain)
   | "unset"; // nothing sent, nothing required set yet
 
-/** Chart/legend colour bucket a state rolls up into. */
-type Cat = "first" | "second" | "dues" | "other";
+/**
+ * Chart/legend colour bucket a state rolls up into.
+ *   first  — 1st phase still to dispatch          (blue)
+ *   second — 1st phase sent, 2nd phase to go      (purple)
+ *   fully  — whole job dispatched/to dispatch     (green)
+ *   dues   — 2nd phase out, items still due        (amber)
+ */
+type Cat = "first" | "second" | "fully" | "dues" | "other";
 
 const CAT_BAR: Record<Cat, string> = {
   first: "bg-gradient-to-t from-blue-600 to-blue-400",
-  second: "bg-gradient-to-t from-emerald-600 to-emerald-400",
+  second: "bg-gradient-to-t from-purple-600 to-purple-400",
+  fully: "bg-gradient-to-t from-emerald-600 to-emerald-400",
   dues: "bg-gradient-to-t from-amber-500 to-amber-400",
   other: "bg-[var(--border-strong)]",
 };
@@ -98,13 +105,13 @@ function displayOf(j: PlanJob): Display {
     case "first_due":
       return { badge: "1st phase", variant: "blue", sent: null, cat: "first" };
     case "full_due":
-      return { badge: "Full dispatch", variant: "green", sent: null, cat: "second" };
+      return { badge: "Full dispatch", variant: "green", sent: null, cat: "fully" };
     case "first_sent":
-      return { badge: "2nd phase", variant: "green", sent: "1st", cat: "second" };
+      return { badge: "2nd phase", variant: "purple", sent: "1st", cat: "second" };
     case "second_sent":
       return j.hasDues
         ? { badge: "Dues pending", variant: "amber", sent: "2nd", cat: "dues" }
-        : { badge: "2nd phase", variant: "green", sent: "2nd", cat: "second" };
+        : { badge: "2nd phase sent", variant: "green", sent: "2nd", cat: "fully" };
     default:
       return { badge: "—", variant: "neutral", sent: null, cat: "other" };
   }
@@ -119,6 +126,7 @@ interface Bucket {
   isCurrent: boolean;
   first: number;
   second: number;
+  fully: number;
   dues: number;
   other: number;
   total: number;
@@ -178,15 +186,16 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
     unscheduled.sort(cmpJob);
 
     const tally = (arr: PlanJob[]) => {
-      let first = 0, second = 0, dues = 0, other = 0;
+      let first = 0, second = 0, fully = 0, dues = 0, other = 0;
       for (const j of arr) {
         const c = displayOf(j).cat;
         if (c === "first") first++;
         else if (c === "second") second++;
+        else if (c === "fully") fully++;
         else if (c === "dues") dues++;
         else other++;
       }
-      return { first, second, dues, other, total: arr.length };
+      return { first, second, fully, dues, other, total: arr.length };
     };
 
     const out: Bucket[] = [];
@@ -244,7 +253,8 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
     const max = Math.max(1, ...chart.map((b) => b.total));
 
     // Headline counts = sum across every bucket (all jobs are in exactly one).
-    const sum = (k: "first" | "second" | "dues") => out.reduce((a, b) => a + b[k], 0);
+    const sum = (k: "first" | "second" | "fully" | "dues") =>
+      out.reduce((a, b) => a + b[k], 0);
 
     return {
       buckets: out,
@@ -253,6 +263,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
       totals: {
         first: sum("first"),
         second: sum("second"),
+        fully: sum("fully"),
         dues: sum("dues"),
         overdue: overdue.length,
         total: jobs.length,
@@ -277,13 +288,12 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Legend */}
+      {/* Legend — a count for each dispatch type */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <LegendDot className="bg-blue-500" label="1st phase" count={totals.first} />
-        <LegendDot className="bg-emerald-500" label="2nd phase / full" count={totals.second} />
-        {totals.dues > 0 && (
-          <LegendDot className="bg-amber-500" label="Dues pending" count={totals.dues} />
-        )}
+        <LegendDot className="bg-purple-500" label="2nd phase" count={totals.second} />
+        <LegendDot className="bg-emerald-500" label="Full dispatch" count={totals.fully} />
+        <LegendDot className="bg-amber-500" label="Dues pending" count={totals.dues} />
         {totals.overdue > 0 && (
           <span className="inline-flex items-center gap-1.5 text-[var(--destructive)]">
             <AlertTriangle size={14} />
@@ -301,6 +311,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
             const segs: { cat: Cat; n: number }[] = [
               { cat: "first", n: b.first },
               { cat: "second", n: b.second },
+              { cat: "fully", n: b.fully },
               { cat: "dues", n: b.dues },
               { cat: "other", n: b.other },
             ];
@@ -414,7 +425,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                         title={`${d.sent === "1st" ? "First" : "Second"} phase already dispatched`}
                         className={cn(
                           "shrink-0 whitespace-nowrap text-[11px] font-medium",
-                          d.sent === "1st" ? "text-blue-600" : "text-emerald-600",
+                          d.sent === "1st" ? "text-blue-600" : "text-purple-600",
                         )}
                       >
                         (✓ {d.sent} phase)
