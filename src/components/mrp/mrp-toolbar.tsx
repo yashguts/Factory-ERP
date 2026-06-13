@@ -3,15 +3,16 @@
 import { useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, ListChecks, Hammer, ShoppingCart, X } from "lucide-react";
+import { CalendarDays, CalendarRange, ListChecks, Hammer, ShoppingCart, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
-export type MrpView = "requirements" | "programs" | "buy";
+export type MrpView = "requirements" | "programs" | "buy" | "weekly";
 
 const VIEWS: { key: MrpView; label: string; href: string; icon: typeof ListChecks }[] = [
   { key: "requirements", label: "Requirements", href: "/mrp", icon: ListChecks },
   { key: "programs", label: "Programs to run", href: "/mrp/make-plan", icon: Hammer },
   { key: "buy", label: "Buy list", href: "/mrp/plan", icon: ShoppingCart },
+  { key: "weekly", label: "Weekly plan", href: "/mrp/weekly", icon: CalendarRange },
 ];
 
 const ymd = (d: Date) =>
@@ -64,7 +65,13 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
         })}
       </div>
 
-      {/* Date control */}
+      {/* Date control (the weekly view has a fixed today-relative horizon) */}
+      {view === "weekly" ? (
+        <div className="flex items-center gap-2 p-3 card-surface text-sm text-[var(--muted-foreground)]">
+          <CalendarRange className="h-4 w-4 shrink-0 text-[var(--primary)]" />
+          Planning the next <strong className="text-[var(--foreground)]">8 weeks</strong> from today, cumulatively — Overdue plus each week.
+        </div>
+      ) : (
       <div className="flex items-center gap-2.5 flex-wrap p-3 card-surface">
         <CalendarDays className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
         <span className="text-sm font-medium whitespace-nowrap">Plan jobs due by</span>
@@ -113,6 +120,7 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
         </div>
         {isPending && <span className="text-xs text-[var(--muted-foreground)]">updating…</span>}
       </div>
+      )}
     </div>
   );
 }
