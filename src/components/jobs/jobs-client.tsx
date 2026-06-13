@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils";
 import { updateJob } from "@/lib/actions/jobs";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
+import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -80,9 +81,10 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   // List state lives in the URL too, so Back from a job restores the view.
   const sp = useSearchParams();
   // Tab: active jobs vs. fully-dispatched ones (a job leaves "Active" once every
-  // BOM line is fully dispatched — dispatchStatus === "full").
-  const [view, setView] = useState<"active" | "dispatched">(
-    () => readParam(sp, "view", "active", ["active", "dispatched"]) as "active" | "dispatched",
+  // BOM line is fully dispatched — dispatchStatus === "full"). The "plan" tab is
+  // a week-by-week dispatch board over the SAME active set (no extra data).
+  const [view, setView] = useState<"active" | "dispatched" | "plan">(
+    () => readParam(sp, "view", "active", ["active", "dispatched", "plan"]) as "active" | "dispatched" | "plan",
   );
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
@@ -303,6 +305,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
         {([
           { key: "active", label: "Active", count: activeCount },
           { key: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
+          { key: "plan", label: "Dispatch Plan", count: activeCount },
         ] as const).map((t) => (
           <button
             key={t.key}
@@ -391,8 +394,10 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
         )}
       </div>
 
-      {/* Table */}
-      {paginated.length === 0 ? (
+      {/* Week-by-week dispatch board (visual of the same active set) */}
+      {view === "plan" ? (
+        <DispatchPlanBoard jobs={sorted} dispatchStatus={dispatchStatus} />
+      ) : /* Table */ paginated.length === 0 ? (
         <div className="card-surface p-12 text-center">
           <ClipboardList size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
           <p className="text-[var(--muted-foreground)]">
@@ -520,7 +525,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
       )}
 
       {/* Pagination */}
-      {totalPages > 1 && (
+      {view !== "plan" && totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-[var(--muted-foreground)]">
             Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length}
