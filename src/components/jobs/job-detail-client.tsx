@@ -32,10 +32,11 @@ const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
   hold: "red",
 };
 
+// "Full material" is the 2nd (final) dispatch phase — see Jobs list note.
 const STAGE_LABELS: Record<JobStage, string> = {
   new: "New",
-  first_phase: "First Phase",
-  full_material: "Full Material",
+  first_phase: "1st phase",
+  full_material: "2nd phase",
 };
 
 interface BomLineWithItem {

@@ -5,61 +5,48 @@ import Link from "next/link";
 import { CalendarClock, AlertTriangle } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { Job, JobStage } from "@/lib/supabase/types";
+import type { Job } from "@/lib/supabase/types";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 
 /* ------------------------------------------------------------------ *
  * Dispatch Plan — a read-only, week-by-week picture of the Active Job
  * Orders. The top is a left-to-right stacked-bar chart of how many jobs
- * dispatch each week (split by planned phase); below it, the jobs in each
- * week as compact rows (number · customer · phase).
+ * dispatch each week; below it, the jobs in each week as compact rows.
  *
- * Planned phase is taken purely from a job's "Required" (requirement_stage)
- * value — the office's source of truth for what the job needs prepared:
- *   first_phase   → "First Phase"   (blue)
- *   full_material → "Full Dispatch" (green)
- *   new / null    → "Not planned"   (grey)
+ * Dispatch is two phases plus a terminal state. We read a job's phase from
+ * the office's own Sent (`stage`) and Required (`requirement_stage`) values
+ * — the source of truth they maintain on the Jobs list — and use recorded
+ * dispatches only to know whether items are still due:
  *
- * Nothing is mutated — it's the same active set the table shows, placed on
- * a calendar. Weeks are Monday-start (the factory's working week). Jobs
- * whose date is already past (and not fully dispatched) collect in a red
- * "Overdue" lane; dateless jobs collect in a muted "No date" lane.
+ *   Sent = 2nd phase (full)            → 2nd phase already dispatched.
+ *                                        If items remain → "Dues pending".
+ *   Sent = 1st phase                   → 1st phase dispatched; 2nd phase due.
+ *   Sent = New, Required = 2nd (full)  → whole job still to dispatch.
+ *   Sent = New, Required = 1st phase   → 1st phase still to dispatch.
+ *
+ * "Fully dispatched" (everything out, no dues) is the terminal state and is
+ * filtered out before this board — those jobs live on the Fully Dispatched
+ * tab. Nothing is mutated here. Weeks are Monday-start (the working week);
+ * past-due jobs collect in a red "Overdue" lane, dateless ones in "No date".
  * ------------------------------------------------------------------ */
 
-type Phase = "first" | "full" | "none";
+/** Where a job sits in the two-phase dispatch lifecycle (for an active job). */
+type PlanState =
+  | "first_due" // nothing sent, 1st phase required
+  | "full_due" // nothing sent, full job required (no separate 1st phase)
+  | "first_sent" // 1st phase dispatched, 2nd phase now due
+  | "second_sent" // 2nd phase / full dispatched (dues may remain)
+  | "unset"; // nothing sent, nothing required set yet
 
-const PHASE_META: Record<
-  Phase,
-  { label: string; short: string; variant: BadgeVariant; bar: string; dot: string }
-> = {
-  first: {
-    label: "First Phase",
-    short: "First",
-    variant: "blue",
-    bar: "bg-gradient-to-t from-blue-600 to-blue-400",
-    dot: "bg-blue-500",
-  },
-  full: {
-    label: "Full Dispatch",
-    short: "Full",
-    variant: "green",
-    bar: "bg-gradient-to-t from-emerald-600 to-emerald-400",
-    dot: "bg-emerald-500",
-  },
-  none: {
-    label: "Not planned",
-    short: "—",
-    variant: "neutral",
-    bar: "bg-[var(--border-strong)]",
-    dot: "bg-[var(--border-strong)]",
-  },
+/** Chart/legend colour bucket a state rolls up into. */
+type Cat = "first" | "second" | "dues" | "other";
+
+const CAT_BAR: Record<Cat, string> = {
+  first: "bg-gradient-to-t from-blue-600 to-blue-400",
+  second: "bg-gradient-to-t from-emerald-600 to-emerald-400",
+  dues: "bg-gradient-to-t from-amber-500 to-amber-400",
+  other: "bg-[var(--border-strong)]",
 };
-
-function phaseOf(stage: JobStage | null | undefined): Phase {
-  if (stage === "first_phase") return "first";
-  if (stage === "full_material") return "full";
-  return "none";
-}
 
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -92,28 +79,48 @@ interface PlanJob {
   id: string;
   job_number: string;
   customer_name: string | null;
-  phase: Phase;
-  /**
-   * Full material is required but the first phase has already gone out
-   * (stage advanced to first_phase) — i.e. only the second phase is left.
-   * Flagged with a small "1st phase sent" tag for quick visual scanning.
-   */
-  secondPhase: boolean;
+  state: PlanState;
+  /** Recorded dispatches still leave items short (only meaningful when sent). */
+  hasDues: boolean;
+}
+
+interface Display {
+  badge: string;
+  variant: BadgeVariant;
+  /** Phase already dispatched, shown as a "(✓ …)" tag by the job number. */
+  sent: "1st" | "2nd" | null;
+  cat: Cat;
+}
+
+/** Map a job's state (+ dues) to its row badge, sent-tag, and chart bucket. */
+function displayOf(j: PlanJob): Display {
+  switch (j.state) {
+    case "first_due":
+      return { badge: "1st phase", variant: "blue", sent: null, cat: "first" };
+    case "full_due":
+      return { badge: "Full dispatch", variant: "green", sent: null, cat: "second" };
+    case "first_sent":
+      return { badge: "2nd phase", variant: "green", sent: "1st", cat: "second" };
+    case "second_sent":
+      return j.hasDues
+        ? { badge: "Dues pending", variant: "amber", sent: "2nd", cat: "dues" }
+        : { badge: "2nd phase", variant: "green", sent: "2nd", cat: "second" };
+    default:
+      return { badge: "—", variant: "neutral", sent: null, cat: "other" };
+  }
 }
 
 interface Bucket {
-  /** Stable anchor id for scroll-to. */
   key: string;
   kind: "overdue" | "week" | "unscheduled";
-  /** Short label for the chart axis ("Overdue", "This wk", "Next wk", "Jun 15"). */
   axisLabel: string;
-  /** Full heading for the list section. */
   title: string;
   subtitle: string;
   isCurrent: boolean;
   first: number;
-  full: number;
-  none: number;
+  second: number;
+  dues: number;
+  other: number;
   total: number;
   jobs: PlanJob[];
 }
@@ -123,7 +130,7 @@ interface Props {
   dispatchStatus: Record<string, DispatchStatus>;
 }
 
-export function DispatchPlanBoard({ jobs }: Props) {
+export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
   const { buckets, chartBuckets, maxTotal, totals } = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
@@ -133,25 +140,28 @@ export function DispatchPlanBoard({ jobs }: Props) {
     const unscheduled: PlanJob[] = [];
     const weekMap = new Map<number, PlanJob[]>();
 
-    let firstAll = 0;
-    let fullAll = 0;
-
     for (const job of jobs) {
-      const date = job.requirement_dispatch_date
-        ? parseLocalDate(job.requirement_dispatch_date)
-        : null;
-      const phase = phaseOf(job.requirement_stage);
-      if (phase === "first") firstAll++;
-      else if (phase === "full") fullAll++;
+      const ds = dispatchStatus[job.id] ?? "none";
+      // Phase comes from the office's Sent/Required values; dues come from
+      // recorded dispatches (partial = items still short).
+      let state: PlanState;
+      if (job.stage === "full_material") state = "second_sent";
+      else if (job.stage === "first_phase") state = "first_sent";
+      else if (job.requirement_stage === "full_material") state = "full_due";
+      else if (job.requirement_stage === "first_phase") state = "first_due";
+      else state = "unset";
 
       const pj: PlanJob = {
         id: job.id,
         job_number: job.job_number,
         customer_name: job.customer_name,
-        phase,
-        secondPhase: phase === "full" && job.stage === "first_phase",
+        state,
+        hasDues: ds === "partial",
       };
 
+      const date = job.requirement_dispatch_date
+        ? parseLocalDate(job.requirement_dispatch_date)
+        : null;
       if (!date) unscheduled.push(pj);
       else if (date.getTime() < today.getTime()) overdue.push(pj);
       else {
@@ -167,12 +177,17 @@ export function DispatchPlanBoard({ jobs }: Props) {
     overdue.sort(cmpJob);
     unscheduled.sort(cmpJob);
 
-    const tally = (arr: PlanJob[]) => ({
-      first: arr.filter((j) => j.phase === "first").length,
-      full: arr.filter((j) => j.phase === "full").length,
-      none: arr.filter((j) => j.phase === "none").length,
-      total: arr.length,
-    });
+    const tally = (arr: PlanJob[]) => {
+      let first = 0, second = 0, dues = 0, other = 0;
+      for (const j of arr) {
+        const c = displayOf(j).cat;
+        if (c === "first") first++;
+        else if (c === "second") second++;
+        else if (c === "dues") dues++;
+        else other++;
+      }
+      return { first, second, dues, other, total: arr.length };
+    };
 
     const out: Bucket[] = [];
 
@@ -224,24 +239,26 @@ export function DispatchPlanBoard({ jobs }: Props) {
       });
     }
 
-    // The chart shows time-placed buckets only (overdue + weeks), never the
-    // dateless lane — there's no axis slot for "no date".
+    // The chart shows time-placed buckets only (overdue + weeks).
     const chart = out.filter((b) => b.kind !== "unscheduled");
     const max = Math.max(1, ...chart.map((b) => b.total));
+
+    // Headline counts = sum across every bucket (all jobs are in exactly one).
+    const sum = (k: "first" | "second" | "dues") => out.reduce((a, b) => a + b[k], 0);
 
     return {
       buckets: out,
       chartBuckets: chart,
       maxTotal: max,
       totals: {
-        first: firstAll,
-        full: fullAll,
+        first: sum("first"),
+        second: sum("second"),
+        dues: sum("dues"),
         overdue: overdue.length,
-        unscheduled: unscheduled.length,
         total: jobs.length,
       },
     };
-  }, [jobs]);
+  }, [jobs, dispatchStatus]);
 
   if (totals.total === 0) {
     return (
@@ -262,8 +279,11 @@ export function DispatchPlanBoard({ jobs }: Props) {
     <div className="space-y-6">
       {/* Legend */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
-        <LegendDot className="bg-blue-500" label="First Phase" count={totals.first} />
-        <LegendDot className="bg-emerald-500" label="Full Dispatch" count={totals.full} />
+        <LegendDot className="bg-blue-500" label="1st phase" count={totals.first} />
+        <LegendDot className="bg-emerald-500" label="2nd phase / full" count={totals.second} />
+        {totals.dues > 0 && (
+          <LegendDot className="bg-amber-500" label="Dues pending" count={totals.dues} />
+        )}
         {totals.overdue > 0 && (
           <span className="inline-flex items-center gap-1.5 text-[var(--destructive)]">
             <AlertTriangle size={14} />
@@ -278,6 +298,12 @@ export function DispatchPlanBoard({ jobs }: Props) {
           {chartBuckets.map((b) => {
             const barPx = b.total > 0 ? Math.max(10, Math.round((b.total / maxTotal) * CHART_H)) : 0;
             const isOverdue = b.kind === "overdue";
+            const segs: { cat: Cat; n: number }[] = [
+              { cat: "first", n: b.first },
+              { cat: "second", n: b.second },
+              { cat: "dues", n: b.dues },
+              { cat: "other", n: b.other },
+            ];
             return (
               <button
                 key={b.key}
@@ -285,50 +311,43 @@ export function DispatchPlanBoard({ jobs }: Props) {
                 onClick={() => scrollTo(b.key)}
                 title={`${b.title} · ${b.total} ${b.total === 1 ? "job" : "jobs"}`}
                 className={cn(
-                  "group flex shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
-                  "w-[60px]",
+                  "group flex w-[60px] shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
                   isOverdue ? "hover:bg-red-50" : "hover:bg-[var(--muted)]",
                 )}
               >
-                {/* count */}
                 <span
                   className={cn(
                     "text-xs font-semibold tabular-nums",
-                    b.total === 0 ? "text-transparent" : isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]",
+                    b.total === 0
+                      ? "text-transparent"
+                      : isOverdue
+                        ? "text-[var(--destructive)]"
+                        : "text-[var(--foreground)]",
                   )}
                 >
                   {b.total || "0"}
                 </span>
 
-                {/* bar */}
                 <div className="flex w-full items-end justify-center" style={{ height: CHART_H }}>
                   {b.total === 0 ? (
                     <div className="h-px w-7 rounded bg-[var(--border)]" />
                   ) : (
                     <div
-                      className="flex w-8 flex-col overflow-hidden rounded-t-md shadow-sm ring-1 ring-black/5 transition-transform group-hover:-translate-y-0.5"
+                      className={cn(
+                        "flex w-8 flex-col overflow-hidden rounded-t-md shadow-sm ring-1 transition-transform group-hover:-translate-y-0.5",
+                        isOverdue ? "ring-red-200" : "ring-black/5",
+                      )}
                       style={{ height: barPx }}
                     >
-                      {isOverdue ? (
-                        <div className="flex-1 bg-gradient-to-t from-red-600 to-red-400" />
-                      ) : (
-                        <>
-                          {b.first > 0 && (
-                            <div className={PHASE_META.first.bar} style={{ flexGrow: b.first }} />
-                          )}
-                          {b.full > 0 && (
-                            <div className={PHASE_META.full.bar} style={{ flexGrow: b.full }} />
-                          )}
-                          {b.none > 0 && (
-                            <div className={PHASE_META.none.bar} style={{ flexGrow: b.none }} />
-                          )}
-                        </>
-                      )}
+                      {segs
+                        .filter((s) => s.n > 0)
+                        .map((s) => (
+                          <div key={s.cat} className={CAT_BAR[s.cat]} style={{ flexGrow: s.n }} />
+                        ))}
                     </div>
                   )}
                 </div>
 
-                {/* axis label */}
                 <span
                   className={cn(
                     "text-center text-[11px] leading-tight",
@@ -347,7 +366,7 @@ export function DispatchPlanBoard({ jobs }: Props) {
         </div>
       </div>
 
-      {/* ── List: jobs per week (number · name · phase) ── */}
+      {/* ── List: jobs per week (number · sent-tag · name · status) ── */}
       <div className="space-y-5">
         {buckets.filter((b) => b.total > 0).map((b) => (
           <section key={b.key} id={`plan-${b.key}`} className="scroll-mt-4">
@@ -380,7 +399,7 @@ export function DispatchPlanBoard({ jobs }: Props) {
 
             <div className="grid grid-cols-1 gap-x-8 md:grid-cols-2">
               {b.jobs.map((job) => {
-                const meta = PHASE_META[job.phase];
+                const d = displayOf(job);
                 return (
                   <Link
                     key={job.id}
@@ -390,12 +409,15 @@ export function DispatchPlanBoard({ jobs }: Props) {
                     <span className="shrink-0 whitespace-nowrap font-mono text-sm font-semibold">
                       {job.job_number}
                     </span>
-                    {job.secondPhase && (
+                    {d.sent && (
                       <span
-                        title="First phase already dispatched — second phase pending"
-                        className="shrink-0 whitespace-nowrap text-[11px] font-medium text-blue-600"
+                        title={`${d.sent === "1st" ? "First" : "Second"} phase already dispatched`}
+                        className={cn(
+                          "shrink-0 whitespace-nowrap text-[11px] font-medium",
+                          d.sent === "1st" ? "text-blue-600" : "text-emerald-600",
+                        )}
                       >
-                        (✓ 1st phase)
+                        (✓ {d.sent} phase)
                       </span>
                     )}
                     <span
@@ -404,8 +426,8 @@ export function DispatchPlanBoard({ jobs }: Props) {
                     >
                       {job.customer_name || "—"}
                     </span>
-                    <Badge variant={meta.variant} className="shrink-0">
-                      {meta.short}
+                    <Badge variant={d.variant} className="shrink-0">
+                      {d.badge}
                     </Badge>
                   </Link>
                 );

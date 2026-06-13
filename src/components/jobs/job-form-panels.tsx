@@ -20,10 +20,12 @@ import {
 /*  Shared types                                                      */
 /* ------------------------------------------------------------------ */
 
+// "Full material" is the 2nd (final) dispatch phase — labelled "2nd phase" to
+// match the Jobs list and Dispatch Plan. Stored value is unchanged.
 export const STAGE_OPTIONS: { value: JobStage; label: string }[] = [
   { value: "new", label: "New" },
-  { value: "first_phase", label: "First Phase" },
-  { value: "full_material", label: "Full Material" },
+  { value: "first_phase", label: "1st phase" },
+  { value: "full_material", label: "2nd phase" },
 ];
 
 /* ------------------------------------------------------------------ */

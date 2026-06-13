@@ -42,10 +42,14 @@ const STATUS_SELECT_COLORS: Record<JobStatus, string> = {
   hold: "bg-red-50 text-red-700",
 };
 
+// Dispatch is two phases plus a terminal "fully dispatched" state. "Full
+// material" is the 2nd (final) phase — labelled "2nd phase" so Sent/Required
+// read consistently with the Dispatch Plan. As Sent: which phase has gone out;
+// as Required: which phase the job needs next.
 const STAGE_LABELS: Record<JobStage, string> = {
   new: "New",
-  first_phase: "First Phase",
-  full_material: "Full Material",
+  first_phase: "1st phase",
+  full_material: "2nd phase",
 };
 
 const STAGE_BADGE: Record<JobStage, BadgeVariant> = {
