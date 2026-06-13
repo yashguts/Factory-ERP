@@ -1,15 +1,19 @@
 "use server";
 
 /**
- * PDF -> elevator spec via Claude vision. This is the ONLY key-dependent piece.
- * Reads ANTHROPIC_API_KEY from the server env; when absent it returns a graceful
- * {ok:false} ("not configured") and never throws — so the whole feature works
- * from the typed spec until the owner adds a key, then this lights up.
+ * PDF -> RICH elevator drawing extraction via Claude vision.
  *
- * Additive: only READS the job's public GAD PDF and RETURNS a draft spec. It
- * never writes to the job. Uses raw fetch (no SDK dependency to break the build).
+ * Phase 1 of the deep-learning program: read the WHOLE drawing (not just the
+ * 5 form fields) and STORE it per job (job_drawing_extractions), so we
+ * accumulate the (drawing content -> human-verified job) corpus the deep study
+ * will learn from. Piggybacks the existing autofill call — no extra cost.
+ *
+ * The ONLY key-dependent piece. Reads ANTHROPIC_API_KEY; absent -> graceful
+ * {ok:false,'not configured'}, never throws. Additive: reads the public GAD
+ * PDF + writes ONLY to the job_drawing_extractions log. Never touches the job.
  */
 import { createCacheClient } from "@/lib/supabase/cache-client";
+import { createClient } from "@/lib/supabase/server";
 
 export type FieldConfidence = "high" | "medium" | "low";
 export interface SpecField<T> {
@@ -17,17 +21,55 @@ export interface SpecField<T> {
   confidence: FieldConfidence;
   rationale: string;
 }
+/** The 5 fields the autofill form consumes (unchanged contract). */
 export interface ExtractedSpec {
   floors: SpecField<number>;
-  drive_type: SpecField<string>; // MRL|BELT|HOME|MR|HYD|CANTI
-  capacity: SpecField<string>; // "4PASS" | "1000KG"
+  drive_type: SpecField<string>;
+  capacity: SpecField<string>;
   door_finish: SpecField<string>;
   brand: SpecField<string>;
+  notes: string;
+}
+/** The FULL read — everything we can pull off the drawing, for the deep corpus. */
+export interface RichDrawing {
+  drive_type: SpecField<string>;
+  floors: SpecField<number>;
+  capacity: SpecField<string>;
+  door_type: SpecField<string>;
+  door_finish: SpecField<string>;
+  brand: SpecField<string>;
+  dimensions: {
+    shaft_width_mm: SpecField<string>;
+    shaft_depth_mm: SpecField<string>;
+    car_width_mm: SpecField<string>;
+    car_depth_mm: SpecField<string>;
+    car_height_mm: SpecField<string>;
+    door_opening_width_mm: SpecField<string>;
+    door_opening_height_mm: SpecField<string>;
+    pit_depth_mm: SpecField<string>;
+    overhead_mm: SpecField<string>;
+    travel_mm: SpecField<string>;
+    speed_mps: SpecField<string>;
+  };
+  machine_room: SpecField<string>;
+  counterweight_position: SpecField<string>;
+  /** Everything else labelled on the drawing — the open-ended nuance bucket. */
+  additional_details: { label: string; value: string; confidence: FieldConfidence }[];
   notes: string;
 }
 export type ExtractSpecResult =
   | { ok: true; spec: ExtractedSpec }
   | { ok: false; error: string; reason?: "not_configured" };
+export type RichResult =
+  | { ok: true; rich: RichDrawing; discrepancies: Discrepancy[] }
+  | { ok: false; error: string; reason?: "not_configured" };
+
+export interface Discrepancy {
+  field: string;
+  drawing: string;
+  entered: string;
+  note: string;
+}
 
 const MODEL = "claude-opus-4-8";
 
@@ -41,12 +83,20 @@ const CONF = (vt: "string" | "integer") => ({
   },
   required: ["value", "confidence", "rationale"],
 });
-
-const SPEC_SCHEMA = {
+const DIM = () => ({
   type: "object",
   additionalProperties: false,
   properties: {
-    floors: CONF("integer"),
+    value: { type: ["string", "null"] },
+    confidence: { type: "string", enum: ["high", "medium", "low"] },
+  },
+  required: ["value", "confidence"],
+});
+
+const SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  properties: {
     drive_type: {
       type: "object",
       additionalProperties: false,
@@ -57,29 +107,101 @@ const SPEC_SCHEMA = {
       },
       required: ["value", "confidence", "rationale"],
     },
+    floors: CONF("integer"),
     capacity: CONF("string"),
+    door_type: CONF("string"),
     door_finish: CONF("string"),
     brand: CONF("string"),
+    dimensions: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        shaft_width_mm: DIM(), shaft_depth_mm: DIM(), car_width_mm: DIM(), car_depth_mm: DIM(),
+        car_height_mm: DIM(), door_opening_width_mm: DIM(), door_opening_height_mm: DIM(),
+        pit_depth_mm: DIM(), overhead_mm: DIM(), travel_mm: DIM(), speed_mps: DIM(),
+      },
+      required: [
+        "shaft_width_mm", "shaft_depth_mm", "car_width_mm", "car_depth_mm", "car_height_mm",
+        "door_opening_width_mm", "door_opening_height_mm", "pit_depth_mm", "overhead_mm",
+        "travel_mm", "speed_mps",
+      ],
+    },
+    machine_room: CONF("string"),
+    counterweight_position: CONF("string"),
+    additional_details: {
+      type: "array",
+      items: {
+        type: "object",
+        additionalProperties: false,
+        properties: {
+          label: { type: "string" },
+          value: { type: "string" },
+          confidence: { type: "string", enum: ["high", "medium", "low"] },
+        },
+        required: ["label", "value", "confidence"],
+      },
+    },
     notes: { type: "string" },
   },
-  required: ["floors", "drive_type", "capacity", "door_finish", "brand", "notes"],
+  required: [
+    "drive_type", "floors", "capacity", "door_type", "door_finish", "brand",
+    "dimensions", "machine_room", "counterweight_position", "additional_details", "notes",
+  ],
 };
 
-const SYSTEM_PROMPT = `You are an expert elevator engineer reading General Arrangement (GA) drawings for passenger and goods elevators made in India, and extracting the machine-readable specification. Read every view, the title block, the dimension table and notes. Return the spec ONLY by calling report_elevator_spec exactly once.
+const SYSTEM_PROMPT = `You are an expert elevator engineer reading General Arrangement (GA) drawings for passenger and goods elevators made in India, and extracting a COMPLETE machine-readable record. Read every view, the title block, the dimension/spec table, and all notes. Return everything ONLY by calling report_drawing exactly once.
 
-Rules:
-- drive_type — normalise to exactly one of MRL, BELT, HOME, MR, HYD, CANTI. Map synonyms: "Machine Room Less"/"roomless"/"gearless MRL" -> MRL; "Belt"/"belt drive" -> BELT; "Home lift"/"villa"/"domestic" -> HOME; "Machine Room"/"geared"/"traction MR" -> MR; "Hydraulic" -> HYD; "Cantilever" -> CANTI. If the drawing doesn't say, value null, confidence "low".
-- floors — total stops served (integer). "G+N" = N+1, "B+G+N" = N+2. If only a travel dimension is given, null.
-- capacity — copy the rated load AS LABELLED: persons -> "4PASS"/"6PASS"; kilograms -> "1000KG". Prefer persons for passenger lifts, KG for goods.
-- door_finish — e.g. "SS Hairline", "SS Mirror", "MS Powder Coated", "Rose Gold", "Glass".
-- brand — lift/controller make from the title block if printed.
-- confidence — "high" (clearly printed), "medium" (inferred/partly legible), "low" (guessed or absent). Never invent a value; null + low is correct when the drawing is silent.
-- rationale — one short phrase per field saying where you read it ("title block", "plan view", "not shown").`;
+Capture the core spec AND every other labelled value you can find (sizes, weights, speeds, counts, finishes, makes, clauses) — put anything that doesn't fit a named field into additional_details as {label, value}. Be exhaustive: this drawing's details are what makes the job different from past jobs.
+
+Normalisation rules:
+- drive_type -> exactly one of MRL, BELT, HOME, MR, HYD, CANTI. Synonyms: "Machine Room Less"/"roomless"/"gearless MRL"->MRL; "Belt"->BELT; "Home lift"/"villa"/"domestic"->HOME; "Machine Room"/"geared"/"traction MR"->MR; "Hydraulic"->HYD; "Cantilever"->CANTI. Unknown -> null/low.
+- floors -> total stops (integer). "G+N"=N+1, "B+G+N"=N+2. Only a travel dimension and no stop count -> null.
+- capacity -> as labelled: persons -> "4PASS"/"6PASS"; kilograms -> "1000KG". Prefer persons for passenger, KG for goods.
+- door_type -> e.g. "Centre Opening (CO)", "2-Panel Telescopic", "Collapsible", "Swing", "Auto". door_finish -> "SS Hairline", "SS Mirror", "MS Powder Coated", "Rose Gold", "Glass".
+- dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
+- confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
 const USER_PROMPT =
-  'This is the GA drawing for one elevator job. Read it and call report_elevator_spec with floors, drive_type (MRL/BELT/HOME/MR/HYD/CANTI), capacity, door_finish and brand — each with a per-field confidence and a one-line rationale. Null + low for anything not on the drawing.';
+  "This is the GA drawing for one elevator job. Read it COMPLETELY and call report_drawing with the full spec, all dimensions, and every other labelled value in additional_details — each with a confidence and (for core fields) a one-line rationale of where you read it.";
 
-export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResult> {
+async function callVision(b64: string, apiKey: string): Promise<RichDrawing | { error: string }> {
+  const resp = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+    body: JSON.stringify({
+      model: MODEL,
+      max_tokens: 4096,
+      system: SYSTEM_PROMPT,
+      tool_choice: { type: "tool", name: "report_drawing" },
+      tools: [{ name: "report_drawing", description: "Report the complete elevator drawing record.", input_schema: SCHEMA }],
+      messages: [
+        {
+          role: "user",
+          content: [
+            { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
+            { type: "text", text: USER_PROMPT },
+          ],
+        },
+      ],
+    }),
+  });
+  if (!resp.ok) {
+    if (resp.status === 429) return { error: "AI is busy — try again in a moment." };
+    if (resp.status === 401) return { error: "AI key rejected — check the Anthropic API key." };
+    return { error: `AI drawing-reading failed (${resp.status}).` };
+  }
+  const data = (await resp.json()) as { content?: Array<{ type: string; input?: unknown }>; stop_reason?: string };
+  const tool = data.content?.find((b) => b.type === "tool_use");
+  if (!tool?.input)
+    return { error: data.stop_reason === "refusal" ? "The model declined to read this drawing." : "Could not extract a spec." };
+  const rich = tool.input as RichDrawing;
+  if (rich.floors?.value != null && (!Number.isInteger(rich.floors.value) || rich.floors.value < 1 || rich.floors.value > 60))
+    rich.floors = { value: null, confidence: "low", rationale: "Out-of-range floor count — verify." };
+  return rich;
+}
+
+/** Rich extraction + store + discrepancy compute. The deep-corpus entry point. */
+export async function extractDrawingData(jobId: string): Promise<RichResult> {
   if (!jobId) return { ok: false, error: "Missing jobId" };
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) return { ok: false, error: "AI drawing-reading not configured", reason: "not_configured" };
@@ -87,7 +209,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
   const supabase = createCacheClient();
   const { data: job, error } = await supabase
     .from("jobs")
-    .select("gad_drawing_url")
+    .select("gad_drawing_url, gad_drawing_filename, floors, drive_type, capacity, door_finish, brand")
     .eq("id", jobId)
     .single();
   if (error || !job) return { ok: false, error: "Job not found." };
@@ -95,72 +217,69 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
   if (!url) return { ok: false, error: "This job has no drawing to read." };
 
   try {
-    // Download + base64 the PDF (robust for public AND future-private buckets).
     const pdfRes = await fetch(url);
     if (!pdfRes.ok) return { ok: false, error: "Could not load the drawing file." };
     const b64 = Buffer.from(await pdfRes.arrayBuffer()).toString("base64");
+    const result = await callVision(b64, apiKey);
+    if ("error" in result) return { ok: false, error: result.error };
+    const rich = result;
 
-    const resp = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: MODEL,
-        max_tokens: 2048,
-        system: SYSTEM_PROMPT,
-        tool_choice: { type: "tool", name: "report_elevator_spec" },
-        tools: [
-          {
-            name: "report_elevator_spec",
-            description: "Report the elevator specification read from the GA drawing.",
-            input_schema: SPEC_SCHEMA,
-          },
-        ],
-        messages: [
-          {
-            role: "user",
-            content: [
-              { type: "document", source: { type: "base64", media_type: "application/pdf", data: b64 } },
-              { type: "text", text: USER_PROMPT },
-            ],
-          },
-        ],
-      }),
-    });
-
-    if (!resp.ok) {
-      const status = resp.status;
-      if (status === 429) return { ok: false, error: "AI is busy — try again in a moment." };
-      if (status === 401) return { ok: false, error: "AI key rejected — check the Anthropic API key." };
-      return { ok: false, error: `AI drawing-reading failed (${status}).` };
-    }
-    const data = (await resp.json()) as {
-      content?: Array<{ type: string; input?: unknown }>;
-      stop_reason?: string;
+    // Discrepancies vs the job's entered spec (first "data disagrees" signal).
+    const discrepancies: Discrepancy[] = [];
+    const cmp = (field: string, drawingVal: string | number | null, enteredVal: string | number | null) => {
+      if (drawingVal == null || enteredVal == null) return;
+      if (String(drawingVal).trim() && String(drawingVal) !== String(enteredVal))
+        discrepancies.push({ field, drawing: String(drawingVal), entered: String(enteredVal), note: "drawing differs from entered value" });
     };
-    const tool = data.content?.find((b) => b.type === "tool_use");
-    if (!tool?.input) {
-      return {
-        ok: false,
-        error:
-          data.stop_reason === "refusal"
-            ? "The model declined to read this drawing."
-            : "Could not extract a spec from this drawing.",
-      };
+    cmp("drive_type", rich.drive_type?.value, job.drive_type as string | null);
+    cmp("floors", rich.floors?.value, job.floors as number | null);
+    cmp("capacity", rich.capacity?.value, job.capacity as string | null);
+
+    const spec = {
+      floors: rich.floors,
+      drive_type: rich.drive_type,
+      capacity: rich.capacity,
+      door_finish: rich.door_finish,
+      brand: rich.brand,
+    };
+
+    // Store (best-effort — must never break the extraction the UI needs).
+    try {
+      const writer = await createClient();
+      await writer.from("job_drawing_extractions").insert({
+        job_id: jobId,
+        drawing_url: url,
+        drawing_filename: (job.gad_drawing_filename as string | null) ?? null,
+        extracted: rich,
+        spec,
+        model: MODEL,
+        schema_version: "rich_v1",
+        discrepancies,
+      });
+    } catch {
+      /* logging the read is best-effort; never block the user */
     }
-    const spec = tool.input as ExtractedSpec;
-    // Range-guard floors (schema can't express numeric bounds).
-    if (
-      spec.floors?.value != null &&
-      (!Number.isInteger(spec.floors.value) || spec.floors.value < 1 || spec.floors.value > 60)
-    ) {
-      spec.floors = { value: null, confidence: "low", rationale: "Out-of-range floor count — verify manually." };
-    }
-    return { ok: true, spec };
+
+    return { ok: true, rich, discrepancies };
   } catch {
     return { ok: false, error: "AI drawing-reading failed unexpectedly." };
   }
+}
+
+/** Backwards-compatible 5-field spec for the autofill form (now rich-backed + stored). */
+export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResult> {
+  const r = await extractDrawingData(jobId);
+  if (!r.ok) return r;
+  const rich = r.rich;
+  return {
+    ok: true,
+    spec: {
+      floors: rich.floors,
+      drive_type: rich.drive_type,
+      capacity: rich.capacity,
+      door_finish: rich.door_finish,
+      brand: rich.brand,
+      notes: rich.notes ?? "",
+    },
+  };
 }
