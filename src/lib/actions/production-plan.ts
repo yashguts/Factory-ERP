@@ -1,7 +1,7 @@
 "use server";
 
 import { unstable_cache } from "next/cache";
-import { getMrpData } from "@/lib/actions/mrp";
+import { _getMrpDataUncached } from "@/lib/actions/mrp";
 import { computeMakePlanCore } from "@/lib/actions/make-plan-core";
 
 /**
@@ -139,7 +139,10 @@ export async function getMakeProductionPlan(
 }
 
 async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []): Promise<MakeProductionPlan> {
-  const mrp = await getMrpData(cutoffDate);
+  // Un-nested read: this fn is wrapped in unstable_cache, and calling the cached
+  // getMrpData here would nest unstable_cache and make the OUTER make-plan cache
+  // degrade to pass-through — re-running the whole optimiser on every request.
+  const mrp = await _getMrpDataUncached(cutoffDate);
   const core = await computeMakePlanCore(excludeCodes, mrp);
   if (core.empty) return empty(cutoffDate ?? null, excludeCodes);
 

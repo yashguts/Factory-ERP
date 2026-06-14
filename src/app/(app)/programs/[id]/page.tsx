@@ -18,21 +18,21 @@ interface Props {
 export default async function ProgramDetailPage({ params }: Props) {
   const { id } = await params;
 
-  const [operation, itemRefs, categories, units] = await Promise.all([
+  // getFamilyOptions() is argument-free, so it joins the first wave instead of
+  // paying a second serial cross-region hop. Only getFamilyVariants genuinely
+  // depends on the loaded operation's family_key.
+  const [operation, itemRefs, categories, units, familyOptions] = await Promise.all([
     getOperationDetail(id),
     getItemRefs(),
     getCategories(),
     getUnits(),
+    getFamilyOptions(),
   ]);
 
   if (!operation) notFound();
 
-  // Sibling material/finish variants (same family) for the variant switcher,
-  // plus all families for the edit/clone form's family-autocomplete.
-  const [variants, familyOptions] = await Promise.all([
-    getFamilyVariants(operation.family_key),
-    getFamilyOptions(),
-  ]);
+  // Sibling material/finish variants (same family) for the variant switcher.
+  const variants = await getFamilyVariants(operation.family_key);
 
   return (
     <ProgramDetailClient

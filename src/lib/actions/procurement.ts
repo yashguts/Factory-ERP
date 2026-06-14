@@ -1,7 +1,8 @@
 "use server";
 
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { createCacheClient } from "@/lib/supabase/cache-client";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { getMrpData } from "@/lib/actions/mrp";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
@@ -43,7 +44,14 @@ function msg(e: unknown, fallback: string): string {
 // ── Reads ──────────────────────────────────────────────────────────────────
 
 export async function getPurchaseOrders(): Promise<PoListRow[]> {
-  const supabase = await createClient();
+  return unstable_cache(_getPurchaseOrdersUncached, ["purchase-orders"], {
+    revalidate: 120,
+    tags: ["purchase-orders"],
+  })();
+}
+
+async function _getPurchaseOrdersUncached(): Promise<PoListRow[]> {
+  const supabase = createCacheClient();
   // Paged: a single supabase-js select caps at 1000 rows, and the lines table
   // can exceed that across many POs — un-ranged reads would silently
   // under-report every list aggregate (the documented PostgREST cap gotcha).
@@ -90,7 +98,16 @@ export async function getPurchaseOrders(): Promise<PoListRow[]> {
 export async function getPurchaseOrder(
   id: string,
 ): Promise<{ po: PurchaseOrder; lines: PoLineDetail[] } | null> {
-  const supabase = await createClient();
+  return unstable_cache(_getPurchaseOrderUncached, ["purchase-order", id], {
+    revalidate: 120,
+    tags: ["purchase-orders"],
+  })(id);
+}
+
+async function _getPurchaseOrderUncached(
+  id: string,
+): Promise<{ po: PurchaseOrder; lines: PoLineDetail[] } | null> {
+  const supabase = createCacheClient();
   const { data: po, error } = await supabase
     .from("purchase_orders")
     .select("*")
@@ -215,6 +232,7 @@ export async function generateDraftPosFromShortfall(
       lineCount += lines.length;
     }
 
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     return { ok: true, orders, lines: lineCount, skipped };
   } catch (e) {
@@ -235,6 +253,7 @@ export async function updatePurchaseOrder(
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw error;
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${id}`);
     return { ok: true };
@@ -252,6 +271,7 @@ export async function updatePoLine(
     const supabase = await createClient();
     const { error } = await supabase.from("purchase_order_lines").update(patch).eq("id", id);
     if (error) throw error;
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${poId}`);
     return { ok: true };
@@ -265,6 +285,7 @@ export async function deletePoLine(id: string, poId: string): Promise<SaveResult
     const supabase = await createClient();
     const { error } = await supabase.from("purchase_order_lines").delete().eq("id", id);
     if (error) throw error;
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${poId}`);
     return { ok: true };
@@ -278,6 +299,7 @@ export async function deletePurchaseOrder(id: string): Promise<SaveResult> {
     const supabase = await createClient();
     const { error } = await supabase.from("purchase_orders").delete().eq("id", id);
     if (error) throw error;
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     return { ok: true };
   } catch (e) {
@@ -329,6 +351,7 @@ export async function receivePurchaseOrder(
       .eq("id", id);
     if (sErr) throw sErr;
 
+    revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${id}`);
     return { ok: true, posted };
