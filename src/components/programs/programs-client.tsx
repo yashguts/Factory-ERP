@@ -598,7 +598,7 @@ export function ProgramsClient({
         }
       />
 
-      <Toolbar>
+      <Toolbar className="mb-2">
         <div className="relative max-w-sm flex-1 min-w-[220px]">
           <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
           <Input
@@ -666,7 +666,7 @@ export function ProgramsClient({
       )}
 
       <div className="card-surface overflow-hidden">
-        <Table density="compact">
+        <Table density="dense">
           <TableHeader sticky>
             <TableRow>
               <TableHead className="w-10 text-center" title="Audited">✓</TableHead>
@@ -776,7 +776,7 @@ function FilterChip({
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md text-sm border cursor-pointer transition-colors",
+        "inline-flex items-center gap-1.5 px-2 h-7 rounded-md text-[13px] border cursor-pointer transition-colors",
         active
           ? activeClass
           : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]",
