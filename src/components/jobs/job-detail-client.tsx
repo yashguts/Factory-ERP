@@ -79,13 +79,15 @@ interface Props {
   bomHeaderId: string | null;
   bomSectionLines: BomSectionLine[];
   dispatch: JobDispatchSummary;
+  /** On-hand stock per item id, scoped to this job's BOM. */
+  stockByItem: Record<string, number>;
 }
 
 type SortKey = "code" | "name" | "category" | "required" | "dispatched";
 type SortDir = "asc" | "desc";
 type ViewTab = "sections" | "items";
 
-export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch }: Props) {
+export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch, stockByItem }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const [showDispatch, setShowDispatch] = useState(false);
@@ -250,6 +252,30 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     }
     return { req, disp, pct: req > 0 ? Math.round((disp / req) * 100) : 0 };
   }, [itemBomLines, dispByLine]);
+
+  // Stock readiness per dispatch phase: of the material still to ship
+  // (required − dispatched), how much is NOT coverable from current on-hand
+  // stock. Stock is a global balance, not reserved per job, so this is "in
+  // stock now", optimistic when jobs compete for the same item.
+  const readiness = useMemo(() => {
+    const phases = {
+      first: { lines: 0, short: 0, shortUnits: 0 },
+      second: { lines: 0, short: 0, shortUnits: 0 },
+    };
+    for (const l of itemBomLines) {
+      const remaining = Math.max(0, Number(l.required_quantity) - (dispByLine.get(l.id) ?? 0));
+      if (remaining <= 0) continue;
+      const have = stockByItem[l.item_id ?? ""] ?? 0;
+      const short = Math.max(0, remaining - have);
+      const ph = dispatchPhaseOf(l.category ?? "") === "first" ? "first" : "second";
+      phases[ph].lines += 1;
+      if (short > 0) {
+        phases[ph].short += 1;
+        phases[ph].shortUnits += short;
+      }
+    }
+    return phases;
+  }, [itemBomLines, dispByLine, stockByItem]);
 
   const filteredBom = useMemo(() => {
     // Multi-token fuzzy match across code / name / category.
@@ -434,6 +460,26 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         </div>
       )}
 
+      {/* Stock readiness — can the remaining material ship from current stock? */}
+      {hasItemBom && (readiness.first.lines > 0 || readiness.second.lines > 0) && (
+        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
+          <span className="text-[var(--muted-foreground)]">Stock readiness:</span>
+          {(["first", "second"] as const).map((ph) => {
+            const r = readiness[ph];
+            if (r.lines === 0) return null;
+            const label = ph === "first" ? "1st phase" : "2nd phase";
+            return r.short === 0 ? (
+              <Badge key={ph} variant="green">{label}: ready ({r.lines})</Badge>
+            ) : (
+              <Badge key={ph} variant="amber">
+                {label}: {r.short} short · {r.shortUnits.toLocaleString()} units
+              </Badge>
+            );
+          })}
+          <span className="text-[11px] text-[var(--muted-foreground)]">in stock now, not reserved</span>
+        </div>
+      )}
+
       {/* Metadata Grid — core fields always; legacy columns only when set,
           so existing-job data is still shown but blank columns don't clutter. */}
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4 p-3 card-surface">
@@ -608,13 +654,17 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                     <SortHeader label="Category" sortField="category" />
                     <SortHeader label="Required" sortField="required" />
                     <SortHeader label="Dispatched" sortField="dispatched" />
-                    <TableHead>Remaining</TableHead>
+                    <TableHead className="text-right">Remaining</TableHead>
+                    <TableHead className="text-right">In stock</TableHead>
+                    <TableHead className="text-right">Short</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {sortedBom.map((line) => {
                     const dispatched = dispByLine.get(line.id) ?? 0;
                     const remaining = line.required_quantity - dispatched;
+                    const stock = stockByItem[line.item_id ?? ""] ?? 0;
+                    const short = Math.max(0, remaining - stock);
                     return (
                       <TableRow key={line.id}>
                         <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
@@ -638,6 +688,16 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                           <span className={remaining > 0 ? "text-[var(--warning)]" : "text-[var(--success)]"}>
                             {remaining > 0 ? remaining.toLocaleString() : "Done"}
                           </span>
+                        </TableCell>
+                        <TableCell className="text-right text-[var(--muted-foreground)]">
+                          {stock.toLocaleString()}
+                        </TableCell>
+                        <TableCell className="text-right font-medium">
+                          {short > 0 ? (
+                            <span className="text-[var(--destructive)]">{short.toLocaleString()}</span>
+                          ) : (
+                            <span className="text-[var(--success)]">—</span>
+                          )}
                         </TableCell>
                       </TableRow>
                     );

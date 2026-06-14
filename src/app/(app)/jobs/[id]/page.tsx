@@ -1,5 +1,6 @@
 import { getJobDetail, getJobBomSections } from "@/lib/actions/jobs";
 import { getJobDispatchSummary } from "@/lib/actions/dispatch";
+import { getStockForItems } from "@/lib/actions/inventory";
 import { JobDetailClient } from "@/components/jobs/job-detail-client";
 
 interface Props {
@@ -17,6 +18,11 @@ export default async function JobDetailPage({ params }: Props) {
       getJobDispatchSummary(id),
     ]);
 
+  // Scoped on-hand stock for THIS job's BOM items (drives the readiness view).
+  const stockByItem = await getStockForItems(
+    bomLines.map((l) => l.item_id).filter((x): x is string => !!x),
+  );
+
   return (
     <JobDetailClient
       job={job}
@@ -24,6 +30,7 @@ export default async function JobDetailPage({ params }: Props) {
       bomHeaderId={bomHeaderId}
       bomSectionLines={bomSections}
       dispatch={dispatch}
+      stockByItem={stockByItem}
     />
   );
 }

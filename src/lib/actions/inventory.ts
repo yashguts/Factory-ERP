@@ -1233,3 +1233,29 @@ export async function getRecentTransactions(limit = 20) {
   if (error) throw error;
   return data ?? [];
 }
+
+/**
+ * Total on-hand stock per item across warehouses, SCOPED to the given item ids.
+ * Safe to call on a detail page (small, chunked, paged) — deliberately NOT the
+ * 2MB getItemsWithStock payload. Returns a plain { item_id: qty } map.
+ */
+export async function getStockForItems(itemIds: string[]): Promise<Record<string, number>> {
+  const ids = Array.from(new Set(itemIds.filter(Boolean)));
+  if (ids.length === 0) return {};
+  const supabase = createCacheClient();
+  const out: Record<string, number> = {};
+  const CHUNK = 200;
+  for (let i = 0; i < ids.length; i += CHUNK) {
+    const slice = ids.slice(i, i + CHUNK);
+    const rows = await fetchAllRanged<{ item_id: string; quantity: number }>(
+      (from, to, withCount) =>
+        supabase
+          .from("inventory")
+          .select("item_id, quantity", withCount ? { count: "exact" } : {})
+          .in("item_id", slice)
+          .range(from, to),
+    );
+    for (const r of rows) out[r.item_id] = (out[r.item_id] ?? 0) + (Number(r.quantity) || 0);
+  }
+  return out;
+}
