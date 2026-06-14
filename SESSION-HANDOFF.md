@@ -1,8 +1,88 @@
-# Session Handoff — 2026-06-11
+# Session Handoff — 2026-06-14
 
-> For the next Claude session. Read `CLAUDE.md` first (deep technical reference);
-> this file is the *what-just-happened and what's-open* picture. The previous
-> session ran ~24h (overnight UX overhaul + a day of owner-driven iteration).
+> For the next Claude session. Read **CLAUDE.md** (deep technical reference) and
+> **AI-JOB-BUILDER-PROGRAM.md** (the AI Job Builder SSOT) first; this file is the
+> *what-just-happened + what's-open* picture. Earlier handoffs (06-11 → 06-13) are
+> preserved below — still-valid context.
+
+## This session — all SHIPPED, LIVE on main, verified
+
+1. **Weekly MRP plan** (`/mrp/weekly`) — the headline. MRP broken into an Overdue
+   lane + the next 8 Monday-start weeks, sub-tabs **Make / Trade / Programs to run /
+   Buy list**, mirroring the Job Orders Dispatch Plan board. **The owner's rule,
+   honoured:** never optimise each week separately (it over-provisions) — the
+   owner-tuned sheet-minimiser runs ONCE on the full 8-week demand, then those
+   globally-minimal runs are ALLOCATED to weeks by deadline (Σ weekly runs === the
+   one optimum, zero over-provisioning; proven on-screen + by the verifier). One
+   optimiser pass + in-memory bucketing → no slowdown.
+   - NEW `src/lib/actions/make-plan-core.ts` — the optimiser core + reusable
+     `explodeToLeaves`, EXTRACTED from production-plan.ts so make-plan AND weekly
+     drive the EXACT same selection (make-plan output byte-identical post-extraction,
+     verified by a before/after diff). **Don't duplicate the optimiser — extend the core.**
+   - NEW `src/lib/actions/mrp-weekly.ts` (`getWeeklyMrpPlan`, `loadWeeklyDemand`, the
+     run allocator). NEW `weekly-board.tsx` + `weekly-mrp-client.tsx`; `/mrp/weekly`
+     route + loading skeleton; "Weekly plan" added to `mrp-toolbar.tsx`. Existing MRP
+     views untouched. `mrp.ts` exports `_getMrpDataUncached` (for the verifier).
+   - Scope = strictly 8 weeks (jobs due later / no date excluded → muted count).
+     Buy list = raw SHEETS for the programs (trade-leaves-under-make deferred —
+     sub-assemblies are sparse). Memory: `project_weekly_mrp.md`.
+
+2. **AI Job Builder — Pass 2** (predictor accuracy). Encoded the SAFE deterministic
+   quantity rules into `predict-core.ts` (`deterministicQty`), ONE at a time,
+   backtest-gated: **KEPT** A limit-switch set = 6 (fixed a floor-scaling bug), B
+   landing-side = L, C1 sill-angle = L, D the 7 always-1 car/machine sections.
+   **REJECTED** C2 aluminium-sill = L+1 (regressed — stored sill too noisy; comment
+   in code says don't re-try). E never-present-suppression unnecessary. Keep-rate
+   71.7→72.0, qty±10% 85.5→85.9, no drive regressed. AI-JOB-BUILDER-PROGRAM.md updated
+   with the PASS 2 record; **next lever = NAME COMPOSITION** (attacks item-hit 84%,
+   the bigger ceiling). Corpus survey: every drawing already read — under-covered
+   types (HYD n=2) are data-limited, not reading-limited.
+
+3. **AI Auto-Fill robustness.** (a) A real crash on job 4938 — vision *succeeded* but
+   the flow hit the route error boundary ("Something went wrong"); wrapped
+   `autofillFromDrawing` (returns the message), caught in `runAutofill` (toast), and
+   guarded `ConfidenceBadge` — can never blank-crash again. (b) Slow *merged multi-sheet*
+   PDF reads were 502-ing (serverless function timeout) — bounded the vision fetch with
+   a 22 s AbortController (`VISION_TIMEOUT_MS` in spec-vision.ts); a slow read falls back
+   to the typed-spec BOM + a review-modal note. **Proper fix if slow reads recur = move
+   the drawing-read to a Netlify BACKGROUND function (15-min limit) + client poll** —
+   deferred. `ANTHROPIC_API_KEY` is live; vision works.
+
+4. **Job Orders "Fully Dispatched" tab.** A job leaves "Active" only when every BOM
+   line is fully dispatched (`getJobsDispatchStatus === "full"`). URL-backed tabs.
+
+5. **Dispatch-status accuracy fix.** `getJobsDispatchStatus` read `job_bom_lines` /
+   `job_dispatch_lines` WITHOUT pagination → over the 1000-row PostgREST cap → some jobs
+   mis-flagged "Fully Dispatched" (non-deterministically). Now pages via `fetchAllRanged`
+   + stable `.order("id")`. Verified: 16 truly-full jobs, deterministic.
+
+## Open items from this session (next-session candidates)
+- **Weekly MRP polish** (likely after the owner uses it): a cumulative-by-week toggle
+  vs the current incremental "+N (cum M)"; group programs by machine; a "Don't run"
+  exclude on the weekly board (the `?exclude=` plumbing is already wired through to the
+  optimiser); buy list could add trade-leaves-under-make if sub-assemblies grow.
+- **AI predictor — name composition** (AI-JOB-BUILDER-PROGRAM.md checklist #1): compose
+  the right SKU name from spec + resolve to an item_id when no neighbour carries it.
+  Highest remaining accuracy lever; needs an item-resolution step + a smarter backtest.
+- **AI re-derivation drift-flag** (offered, not built): a cheap nightly check that pings
+  when ~15–20 new audited jobs accumulate → prompt a manual rule-encoding pass. Do NOT
+  auto-cron the re-derivation itself (overfits on small data).
+
+## Verify / continue
+- `npx tsc --noEmit` (clean) · `npm run build` (passes).
+- `npx tsx scripts/verify-weekly-mrp.ts` (weekly engine — all green) ·
+  `npx tsx scripts/backtest-bom-predict.ts` (predictor — 72.0% keep-rate).
+- `unstable_cache` can't run under tsx (needs Next's incremental cache) — inject
+  uncached MRP (`_getMrpDataUncached`) into `computeMakePlanCore`, or capture make-plan
+  baselines via a temporary uncached `/api/...` route on the dev server.
+- OneDrive makes local dev/preview flaky (constant Fast-Refresh churn resets client
+  state mid-test) — verify on the LIVE deploy.
+
+---
+
+# (Earlier) Session Handoff — 2026-06-11 → 06-13
+
+> Still-valid context from prior sessions.
 
 ## State: everything below is SHIPPED, LIVE and verified on main
 
