@@ -149,6 +149,7 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
               <Table density="dense">
                 <TableHeader sticky>
                   <TableRow>
+                    <TableHead>PO #</TableHead>
                     <TableHead>Supplier</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Items</TableHead>
@@ -161,6 +162,7 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                 <TableBody>
                   {filteredOrders.map((o) => (
                     <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
+                      <TableCell className="font-mono text-xs">{o.note || "—"}</TableCell>
                       <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
                       <TableCell><Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge></TableCell>
                       <TableCell className="text-right">

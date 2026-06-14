@@ -143,7 +143,7 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
             <Badge variant={STATUS_BADGE[po.status]}>{STATUS_LABEL[po.status]}</Badge>
           </span>
         }
-        subtitle={`Purchase order · created ${new Date(po.created_at).toLocaleDateString("en-IN")}`}
+        subtitle={`${po.note ? `${po.note} · ` : ""}Purchase order · created ${new Date(po.created_at).toLocaleDateString("en-IN")}`}
         actions={
           <>
             {!received && (
