@@ -8,7 +8,10 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { ArrowLeft, Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck } from "lucide-react";
+import { PageHeader } from "@/components/ui/page-header";
+import { Tabs } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob } from "@/lib/actions/jobs";
@@ -117,8 +120,6 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   // Split-screen with the GAD drawing on the right. Auto-on if a
   // drawing is already attached so the user sees it immediately.
   const [splitView, setSplitView] = useState<boolean>(!!job.gad_drawing_url);
-
-  const pct = Math.round((job.progress ?? 0) * 100);
 
   const handleStatusChange = (newStatus: JobStatus) => {
     startTransition(async () => {
@@ -235,6 +236,21 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     [bomLines],
   );
 
+  // Real "shipped %" from recorded dispatches. job.progress is a dead legacy
+  // field (~0 on every job), so we compute completion from the dispatch
+  // summary instead: Σ dispatched (capped per line so over-dispatch can't
+  // exceed 100%) / Σ required across the item BOM.
+  const shipped = useMemo(() => {
+    let req = 0;
+    let disp = 0;
+    for (const l of itemBomLines) {
+      const r = Number(l.required_quantity) || 0;
+      req += r;
+      disp += Math.min(dispByLine.get(l.id) ?? 0, r);
+    }
+    return { req, disp, pct: req > 0 ? Math.round((disp / req) * 100) : 0 };
+  }, [itemBomLines, dispByLine]);
+
   const filteredBom = useMemo(() => {
     // Multi-token fuzzy match across code / name / category.
     const tokens = bomSearch
@@ -309,29 +325,22 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
 
   return (
     <div>
-      {/* Back + Header */}
-      <div className="mb-6">
-        <button
-          onClick={() =>
-            window.history.length > 1 ? router.back() : router.push("/jobs")
-          }
-          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3 cursor-pointer"
-        >
-          <ArrowLeft size={14} /> Back to Jobs
-        </button>
-        <div className="flex items-start justify-between">
-          <div>
-            <div className="flex items-center gap-3">
-              <h1 className="text-2xl font-bold tracking-tight">Job {job.job_number}</h1>
-              <Badge variant={STATUS_BADGE[job.status]}>
-                {STATUS_LABELS[job.status]}
-              </Badge>
-            </div>
-            <p className="text-sm text-[var(--muted-foreground)] mt-1">
-              {job.customer_name || "No customer"}{job.brand ? ` — ${job.brand}` : ""}
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
+      {/* Header */}
+      <PageHeader
+        onBack={() =>
+          window.history.length > 1 ? router.back() : router.push("/jobs")
+        }
+        title={
+          <span className="flex items-center gap-2">
+            Job {job.job_number}
+            <Badge variant={STATUS_BADGE[job.status]}>
+              {STATUS_LABELS[job.status]}
+            </Badge>
+          </span>
+        }
+        subtitle={`${job.customer_name || "No customer"}${job.brand ? ` — ${job.brand}` : ""}`}
+        actions={
+          <>
             <Button
               size="sm"
               onClick={() => setShowDispatch(true)}
@@ -361,33 +370,35 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               <Pencil className="h-4 w-4 mr-1" />
               Edit BOM
             </Button>
-            <Button
-              variant="destructive"
-              size="sm"
-              onClick={handleDelete}
-              disabled={isPending}
-              title="Delete this job permanently"
-            >
-              {isPending ? (
-                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4 mr-1" />
-              )}
-              Delete
-            </Button>
             <Select
               value={job.status}
               onChange={(e) => handleStatusChange(e.target.value as JobStatus)}
-              className="w-[160px]"
+              size="sm"
+              className="w-[150px]"
               disabled={isPending}
             >
               {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
                 <option key={s} value={s}>{STATUS_LABELS[s]}</option>
               ))}
             </Select>
-          </div>
-        </div>
-      </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleDelete}
+              disabled={isPending}
+              aria-label="Delete job"
+              title="Delete this job permanently"
+              className="text-[var(--destructive)] hover:bg-[var(--destructive-bg)]"
+            >
+              {isPending ? (
+                <Loader2 className="h-4 w-4 animate-spin" />
+              ) : (
+                <Trash2 className="h-4 w-4" />
+              )}
+            </Button>
+          </>
+        }
+      />
 
       {/* Split layout: when on, the detail body scrolls on the left and
           the GAD drawing on the right (each independently). */}
@@ -400,61 +411,67 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       >
         <div className={splitView ? "overflow-y-auto pr-2" : "contents"}>
 
-      {/* Progress Bar */}
-      <div className="mb-6 p-4 card-surface">
-        <div className="flex items-center justify-between mb-2">
-          <span className="text-sm font-medium">Progress</span>
-          <span className="text-sm text-[var(--muted-foreground)]">{pct}%</span>
+      {/* Dispatched progress — real shipped % from recorded dispatches */}
+      {hasItemBom && (
+        <div className="mb-4 p-3 card-surface">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium">Dispatched</span>
+            <span className="text-sm text-[var(--muted-foreground)]">
+              {shipped.pct}%
+              <span className="mx-1.5 text-[var(--border-strong)]">·</span>
+              {shipped.disp.toLocaleString()} of {shipped.req.toLocaleString()} units
+            </span>
+          </div>
+          <div className="w-full h-2.5 bg-[var(--muted)] rounded-full overflow-hidden">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{
+                width: `${shipped.pct}%`,
+                backgroundColor: shipped.pct >= 100 ? "var(--success)" : "var(--primary)",
+              }}
+            />
+          </div>
         </div>
-        <div className="w-full h-3 bg-[var(--muted)] rounded-full overflow-hidden">
-          <div
-            className="h-full rounded-full transition-all"
-            style={{
-              width: `${pct}%`,
-              backgroundColor: pct === 100 ? "var(--success, #22c55e)" : "var(--primary)",
-            }}
-          />
-        </div>
-      </div>
+      )}
 
-      {/* Metadata Grid */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6 p-4 card-surface">
+      {/* Metadata Grid — core fields always; legacy columns only when set,
+          so existing-job data is still shown but blank columns don't clutter. */}
+      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4 p-3 card-surface">
         <MetaItem label="Spec" value={job.spec_string} />
         <MetaItem label="Stops" value={job.floors?.toString()} />
-        <MetaItem label="Door Type" value={job.door_type} />
         <MetaItem label="Drive Type" value={job.drive_type} />
         <MetaItem label="Capacity" value={job.capacity} />
         <MetaItem label="Structure" value={job.structure_included} />
-        <MetaItem label="Door Finish" value={job.door_finish} />
         <MetaItem label="Location" value={job.location} />
         <MetaItem label="Mobile" value={job.mobile_number} />
-        <MetaItem label="Brand" value={job.brand} />
+        <MetaItem label="Sent" value={STAGE_LABELS[job.stage ?? "new"]} />
         <MetaItem
-          label="Order Date"
-          value={job.order_date ? new Date(job.order_date).toLocaleDateString("en-IN") : null}
+          label="Required"
+          value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null}
         />
         <MetaItem
-          label="Expected Delivery"
-          value={job.expected_delivery ? new Date(job.expected_delivery).toLocaleDateString("en-IN") : null}
-        />
-        <MetaItem
-          label="Planned Start"
-          value={job.planned_start ? new Date(job.planned_start).toLocaleDateString("en-IN") : null}
-        />
-        <MetaItem
-          label="Planned End"
-          value={job.planned_end ? new Date(job.planned_end).toLocaleDateString("en-IN") : null}
-        />
-        <MetaItem label="Sent (dispatched)" value={STAGE_LABELS[job.stage ?? "new"]} />
-        <MetaItem label="Required" value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null} />
-        <MetaItem
-          label="Req. Dispatch Date"
+          label="Req. Dispatch"
           value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}
         />
+        {job.door_type && <MetaItem label="Door Type" value={job.door_type} />}
+        {job.door_finish && <MetaItem label="Door Finish" value={job.door_finish} />}
+        {job.brand && <MetaItem label="Brand" value={job.brand} />}
+        {job.order_date && (
+          <MetaItem label="Order Date" value={new Date(job.order_date).toLocaleDateString("en-IN")} />
+        )}
+        {job.expected_delivery && (
+          <MetaItem label="Expected Delivery" value={new Date(job.expected_delivery).toLocaleDateString("en-IN")} />
+        )}
+        {job.planned_start && (
+          <MetaItem label="Planned Start" value={new Date(job.planned_start).toLocaleDateString("en-IN")} />
+        )}
+        {job.planned_end && (
+          <MetaItem label="Planned End" value={new Date(job.planned_end).toLocaleDateString("en-IN")} />
+        )}
       </div>
 
       {job.remark && (
-        <div className="mb-6 p-4 card-surface">
+        <div className="mb-4 p-3 card-surface">
           <h3 className="text-sm font-medium mb-1">Remark</h3>
           <p className="text-sm text-[var(--muted-foreground)]">{job.remark}</p>
         </div>
@@ -477,38 +494,26 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
 
       {/* BOM Section */}
       <div>
-        <div className="flex items-center justify-between mb-4">
-          <div>
-            <h2 className="text-lg font-semibold">Bill of Materials</h2>
+        <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
+          <div className="flex items-center gap-3">
+            <h2 className="text-base font-semibold">Bill of Materials</h2>
             {(hasSectionBom && hasItemBom) && (
-              <div className="flex gap-1 mt-2">
-                <button
-                  className={`px-3 py-1 text-sm rounded-md transition-colors cursor-pointer ${
-                    viewTab === "sections"
-                      ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  }`}
-                  onClick={() => setViewTab("sections")}
-                >
-                  By Section ({bomSectionLines.length})
-                </button>
-                <button
-                  className={`px-3 py-1 text-sm rounded-md transition-colors cursor-pointer ${
-                    viewTab === "items"
-                      ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                      : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-                  }`}
-                  onClick={() => setViewTab("items")}
-                >
-                  By Item ({itemBomLines.length})
-                </button>
-              </div>
+              <Tabs
+                variant="segmented"
+                value={viewTab}
+                onChange={(v) => setViewTab(v as ViewTab)}
+                tabs={[
+                  { value: "sections", label: "By Section", count: bomSectionLines.length },
+                  { value: "items", label: "By Item", count: itemBomLines.length },
+                ]}
+              />
             )}
           </div>
           {viewTab === "items" && hasItemBom && (
             <div className="relative w-64">
-              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] z-10" />
               <Input
+                size="sm"
                 placeholder="Search BOM items..."
                 value={bomSearch}
                 onChange={(e) => setBomSearch(e.target.value)}
@@ -521,7 +526,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         {/* Section View */}
         {viewTab === "sections" && (
           hasSectionBom ? (
-            <div className="space-y-6">
+            <div className="space-y-4">
               {sectionData.map((phase) => (
                 <div key={phase.phase}>
                   <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
@@ -531,20 +536,16 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                     {phase.sections.map((sec) => (
                       <div
                         key={sec.category}
-                        className="card-surface p-4"
+                        className="card-surface p-3"
                       >
                         <h4 className="font-medium text-sm mb-2 flex items-center gap-2 flex-wrap">
                           {sec.category}
-                          <span
-                            className={`text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border ${
-                              dispatchPhaseOf(sec.category) === "first"
-                                ? "text-blue-700 bg-blue-50 border-blue-200"
-                                : "text-[var(--muted-foreground)] bg-[var(--muted)] border-[var(--border)]"
-                            }`}
+                          <Badge
+                            variant={dispatchPhaseOf(sec.category) === "first" ? "blue" : "neutral"}
                             title="Dispatch phase"
                           >
                             {dispatchPhaseOf(sec.category) === "first" ? "1st phase" : "2nd phase"}
-                          </span>
+                          </Badge>
                           {(() => {
                             const st = sectionStat.get(sec.category);
                             return st ? (
@@ -576,17 +577,21 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               ))}
             </div>
           ) : (
-            <div className="card-surface p-8 text-center">
-              <p className="text-[var(--muted-foreground)] mb-3">
-                No section-based BOM data yet.
-              </p>
-              <Button
-                variant="secondary"
-                onClick={() => router.push(`/jobs/${job.id}/edit`)}
-              >
-                <Pencil className="h-4 w-4 mr-1" />
-                Add BOM Data
-              </Button>
+            <div className="card-surface">
+              <EmptyState
+                icon={<Pencil size={26} />}
+                title="No section-based BOM data yet"
+                action={
+                  <Button
+                    size="sm"
+                    variant="secondary"
+                    onClick={() => router.push(`/jobs/${job.id}/edit`)}
+                  >
+                    <Pencil className="h-4 w-4 mr-1" />
+                    Add BOM Data
+                  </Button>
+                }
+              />
             </div>
           )
         )}
@@ -595,8 +600,8 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         {viewTab === "items" && (
           hasItemBom ? (
             <div className="card-surface overflow-hidden">
-              <Table>
-                <TableHeader>
+              <Table density="compact">
+                <TableHeader sticky>
                   <TableRow>
                     <SortHeader label="Code" sortField="code" />
                     <SortHeader label="Item" sortField="name" />
@@ -613,27 +618,24 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                     return (
                       <TableRow key={line.id}>
                         <TableCell className="font-mono text-xs">{line.item?.code ?? "-"}</TableCell>
-                        <TableCell className="font-medium text-sm">
+                        <TableCell className="font-medium">
                           <span className="inline-flex items-center gap-2 flex-wrap">
                             {line.item?.name ?? "-"}
                             {dispatchPhaseOf(line.category ?? "") === "first" && (
-                              <span
-                                className="text-[10px] font-medium uppercase tracking-wide rounded-full px-1.5 py-0.5 border text-blue-700 bg-blue-50 border-blue-200"
-                                title="First-phase dispatch item"
-                              >
+                              <Badge variant="blue" title="First-phase dispatch item">
                                 1st phase
-                              </span>
+                              </Badge>
                             )}
                           </span>
                         </TableCell>
-                        <TableCell className="text-sm">{line.item?.category?.name ?? "-"}</TableCell>
+                        <TableCell>{line.item?.category?.name ?? "-"}</TableCell>
                         <TableCell className="text-right font-medium">
                           {Number(line.required_quantity).toLocaleString()}{" "}
                           <span className="text-xs text-[var(--muted-foreground)]">{line.item?.uom?.abbreviation}</span>
                         </TableCell>
-                        <TableCell className="text-right text-sm">{dispatched.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{dispatched.toLocaleString()}</TableCell>
                         <TableCell className="text-right font-medium">
-                          <span className={remaining > 0 ? "text-amber-600" : "text-green-600"}>
+                          <span className={remaining > 0 ? "text-[var(--warning)]" : "text-[var(--success)]"}>
                             {remaining > 0 ? remaining.toLocaleString() : "Done"}
                           </span>
                         </TableCell>
@@ -644,10 +646,11 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               </Table>
             </div>
           ) : (
-            <div className="card-surface p-8 text-center">
-              <p className="text-[var(--muted-foreground)]">
-                No item-based BOM data. Import from Excel to populate.
-              </p>
+            <div className="card-surface">
+              <EmptyState
+                title="No item-based BOM data"
+                description="Import from Excel to populate."
+              />
             </div>
           )
         )}

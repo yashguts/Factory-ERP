@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import {
   Truck,
   Trash2,
@@ -45,9 +46,9 @@ function PhaseStatus({ name, stat }: { name: string; stat: DispatchStat | null }
               width: `${stat.total ? (stat.done / stat.total) * 100 : 0}%`,
               backgroundColor:
                 stat.tone === "done"
-                  ? "#16a34a"
+                  ? "var(--success)"
                   : stat.tone === "partial"
-                    ? "#d97706"
+                    ? "var(--warning)"
                     : "var(--muted-foreground)",
             }}
           />
@@ -111,7 +112,7 @@ export function DispatchPanel({
   };
 
   return (
-    <div className="card-surface p-4 mb-6">
+    <div className="card-surface p-3 mb-4">
       <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
         <div className="flex items-center gap-4 flex-wrap">
           <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
@@ -128,7 +129,7 @@ export function DispatchPanel({
       {/* Remaining to dispatch — what still needs to be sent, with quantities */}
       {hasBom &&
         (pending.length === 0 ? (
-          <p className="text-sm font-medium text-green-600 mb-3">
+          <p className="text-sm font-medium text-[var(--success)] mb-3">
             All materials dispatched ✓
           </p>
         ) : (
@@ -143,7 +144,7 @@ export function DispatchPanel({
               ) : (
                 <ChevronRight className="h-3.5 w-3.5" />
               )}
-              <span className="text-amber-600">
+              <span className="text-[var(--warning)]">
                 Remaining to dispatch — {pending.length} item
                 {pending.length === 1 ? "" : "s"}
               </span>
@@ -182,7 +183,7 @@ export function DispatchPanel({
                               )}
                             </span>
                             <span className="whitespace-nowrap text-right">
-                              <span className="font-medium text-amber-600">
+                              <span className="font-medium text-[var(--warning)]">
                                 {l.remaining.toLocaleString()}
                                 {l.uom ? ` ${l.uom}` : ""} remaining
                               </span>
@@ -230,9 +231,9 @@ export function DispatchPanel({
                       year: "numeric",
                     })}
                   </button>
-                  <span className="text-[10px] uppercase tracking-wide rounded-full px-1.5 py-0.5 border border-[var(--border)] bg-[var(--muted)] text-[var(--muted-foreground)]">
+                  <Badge variant="neutral" className="text-[10px] uppercase tracking-wide px-1.5 py-0.5">
                     {SCOPE_LABEL[d.phase_scope]}
-                  </span>
+                  </Badge>
                   <span className="text-xs text-[var(--muted-foreground)]">
                     {d.lines.length} item{d.lines.length === 1 ? "" : "s"} ·{" "}
                     {total.toLocaleString()} qty
@@ -247,7 +248,7 @@ export function DispatchPanel({
                     onClick={() => onDelete(d.id)}
                     disabled={busy === d.id || isPending}
                     title="Undo this dispatch"
-                    className="ml-auto p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer"
+                    className="ml-auto p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
                   >
                     {busy === d.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -273,7 +274,7 @@ export function DispatchPanel({
                             </span>
                           )}
                           {l.adhoc && (
-                            <span className="ml-2 text-[10px] text-amber-600">ad-hoc</span>
+                            <span className="ml-2 text-[10px] text-[var(--warning)]">ad-hoc</span>
                           )}
                         </span>
                         <span className="font-medium whitespace-nowrap">

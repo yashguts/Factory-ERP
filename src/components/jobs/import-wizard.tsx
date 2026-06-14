@@ -5,11 +5,13 @@ import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Upload, ArrowLeft, Check, X, Search, AlertTriangle } from "lucide-react";
+import { Upload, Check, Search, AlertTriangle } from "lucide-react";
 import { resolveColumnMapping, saveColumnMapping, validateJobImport, executeJobImport } from "@/lib/actions/jobs-import";
 import { parseJobRow, parseHeaderRow, parseBomQuantities } from "@/lib/import/parse-target-list";
 import type { ColumnMatchResult, ParsedJobRow, JobImportResult } from "@/lib/import/types";
@@ -251,21 +253,14 @@ export function ImportWizard() {
   return (
     <div>
       {/* Header */}
-      <div className="mb-6">
-        <button
-          onClick={() => router.push("/jobs")}
-          className="inline-flex items-center gap-1 text-sm text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-3 cursor-pointer"
-        >
-          <ArrowLeft size={14} /> Back to Jobs
-        </button>
-        <h1 className="text-2xl font-bold">Import Jobs from Excel</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Upload your Target List Excel to import job orders and BOM requirements
-        </p>
-      </div>
+      <PageHeader
+        title="Import Jobs from Excel"
+        subtitle="Upload your Target List Excel to import job orders and BOM requirements"
+        onBack={() => router.push("/jobs")}
+      />
 
       {/* Step Indicator */}
-      <div className="flex items-center gap-2 mb-6">
+      <div className="flex items-center gap-2 mb-4">
         {(["upload", "columns", "preview", "result"] as Step[]).map((s, i) => (
           <div key={s} className="flex items-center gap-2">
             {i > 0 && <div className="w-8 h-px bg-[var(--border)]" />}
@@ -288,8 +283,8 @@ export function ImportWizard() {
       {/* Step 1: Upload */}
       {step === "upload" && (
         <div className="max-w-xl space-y-4">
-          <div className="border-2 border-dashed border-[var(--border)] rounded-lg p-8 text-center hover:border-[var(--primary)] transition-colors">
-            <Upload size={32} className="mx-auto mb-3 text-[var(--muted-foreground)]" />
+          <div className="border-2 border-dashed border-[var(--border)] rounded-lg p-6 text-center hover:border-[var(--primary)] transition-colors">
+            <Upload size={28} className="mx-auto mb-2 text-[var(--muted-foreground)]" />
             <p className="text-sm text-[var(--muted-foreground)] mb-3">
               Select your Target List Excel file (.xlsx)
             </p>
@@ -304,7 +299,7 @@ export function ImportWizard() {
           {sheetNames.length > 0 && (
             <div className="space-y-3">
               <div>
-                <label className="block text-sm font-medium mb-1">Select Sheet</label>
+                <label className="block text-sm font-medium mb-1.5">Select Sheet</label>
                 <Select
                   value={selectedSheet}
                   onChange={(e) => setSelectedSheet(e.target.value)}
@@ -325,24 +320,25 @@ export function ImportWizard() {
       {/* Step 2: Column Mapping */}
       {step === "columns" && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
             <div className="flex items-center gap-4">
               <div className="flex items-center gap-1.5 text-sm">
-                <div className="w-3 h-3 rounded-full bg-green-500" />
+                <Badge variant="green" dot />
                 <span>Matched: {matchedCount}</span>
               </div>
               <div className="flex items-center gap-1.5 text-sm">
-                <div className="w-3 h-3 rounded-full bg-amber-500" />
+                <Badge variant="amber" dot />
                 <span>Unmatched: {unmatchedCount}</span>
               </div>
               <div className="flex items-center gap-1.5 text-sm">
-                <div className="w-3 h-3 rounded-full bg-gray-400" />
+                <Badge variant="neutral" dot />
                 <span>Skipped: {columnResults.filter((c) => c.match_status === "skipped").length}</span>
               </div>
             </div>
             <div className="relative w-64">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
               <Input
+                size="sm"
                 placeholder="Search columns..."
                 value={columnSearch}
                 onChange={(e) => setColumnSearch(e.target.value)}
@@ -352,8 +348,8 @@ export function ImportWizard() {
           </div>
 
           <div className="border border-[var(--border)] rounded-lg max-h-[60vh] overflow-y-auto">
-            <Table>
-              <TableHeader>
+            <Table density="compact">
+              <TableHeader sticky>
                 <TableRow>
                   <TableHead className="w-16">Col #</TableHead>
                   <TableHead>Excel Header</TableHead>
@@ -367,7 +363,7 @@ export function ImportWizard() {
                 {filteredColumns.map((col) => (
                   <TableRow
                     key={col.column_index}
-                    className={col.match_status === "unmatched" ? "bg-amber-50" : ""}
+                    className={col.match_status === "unmatched" ? "bg-[var(--warning-bg)]" : ""}
                   >
                     <TableCell className="font-mono text-xs">{col.column_index}</TableCell>
                     <TableCell className="text-sm font-medium">{col.column_label}</TableCell>
@@ -375,13 +371,13 @@ export function ImportWizard() {
                     <TableCell className="font-mono text-xs">{col.item_code ?? "-"}</TableCell>
                     <TableCell>
                       {col.match_status === "matched" ? (
-                        <span className="inline-flex items-center gap-1 text-xs text-green-700">
+                        <span className="inline-flex items-center gap-1 text-xs text-[var(--success)]">
                           <Check size={12} /> Matched
                         </span>
                       ) : col.match_status === "skipped" ? (
-                        <span className="text-xs text-gray-500">Skipped</span>
+                        <span className="text-xs text-[var(--muted-foreground)]">Skipped</span>
                       ) : (
-                        <span className="inline-flex items-center gap-1 text-xs text-amber-700">
+                        <span className="inline-flex items-center gap-1 text-xs text-[var(--warning)]">
                           <AlertTriangle size={12} /> No match
                         </span>
                       )}
@@ -402,9 +398,9 @@ export function ImportWizard() {
             </Table>
           </div>
 
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setStep("upload")}>Back</Button>
-            <Button onClick={handleSaveColumnsAndContinue} disabled={isPending}>
+          <div className="flex justify-end gap-2 mt-3">
+            <Button size="sm" variant="secondary" onClick={() => setStep("upload")}>Back</Button>
+            <Button size="sm" onClick={handleSaveColumnsAndContinue} disabled={isPending}>
               {isPending ? "Processing..." : "Save Mapping & Continue"}
             </Button>
           </div>
@@ -414,19 +410,19 @@ export function ImportWizard() {
       {/* Step 3: Preview */}
       {step === "preview" && (
         <div>
-          <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
             <div className="flex items-center gap-4">
               <span className="text-sm">
                 {selectedCount} of {jobPreviews.length} jobs selected
               </span>
-              <span className="text-sm text-green-600">
+              <span className="text-sm text-[var(--success)]">
                 New: {jobPreviews.filter((j) => j.status === "new").length}
               </span>
-              <span className="text-sm text-blue-600">
+              <span className="text-sm text-[var(--primary)]">
                 Update: {jobPreviews.filter((j) => j.status === "update").length}
               </span>
               {jobPreviews.some((j) => j.status === "error") && (
-                <span className="text-sm text-red-600">
+                <span className="text-sm text-[var(--destructive)]">
                   Errors: {jobPreviews.filter((j) => j.status === "error").length}
                 </span>
               )}
@@ -434,6 +430,7 @@ export function ImportWizard() {
             <div className="relative w-64">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
               <Input
+                size="sm"
                 placeholder="Search jobs..."
                 value={previewSearch}
                 onChange={(e) => setPreviewSearch(e.target.value)}
@@ -443,8 +440,8 @@ export function ImportWizard() {
           </div>
 
           <div className="border border-[var(--border)] rounded-lg max-h-[60vh] overflow-y-auto">
-            <Table>
-              <TableHeader>
+            <Table density="compact">
+              <TableHeader sticky>
                 <TableRow>
                   <TableHead className="w-12">
                     <input type="checkbox" checked={selectedCount === jobPreviews.filter((j) => j.status !== "error").length} onChange={toggleAll} />
@@ -462,7 +459,7 @@ export function ImportWizard() {
                 {filteredPreviews.map((job) => (
                   <TableRow
                     key={job.row_number}
-                    className={job.status === "error" ? "bg-red-50 opacity-60" : ""}
+                    className={job.status === "error" ? "bg-[var(--destructive-bg)] opacity-60" : ""}
                   >
                     <TableCell>
                       <input
@@ -495,9 +492,10 @@ export function ImportWizard() {
             </Table>
           </div>
 
-          <div className="flex justify-end gap-2 mt-4">
-            <Button variant="secondary" onClick={() => setStep("columns")}>Back</Button>
+          <div className="flex justify-end gap-2 mt-3">
+            <Button size="sm" variant="secondary" onClick={() => setStep("columns")}>Back</Button>
             <Button
+              size="sm"
               onClick={handleExecuteImport}
               disabled={isPending || selectedCount === 0}
             >
@@ -510,33 +508,21 @@ export function ImportWizard() {
       {/* Step 4: Result */}
       {step === "result" && importResult && (
         <div>
-          <div className="grid grid-cols-4 gap-4 mb-6">
-            <div className="border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold">{importResult.total_jobs}</div>
-              <div className="text-sm text-[var(--muted-foreground)]">Total Jobs</div>
-            </div>
-            <div className="border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-green-600">{importResult.created}</div>
-              <div className="text-sm text-[var(--muted-foreground)]">Created</div>
-            </div>
-            <div className="border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-blue-600">{importResult.updated}</div>
-              <div className="text-sm text-[var(--muted-foreground)]">Updated</div>
-            </div>
-            <div className="border border-[var(--border)] rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold">{importResult.bom_lines_created}</div>
-              <div className="text-sm text-[var(--muted-foreground)]">BOM Lines</div>
-            </div>
-          </div>
+          <StatStrip className="mb-4">
+            <StatTile label="Total Jobs" value={importResult.total_jobs} />
+            <StatTile label="Created" value={importResult.created} tone="ok" />
+            <StatTile label="Updated" value={importResult.updated} tone="primary" />
+            <StatTile label="BOM Lines" value={importResult.bom_lines_created} />
+          </StatStrip>
 
           {importResult.errors.length > 0 && (
-            <div className="border border-red-200 rounded-lg p-4 mb-6 bg-red-50">
-              <h3 className="text-sm font-medium text-red-800 mb-2">
+            <div className="border border-[var(--destructive-border)] rounded-lg p-3 mb-4 bg-[var(--destructive-bg)]">
+              <h3 className="text-sm font-medium text-[var(--destructive)] mb-2">
                 {importResult.errors.length} Errors
               </h3>
               <div className="max-h-48 overflow-auto space-y-1">
                 {importResult.errors.map((err, i) => (
-                  <p key={i} className="text-xs text-red-700">
+                  <p key={i} className="text-xs text-[var(--destructive)]">
                     Row {err.row}: {err.message}
                   </p>
                 ))}

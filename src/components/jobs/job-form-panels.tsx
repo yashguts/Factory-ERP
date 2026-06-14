@@ -2,6 +2,7 @@
 
 import { Loader2, Save, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardBody, SectionHeader } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import {
@@ -109,28 +110,28 @@ export function JobDetailsPanel({
   onSaveDetails,
 }: JobDetailsPanelProps) {
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4">
-      <div className="flex items-center justify-between mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-          Job Details
-        </h2>
-        <Button
-          size="sm"
-          variant={jobSaved ? "secondary" : "primary"}
-          onClick={onSaveDetails}
-          disabled={isPending || !isFormValid}
-        >
-          {isPending && !savingPhase ? (
-            <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-          ) : jobSaved ? (
-            <Check className="h-3 w-3 mr-1 text-green-600" />
-          ) : (
-            <Save className="h-3 w-3 mr-1" />
-          )}
-          {jobSaved ? "Saved" : "Save Details"}
-        </Button>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+    <Card>
+      <SectionHeader
+        title="Job Details"
+        actions={
+          <Button
+            size="sm"
+            variant={jobSaved ? "secondary" : "primary"}
+            onClick={onSaveDetails}
+            disabled={isPending || !isFormValid}
+          >
+            {isPending && !savingPhase ? (
+              <Loader2 className="h-3 w-3 mr-1 animate-spin" />
+            ) : jobSaved ? (
+              <Check className="h-3 w-3 mr-1 text-[var(--success)]" />
+            ) : (
+              <Save className="h-3 w-3 mr-1" />
+            )}
+            {jobSaved ? "Saved" : "Save Details"}
+          </Button>
+        }
+      />
+      <CardBody className="grid grid-cols-2 md:grid-cols-3 gap-3">
         <Field label="Job Number *">
           <Input
             value={jobNumber}
@@ -167,7 +168,9 @@ export function JobDetailsPanel({
             aria-invalid={!!mobileError}
           />
           {mobileError && (
-            <p className="mt-1 text-[11px] text-red-600">{mobileError}</p>
+            <p className="mt-1 text-[11px] text-[var(--destructive)]">
+              {mobileError}
+            </p>
           )}
         </Field>
         <Field label="Location *">
@@ -220,8 +223,8 @@ export function JobDetailsPanel({
             }}
           />
         </Field>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -255,16 +258,12 @@ export function ElevatorSpecPanel({
   specPreview,
 }: ElevatorSpecPanelProps) {
   return (
-    <div className="rounded-md border border-[var(--border)] bg-[var(--card)] p-4">
-      <div className="flex items-baseline justify-between mb-3">
-        <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-          Elevator Specification
-        </h2>
-        <p className="text-[11px] text-[var(--muted-foreground)]">
-          Controls which BOM sections appear below.
-        </p>
-      </div>
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+    <Card>
+      <SectionHeader
+        title="Elevator Specification"
+        count="Controls which BOM sections appear below."
+      />
+      <CardBody className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <Field label="Stops *">
           <Select
             value={floors}
@@ -337,12 +336,12 @@ export function ElevatorSpecPanel({
             ))}
           </Select>
         </Field>
-      </div>
-      {specPreview && (
-        <p className="mt-2 text-[11px] font-mono text-[var(--muted-foreground)]">
-          Spec: {specPreview}
-        </p>
-      )}
-    </div>
+        {specPreview && (
+          <p className="col-span-full mt-1 text-[11px] font-mono text-[var(--muted-foreground)]">
+            Spec: {specPreview}
+          </p>
+        )}
+      </CardBody>
+    </Card>
   );
 }

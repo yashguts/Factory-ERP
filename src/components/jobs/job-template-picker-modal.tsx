@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Search, Loader2 } from "lucide-react";
 import { getJobs, getJobsImportMeta } from "@/lib/actions/jobs";
 import type { JobImportMeta } from "@/lib/actions/jobs";
@@ -78,7 +79,7 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
     <Modal
       title="Import from Existing Job"
       onClose={onClose}
-      className="max-w-2xl"
+      size="lg"
     >
       <div className="space-y-3">
         <p className="text-sm text-[var(--muted-foreground)]">
@@ -105,7 +106,7 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
             Loading jobs...
           </div>
         ) : error ? (
-          <p className="text-sm text-red-600 text-center py-8">{error}</p>
+          <p className="text-sm text-[var(--destructive)] text-center py-8">{error}</p>
         ) : filtered.length === 0 ? (
           <p className="text-sm text-[var(--muted-foreground)] text-center py-8">
             {jobs.length === 0
@@ -138,9 +139,9 @@ export function JobTemplatePickerModal({ onPick, onClose }: Props) {
                   </span>
                   <span className="flex items-center gap-1.5 shrink-0">
                     {meta[job.id]?.door && (
-                      <span className="text-[10px] font-medium rounded-full px-1.5 py-0.5 border border-[var(--border)] bg-[var(--muted)] text-[var(--foreground)]">
+                      <Badge variant="neutral" className="text-[10px] px-1.5">
                         {meta[job.id].door}
-                      </span>
+                      </Badge>
                     )}
                     <span className="text-[10px] text-[var(--muted-foreground)] whitespace-nowrap">
                       {meta[job.id]?.items ?? 0} item

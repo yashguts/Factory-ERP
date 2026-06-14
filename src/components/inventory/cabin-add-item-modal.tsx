@@ -7,6 +7,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { createCabinItem } from "@/lib/actions/cabin";
 
 const NEW = "__new__";
@@ -71,24 +72,25 @@ export function CabinAddItemModal({
   };
 
   return (
-    <Modal title={`Add ${typeName} item`} onClose={onClose} className="max-w-lg">
-      <div className="space-y-4">
+    <Modal title={`Add ${typeName} item`} onClose={onClose} size="md">
+      <div className="space-y-3">
         {error && (
           <div className="p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
           </div>
         )}
         {justAdded && !error && (
-          <div className="p-2.5 text-sm bg-green-50 text-green-700 rounded-md border border-green-200 inline-flex items-center gap-1.5">
+          <Badge variant="success" className="gap-1.5">
             <Check className="h-3.5 w-3.5" /> Added {justAdded}
-          </div>
+          </Badge>
         )}
 
         <div>
           <label className="block text-sm font-medium mb-1">
-            Item Name <span className="text-red-500">*</span>
+            Item Name <span className="text-[var(--destructive)]">*</span>
           </label>
           <Input
+            size="sm"
             value={name}
             onChange={(e) => setName(e.target.value)}
             placeholder="e.g., ACO 900X900"
@@ -96,10 +98,10 @@ export function CabinAddItemModal({
           />
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Sub-type</label>
-            <Select value={subChoice} onChange={(e) => setSubChoice(e.target.value)}>
+            <Select size="sm" value={subChoice} onChange={(e) => setSubChoice(e.target.value)}>
               {subCategories.map((s) => (
                 <option key={s.id} value={s.name}>
                   {s.name}
@@ -109,6 +111,7 @@ export function CabinAddItemModal({
             </Select>
             {subChoice === NEW && (
               <Input
+                size="sm"
                 value={newSub}
                 onChange={(e) => setNewSub(e.target.value)}
                 placeholder="New sub-type name"
@@ -121,6 +124,7 @@ export function CabinAddItemModal({
               Opening stock
             </label>
             <Input
+              size="sm"
               type="number"
               step="any"
               value={stock}
@@ -134,14 +138,14 @@ export function CabinAddItemModal({
         </p>
 
         <div className="flex items-center justify-end gap-2 pt-3 border-t border-[var(--border)]">
-          <Button variant="secondary" onClick={onClose} disabled={isPending}>
+          <Button size="sm" variant="secondary" onClick={onClose} disabled={isPending}>
             Cancel
           </Button>
-          <Button variant="secondary" onClick={() => submit(true)} disabled={isPending}>
+          <Button size="sm" variant="secondary" onClick={() => submit(true)} disabled={isPending}>
             {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
             Save &amp; add another
           </Button>
-          <Button onClick={() => submit(false)} disabled={isPending}>
+          <Button size="sm" onClick={() => submit(false)} disabled={isPending}>
             {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : null}
             Add item
           </Button>

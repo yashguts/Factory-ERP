@@ -4,7 +4,6 @@ import { useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Plus,
   Loader2,
   Save,
@@ -19,6 +18,9 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
+import { Card, CardBody, SectionHeader } from "@/components/ui/card";
+import { PageHeader } from "@/components/ui/page-header";
 import { ItemRow } from "@/components/jobs/item-row";
 import { LoosePartPicker } from "@/components/inventory/loose-part-picker";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
@@ -166,50 +168,44 @@ export function ItemDetailClient({
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-6">
-        {/* Item detail is reached from many sections (inventory, cabin pages, MRP,
-            sub-assemblies, programs) — go back to wherever the user came from, not
-            a hardcoded Inventory. Fall back to /inventory only on a direct deep-link. */}
-        <button
-          onClick={() =>
-            window.history.length > 1 ? router.back() : router.push("/inventory")
-          }
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2 cursor-pointer"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back
-        </button>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">{item.name}</h1>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              <span className="font-mono text-xs text-[var(--muted-foreground)]">{item.code}</span>
-              {item.effective_procurement_type === "make" ? (
-                <Badge variant="blue" title="Make — manufactured in-house">Make</Badge>
-              ) : item.effective_procurement_type === "trade" ? (
-                <Badge variant="amber" title="Trade — purchased from suppliers">Trade</Badge>
-              ) : null}
-              <Badge variant={IDENTITY.variant}>
-                <IDENTITY.Icon className="h-3 w-3 mr-1" />
-                {IDENTITY.label}
-              </Badge>
-              {item.family && (
-                <Badge variant="neutral" title="Finish family">
-                  {item.family}{item.finish ? ` · ${item.finish}` : ""}
-                </Badge>
-              )}
-              {item.stock_behaviour !== "stocked" && (
-                <Badge variant={item.stock_behaviour === "tooling" ? "neutral" : "purple"}>
-                  {item.stock_behaviour}
-                </Badge>
-              )}
-            </div>
-            <p className="text-sm text-[var(--muted-foreground)] mt-2">{IDENTITY.hint}</p>
-          </div>
-          <Link href={`/inventory?edit=${item.id}`} className="shrink-0">
-            <Button variant="secondary">Edit item</Button>
+      {/* Header. Item detail is reached from many sections (inventory, cabin
+          pages, MRP, sub-assemblies, programs) — go back to wherever the user
+          came from, not a hardcoded Inventory. Fall back to /inventory only on
+          a direct deep-link. */}
+      <PageHeader
+        title={item.name}
+        meta={<span className="font-mono">{item.code}</span>}
+        subtitle={IDENTITY.hint}
+        onBack={() =>
+          window.history.length > 1 ? router.back() : router.push("/inventory")
+        }
+        actions={
+          <Link href={`/inventory?edit=${item.id}`}>
+            <Button size="sm" variant="secondary">Edit item</Button>
           </Link>
-        </div>
+        }
+      />
+
+      <div className="flex items-center gap-2 mb-4 flex-wrap">
+        {item.effective_procurement_type === "make" ? (
+          <Badge variant="blue" title="Make — manufactured in-house">Make</Badge>
+        ) : item.effective_procurement_type === "trade" ? (
+          <Badge variant="amber" title="Trade — purchased from suppliers">Trade</Badge>
+        ) : null}
+        <Badge variant={IDENTITY.variant}>
+          <IDENTITY.Icon className="h-3 w-3 mr-1" />
+          {IDENTITY.label}
+        </Badge>
+        {item.family && (
+          <Badge variant="neutral" title="Finish family">
+            {item.family}{item.finish ? ` · ${item.finish}` : ""}
+          </Badge>
+        )}
+        {item.stock_behaviour !== "stocked" && (
+          <Badge variant={item.stock_behaviour === "tooling" ? "neutral" : "purple"}>
+            {item.stock_behaviour}
+          </Badge>
+        )}
       </div>
 
       {producedBy.length > 0 && (
@@ -252,10 +248,12 @@ export function ItemDetailClient({
       )}
 
       {isTrade && (
-        <div className="card-surface p-4 mb-4 text-sm text-[var(--muted-foreground)]">
-          This is a <span className="font-medium text-[var(--foreground)]">bought</span> item —
-          purchased from a supplier, so it has no parts list.
-        </div>
+        <Card className="mb-4">
+          <CardBody className="text-sm text-[var(--muted-foreground)]">
+            This is a <span className="font-medium text-[var(--foreground)]">bought</span> item —
+            purchased from a supplier, so it has no parts list.
+          </CardBody>
+        </Card>
       )}
 
       {consumedBy.length > 0 && (
@@ -301,24 +299,26 @@ function ProgramChips({
   ops: ItemOperationRef[];
 }) {
   return (
-    <div className="card-surface p-4">
-      <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--muted-foreground)] mb-2">
-        {icon} {title}
-      </div>
-      <div className="flex flex-wrap gap-1.5">
-        {ops.map((op) => (
-          <Link
-            key={op.id}
-            href={`/programs/${op.id}`}
-            className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] cursor-pointer"
-            title={op.code ?? op.name}
-          >
-            <span className="font-medium">{op.name}</span>
-            <span className="text-[var(--muted-foreground)]">×{op.qty_per_run}</span>
-          </Link>
-        ))}
-      </div>
-    </div>
+    <Card>
+      <CardBody>
+        <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--muted-foreground)] mb-2">
+          {icon} {title}
+        </div>
+        <div className="flex flex-wrap gap-1.5">
+          {ops.map((op) => (
+            <Link
+              key={op.id}
+              href={`/programs/${op.id}`}
+              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] cursor-pointer"
+              title={op.code ?? op.name}
+            >
+              <span className="font-medium">{op.name}</span>
+              <span className="text-[var(--muted-foreground)]">×{op.qty_per_run}</span>
+            </Link>
+          ))}
+        </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -354,26 +354,32 @@ function PartsSection({
   createLabel?: string;
 }) {
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
-        {icon}
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">· {subtitle}</span>
-        {onSave && (
-          <div className="ml-auto flex items-center gap-2">
-            {saved && (
-              <span className="text-xs text-[var(--success)] inline-flex items-center gap-1">
-                <Check className="h-3.5 w-3.5" /> Saved
-              </span>
-            )}
-            <Button size="sm" onClick={onSave} disabled={isPending}>
-              {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
-              Save parts list
-            </Button>
-          </div>
-        )}
-      </div>
-      <div className="p-4">
+    <Card>
+      <SectionHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            {icon}
+            {title}
+            <span className="text-xs font-normal text-[var(--muted-foreground)]">· {subtitle}</span>
+          </span>
+        }
+        actions={
+          onSave ? (
+            <>
+              {saved && (
+                <span className="text-xs text-[var(--success)] inline-flex items-center gap-1">
+                  <Check className="h-3.5 w-3.5" /> Saved
+                </span>
+              )}
+              <Button size="sm" onClick={onSave} disabled={isPending}>
+                {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Save className="h-3.5 w-3.5 mr-1.5" />}
+                Save parts list
+              </Button>
+            </>
+          ) : undefined
+        }
+      />
+      <CardBody>
         {error && (
           <div className="mb-3 p-2.5 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
@@ -391,17 +397,18 @@ function PartsSection({
                   onRemove={rows.length > 1 || row.item_id ? () => onRemove(row._key) : undefined}
                 />
               </div>
-              <select
+              <Select
+                size="sm"
                 value={row.finishRule}
                 onChange={(e) => onUpdate(row._key, { finishRule: e.target.value as FinishRule })}
                 disabled={!row.item_id}
                 title="How is this part's finish decided?"
-                className="h-8 w-[170px] shrink-0 rounded-md border border-[var(--border)] bg-[var(--background)] px-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] transition-colors disabled:opacity-50"
+                className="w-[170px] shrink-0"
               >
                 <option value="neutral">This exact item</option>
                 {row.family && <option value="inherit">Matches parent finish</option>}
                 {row.family && <option value="pinned">Always {row.finish ?? "this finish"}</option>}
-              </select>
+              </Select>
             </div>
           ))}
         </div>
@@ -423,8 +430,8 @@ function PartsSection({
             </button>
           )}
         </div>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }
 
@@ -456,30 +463,36 @@ function LoosePartsSection({
   error: string | null;
 }) {
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
-        <Puzzle className="h-4 w-4" />
-        <h2 className="text-sm font-semibold">Assembly parts</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          · loose parts (cut on programs, never stocked) fitted into this item
-        </span>
-        <div className="ml-auto flex items-center gap-2">
-          {saved && (
-            <span className="text-xs text-[var(--success)] inline-flex items-center gap-1">
-              <Check className="h-3.5 w-3.5" /> Saved
+    <Card>
+      <SectionHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            <Puzzle className="h-4 w-4" />
+            Assembly parts
+            <span className="text-xs font-normal text-[var(--muted-foreground)]">
+              · loose parts (cut on programs, never stocked) fitted into this item
             </span>
-          )}
-          <Button size="sm" onClick={onSave} disabled={isPending}>
-            {isPending ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <Save className="h-3.5 w-3.5 mr-1.5" />
+          </span>
+        }
+        actions={
+          <>
+            {saved && (
+              <span className="text-xs text-[var(--success)] inline-flex items-center gap-1">
+                <Check className="h-3.5 w-3.5" /> Saved
+              </span>
             )}
-            Save parts list
-          </Button>
-        </div>
-      </div>
-      <div className="p-4">
+            <Button size="sm" onClick={onSave} disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Save parts list
+            </Button>
+          </>
+        }
+      />
+      <CardBody>
         {error && (
           <div className="mb-3 p-2.5 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
@@ -540,7 +553,7 @@ function LoosePartsSection({
             <Plus className="h-3 w-3" /> Create loose part
           </button>
         </div>
-      </div>
-    </div>
+      </CardBody>
+    </Card>
   );
 }

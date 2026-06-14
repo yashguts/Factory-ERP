@@ -860,7 +860,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
       {/* ── Missing-field banner ── */}
       {!isFormValid && (
-        <div className="rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
+        <div className="rounded-md border border-[var(--warning-border)] bg-[var(--warning-bg)] px-3 py-2 text-xs text-[var(--warning)]">
           <span className="font-medium">Required to save:</span>{" "}
           {[...missingFields, ...(mobileError ? [mobileError] : [])].join(", ")}.
         </div>
@@ -902,7 +902,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
                 {isSaving ? (
                   <Loader2 className="h-3 w-3 mr-1 animate-spin" />
                 ) : isSaved ? (
-                  <Check className="h-3 w-3 mr-1 text-green-600" />
+                  <Check className="h-3 w-3 mr-1 text-[var(--success)]" />
                 ) : (
                   <Save className="h-3 w-3 mr-1" />
                 )}

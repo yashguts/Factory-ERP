@@ -133,7 +133,7 @@ export function OperationLinePicker({
                   "h-8 w-[140px] shrink-0 rounded-md border bg-[var(--background)] px-2 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] transition-colors",
                   role
                     ? "border-[var(--border)]"
-                    : "border-amber-400 text-amber-700 font-medium",
+                    : "border-[var(--warning)] text-[var(--warning)] font-medium",
                 )}
               >
                 <option value="" disabled>
