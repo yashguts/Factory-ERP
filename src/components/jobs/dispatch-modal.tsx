@@ -192,14 +192,14 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
         )}
 
         {/* Date + scope */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Dispatch date</label>
-            <Input type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
+            <Input size="sm" type="date" value={date} max={todayISO()} onChange={(e) => setDate(e.target.value)} />
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">What is going out?</label>
-            <Select value={scope} onChange={(e) => changeScope(e.target.value as PhaseScope)}>
+            <Select size="sm" value={scope} onChange={(e) => changeScope(e.target.value as PhaseScope)}>
               <option value="first">{SCOPE_LABEL.first}</option>
               <option value="second">{SCOPE_LABEL.second}</option>
               <option value="full">{SCOPE_LABEL.full}</option>
@@ -277,7 +277,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           <label className="block text-sm font-medium mb-1">
             Note <span className="text-[var(--muted-foreground)] font-normal text-xs">(optional)</span>
           </label>
-          <Input value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g., vehicle no., LR no., partial — balance next week" />
+          <Input size="sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="e.g., vehicle no., LR no., partial — balance next week" />
         </div>
 
         {/* The rule is intentional (Phase 0): recording a dispatch never
@@ -365,8 +365,8 @@ function DispatchRow({
             <span
               className={
                 row.remaining
-                  ? "text-amber-600 font-medium"
-                  : "text-green-600 font-medium"
+                  ? "text-[var(--warning)] font-medium"
+                  : "text-[var(--success)] font-medium"
               }
             >
               {(row.remaining ?? 0).toLocaleString()} remaining
@@ -390,7 +390,7 @@ function DispatchRow({
           onChange={(e) => onQty(e.target.value ? Number(e.target.value) : 0)}
           disabled={!row.item_id}
           className={`w-16 h-8 px-2 text-sm text-right rounded-md border bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] disabled:opacity-50 ${
-            overdraw ? "border-amber-400" : "border-[var(--border)]"
+            overdraw ? "border-[var(--warning)]" : "border-[var(--border)]"
           }`}
           title={overdraw ? "More than the remaining quantity" : undefined}
         />
@@ -399,7 +399,7 @@ function DispatchRow({
           type="button"
           onClick={onRemove}
           title="Remove"
-          className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer"
+          className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
         >
           <X className="h-3.5 w-3.5" />
         </button>
@@ -415,7 +415,7 @@ function DispatchRow({
               onChange={(e) => onClose(e.target.checked)}
               className="mt-px cursor-pointer accent-[var(--primary)]"
             />
-            <span className={row.closeLine ? "text-green-700 font-medium" : "text-[var(--muted-foreground)]"}>
+            <span className={row.closeLine ? "text-[var(--success)] font-medium" : "text-[var(--muted-foreground)]"}>
               {row.closeLine ? (
                 <>
                   Requirement revised to{" "}

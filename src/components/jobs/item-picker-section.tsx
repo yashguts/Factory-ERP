@@ -3,6 +3,7 @@
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { Plus, Trash2, AlertTriangle } from "lucide-react";
 import { ItemRow } from "@/components/jobs/item-row";
+import { Badge } from "@/components/ui/badge";
 
 /* ------------------------------------------------------------------ */
 /*  Types                                                             */
@@ -123,9 +124,9 @@ export function ItemPickerSection({
             {category}
           </h3>
           {pickedCount > 0 && (
-            <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+            <Badge variant="blue" className="px-1.5 text-[10px] shrink-0">
               {pickedCount}
-            </span>
+            </Badge>
           )}
           {description && !isUnmapped && (
             <span className="text-xs text-[var(--muted-foreground)] truncate">
@@ -148,7 +149,7 @@ export function ItemPickerSection({
               type="button"
               onClick={onRemoveSection}
               title="Remove this section"
-              className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer"
+              className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -159,7 +160,7 @@ export function ItemPickerSection({
       {/* Mapping warning — appears when the bound category paths can't
           be resolved against the live inventory taxonomy. */}
       {isUnmapped && (
-        <div className="mb-2 flex items-start gap-1.5 text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1.5">
+        <div className="mb-2 flex items-start gap-1.5 text-[11px] text-[var(--warning)] bg-[var(--warning-bg)] border border-[var(--warning-border)] rounded px-2 py-1.5">
           <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
           <span>
             No inventory category mapped for this section

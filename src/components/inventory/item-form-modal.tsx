@@ -409,7 +409,7 @@ export function ItemFormModal({
       onClose={onClose}
       className="max-w-2xl"
     >
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {error && (
           <div className="p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
@@ -417,7 +417,7 @@ export function ItemFormModal({
         )}
 
         {isCloning && cloneSource && (
-          <div className="p-2.5 text-xs bg-blue-50 text-blue-800 rounded-md border border-blue-200">
+          <div className="p-2.5 text-xs bg-[var(--primary)]/10 text-[var(--primary)] rounded-md border border-[var(--primary)]/30">
             Cloning from{" "}
             <span className="font-mono font-medium">{cloneSource.code}</span> —{" "}
             <span className="font-medium">{cloneSource.name}</span>.
@@ -432,7 +432,7 @@ export function ItemFormModal({
             <div className="rounded-md border border-[var(--border)] bg-[var(--muted)]/30 p-3 space-y-2">
               {itemOps.produces.length > 0 && (
                 <div>
-                  <div className="flex items-center gap-1.5 text-xs font-semibold text-blue-700 mb-1">
+                  <div className="flex items-center gap-1.5 text-xs font-semibold text-[var(--primary)] mb-1">
                     <ArrowUpFromLine className="h-3.5 w-3.5" />
                     Produced by
                   </div>
@@ -479,7 +479,7 @@ export function ItemFormModal({
             </div>
           )}
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">
               Item Code
@@ -494,6 +494,7 @@ export function ItemFormModal({
               ) : null}
             </label>
             <Input
+              size="sm"
               value={form.code}
               onChange={(e) => setForm({ ...form, code: e.target.value })}
               placeholder={isEditing ? "e.g., RM-MTR-001" : "Leave blank to auto-generate"}
@@ -503,6 +504,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Item Type</label>
             <Select
+              size="sm"
               value={form.item_type}
               onChange={(e) => handleTypeChange(e.target.value as ItemType)}
             >
@@ -518,6 +520,7 @@ export function ItemFormModal({
         <div>
           <label className="block text-sm font-medium mb-1">Item Name</label>
           <Input
+            size="sm"
             value={form.name}
             onChange={(e) => setForm({ ...form, name: e.target.value })}
             placeholder="e.g., Geared Traction Motor 10HP"
@@ -528,16 +531,18 @@ export function ItemFormModal({
         <div>
           <label className="block text-sm font-medium mb-1">Description</label>
           <Input
+            size="sm"
             value={form.description}
             onChange={(e) => setForm({ ...form, description: e.target.value })}
             placeholder="Optional description"
           />
         </div>
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Category</label>
             <Select
+              size="sm"
               value={parentCategoryId}
               onChange={(e) => {
                 setParentCategoryId(e.target.value);
@@ -553,6 +558,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Sub-Category</label>
             <Select
+              size="sm"
               value={subCategoryId}
               onChange={(e) => setSubCategoryId(e.target.value)}
               disabled={!parentCategoryId || subCategories.length === 0}
@@ -572,6 +578,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Unit of Measurement</label>
             <Select
+              size="sm"
               value={form.uom_id}
               onChange={(e) => setForm({ ...form, uom_id: e.target.value })}
               required
@@ -584,10 +591,11 @@ export function ItemFormModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">Min Stock</label>
             <Input
+              size="sm"
               type="number"
               value={form.minimum_stock}
               onChange={(e) => setForm({ ...form, minimum_stock: Number(e.target.value) })}
@@ -598,6 +606,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Reorder Point</label>
             <Input
+              size="sm"
               type="number"
               value={form.reorder_point}
               onChange={(e) => setForm({ ...form, reorder_point: Number(e.target.value) })}
@@ -608,6 +617,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Lead Time (days)</label>
             <Input
+              size="sm"
               type="number"
               value={form.lead_time_days}
               onChange={(e) => setForm({ ...form, lead_time_days: Number(e.target.value) })}
@@ -617,6 +627,7 @@ export function ItemFormModal({
           <div>
             <label className="block text-sm font-medium mb-1">Cost Price (INR)</label>
             <Input
+              size="sm"
               type="number"
               value={form.cost_price}
               onChange={(e) => setForm({ ...form, cost_price: Number(e.target.value) })}
@@ -627,13 +638,14 @@ export function ItemFormModal({
         </div>
 
         {/* Stock behaviour — how the item is planned/held. */}
-        <div className="border-t border-[var(--border)] pt-4">
-          <div className="grid grid-cols-3 gap-4 items-start">
+        <div className="border-t border-[var(--border)] pt-3">
+          <div className="grid grid-cols-3 gap-3 items-start">
             <div>
               <label className="block text-sm font-medium mb-1">
                 Stock behaviour
               </label>
               <Select
+                size="sm"
                 value={stockBehaviour}
                 onChange={(e) =>
                   setStockBehaviour(e.target.value as StockBehaviour)
@@ -644,7 +656,7 @@ export function ItemFormModal({
                 <option value="tooling">Tooling (jig/template, not a product)</option>
               </Select>
             </div>
-            <p className="col-span-2 text-xs text-[var(--muted-foreground)] mt-7">
+            <p className="col-span-2 text-xs text-[var(--muted-foreground)] mt-6">
               {stockBehaviour === "stocked"
                 ? "Has a stock balance and is planned by MRP (raw sheets, bought parts, real sub-assemblies)."
                 : stockBehaviour === "phantom"
@@ -655,13 +667,14 @@ export function ItemFormModal({
         </div>
 
         {/* Make / Trade classification */}
-        <div className="border-t border-[var(--border)] pt-4">
-          <div className="grid grid-cols-3 gap-4 items-start">
+        <div className="border-t border-[var(--border)] pt-3">
+          <div className="grid grid-cols-3 gap-3 items-start">
             <div>
               <label className="block text-sm font-medium mb-1">
                 Make / Trade
               </label>
               <Select
+                size="sm"
                 value={procOverride}
                 onChange={(e) =>
                   setProcOverride(e.target.value as ProcOverride)
@@ -682,8 +695,8 @@ export function ItemFormModal({
                   <span
                     className={`font-medium ${
                       effectiveProcurement === "make"
-                        ? "text-blue-700"
-                        : "text-amber-700"
+                        ? "text-[var(--primary)]"
+                        : "text-[var(--warning)]"
                     }`}
                   >
                     {effectiveProcurement === "make" ? "Make" : "Trade"}
@@ -709,6 +722,7 @@ export function ItemFormModal({
                     {suppliers.map((s, i) => (
                       <Input
                         key={i}
+                        size="sm"
                         value={s}
                         onChange={(e) => setSupplierAt(i, e.target.value)}
                         placeholder={`Supplier ${i + 1}`}
@@ -717,7 +731,7 @@ export function ItemFormModal({
                   </div>
                 </>
               ) : (
-                <p className="text-xs text-[var(--muted-foreground)] mt-7">
+                <p className="text-xs text-[var(--muted-foreground)] mt-6">
                   Supplier list is hidden because this item is{" "}
                   {effectiveProcurement === "make" ? "Make" : "unclassified"}.
                   Switch to Trade to enter suppliers.
@@ -729,7 +743,7 @@ export function ItemFormModal({
 
         {/* Optional audit note — recorded against this change so the
             Daily Changes page shows why it was made. */}
-        <div className="border-t border-[var(--border)] pt-4">
+        <div className="border-t border-[var(--border)] pt-3">
           <label className="block text-sm font-medium mb-1">
             Reason for change
             <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
@@ -737,6 +751,7 @@ export function ItemFormModal({
             </span>
           </label>
           <Input
+            size="sm"
             value={note}
             onChange={(e) => setNote(e.target.value)}
             placeholder={
@@ -747,7 +762,7 @@ export function ItemFormModal({
           />
         </div>
 
-        <div className="flex items-center justify-between gap-2 pt-4 border-t border-[var(--border)]">
+        <div className="flex items-center justify-between gap-2 pt-3 border-t border-[var(--border)]">
           {/* Delete is only available when editing an existing item.
               Sits on the left so it's visually separated from the
               positive-action buttons on the right. */}
