@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
@@ -13,8 +14,11 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { ShoppingCart, Sparkles, Loader2 } from "lucide-react";
-import { generateDraftPosFromShortfall, type PoListRow } from "@/lib/actions/procurement";
+import { ShoppingCart, Sparkles, Loader2, Package, Building2, ListOrdered } from "lucide-react";
+import {
+  generateDraftPosFromShortfall,
+  type ProcurementData,
+} from "@/lib/actions/procurement";
 import type { PurchaseOrderStatus } from "@/lib/supabase/types";
 
 const STATUS_BADGE: Record<PurchaseOrderStatus, BadgeVariant> = {
@@ -31,46 +35,44 @@ const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
 };
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+const qty = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : (Math.round(n * 100) / 100).toLocaleString());
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-IN") : "—");
 
-type Tab = "all" | PurchaseOrderStatus;
+type View = "orders" | "byitem" | "bysupplier";
+type StatusTab = "all" | PurchaseOrderStatus;
 
-export function ProcurementClient({ orders }: { orders: PoListRow[] }) {
+export function ProcurementClient({ data }: { data: ProcurementData }) {
+  const { orders, byItem, bySupplier } = data;
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
-  const [tab, setTab] = useState<Tab>("all");
+  const [view, setView] = useState<View>("orders");
+  const [statusTab, setStatusTab] = useState<StatusTab>("all");
 
-  const counts = useMemo(() => {
+  const statusCounts = useMemo(() => {
     const c = { all: orders.length, draft: 0, ordered: 0, received: 0, cancelled: 0 };
     for (const o of orders) c[o.status] += 1;
     return c;
   }, [orders]);
 
   const stats = useMemo(() => {
-    let open = 0;
-    let onOrderCost = 0;
+    let openPos = 0, onOrderCost = 0;
     for (const o of orders) {
-      if (o.status === "draft" || o.status === "ordered") {
-        open += 1;
-        onOrderCost += o.total_cost;
-      }
+      if (o.status === "draft" || o.status === "ordered") { openPos += 1; onOrderCost += o.total_cost; }
     }
-    return { open, onOrderCost };
-  }, [orders]);
+    const onOrderUnits = byItem.reduce((s, i) => s + i.on_order, 0);
+    return { openPos, onOrderCost, onOrderUnits };
+  }, [orders, byItem]);
 
-  const filtered = useMemo(
-    () => (tab === "all" ? orders : orders.filter((o) => o.status === tab)),
-    [orders, tab],
+  const filteredOrders = useMemo(
+    () => (statusTab === "all" ? orders : orders.filter((o) => o.status === statusTab)),
+    [orders, statusTab],
   );
 
   const handleGenerate = () => {
     startTransition(async () => {
       const res = await generateDraftPosFromShortfall();
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
-      }
+      if (!res.ok) { toast.error(res.error); return; }
       if (res.orders === 0) {
         toast.info(
           res.skipped > 0
@@ -78,10 +80,7 @@ export function ProcurementClient({ orders }: { orders: PoListRow[] }) {
             : "No Trade shortfall to order right now.",
         );
       } else {
-        toast.success(
-          `Created ${res.orders} draft PO${res.orders === 1 ? "" : "s"} (${res.lines} line${res.lines === 1 ? "" : "s"})` +
-            (res.skipped > 0 ? ` · skipped ${res.skipped} already on an open PO` : ""),
-        );
+        toast.success(`Created ${res.orders} draft PO${res.orders === 1 ? "" : "s"} (${res.lines} line${res.lines === 1 ? "" : "s"})` + (res.skipped > 0 ? ` · skipped ${res.skipped} already on an open PO` : ""));
       }
       router.refresh();
     });
@@ -92,7 +91,7 @@ export function ProcurementClient({ orders }: { orders: PoListRow[] }) {
       <PageHeader
         title="Procurement"
         icon={<ShoppingCart size={18} />}
-        meta={`${orders.length} purchase order${orders.length === 1 ? "" : "s"}`}
+        meta={`${orders.length} order${orders.length === 1 ? "" : "s"} · ${byItem.length} item${byItem.length === 1 ? "" : "s"} on order`}
         actions={
           <Button size="sm" onClick={handleGenerate} disabled={isPending} title="Create draft POs from the current Trade shortfall, grouped by supplier">
             {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
@@ -102,89 +101,169 @@ export function ProcurementClient({ orders }: { orders: PoListRow[] }) {
       />
 
       <StatStrip className="mb-3">
-        <StatTile label="Open POs" value={stats.open} />
+        <StatTile label="Open POs" value={stats.openPos} />
+        <StatTile label="On order (units)" value={qty(stats.onOrderUnits)} tone={stats.onOrderUnits > 0 ? "primary" : "default"} />
         <StatTile label="On order (est.)" value={inr(stats.onOrderCost)} tone={stats.onOrderCost > 0 ? "primary" : "default"} />
-        <StatTile label="Draft" value={counts.draft} tone={counts.draft > 0 ? "warn" : "default"} />
-        <StatTile label="Received" value={counts.received} tone="ok" />
+        <StatTile label="Received" value={statusCounts.received} tone="ok" />
       </StatStrip>
 
-      <div className="mb-3">
-        <Tabs
-          variant="underline"
-          value={tab}
-          onChange={(v) => setTab(v as Tab)}
-          tabs={[
-            { value: "all", label: "All", count: counts.all },
-            { value: "draft", label: "Draft", count: counts.draft },
-            { value: "ordered", label: "Ordered", count: counts.ordered },
-            { value: "received", label: "Received", count: counts.received },
-          ]}
-        />
-      </div>
+      <Tabs
+        variant="segmented"
+        className="mb-3"
+        value={view}
+        onChange={(v) => setView(v as View)}
+        tabs={[
+          { value: "orders", label: <span className="inline-flex items-center gap-1.5"><ListOrdered className="h-3.5 w-3.5" />Orders</span>, count: orders.length },
+          { value: "byitem", label: <span className="inline-flex items-center gap-1.5"><Package className="h-3.5 w-3.5" />By item</span>, count: byItem.length },
+          { value: "bysupplier", label: <span className="inline-flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />By supplier</span>, count: bySupplier.length },
+        ]}
+      />
 
-      {filtered.length === 0 ? (
-        <div className="card-surface">
-          <EmptyState
-            icon={<ShoppingCart size={28} />}
-            title={orders.length === 0 ? "No purchase orders yet" : "No purchase orders in this view"}
-            description={
-              orders.length === 0
-                ? "Generate draft POs from your Trade shortfall to get started — they group automatically by supplier."
-                : undefined
-            }
-            action={
-              orders.length === 0 ? (
-                <Button size="sm" variant="secondary" onClick={handleGenerate} disabled={isPending}>
-                  <Sparkles className="h-3.5 w-3.5 mr-1.5" />
-                  Generate from shortfall
-                </Button>
-              ) : undefined
-            }
-          />
-        </div>
-      ) : (
-        <div className="card-surface overflow-hidden">
-          <Table density="compact">
-            <TableHeader sticky>
-              <TableRow>
-                <TableHead>Supplier</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead className="text-right">Items</TableHead>
-                <TableHead className="text-right">Qty</TableHead>
-                <TableHead className="text-right">Est. cost</TableHead>
-                <TableHead>Order date</TableHead>
-                <TableHead>Expected</TableHead>
-                <TableHead>Created</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.map((o) => (
-                <TableRow
-                  key={o.id}
-                  className="cursor-pointer"
-                  onClick={() => router.push(`/procurement/${o.id}`)}
-                >
-                  <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
-                  <TableCell>
-                    <Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
-                  </TableCell>
-                  <TableCell className="text-right">
-                    {o.received_lines > 0 && o.received_lines < o.line_count ? (
-                      <span className="text-[var(--muted-foreground)]">{o.received_lines}/{o.line_count}</span>
-                    ) : (
-                      o.line_count
-                    )}
-                  </TableCell>
-                  <TableCell className="text-right">{o.total_qty.toLocaleString()}</TableCell>
-                  <TableCell className="text-right">{o.total_cost > 0 ? inr(o.total_cost) : "—"}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.order_date)}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.expected_date)}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.created_at)}</TableCell>
+      {/* ── Orders view ── */}
+      {view === "orders" && (
+        orders.length === 0 ? (
+          <div className="card-surface">
+            <EmptyState
+              icon={<ShoppingCart size={28} />}
+              title="No purchase orders yet"
+              description="Generate draft POs from your Trade shortfall to get started — they group automatically by supplier."
+              action={<Button size="sm" variant="secondary" onClick={handleGenerate} disabled={isPending}><Sparkles className="h-3.5 w-3.5 mr-1.5" />Generate from shortfall</Button>}
+            />
+          </div>
+        ) : (
+          <>
+            <div className="mb-3">
+              <Tabs
+                variant="underline"
+                value={statusTab}
+                onChange={(v) => setStatusTab(v as StatusTab)}
+                tabs={[
+                  { value: "all", label: "All", count: statusCounts.all },
+                  { value: "draft", label: "Draft", count: statusCounts.draft },
+                  { value: "ordered", label: "Ordered", count: statusCounts.ordered },
+                  { value: "received", label: "Received", count: statusCounts.received },
+                ]}
+              />
+            </div>
+            <div className="card-surface overflow-hidden">
+              <Table density="dense">
+                <TableHeader sticky>
+                  <TableRow>
+                    <TableHead>Supplier</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Items</TableHead>
+                    <TableHead className="text-right">Qty</TableHead>
+                    <TableHead className="text-right">Est. cost</TableHead>
+                    <TableHead>Order date</TableHead>
+                    <TableHead>Expected</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {filteredOrders.map((o) => (
+                    <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
+                      <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
+                      <TableCell><Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge></TableCell>
+                      <TableCell className="text-right">
+                        {o.received_lines > 0 && o.received_lines < o.line_count
+                          ? <span className="text-[var(--muted-foreground)]">{o.received_lines}/{o.line_count}</span>
+                          : o.line_count}
+                      </TableCell>
+                      <TableCell className="text-right">{o.total_qty.toLocaleString()}</TableCell>
+                      <TableCell className="text-right">{o.total_cost > 0 ? inr(o.total_cost) : "—"}</TableCell>
+                      <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.order_date)}</TableCell>
+                      <TableCell className={o.expected_date ? "" : "text-[var(--muted-foreground)]"}>{fmtDate(o.expected_date)}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          </>
+        )
+      )}
+
+      {/* ── By item view ── */}
+      {view === "byitem" && (
+        byItem.length === 0 ? (
+          <div className="card-surface"><EmptyState icon={<Package size={28} />} title="Nothing on order" /></div>
+        ) : (
+          <div className="card-surface overflow-hidden">
+            <Table density="dense">
+              <TableHeader sticky>
+                <TableRow>
+                  <TableHead>Code</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="text-right">On order</TableHead>
+                  <TableHead className="text-right">Received</TableHead>
+                  <TableHead className="text-right">Ordered</TableHead>
+                  <TableHead className="text-right">POs</TableHead>
+                  <TableHead>Supplier(s)</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+              </TableHeader>
+              <TableBody>
+                {byItem.map((r) => (
+                  <TableRow key={r.item_id}>
+                    <TableCell>
+                      <Link href={`/inventory/${r.item_id}`} className="font-mono text-xs text-[var(--primary)] hover:underline">{r.code}</Link>
+                    </TableCell>
+                    <TableCell className="font-medium">{r.name}</TableCell>
+                    <TableCell className="text-right font-semibold">
+                      {r.on_order > 0 ? <span className="text-[var(--primary)]">{qty(r.on_order)}</span> : "—"}
+                      {r.uom && r.on_order > 0 && <span className="text-[11px] text-[var(--muted-foreground)] ml-1">{r.uom}</span>}
+                    </TableCell>
+                    <TableCell className="text-right text-[var(--muted-foreground)]">{r.received > 0 ? qty(r.received) : "—"}</TableCell>
+                    <TableCell className="text-right text-[var(--muted-foreground)]">{qty(r.ordered)}</TableCell>
+                    <TableCell className="text-right text-[var(--muted-foreground)]">{r.po_count}</TableCell>
+                    <TableCell className="text-[var(--muted-foreground)] truncate max-w-[260px]" title={r.suppliers.join(", ")}>
+                      {r.suppliers.join(", ") || "—"}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
+      )}
+
+      {/* ── By supplier view ── */}
+      {view === "bysupplier" && (
+        bySupplier.length === 0 ? (
+          <div className="card-surface"><EmptyState icon={<Building2 size={28} />} title="No suppliers with orders" /></div>
+        ) : (
+          <div className="card-surface overflow-hidden">
+            <Table density="dense">
+              <TableHeader sticky>
+                <TableRow>
+                  <TableHead>Supplier</TableHead>
+                  <TableHead className="text-right">POs</TableHead>
+                  <TableHead className="text-right">Lines</TableHead>
+                  <TableHead className="text-right">On order</TableHead>
+                  <TableHead className="text-right">Ordered qty</TableHead>
+                  <TableHead className="text-right">Est. cost</TableHead>
+                  <TableHead>Status</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {bySupplier.map((s) => (
+                  <TableRow key={s.supplier}>
+                    <TableCell className="font-medium">{s.supplier}</TableCell>
+                    <TableCell className="text-right">{s.po_count}</TableCell>
+                    <TableCell className="text-right text-[var(--muted-foreground)]">{s.line_count}</TableCell>
+                    <TableCell className="text-right font-semibold">{s.on_order > 0 ? <span className="text-[var(--primary)]">{qty(s.on_order)}</span> : "—"}</TableCell>
+                    <TableCell className="text-right text-[var(--muted-foreground)]">{qty(s.ordered)}</TableCell>
+                    <TableCell className="text-right">{s.est_cost > 0 ? inr(s.est_cost) : "—"}</TableCell>
+                    <TableCell>
+                      <span className="inline-flex items-center gap-1">
+                        {s.ordered_n > 0 && <Badge variant="blue">{s.ordered_n} ordered</Badge>}
+                        {s.draft > 0 && <Badge variant="neutral">{s.draft} draft</Badge>}
+                        {s.received_n > 0 && <Badge variant="green">{s.received_n} recv</Badge>}
+                      </span>
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </div>
+        )
       )}
     </div>
   );

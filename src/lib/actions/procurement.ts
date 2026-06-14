@@ -162,6 +162,133 @@ async function _getPurchaseOrderUncached(
   return { po: po as PurchaseOrder, lines };
 }
 
+// ── Aggregated views (Orders / By item / By supplier) ───────────────────────
+
+export interface ProcItemRow {
+  item_id: string;
+  code: string;
+  name: string;
+  uom: string | null;
+  ordered: number;     // total qty across non-cancelled POs
+  received: number;    // qty already received
+  on_order: number;    // still to receive (Σ max(0, qty − received))
+  po_count: number;
+  suppliers: string[];
+}
+export interface ProcSupplierRow {
+  supplier: string;
+  po_count: number;
+  line_count: number;
+  ordered: number;
+  on_order: number;
+  est_cost: number;
+  draft: number;
+  ordered_n: number;
+  received_n: number;
+}
+export interface ProcurementData {
+  orders: PoListRow[];
+  byItem: ProcItemRow[];
+  bySupplier: ProcSupplierRow[];
+}
+
+export async function getProcurementData(): Promise<ProcurementData> {
+  return unstable_cache(_getProcurementDataUncached, ["procurement-data"], {
+    revalidate: 120,
+    tags: ["purchase-orders"],
+  })();
+}
+
+async function _getProcurementDataUncached(): Promise<ProcurementData> {
+  const supabase = createCacheClient();
+  const pos = await fetchAllRanged<PurchaseOrder>((from, to, wc) =>
+    supabase
+      .from("purchase_orders")
+      .select("*", wc ? { count: "exact" } : {})
+      .order("created_at", { ascending: false })
+      .range(from, to),
+  );
+  const lines = await fetchAllRanged<{
+    po_id: string;
+    item_id: string;
+    qty: number;
+    unit_cost: number | null;
+    received_qty: number;
+    item: { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null } | { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null }[] | null;
+  }>((from, to, wc) =>
+    supabase
+      .from("purchase_order_lines")
+      .select(
+        "po_id, item_id, qty, unit_cost, received_qty, item:items(code, name, uom:units_of_measurement(abbreviation))",
+        wc ? { count: "exact" } : {},
+      )
+      .range(from, to),
+  );
+  const poById = new Map(pos.map((p) => [p.id, p]));
+
+  // Orders (one row per PO, with aggregates) — same shape as getPurchaseOrders.
+  const agg = new Map<string, { line_count: number; total_qty: number; total_cost: number; received_lines: number }>();
+  for (const l of lines) {
+    const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 };
+    const qty = Number(l.qty) || 0, cost = Number(l.unit_cost) || 0, rec = Number(l.received_qty) || 0;
+    a.line_count += 1; a.total_qty += qty; a.total_cost += qty * cost;
+    if (rec >= qty && qty > 0) a.received_lines += 1;
+    agg.set(l.po_id, a);
+  }
+  const orders: PoListRow[] = pos.map((o) => ({
+    ...o,
+    ...(agg.get(o.id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 }),
+  }));
+
+  // By item (cancelled POs excluded).
+  const itemAgg = new Map<string, { code: string; name: string; uom: string | null; ordered: number; received: number; on_order: number; pos: Set<string>; sups: Set<string> }>();
+  for (const l of lines) {
+    const po = poById.get(l.po_id);
+    if (!po || po.status === "cancelled") continue;
+    const item = Array.isArray(l.item) ? l.item[0] : l.item;
+    const uomRel = item?.uom;
+    const uom = Array.isArray(uomRel) ? uomRel[0] : uomRel;
+    let r = itemAgg.get(l.item_id);
+    if (!r) {
+      r = { code: item?.code ?? "—", name: item?.name ?? "—", uom: uom?.abbreviation ?? null, ordered: 0, received: 0, on_order: 0, pos: new Set(), sups: new Set() };
+      itemAgg.set(l.item_id, r);
+    }
+    const qty = Number(l.qty) || 0, rec = Number(l.received_qty) || 0;
+    r.ordered += qty; r.received += rec; r.on_order += Math.max(0, qty - rec);
+    r.pos.add(l.po_id);
+    if (po.supplier_name) r.sups.add(po.supplier_name);
+  }
+  const byItem: ProcItemRow[] = [...itemAgg.entries()]
+    .map(([item_id, r]) => ({ item_id, code: r.code, name: r.name, uom: r.uom, ordered: r.ordered, received: r.received, on_order: r.on_order, po_count: r.pos.size, suppliers: [...r.sups].sort() }))
+    .sort((a, b) => b.on_order - a.on_order || a.code.localeCompare(b.code));
+
+  // By supplier.
+  const supAgg = new Map<string, { po: Set<string>; line_count: number; ordered: number; on_order: number; est_cost: number; draft: number; ordered_n: number; received_n: number }>();
+  for (const o of pos) {
+    const key = o.supplier_name || "Unassigned";
+    let s = supAgg.get(key);
+    if (!s) { s = { po: new Set(), line_count: 0, ordered: 0, on_order: 0, est_cost: 0, draft: 0, ordered_n: 0, received_n: 0 }; supAgg.set(key, s); }
+    s.po.add(o.id);
+    if (o.status === "draft") s.draft += 1;
+    else if (o.status === "ordered") s.ordered_n += 1;
+    else if (o.status === "received") s.received_n += 1;
+  }
+  for (const l of lines) {
+    const po = poById.get(l.po_id);
+    if (!po) continue;
+    const s = supAgg.get(po.supplier_name || "Unassigned");
+    if (!s) continue;
+    const qty = Number(l.qty) || 0, cost = Number(l.unit_cost) || 0, rec = Number(l.received_qty) || 0;
+    s.line_count += 1; s.ordered += qty; s.est_cost += qty * cost;
+    if (po.status !== "cancelled") s.on_order += Math.max(0, qty - rec);
+  }
+  const bySupplier: ProcSupplierRow[] = [...supAgg.entries()]
+    .map(([supplier, s]) => ({ supplier, po_count: s.po.size, line_count: s.line_count, ordered: s.ordered, on_order: s.on_order, est_cost: s.est_cost, draft: s.draft, ordered_n: s.ordered_n, received_n: s.received_n }))
+    .sort((a, b) => b.on_order - a.on_order || a.supplier.localeCompare(b.supplier));
+
+  return { orders, byItem, bySupplier };
+}
+
 // ── Generate drafts from the Trade shortfall ────────────────────────────────
 
 export async function generateDraftPosFromShortfall(
