@@ -14,7 +14,7 @@ import {
 // data-heavy list flips to compact with a single prop. Default stays
 // "comfortable" (the original px-4 py-3 / h-10 chrome) so no existing table
 // shifts until it explicitly opts in.
-type Density = "comfortable" | "compact";
+type Density = "comfortable" | "compact" | "dense";
 const DensityContext = createContext<Density>("comfortable");
 
 interface TableProps extends HTMLAttributes<HTMLTableElement> {
@@ -87,9 +87,11 @@ const TableHead = forwardRef<HTMLTableCellElement, ThHTMLAttributes<HTMLTableCel
         ref={ref}
         className={cn(
           "text-left align-middle font-semibold uppercase tracking-wider text-[var(--muted-foreground)]",
-          density === "compact"
-            ? "h-8 px-3 text-[11px]"
-            : "h-10 px-4 text-xs",
+          density === "dense"
+            ? "h-7 px-2.5 text-[11px]"
+            : density === "compact"
+              ? "h-8 px-3 text-[11px]"
+              : "h-10 px-4 text-xs",
           className
         )}
         {...props}
@@ -107,7 +109,11 @@ const TableCell = forwardRef<HTMLTableCellElement, TdHTMLAttributes<HTMLTableCel
         ref={ref}
         className={cn(
           "align-middle",
-          density === "compact" ? "px-3 py-1.5 text-[13px]" : "px-4 py-3",
+          density === "dense"
+            ? "px-2.5 py-1 text-[13px]"
+            : density === "compact"
+              ? "px-3 py-1.5 text-[13px]"
+              : "px-4 py-3",
           className
         )}
         {...props}

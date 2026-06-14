@@ -378,15 +378,15 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
 
       {/* Make / Trade tabs + filters in one toolbar band. Tab counts are the
           global universe, not the current filter result (mirrors MRP). */}
-      <Toolbar>
+      <Toolbar className="mb-2">
         <Tabs
           variant="underline"
           value={mtTab}
           onChange={(v) => { setMtTab(v as "all" | "make" | "trade"); resetPage(); }}
           tabs={[
             { value: "all", label: "All", count: tabCounts.all },
-            { value: "make", label: "Make · Manufactured", count: tabCounts.make },
-            { value: "trade", label: "Trade · Purchased", count: tabCounts.trade },
+            { value: "make", label: "Make", count: tabCounts.make },
+            { value: "trade", label: "Trade", count: tabCounts.trade },
           ]}
         />
 
@@ -494,7 +494,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <SortHeader label="Code" sortField="code" />
@@ -655,7 +655,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                           type="button"
                           onClick={() => handleClone(item)}
                           title="Clone this item — pre-fills a new item with the same category, UOM, Make/Trade and suppliers"
-                          className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
                         >
                           <Copy className="h-3.5 w-3.5" />
                         </button>
@@ -682,7 +682,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
 
       {/* Pagination */}
       {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
+        <div className="flex items-center justify-between mt-3">
           <p className="text-sm text-[var(--muted-foreground)]">
             Showing {rangeStart}–{rangeEnd} of {total.toLocaleString()}
           </p>
