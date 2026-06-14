@@ -24,7 +24,11 @@ export async function getItems() {
   return data;
 }
 
-const _getItemsWithStockUncached = async () => {
+// Exported so callers that are THEMSELVES inside an unstable_cache (the MRP
+// plan / make-plan) can read items WITHOUT nesting unstable_cache (nesting
+// makes the OUTER cache degrade to pass-through). The cached wrapper below is
+// what the inventory page uses.
+export const _getItemsWithStockUncached = async () => {
   const supabase = createCacheClient();
 
   // Cabin items live in their own /cabin-inventory section — keep them OUT of the
@@ -1240,8 +1244,17 @@ export async function getRecentTransactions(limit = 20) {
  * 2MB getItemsWithStock payload. Returns a plain { item_id: qty } map.
  */
 export async function getStockForItems(itemIds: string[]): Promise<Record<string, number>> {
-  const ids = Array.from(new Set(itemIds.filter(Boolean)));
+  const ids = Array.from(new Set(itemIds.filter(Boolean))).sort();
   if (ids.length === 0) return {};
+  // Cached — the job-detail readiness view reads this on a hot page; the
+  // inventory-stock tag (revalidated by every stock mutation) keeps it fresh.
+  return unstable_cache(_getStockForItemsUncached, ["stock-for-items", ids.join(",")], {
+    revalidate: 300,
+    tags: ["inventory-stock"],
+  })(ids);
+}
+
+async function _getStockForItemsUncached(ids: string[]): Promise<Record<string, number>> {
   const supabase = createCacheClient();
   const out: Record<string, number> = {};
   const CHUNK = 200;

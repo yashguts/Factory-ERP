@@ -2,7 +2,7 @@
 
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
-import { getItemsWithStock } from "@/lib/actions/inventory";
+import { _getItemsWithStockUncached } from "@/lib/actions/inventory";
 import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
@@ -300,9 +300,12 @@ async function _getProductionPlanUncached(
   const supabase = createCacheClient();
 
   // Top-level demand + every active item (procurement, family/finish, stock).
+  // Use the UN-nested variants: this fn is itself wrapped in unstable_cache, and
+  // nesting unstable_cache (getMrpData/getItemsWithStock) makes the OUTER
+  // production-plan cache degrade to pass-through (re-running on every request).
   const [demand, items] = await Promise.all([
-    getMrpData(cutoffDate),
-    getItemsWithStock(),
+    _getMrpDataUncached(cutoffDate),
+    _getItemsWithStockUncached(),
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
 

@@ -1,7 +1,8 @@
 "use server";
 
 import { createClient } from "@/lib/supabase/server";
-import { revalidatePath, revalidateTag } from "next/cache";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
@@ -68,10 +69,20 @@ export interface JobDispatchSummary {
   dispatches: DispatchHistory[];
 }
 
-export async function getJobDispatchSummary(
+export async function getJobDispatchSummary(jobId: string): Promise<JobDispatchSummary> {
+  // Cached — job detail (a hot page) reads this. Correctness comes from the
+  // jobs/bom-lines tags that every dispatch mutation already revalidates, so
+  // the numbers are always fresh after a dispatch.
+  return unstable_cache(_getJobDispatchSummaryUncached, ["job-dispatch-summary", jobId], {
+    revalidate: 600,
+    tags: ["jobs", "bom-lines"],
+  })(jobId);
+}
+
+async function _getJobDispatchSummaryUncached(
   jobId: string,
 ): Promise<JobDispatchSummary> {
-  const supabase = await createClient();
+  const supabase = createCacheClient();
 
   // BOM lines (item-based, real sections) for the job.
   const { data: header } = await supabase
@@ -321,11 +332,24 @@ export type DispatchStatus = "none" | "partial" | "full";
 export async function getJobsDispatchStatus(
   jobIds: string[],
 ): Promise<Record<string, DispatchStatus>> {
+  if (jobIds.length === 0) return {};
+  // Cached on the jobs list (hot). Key by the sorted id set; tags bust on any
+  // dispatch change so badges stay correct.
+  const key = [...jobIds].sort().join(",");
+  return unstable_cache(_getJobsDispatchStatusUncached, ["jobs-dispatch-status", key], {
+    revalidate: 600,
+    tags: ["jobs", "bom-lines"],
+  })(jobIds);
+}
+
+async function _getJobsDispatchStatusUncached(
+  jobIds: string[],
+): Promise<Record<string, DispatchStatus>> {
   const out: Record<string, DispatchStatus> = {};
   for (const id of jobIds) out[id] = "none";
   if (jobIds.length === 0) return out;
 
-  const supabase = await createClient();
+  const supabase = createCacheClient();
   const { data: disp } = await supabase
     .from("job_dispatches")
     .select("id, job_id")
