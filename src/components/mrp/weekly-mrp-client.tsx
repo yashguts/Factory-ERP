@@ -5,13 +5,14 @@ import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { WeeklyBoard } from "@/components/mrp/weekly-board";
+import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
-import { Hammer, ShoppingCart, Wrench, Package, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Hammer, ShoppingCart, Wrench, Package, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
-type Tab = "programs" | "make" | "trade" | "buy";
+type Tab = "programs" | "make" | "trade" | "buy" | "capacity";
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
 const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
@@ -19,7 +20,7 @@ const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
 export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState<Tab>(
-    () => readParam(sp, "tab", "programs", ["programs", "make", "trade", "buy"]) as Tab,
+    () => readParam(sp, "tab", "programs", ["programs", "make", "trade", "buy", "capacity"]) as Tab,
   );
   useUrlListSync({ tab }, { tab: "programs" });
 
@@ -87,11 +88,17 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
     };
   }, [tab, plan, weeks]);
 
+  const machineCount = useMemo(
+    () => new Set(plan.programs.filter((p) => p.totalRuns > 0).map((p) => p.machine)).size,
+    [plan.programs],
+  );
+
   const TABS: { key: Tab; label: string; icon: typeof Hammer; count: number }[] = [
     { key: "programs", label: "Programs to run", icon: Hammer, count: plan.programs.length },
     { key: "make", label: "Make", icon: Wrench, count: plan.make.length },
     { key: "trade", label: "Trade", icon: ShoppingCart, count: plan.trade.length },
     { key: "buy", label: "Buy list (sheets)", icon: Package, count: plan.buy.length },
+    { key: "capacity", label: "Machine load", icon: Gauge, count: machineCount },
   ];
 
   return (
@@ -151,15 +158,19 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         })}
       />
 
-      <WeeklyBoard
-        weeks={weeks}
-        barValues={lane.barValues}
-        bucketCounts={lane.bucketCounts}
-        unit={lane.unit}
-        countNoun={lane.countNoun}
-        renderBucket={lane.renderBucket}
-        emptyLabel={lane.empty}
-      />
+      {tab === "capacity" ? (
+        <WeeklyCapacity plan={plan} />
+      ) : (
+        <WeeklyBoard
+          weeks={weeks}
+          barValues={lane.barValues}
+          bucketCounts={lane.bucketCounts}
+          unit={lane.unit}
+          countNoun={lane.countNoun}
+          renderBucket={lane.renderBucket}
+          emptyLabel={lane.empty}
+        />
+      )}
 
       {tab === "programs" && plan.blocked.length > 0 && (
         <div className="mt-4">
