@@ -80,7 +80,7 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <TableHead>Job #</TableHead>

@@ -413,7 +413,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <SortHeader label="Job #" sortField="job_number" />

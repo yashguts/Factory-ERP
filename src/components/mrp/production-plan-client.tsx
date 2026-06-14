@@ -103,7 +103,7 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
             }
             count="· make items with no program and no parts list"
           />
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <TableHead className="w-[160px]">Code</TableHead>
@@ -204,7 +204,7 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
           program (Edit → Machining time / run).
         </p>
       )}
-      <Table density="compact">
+      <Table density="dense">
         <TableHeader sticky>
           <TableRow>
             <TableHead className="w-10 text-center">
@@ -266,7 +266,7 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
               Machine time by input sheet (selected programs)
             </h3>
           </div>
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[160px]">Sheet</TableHead>
@@ -328,7 +328,7 @@ function LeafTable({
       {rows.length === 0 ? (
         <EmptyState className="py-8" title={empty} />
       ) : (
-        <Table density="compact">
+        <Table density="dense">
           <TableHeader sticky>
             <TableRow>
               <TableHead className="w-[150px]">Code</TableHead>

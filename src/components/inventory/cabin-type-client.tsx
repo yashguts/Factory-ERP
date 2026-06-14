@@ -217,7 +217,7 @@ export function CabinTypeClient({
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <TableHead>Code</TableHead>

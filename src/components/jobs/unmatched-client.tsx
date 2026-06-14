@@ -193,7 +193,7 @@ export function UnmatchedClient({ initialPatterns }: Props) {
         />
       ) : (
         <div className="rounded-lg border border-[var(--border)]">
-          <Table density="compact">
+          <Table density="dense">
             <TableHeader sticky>
               <TableRow>
                 <TableHead>Category</TableHead>
