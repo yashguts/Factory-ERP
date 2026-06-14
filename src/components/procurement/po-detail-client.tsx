@@ -92,7 +92,7 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
 
   const persistLine = (id: string, patch: { qty?: number; unit_cost?: number | null }) => {
     startTransition(async () => {
-      const res = await updatePoLine(id, patch);
+      const res = await updatePoLine(id, po.id, patch);
       if (!res.ok) toast.error(res.error);
     });
   };
@@ -100,7 +100,7 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
   const removeLine = (id: string) => {
     setRows((prev) => prev.filter((r) => r.id !== id));
     startTransition(async () => {
-      const res = await deletePoLine(id);
+      const res = await deletePoLine(id, po.id);
       if (!res.ok) {
         toast.error(res.error);
         router.refresh();
@@ -257,14 +257,19 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
                   <Input
                     size="sm"
                     type="number"
-                    min={0}
+                    min={1}
                     value={r.qty}
                     disabled={received}
                     className="w-24 text-right ml-auto"
                     onChange={(e) =>
                       setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
                     }
-                    onBlur={() => persistLine(r.id, { qty: r.qty })}
+                    onBlur={() => {
+                      // DB enforces qty > 0 — clamp so a cleared/0 field can't hit a raw error.
+                      const q = r.qty >= 1 ? r.qty : 1;
+                      if (q !== r.qty) setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: q } : x)));
+                      persistLine(r.id, { qty: q });
+                    }}
                   />
                 </TableCell>
                 <TableCell className="text-right">

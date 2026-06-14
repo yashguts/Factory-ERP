@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { getMrpData } from "@/lib/actions/mrp";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import type { PurchaseOrder, PurchaseOrderStatus } from "@/lib/supabase/types";
 
 // Receiving posts opening/replenishment stock into the same warehouse the rest
@@ -43,24 +44,35 @@ function msg(e: unknown, fallback: string): string {
 
 export async function getPurchaseOrders(): Promise<PoListRow[]> {
   const supabase = await createClient();
-  const { data: pos, error } = await supabase
-    .from("purchase_orders")
-    .select("*")
-    .order("created_at", { ascending: false });
-  if (error) throw error;
-  const orders = (pos ?? []) as PurchaseOrder[];
+  // Paged: a single supabase-js select caps at 1000 rows, and the lines table
+  // can exceed that across many POs — un-ranged reads would silently
+  // under-report every list aggregate (the documented PostgREST cap gotcha).
+  const orders = await fetchAllRanged<PurchaseOrder>((from, to, withCount) =>
+    supabase
+      .from("purchase_orders")
+      .select("*", withCount ? { count: "exact" } : {})
+      .order("created_at", { ascending: false })
+      .range(from, to),
+  );
   if (orders.length === 0) return [];
 
-  const { data: lines, error: lErr } = await supabase
-    .from("purchase_order_lines")
-    .select("po_id, qty, unit_cost, received_qty");
-  if (lErr) throw lErr;
+  const lines = await fetchAllRanged<{
+    po_id: string;
+    qty: number;
+    unit_cost: number | null;
+    received_qty: number;
+  }>((from, to, withCount) =>
+    supabase
+      .from("purchase_order_lines")
+      .select("po_id, qty, unit_cost, received_qty", withCount ? { count: "exact" } : {})
+      .range(from, to),
+  );
 
   const agg = new Map<
     string,
     { line_count: number; total_qty: number; total_cost: number; received_lines: number }
   >();
-  for (const l of lines ?? []) {
+  for (const l of lines) {
     const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 };
     a.line_count += 1;
     a.total_qty += Number(l.qty) || 0;
@@ -233,6 +245,7 @@ export async function updatePurchaseOrder(
 
 export async function updatePoLine(
   id: string,
+  poId: string,
   patch: { qty?: number; unit_cost?: number | null },
 ): Promise<SaveResult> {
   try {
@@ -240,40 +253,23 @@ export async function updatePoLine(
     const { error } = await supabase.from("purchase_order_lines").update(patch).eq("id", id);
     if (error) throw error;
     revalidatePath("/procurement");
+    revalidatePath(`/procurement/${poId}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: msg(e, "Could not update the line") };
   }
 }
 
-export async function deletePoLine(id: string): Promise<SaveResult> {
+export async function deletePoLine(id: string, poId: string): Promise<SaveResult> {
   try {
     const supabase = await createClient();
     const { error } = await supabase.from("purchase_order_lines").delete().eq("id", id);
     if (error) throw error;
     revalidatePath("/procurement");
+    revalidatePath(`/procurement/${poId}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: msg(e, "Could not remove the line") };
-  }
-}
-
-export async function addPoLine(
-  po_id: string,
-  item_id: string,
-  qty: number,
-  unit_cost: number | null,
-): Promise<SaveResult> {
-  try {
-    const supabase = await createClient();
-    const { error } = await supabase
-      .from("purchase_order_lines")
-      .insert({ po_id, item_id, qty, unit_cost, sort_order: 999 });
-    if (error) throw error;
-    revalidatePath(`/procurement/${po_id}`);
-    return { ok: true };
-  } catch (e) {
-    return { ok: false, error: msg(e, "Could not add the item") };
   }
 }
 
