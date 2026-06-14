@@ -45,3 +45,36 @@ export async function getOutstandingByItem(): Promise<Record<string, number>> {
     tags: ["purchase-orders"],
   })();
 }
+
+/**
+ * Outstanding PO lines with the PO's expected-arrival date — for time-phasing
+ * incoming trade material in the weekly plan. One entry per item per open PO
+ * line (on_order > 0); expected_date is null when not yet entered (the caller
+ * then treats it as arriving now / covering the nearest demand).
+ */
+export async function _getOutstandingLinesUncached(): Promise<
+  { item_id: string; expected_date: string | null; on_order: number }[]
+> {
+  const supabase = createCacheClient();
+  const pos = await fetchAllRanged<{ id: string; status: string; expected_date: string | null }>((from, to, wc) =>
+    supabase
+      .from("purchase_orders")
+      .select("id, status, expected_date", wc ? { count: "exact" } : {})
+      .range(from, to),
+  );
+  const meta = new Map(pos.map((p) => [p.id, p]));
+  const lines = await fetchAllRanged<{ po_id: string; item_id: string; qty: number; received_qty: number }>((from, to, wc) =>
+    supabase
+      .from("purchase_order_lines")
+      .select("po_id, item_id, qty, received_qty", wc ? { count: "exact" } : {})
+      .range(from, to),
+  );
+  const out: { item_id: string; expected_date: string | null; on_order: number }[] = [];
+  for (const l of lines) {
+    const po = meta.get(l.po_id);
+    if (!po || po.status === "cancelled") continue;
+    const oo = Math.max(0, (Number(l.qty) || 0) - (Number(l.received_qty) || 0));
+    if (oo > 0) out.push({ item_id: l.item_id, expected_date: po.expected_date, on_order: oo });
+  }
+  return out;
+}

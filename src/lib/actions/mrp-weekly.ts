@@ -20,6 +20,7 @@ import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { computeMakePlanCore, explodeToLeaves } from "@/lib/actions/make-plan-core";
+import { _getOutstandingLinesUncached } from "@/lib/actions/po-outstanding";
 import type { MrpRow } from "@/lib/actions/mrp";
 
 const HORIZON_WEEKS = 8; // this week (w0) + 7 more
@@ -288,12 +289,23 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   return { weeks, N, horizonEnd, today, curWeek, demandByItemWeek, itemMeta, laterCount, undatedCount };
 }
 
-/** Running cumulative shortfall per bucket = max(0, cumGross − stock) (stock to
- *  earliest weeks). Returns { cumulative, incremental }. */
-function cumulativeShortfall(demand: number[], stock: number): { cumulative: number[]; incremental: number[] } {
+/** Running cumulative shortfall per bucket = max(0, cumGross − stock − cumOnOrder).
+ *  Stock and incoming PO material are both applied to the earliest weeks they're
+ *  available. `onOrder` is per-bucket incoming PO qty (empty = no POs). Returns
+ *  { cumulative, incremental }. */
+function cumulativeShortfall(
+  demand: number[],
+  stock: number,
+  onOrder: number[] = [],
+): { cumulative: number[]; incremental: number[] } {
   const cumulative: number[] = [];
   let cg = 0;
-  for (let i = 0; i < demand.length; i++) { cg += demand[i]; cumulative.push(Math.max(0, cg - stock)); }
+  let coo = 0;
+  for (let i = 0; i < demand.length; i++) {
+    cg += demand[i];
+    coo += onOrder[i] ?? 0;
+    cumulative.push(Math.max(0, cg - stock - coo));
+  }
   const incremental = cumulative.map((c, i) => (i === 0 ? c : c - cumulative[i - 1]));
   return { cumulative, incremental };
 }
@@ -312,12 +324,37 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   if (l.demandByItemWeek.size === 0) return emptyPlan(l, excludeCodes);
   const N = l.N;
 
-  // Make / Trade weekly item rows (cumulative shortfall, stock to earliest weeks).
+  // Time-phase outstanding POs into arrival buckets (pos 0 = overdue/now …
+  // N-1 = last week). No expected date (or already due) => arrives now (pos 0,
+  // covers the nearest demand); beyond the horizon => ignored (too late to help
+  // in-window). Make items carry no POs, so this only affects the Trade lane.
+  const onOrderByItemWeek = new Map<string, number[]>();
+  {
+    const ooLines = await _getOutstandingLinesUncached();
+    for (const ln of ooLines) {
+      let pos = 0;
+      if (ln.expected_date) {
+        const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(ln.expected_date);
+        if (m) {
+          const d = Date.UTC(+m[1], +m[2] - 1, +m[3]);
+          const w = Math.floor((d - l.curWeek.getTime()) / (7 * DAY_MS));
+          if (w >= HORIZON_WEEKS) continue; // arrives after the horizon
+          pos = w < 0 ? 0 : w + 1;
+        }
+      }
+      const arr = onOrderByItemWeek.get(ln.item_id) ?? new Array(N).fill(0);
+      arr[pos] += ln.on_order;
+      onOrderByItemWeek.set(ln.item_id, arr);
+    }
+  }
+
+  // Make / Trade weekly item rows (cumulative shortfall, stock + incoming POs
+  // applied to the earliest weeks they're available).
   const itemRows = (want: "make" | "trade"): WeeklyItemRow[] => {
     const rows: WeeklyItemRow[] = [];
     for (const [id, m] of l.itemMeta) {
       if (m.procurement_type !== want) continue;
-      const { cumulative, incremental } = cumulativeShortfall(l.demandByItemWeek.get(id)!, m.stock);
+      const { cumulative, incremental } = cumulativeShortfall(l.demandByItemWeek.get(id)!, m.stock, onOrderByItemWeek.get(id) ?? []);
       const total = cumulative[N - 1];
       if (total <= 0) continue;
       rows.push({ item_id: id, code: m.code, name: m.name, uom: m.uom, category: m.category_name, procurement_type: m.procurement_type, perWeek: incremental, cumulative, total });
