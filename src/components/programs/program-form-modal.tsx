@@ -331,7 +331,7 @@ export function ProgramFormModal({
         )}
 
         {isCloning && cloneSource && (
-          <div className="p-2.5 text-xs bg-blue-50 text-blue-800 rounded-md border border-blue-200">
+          <div className="p-2.5 text-xs bg-blue-50 text-blue-700 rounded-md border border-blue-200">
             Cloning from{" "}
             <span className="font-medium">
               {cloneSource.code ?? cloneSource.name}
@@ -341,7 +341,7 @@ export function ProgramFormModal({
           </div>
         )}
 
-        <div className="grid grid-cols-3 gap-4">
+        <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">
             <label className="block text-sm font-medium mb-1">
               Program Name
@@ -369,7 +369,7 @@ export function ProgramFormModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-2 gap-3 items-start">
           <div>
             <label className="block text-sm font-medium mb-1">Type</label>
             <Select
@@ -382,6 +382,9 @@ export function ProgramFormModal({
                 </option>
               ))}
             </Select>
+            <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+              {copy.typeHint}
+            </p>
           </div>
           <div>
             <label className="block text-sm font-medium mb-1">
@@ -396,9 +399,6 @@ export function ProgramFormModal({
               placeholder="e.g., 0:07:03 or 7.05"
             />
           </div>
-          <p className="text-xs text-[var(--muted-foreground)] mt-7">
-            {copy.typeHint}
-          </p>
         </div>
 
         <div>
@@ -414,7 +414,7 @@ export function ProgramFormModal({
             program so they're navigable together on the list & detail pages.
             The Family field autocompletes against existing families and warns
             so a typo doesn't spawn a near-duplicate group. */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm font-medium mb-1">
               Family
@@ -499,7 +499,7 @@ export function ProgramFormModal({
 
         {/* Inputs */}
         <div className="border-t border-[var(--border)] pt-3">
-          <div className="mb-2">
+          <div className="mb-1.5">
             <h3 className="text-sm font-semibold">{copy.inputsTitle}</h3>
             <p className="text-[11px] text-[var(--muted-foreground)]">
               {copy.inputsHelp}
@@ -516,7 +516,7 @@ export function ProgramFormModal({
 
         {/* Outputs */}
         <div className="border-t border-[var(--border)] pt-3">
-          <div className="mb-2">
+          <div className="mb-1.5">
             <h3 className="text-sm font-semibold">{copy.outputsTitle}</h3>
             <p className="text-[11px] text-[var(--muted-foreground)]">
               {copy.outputsHelp}

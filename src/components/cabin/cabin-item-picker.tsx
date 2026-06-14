@@ -83,7 +83,7 @@ export function CabinItemPicker({
 
   if (itemId) {
     return (
-      <div className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-blue-300 bg-blue-50/40 min-w-0">
+      <div className="flex items-center gap-2 h-8 px-2.5 rounded-md border border-blue-200 bg-blue-50 min-w-0">
         <span className="text-sm font-medium truncate flex-1">{itemName}</span>
         <span className="text-[11px] font-mono text-[var(--muted-foreground)] shrink-0">
           {itemCode}
@@ -147,7 +147,7 @@ export function CabinItemPicker({
                   <span
                     className={`text-[11px] font-mono shrink-0 mt-0.5 tabular-nums ${
                       it.total_stock <= 0
-                        ? "text-red-500"
+                        ? "text-[var(--destructive)]"
                         : "text-[var(--muted-foreground)]"
                     }`}
                     title={`In stock: ${formatStock(it.total_stock)} ${it.uom}`.trim()}

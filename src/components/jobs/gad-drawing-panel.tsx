@@ -3,6 +3,7 @@
 import { useRef, useState, useTransition } from "react";
 import { Upload, FileText, ImageIcon, Trash2, ExternalLink, Loader2, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   uploadGadDrawing,
   deleteGadDrawing,
@@ -183,7 +184,7 @@ export function GadDrawingPanel({
               onClick={handleRemove}
               disabled={busy}
               title="Remove drawing"
-              className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer"
+              className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
             >
               <Trash2 className="h-3.5 w-3.5" />
             </button>
@@ -204,7 +205,7 @@ export function GadDrawingPanel({
       {/* Body */}
       <div className="flex-1 overflow-auto bg-[var(--background)]">
         {error && (
-          <div className="m-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded px-2 py-1.5">
+          <div className="m-3 text-xs text-[var(--destructive)] bg-[var(--destructive-bg)] border border-[var(--destructive-border)] rounded px-2 py-1.5">
             {error}
           </div>
         )}
@@ -227,28 +228,22 @@ export function GadDrawingPanel({
             />
           )
         ) : (
-          <div className="h-full flex flex-col items-center justify-center text-center p-8">
-            <Upload className="h-10 w-10 text-[var(--muted-foreground)] mb-3" />
-            <p className="text-sm text-[var(--foreground)] font-medium">
-              No GAD drawing yet
-            </p>
-            <p className="text-xs text-[var(--muted-foreground)] mt-1 max-w-xs">
-              Upload a PDF or image (PNG / JPG / WebP, max 50 MB) so you can
-              cross-check items against the drawing side-by-side.
-            </p>
-            <Button
-              size="sm"
-              onClick={handlePickFile}
-              disabled={busy}
-              className="mt-4"
-            >
-              {busy ? (
-                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-              ) : (
-                <Upload className="h-3.5 w-3.5 mr-1.5" />
-              )}
-              Upload Drawing
-            </Button>
+          <div className="h-full flex items-center justify-center">
+            <EmptyState
+              icon={<Upload className="h-10 w-10" />}
+              title="No GAD drawing yet"
+              description="Upload a PDF or image (PNG / JPG / WebP, max 50 MB) so you can cross-check items against the drawing side-by-side."
+              action={
+                <Button size="sm" onClick={handlePickFile} disabled={busy}>
+                  {busy ? (
+                    <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                  ) : (
+                    <Upload className="h-3.5 w-3.5 mr-1.5" />
+                  )}
+                  Upload Drawing
+                </Button>
+              }
+            />
           </div>
         )}
       </div>

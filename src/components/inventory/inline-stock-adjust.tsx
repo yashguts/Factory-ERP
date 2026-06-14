@@ -156,7 +156,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
                 type="button"
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                   direction === "add"
-                    ? "bg-green-600 text-white"
+                    ? "bg-[var(--success)] text-[var(--success-foreground)]"
                     : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                 }`}
                 onClick={() => setDirection("add")}
@@ -167,7 +167,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
                 type="button"
                 className={`flex-1 px-3 py-1.5 text-xs font-medium rounded-md transition-colors cursor-pointer ${
                   direction === "remove"
-                    ? "bg-red-600 text-white"
+                    ? "bg-[var(--destructive)] text-[var(--destructive-foreground)]"
                     : "bg-[var(--muted)] text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
                 }`}
                 onClick={() => setDirection("remove")}

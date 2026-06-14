@@ -4,6 +4,8 @@ import { useMemo } from "react";
 import Link from "next/link";
 import { CalendarClock, AlertTriangle } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { Job } from "@/lib/supabase/types";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
@@ -273,12 +275,13 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
 
   if (totals.total === 0) {
     return (
-      <div className="card-surface p-12 text-center">
-        <CalendarClock size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
-        <p className="text-[var(--muted-foreground)]">
-          No active jobs to plan. Jobs appear here once they have a Req. Dispatch date.
-        </p>
-      </div>
+      <Card>
+        <EmptyState
+          icon={<CalendarClock size={28} />}
+          title="No active jobs to plan"
+          description="Jobs appear here once they have a Req. Dispatch date."
+        />
+      </Card>
     );
   }
 
@@ -287,7 +290,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Legend — a count for each dispatch type */}
       <div className="flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
         <LegendDot className="bg-blue-500" label="1st phase" count={totals.first} />
@@ -303,7 +306,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
       </div>
 
       {/* ── Chart: workload by week, left → right ── */}
-      <div className="card-surface p-5">
+      <div className="card-surface p-3">
         <div className="flex items-end gap-2 overflow-x-auto pb-1">
           {chartBuckets.map((b) => {
             const barPx = b.total > 0 ? Math.max(10, Math.round((b.total / maxTotal) * CHART_H)) : 0;
@@ -323,7 +326,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                 title={`${b.title} · ${b.total} ${b.total === 1 ? "job" : "jobs"}`}
                 className={cn(
                   "group flex w-[74px] shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
-                  isOverdue ? "hover:bg-red-50" : "hover:bg-[var(--muted)]",
+                  isOverdue ? "hover:bg-[var(--destructive-bg)]" : "hover:bg-[var(--muted)]",
                 )}
               >
                 <span
@@ -346,7 +349,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                     <div
                       className={cn(
                         "flex w-8 flex-col overflow-hidden rounded-t-md shadow-sm ring-1 transition-transform group-hover:-translate-y-0.5",
-                        isOverdue ? "ring-red-200" : "ring-black/5",
+                        isOverdue ? "ring-[var(--destructive-border)]" : "ring-black/5",
                       )}
                       style={{ height: barPx }}
                     >
@@ -396,7 +399,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
       </div>
 
       {/* ── List: jobs per week (number · sent-tag · name · status) ── */}
-      <div className="space-y-5">
+      <div className="space-y-4">
         {buckets.filter((b) => b.total > 0).map((b) => (
           <section key={b.key} id={`plan-${b.key}`} className="scroll-mt-4">
             <div className="mb-2 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-[var(--border)] pb-1.5">
@@ -405,7 +408,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                   className={cn(
                     "h-2.5 w-2.5 shrink-0 translate-y-0.5 rounded-full",
                     b.kind === "overdue"
-                      ? "bg-red-500"
+                      ? "bg-[var(--destructive)]"
                       : b.isCurrent
                         ? "bg-[var(--primary)]"
                         : "bg-[var(--border-strong)]",

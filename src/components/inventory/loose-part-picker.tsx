@@ -7,6 +7,7 @@ import {
   promoteLoosePartLabel,
   type LoosePartCandidate,
 } from "@/lib/actions/item-bom";
+import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 
 interface LoosePartPickerProps {
@@ -198,7 +199,7 @@ export function LoosePartPicker({
         {open && inSearch && (
           <div className="absolute z-50 mt-1 w-full min-w-[440px] rounded-md border border-[var(--border)] bg-[var(--card)] shadow-lg max-h-80 overflow-y-auto">
             {error ? (
-              <div className="px-3 py-3 text-xs flex items-start gap-1.5 text-red-700">
+              <div className="px-3 py-3 text-xs flex items-start gap-1.5 text-[var(--destructive)]">
                 <AlertTriangle className="h-3 w-3 mt-0.5 shrink-0" />
                 <span>{error}</span>
               </div>
@@ -248,9 +249,9 @@ export function LoosePartPicker({
                       <span className="font-medium leading-snug break-words flex-1">
                         {c.label}
                       </span>
-                      <span className="text-[10px] font-medium uppercase tracking-wide text-amber-600 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5 shrink-0">
+                      <Badge variant="amber" className="text-[10px] uppercase tracking-wide px-1.5 shrink-0">
                         on {c.programs} program{c.programs === 1 ? "" : "s"}
-                      </span>
+                      </Badge>
                     </div>
                     <div className="mt-0.5 text-[11px] text-[var(--muted-foreground)] pl-6">
                       Click to make it a tracked loose part and link those programs.

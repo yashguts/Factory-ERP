@@ -1,10 +1,13 @@
 "use client";
 
 import type { ReactNode } from "react";
+import { CalendarX } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
-const CHART_H = 150; // px, tallest bar
+const CHART_H = 110; // px, tallest bar
 
 export interface WeeklyBoardProps {
   weeks: WeekMeta[];
@@ -35,9 +38,9 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
     document.getElementById(`wk-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-3">
       {/* Chart: workload by week, left → right */}
-      <div className="card-surface p-5">
+      <div className="card-surface p-3">
         <div className="flex items-end gap-2 overflow-x-auto pb-1">
           {weeks.map((w, i) => {
             const v = barValues[i];
@@ -50,7 +53,7 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
                 title={`${w.title} · ${fmt(v)} ${unit}`}
                 className={cn(
                   "group flex w-[72px] shrink-0 flex-col items-center gap-2 rounded-lg px-1.5 pt-1 pb-2 transition-colors cursor-pointer",
-                  w.isOverdue ? "hover:bg-red-50" : "hover:bg-[var(--muted)]",
+                  w.isOverdue ? "hover:bg-[var(--destructive-bg)]" : "hover:bg-[var(--muted)]",
                 )}
               >
                 <span
@@ -98,11 +101,14 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
 
       {/* Per-week lists */}
       {!hasAny ? (
-        <div className="card-surface p-10 text-center text-[var(--muted-foreground)]">
-          {emptyLabel ?? "Nothing to plan in this window."}
-        </div>
+        <Card>
+          <EmptyState
+            icon={<CalendarX size={28} />}
+            title={emptyLabel ?? "Nothing to plan in this window."}
+          />
+        </Card>
       ) : (
-        <div className="space-y-5">
+        <div className="space-y-3">
           {weeks.map((w, i) =>
             bucketCounts[i] > 0 ? (
               <section key={w.key} id={`wk-${w.key}`} className="scroll-mt-4">
@@ -111,7 +117,7 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
                     <span
                       className={cn(
                         "h-2.5 w-2.5 shrink-0 translate-y-0.5 rounded-full",
-                        w.isOverdue ? "bg-red-500" : w.isCurrent ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]",
+                        w.isOverdue ? "bg-[var(--destructive)]" : w.isCurrent ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]",
                       )}
                     />
                     <h3 className={cn("text-sm font-semibold", w.isOverdue && "text-[var(--destructive)]")}>{w.title}</h3>

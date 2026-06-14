@@ -3,6 +3,7 @@
 import { useMemo, useState } from "react";
 import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { ConfidenceBadge, Provenance } from "@/components/jobs/confidence-badge";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import type {
@@ -130,7 +131,7 @@ export function AutofillReviewModal({
 
   return (
     <Modal title="AI Auto-fill — review & apply" onClose={onClose} className="max-w-3xl">
-      <div className="space-y-4">
+      <div className="space-y-3">
         <p className="text-xs text-[var(--muted-foreground)] flex items-center gap-1.5">
           <Sparkles size={13} className="text-[var(--primary)]" />
           {result.drawingRead
@@ -196,7 +197,7 @@ export function AutofillReviewModal({
                         return (
                           <div
                             key={key}
-                            className={`flex items-center gap-2 text-sm py-1 px-2 rounded ${low ? "bg-red-50/50" : ""}`}
+                            className={`flex items-center gap-2 text-sm py-1 px-2 rounded ${low ? "bg-[var(--destructive-bg)]/50" : ""}`}
                           >
                             <input
                               type="checkbox"
@@ -207,13 +208,14 @@ export function AutofillReviewModal({
                             <span className="flex-1 min-w-0 truncate">{l.item_name}</span>
                             <ConfidenceBadge level={l.confidenceBand} />
                             <Provenance jobs={l.supportingJobs} />
-                            <input
+                            <Input
+                              size="sm"
                               type="number"
                               min={0}
                               step="any"
                               value={qtyEdit[key]}
                               onChange={(e) => setQtyEdit((p) => ({ ...p, [key]: Number(e.target.value) }))}
-                              className="w-16 h-7 px-1.5 text-sm text-right rounded border border-[var(--border)] bg-[var(--background)]"
+                              className="w-16 text-right"
                             />
                             <span className="w-8 text-[11px] text-[var(--muted-foreground)]">{l.uom}</span>
                           </div>

@@ -45,8 +45,8 @@ export function ImportPreviewTable({ rows, onToggleRow, onToggleAll }: Props) {
         </label>
       </div>
       <div className="border border-[var(--border)] rounded-lg overflow-auto max-h-[500px]">
-        <Table>
-          <TableHeader>
+        <Table density="compact">
+          <TableHeader sticky>
             <TableRow>
               <TableHead className="w-10"></TableHead>
               <TableHead className="w-10">#</TableHead>
@@ -62,7 +62,7 @@ export function ImportPreviewTable({ rows, onToggleRow, onToggleAll }: Props) {
             {rows.map((row, i) => (
               <TableRow
                 key={i}
-                className={row.status === "error" ? "bg-red-50" : row.status === "duplicate" ? "bg-yellow-50" : ""}
+                className={row.status === "error" ? "bg-[var(--destructive-bg)]" : row.status === "duplicate" ? "bg-[var(--warning-bg)]" : ""}
               >
                 <TableCell>
                   <input
@@ -88,7 +88,7 @@ export function ImportPreviewTable({ rows, onToggleRow, onToggleAll }: Props) {
                     {row.status}
                   </Badge>
                   {row.error && (
-                    <span className="block text-xs text-red-600 mt-0.5">{row.error}</span>
+                    <span className="block text-xs text-[var(--destructive)] mt-0.5">{row.error}</span>
                   )}
                 </TableCell>
               </TableRow>

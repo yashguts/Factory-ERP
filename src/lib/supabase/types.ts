@@ -419,6 +419,32 @@ export interface OperationOutput {
   created_at: string;
 }
 
+export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled";
+
+/** A purchase order — one dated buy from a supplier (procurement Phase 0). */
+export interface PurchaseOrder {
+  id: string;
+  supplier_name: string | null;
+  status: PurchaseOrderStatus;
+  order_date: string | null;
+  expected_date: string | null;
+  note: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+/** A line on a PO. Receiving posts inventory (purchase_in) for the unreceived qty. */
+export interface PurchaseOrderLine {
+  id: string;
+  po_id: string;
+  item_id: string;
+  qty: number;
+  unit_cost: number | null;
+  received_qty: number;
+  sort_order: number;
+  created_at: string;
+}
+
 // Supabase Database type definition
 export interface Database {
   public: {
@@ -502,6 +528,16 @@ export interface Database {
         Row: OperationOutput;
         Insert: Omit<OperationOutput, "id" | "created_at">;
         Update: Partial<Omit<OperationOutput, "id" | "created_at">>;
+      };
+      purchase_orders: {
+        Row: PurchaseOrder;
+        Insert: Omit<PurchaseOrder, "id" | "created_at" | "updated_at">;
+        Update: Partial<Omit<PurchaseOrder, "id" | "created_at" | "updated_at">>;
+      };
+      purchase_order_lines: {
+        Row: PurchaseOrderLine;
+        Insert: Omit<PurchaseOrderLine, "id" | "created_at">;
+        Update: Partial<Omit<PurchaseOrderLine, "id" | "created_at">>;
       };
     };
     Enums: {

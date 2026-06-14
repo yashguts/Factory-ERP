@@ -18,6 +18,18 @@ import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card, CardBody, SectionHeader } from "@/components/ui/card";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { EmptyState } from "@/components/ui/empty-state";
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
 import { formatDuration } from "@/lib/utils";
 import {
@@ -95,122 +107,140 @@ export function DailyRunsClient({ date, maxDate, initialRows }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-end justify-between gap-3 flex-wrap mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <PlayCircle className="h-6 w-6 text-[var(--muted-foreground)]" />
-            Daily Program Runs
-          </h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            The factory logbook — which programs actually ran, day by day
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium">Date</label>
-          <Input
-            type="date"
-            value={date}
-            max={maxDate}
-            onChange={(e) => changeDate(e.target.value)}
-            className="w-[170px] cursor-pointer"
-          />
-          {isPending && (
-            <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
-          )}
-        </div>
-      </div>
+      <PageHeader
+        title="Daily Program Runs"
+        icon={<PlayCircle size={18} />}
+        subtitle="The factory logbook — which programs actually ran, day by day"
+        actions={
+          <>
+            <label className="text-sm font-medium">Date</label>
+            <Input
+              type="date"
+              size="sm"
+              value={date}
+              max={maxDate}
+              onChange={(e) => changeDate(e.target.value)}
+              className="w-[170px] cursor-pointer"
+            />
+            {isPending && (
+              <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+            )}
+          </>
+        }
+      />
 
       {/* Add a run */}
-      <div className="card-surface p-4 mb-6">
-        <h2 className="text-sm font-semibold mb-3">
-          Record a run for {prettyDate(date)}
-        </h2>
-        <div className="flex items-start gap-2 flex-wrap">
-          <div className="flex-1 min-w-[280px]">
-            {picked ? (
-              <div className="flex items-center gap-2 h-9 px-3 rounded-md border border-blue-300 bg-blue-50/40 min-w-0">
-                <span className="text-sm font-medium truncate flex-1">
-                  {picked.name}
-                </span>
-                <span className="text-[11px] font-mono text-[var(--muted-foreground)] shrink-0">
-                  {picked.code}
-                </span>
-                {picked.machining_time_seconds != null && (
-                  <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 inline-flex items-center gap-1">
-                    <Clock className="h-3 w-3" />
-                    {formatDuration(picked.machining_time_seconds)}/run
+      <Card className="mb-4">
+        <SectionHeader title={`Record a run for ${prettyDate(date)}`} />
+        <CardBody className="space-y-2">
+          <div className="flex items-start gap-2 flex-wrap">
+            <div className="flex-1 min-w-[280px]">
+              {picked ? (
+                <div className="flex items-center gap-2 h-8 px-3 rounded-md border border-[var(--primary)]/40 bg-[var(--primary)]/5 min-w-0">
+                  <span className="text-sm font-medium truncate flex-1">
+                    {picked.name}
                   </span>
-                )}
-                <button
-                  type="button"
-                  onClick={() => setPicked(null)}
-                  title="Change program"
-                  className="p-0.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer shrink-0"
-                >
-                  <X className="h-3 w-3" />
-                </button>
-              </div>
-            ) : (
-              <ProgramSearch onPick={setPicked} />
-            )}
-          </div>
-          <div className="flex items-center gap-1.5">
-            <label className="text-xs text-[var(--muted-foreground)]">Runs</label>
-            <input
-              type="number"
-              min={1}
-              step={1}
-              value={count || ""}
-              onChange={(e) => setCount(e.target.value ? Number(e.target.value) : 0)}
-              className="w-20 h-9 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+                  <span className="text-[11px] font-mono text-[var(--muted-foreground)] shrink-0">
+                    {picked.code}
+                  </span>
+                  {picked.machining_time_seconds != null && (
+                    <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 inline-flex items-center gap-1">
+                      <Clock className="h-3 w-3" />
+                      {formatDuration(picked.machining_time_seconds)}/run
+                    </span>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => setPicked(null)}
+                    title="Change program"
+                    className="p-0.5 rounded text-[var(--muted-foreground)] hover:text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer shrink-0"
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </div>
+              ) : (
+                <ProgramSearch onPick={setPicked} />
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <label className="text-xs text-[var(--muted-foreground)]">Runs</label>
+              <input
+                type="number"
+                min={1}
+                step={1}
+                value={count || ""}
+                onChange={(e) => setCount(e.target.value ? Number(e.target.value) : 0)}
+                className="w-20 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+              />
+            </div>
+            <Input
+              size="sm"
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Note (optional) — operator, shift, remarks…"
+              className="flex-1 min-w-[200px]"
             />
+            <Button size="sm" onClick={record} disabled={!picked || count <= 0 || saving}>
+              {saving ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Plus className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              Record
+            </Button>
           </div>
-          <Input
-            value={note}
-            onChange={(e) => setNote(e.target.value)}
-            placeholder="Note (optional) — operator, shift, remarks…"
-            className="flex-1 min-w-[200px]"
-          />
-          <Button onClick={record} disabled={!picked || count <= 0 || saving}>
-            {saving ? (
-              <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
-            ) : (
-              <Plus className="h-3.5 w-3.5 mr-1.5" />
-            )}
-            Record
-          </Button>
-        </div>
-        <p className="flex items-start gap-1.5 text-[11px] text-[var(--muted-foreground)] mt-3">
-          <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
-          Only <span className="font-semibold">audited</span> programs can be
-          logged. If the factory ran something new, create the program and mark
-          it audited first — then record it here. Logging a run does{" "}
-          <span className="font-semibold">not</span> consume or produce stock.
-        </p>
-      </div>
+          <p className="flex items-start gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+            <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
+            Only <span className="font-semibold">audited</span> programs can be
+            logged. If the factory ran something new, create the program and mark
+            it audited first — then record it here. Logging a run does{" "}
+            <span className="font-semibold">not</span> consume or produce stock.
+          </p>
+        </CardBody>
+      </Card>
 
       {/* Day summary */}
-      <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
-        <SummaryCard label="Programs run" value={String(initialRows.length)} />
-        <SummaryCard label="Total runs" value={totalRuns.toLocaleString()} />
-        <SummaryCard
+      <StatStrip className="mb-4">
+        <StatTile label="Programs run" value={String(initialRows.length)} />
+        <StatTile label="Total runs" value={totalRuns.toLocaleString()} />
+        <StatTile
           label="Machine time"
           value={totalSeconds > 0 ? formatDuration(totalSeconds) : "—"}
+          tone={missingTime > 0 ? "warn" : "default"}
           sub={missingTime > 0 ? `${missingTime} program${missingTime === 1 ? "" : "s"} missing time/run` : undefined}
         />
-      </div>
+      </StatStrip>
 
       {/* The day's log */}
       {initialRows.length === 0 ? (
-        <div className="card-surface p-8 text-center text-sm text-[var(--muted-foreground)]">
-          Nothing recorded for {prettyDate(date)} yet.
-        </div>
+        <Card>
+          <EmptyState
+            icon={<PlayCircle size={28} />}
+            title={`Nothing recorded for ${prettyDate(date)} yet.`}
+          />
+        </Card>
       ) : (
-        <div className="card-surface divide-y divide-[var(--border)]">
-          {initialRows.map((r) => (
-            <RunRow key={r.id} row={r} onChanged={() => router.refresh()} />
-          ))}
-        </div>
+        <Card>
+          <Table density="compact">
+            <TableHeader sticky>
+              <TableRow>
+                <TableHead>Machine</TableHead>
+                <TableHead>Code</TableHead>
+                <TableHead>Program</TableHead>
+                <TableHead>Note</TableHead>
+                <TableHead className="text-right">Time</TableHead>
+                <TableHead>Date</TableHead>
+                <TableHead className="text-right">Runs</TableHead>
+                <TableHead className="w-8" />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {initialRows.map((r) => (
+                <RunRow key={r.id} row={r} onChanged={() => router.refresh()} />
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
       )}
     </div>
   );
@@ -279,67 +309,75 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
   };
 
   return (
-    <div className="flex items-center gap-3 px-4 py-2.5 flex-wrap">
-      <Badge variant="neutral" className="font-mono text-[11px] shrink-0">
-        {MACHINE[row.machine] ?? row.machine}
-      </Badge>
-      <span className="font-mono text-xs text-[var(--muted-foreground)] shrink-0 w-44 truncate" title={row.code ?? undefined}>
+    <TableRow>
+      <TableCell>
+        <Badge variant="neutral" className="font-mono text-[11px]">
+          {MACHINE[row.machine] ?? row.machine}
+        </Badge>
+      </TableCell>
+      <TableCell className="font-mono text-xs text-[var(--muted-foreground)] max-w-44 truncate" title={row.code ?? undefined}>
         {row.code}
-      </span>
-      <span className="text-sm font-medium flex-1 min-w-[160px] truncate" title={row.name}>
+      </TableCell>
+      <TableCell className="text-sm font-medium max-w-[220px] truncate" title={row.name}>
         {row.name}
-      </span>
-      {row.note && (
-        <span className="text-xs text-[var(--muted-foreground)] italic truncate max-w-[25%]" title={row.note}>
-          {row.note}
+      </TableCell>
+      <TableCell className="text-xs text-[var(--muted-foreground)] italic max-w-[200px] truncate" title={row.note ?? undefined}>
+        {row.note}
+      </TableCell>
+      <TableCell className="text-[11px] text-[var(--muted-foreground)] tabular-nums text-right whitespace-nowrap">
+        <span className="inline-flex items-center gap-1">
+          <Clock className="h-3 w-3" />
+          {row.machining_time_seconds != null
+            ? formatDuration(row.runs_count * row.machining_time_seconds)
+            : "—"}
         </span>
-      )}
-      <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 tabular-nums inline-flex items-center gap-1 w-24 justify-end">
-        <Clock className="h-3 w-3" />
-        {row.machining_time_seconds != null
-          ? formatDuration(row.runs_count * row.machining_time_seconds)
-          : "—"}
-      </span>
-      <input
-        type="date"
-        value={row.run_date}
-        onChange={(e) => changeDate(e.target.value)}
-        disabled={busy}
-        title="The day this entry belongs to — change it to move the entry to another date"
-        className="h-8 px-2 text-xs rounded-md border border-[var(--border)] bg-[var(--background)] cursor-pointer shrink-0 focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-      />
-      <div className="flex items-center gap-1 shrink-0">
-        <span className="text-[11px] text-[var(--muted-foreground)]">×</span>
+      </TableCell>
+      <TableCell>
         <input
-          type="number"
-          min={1}
-          step={1}
-          value={count || ""}
-          onChange={(e) => setCount(e.target.value ? Number(e.target.value) : 0)}
-          className="w-16 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          type="date"
+          value={row.run_date}
+          onChange={(e) => changeDate(e.target.value)}
+          disabled={busy}
+          title="The day this entry belongs to — change it to move the entry to another date"
+          className="h-8 px-2 text-xs rounded-md border border-[var(--border)] bg-[var(--background)] cursor-pointer focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
         />
-        {dirty && (
-          <button
-            type="button"
-            onClick={saveCount}
-            disabled={busy}
-            title="Save the new count"
-            className="p-1 rounded text-emerald-700 hover:bg-emerald-50 cursor-pointer"
-          >
-            {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
-          </button>
-        )}
-      </div>
-      <button
-        type="button"
-        onClick={remove}
-        disabled={busy}
-        title="Remove this entry"
-        className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
-      >
-        <Trash2 className="h-3.5 w-3.5" />
-      </button>
-    </div>
+      </TableCell>
+      <TableCell>
+        <div className="flex items-center justify-end gap-1">
+          <span className="text-[11px] text-[var(--muted-foreground)]">×</span>
+          <input
+            type="number"
+            min={1}
+            step={1}
+            value={count || ""}
+            onChange={(e) => setCount(e.target.value ? Number(e.target.value) : 0)}
+            className="w-16 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+          />
+          {dirty && (
+            <button
+              type="button"
+              onClick={saveCount}
+              disabled={busy}
+              title="Save the new count"
+              className="p-1 rounded text-[var(--success)] hover:bg-[var(--success-bg)] cursor-pointer"
+            >
+              {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+            </button>
+          )}
+        </div>
+      </TableCell>
+      <TableCell>
+        <button
+          type="button"
+          onClick={remove}
+          disabled={busy}
+          title="Remove this entry"
+          className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </TableCell>
+    </TableRow>
   );
 }
 
@@ -400,7 +438,7 @@ function ProgramSearch({ onPick }: { onPick: (p: AuditedProgramHit) => void }) {
         }}
         onFocus={() => setOpen(true)}
         placeholder="Search audited programs by name or code…"
-        className="w-full h-9 pl-8 pr-7 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+        className="w-full h-8 pl-8 pr-7 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
       />
       {loading && (
         <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-[var(--muted-foreground)]" />
@@ -451,22 +489,6 @@ function ProgramSearch({ onPick }: { onPick: (p: AuditedProgramHit) => void }) {
             ))
           )}
         </div>
-      )}
-    </div>
-  );
-}
-
-/* ------------------------------------------------------------------ */
-
-function SummaryCard({ label, value, sub }: { label: string; value: string; sub?: string }) {
-  return (
-    <div className="card-surface p-3">
-      <div className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
-        {label}
-      </div>
-      <div className="text-2xl font-bold tabular-nums">{value}</div>
-      {sub && (
-        <div className="text-[10px] text-amber-600 mt-0.5">{sub}</div>
       )}
     </div>
   );

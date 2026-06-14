@@ -2,15 +2,20 @@
 
 import { useState, useTransition, useCallback, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { Modal } from "@/components/ui/modal";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { EmptyState } from "@/components/ui/empty-state";
+import { useToast } from "@/components/ui/toast";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import {
-  ArrowLeft, Search, Link2, Plus, Check, AlertTriangle, Package, Loader2,
+  Search, Link2, Plus, Check, Package, Loader2,
 } from "lucide-react";
 import type { UnmatchedPattern, ItemOption } from "@/lib/actions/bom-mapping";
 import {
@@ -25,6 +30,7 @@ interface Props {
 
 export function UnmatchedClient({ initialPatterns }: Props) {
   const router = useRouter();
+  const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [patterns, setPatterns] = useState(initialPatterns);
   const [resolved, setResolved] = useState<Set<string>>(new Set());
@@ -101,11 +107,12 @@ export function UnmatchedClient({ initialPatterns }: Props) {
         item.id,
       );
       setResolved((prev) => new Set(prev).add(patternKey(mapTarget)));
+      toast.success(`Mapped ${mapTarget.count} BOM line${mapTarget.count === 1 ? "" : "s"} to ${item.name}`);
       setMapTarget(null);
       // Refresh data
       startTransition(() => router.refresh());
     } catch (err) {
-      alert("Failed to map: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Failed to map: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsMapping(false);
     }
@@ -128,7 +135,7 @@ export function UnmatchedClient({ initialPatterns }: Props) {
   async function handleCreate() {
     if (!createTarget || isCreating) return;
     if (!newItemName.trim() || !newItemCode.trim()) {
-      alert("Name and Code are required");
+      toast.error("Name and Code are required");
       return;
     }
     setIsCreating(true);
@@ -145,10 +152,11 @@ export function UnmatchedClient({ initialPatterns }: Props) {
         createTarget.value_text,
       );
       setResolved((prev) => new Set(prev).add(patternKey(createTarget)));
+      toast.success(`Created ${newItemName.trim()} and mapped ${createTarget.count} line${createTarget.count === 1 ? "" : "s"}`);
       setCreateTarget(null);
       startTransition(() => router.refresh());
     } catch (err) {
-      alert("Failed to create: " + (err instanceof Error ? err.message : String(err)));
+      toast.error("Failed to create: " + (err instanceof Error ? err.message : String(err)));
     } finally {
       setIsCreating(false);
     }
@@ -157,50 +165,36 @@ export function UnmatchedClient({ initialPatterns }: Props) {
   const activePatterns = patterns.filter((p) => !resolved.has(patternKey(p)));
 
   return (
-    <div className="p-6 max-w-[1200px] mx-auto space-y-6">
-      {/* Header */}
-      <div className="flex items-center gap-4">
-        <Link
-          href="/jobs"
-          className="p-2 rounded-lg hover:bg-[var(--muted)] transition-colors"
-        >
-          <ArrowLeft size={20} />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-2xl font-bold">Unmatched BOM Items</h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
-            BOM lines that need to be mapped to inventory items. Map once here and it applies across all jobs.
-          </p>
-        </div>
-      </div>
+    <div className="p-6 max-w-[1200px] mx-auto">
+      <PageHeader
+        title="Unmatched BOM Items"
+        meta={`${activePatterns.length} pattern${activePatterns.length === 1 ? "" : "s"} · ${totalUnmatched - totalResolved} lines`}
+        subtitle="BOM lines that need to be mapped to inventory items. Map once here and it applies across all jobs."
+        onBack={() => router.push("/jobs")}
+      />
 
       {/* Stats */}
-      <div className="grid grid-cols-3 gap-4">
-        <div className="rounded-lg border border-[var(--border)] p-4">
-          <div className="text-sm text-[var(--muted-foreground)]">Unique Patterns</div>
-          <div className="text-2xl font-bold mt-1">{activePatterns.length}</div>
-        </div>
-        <div className="rounded-lg border border-[var(--border)] p-4">
-          <div className="text-sm text-[var(--muted-foreground)]">Total Unmatched Lines</div>
-          <div className="text-2xl font-bold mt-1 text-amber-600">{totalUnmatched - totalResolved}</div>
-        </div>
-        <div className="rounded-lg border border-[var(--border)] p-4">
-          <div className="text-sm text-[var(--muted-foreground)]">Resolved This Session</div>
-          <div className="text-2xl font-bold mt-1 text-green-600">{totalResolved}</div>
-        </div>
-      </div>
+      <StatStrip className="mb-3">
+        <StatTile label="Unique Patterns" value={activePatterns.length} />
+        <StatTile
+          label="Total Unmatched Lines"
+          value={totalUnmatched - totalResolved}
+          tone="warn"
+        />
+        <StatTile label="Resolved This Session" value={totalResolved} tone="ok" />
+      </StatStrip>
 
       {/* Table */}
       {activePatterns.length === 0 ? (
-        <div className="text-center py-12 text-[var(--muted-foreground)]">
-          <Check size={48} className="mx-auto mb-4 text-green-500" />
-          <p className="text-lg font-medium">All BOM items are mapped!</p>
-          <p className="text-sm mt-1">Every BOM line is linked to an inventory item.</p>
-        </div>
+        <EmptyState
+          icon={<Check size={28} className="text-[var(--success)]" />}
+          title="All BOM items are mapped!"
+          description="Every BOM line is linked to an inventory item."
+        />
       ) : (
         <div className="rounded-lg border border-[var(--border)]">
-          <Table>
-            <TableHeader>
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <TableHead>Category</TableHead>
                 <TableHead>Variant</TableHead>
@@ -214,26 +208,24 @@ export function UnmatchedClient({ initialPatterns }: Props) {
               {activePatterns.map((p, idx) => (
                 <TableRow key={idx}>
                   <TableCell>
-                    <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-xs font-medium bg-[var(--muted)]">
-                      {p.category}
-                    </span>
+                    <Badge variant="neutral">{p.category}</Badge>
                   </TableCell>
-                  <TableCell className="font-mono text-sm">
+                  <TableCell className="font-mono text-[13px]">
                     {p.variant || <span className="text-[var(--muted-foreground)]">-</span>}
                   </TableCell>
                   <TableCell className="max-w-[300px]">
                     {p.value_text ? (
-                      <span className="text-sm break-words">{p.value_text}</span>
+                      <span className="break-words">{p.value_text}</span>
                     ) : (
-                      <span className="text-[var(--muted-foreground)] text-sm italic">
+                      <span className="text-[var(--muted-foreground)] italic">
                         No value text
                       </span>
                     )}
                   </TableCell>
                   <TableCell className="text-right font-mono">
-                    <span className="text-amber-600 font-medium">{p.count}</span>
+                    <span className="text-[var(--warning)] font-medium">{p.count}</span>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
+                  <TableCell className="text-right font-mono">
                     {p.jobs_affected}
                   </TableCell>
                   <TableCell className="text-right">
@@ -404,17 +396,16 @@ export function UnmatchedClient({ initialPatterns }: Props) {
 
             <div>
               <label className="block text-sm font-medium mb-1">Item Type</label>
-              <select
+              <Select
                 value={newItemType}
                 onChange={(e) => setNewItemType(e.target.value)}
-                className="w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 py-2 text-sm"
               >
                 <option value="raw_material">Raw Material</option>
                 <option value="sub_assembly">Sub Assembly</option>
                 <option value="finished_good">Finished Good</option>
                 <option value="mechanical_finished_stock">Mechanical Finished Stock</option>
                 <option value="door_panel">Door Panel</option>
-              </select>
+              </Select>
             </div>
 
             <div className="flex justify-end gap-2 pt-2">

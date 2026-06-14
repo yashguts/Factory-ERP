@@ -31,6 +31,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
+import { Tabs } from "@/components/ui/tabs";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import {
@@ -370,8 +375,8 @@ export function ProgramsClient({
       total === 0
         ? "text-[var(--muted-foreground)]"
         : matched === total
-          ? "text-emerald-600"
-          : "text-amber-600";
+          ? "text-[var(--success)]"
+          : "text-[var(--warning)]";
     return (
       <span className={cn("inline-flex items-center gap-1 tabular-nums", tone)}>
         {icon}
@@ -402,12 +407,7 @@ export function ProgramsClient({
         onClick={() => router.push(`/programs/${op.id}`)}
       >
         <TableCell className="w-10 text-center">
-          {audited && (
-            <span
-              className="inline-block h-2 w-2 rounded-full bg-emerald-500"
-              title="Audited"
-            />
-          )}
+          {audited && <Badge dot variant="green" className="inline-block" title="Audited" />}
         </TableCell>
         <TableCell
           className={cn(
@@ -455,10 +455,10 @@ export function ProgramsClient({
               onClick={() => requestAudit(op)}
               title={audited ? "Audited — click to unmark" : "Mark audited"}
               className={cn(
-                "p-1.5 rounded cursor-pointer",
+                "p-1 rounded cursor-pointer",
                 audited
-                  ? "text-emerald-600 hover:bg-emerald-50"
-                  : "text-[var(--muted-foreground)] hover:text-emerald-600 hover:bg-[var(--muted)]",
+                  ? "text-[var(--success)] hover:bg-[var(--success-bg)]"
+                  : "text-[var(--muted-foreground)] hover:text-[var(--success)] hover:bg-[var(--muted)]",
               )}
             >
               <Check className="h-3.5 w-3.5" />
@@ -468,7 +468,7 @@ export function ProgramsClient({
               onClick={() => open(op.id, "edit")}
               disabled={busyId === op.id}
               title="Quick edit — fill items + quantities"
-              className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50"
+              className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50"
             >
               {busyId === op.id ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -481,7 +481,7 @@ export function ProgramsClient({
               onClick={() => open(op.id, "clone")}
               disabled={busyId === op.id}
               title="Clone this program"
-              className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50"
+              className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-50"
             >
               <Copy className="h-3.5 w-3.5" />
             </button>
@@ -574,90 +574,75 @@ export function ProgramsClient({
 
   return (
     <div>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <Cog className="h-6 w-6 text-[var(--muted-foreground)]" />
-            Programs
-          </h1>
-          <p className="text-sm text-[var(--muted-foreground)] mt-1">
+      <PageHeader
+        title="Programs"
+        icon={<Cog size={18} />}
+        meta={
+          <>
             {initialOperations.length} programs
             {" · "}
-            <span className="text-emerald-700 font-medium">
+            <span className="text-[var(--success)] font-medium">
               {auditedCount} audited
             </span>{" "}
             / {initialOperations.length - auditedCount} pending
             {" · "}
-            <span className="text-amber-700 font-medium">
+            <span className="text-[var(--warning)] font-medium">
               {matchCounts.unmatched} need item mapping
             </span>
-          </p>
-        </div>
-        <Button onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>
-          <Plus className="h-4 w-4 mr-1.5" />Add Program
-        </Button>
-      </div>
+          </>
+        }
+        actions={
+          <Button size="sm" onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>
+            <Plus className="h-4 w-4 mr-1.5" />Add Program
+          </Button>
+        }
+      />
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      <Toolbar>
         <div className="relative max-w-sm flex-1 min-w-[220px]">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
-          <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search by code, name, material or item..." className="w-full h-9 pl-9 pr-9 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:ring-offset-1 transition-colors" />
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
+          <Input
+            size="sm"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by code, name, material or item..."
+            className="pl-8 pr-8"
+          />
           {searching && (
-            <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] animate-spin pointer-events-none" />
+            <Loader2 className="absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] animate-spin pointer-events-none" />
           )}
         </div>
 
         {/* View toggle: group material variants by family, or flat list. */}
-        <div className="inline-flex items-center rounded-md border border-[var(--border)] p-0.5">
-          <button
-            type="button"
-            onClick={() => setView("family")}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-2.5 h-8 rounded text-sm cursor-pointer transition-colors",
-              view === "family"
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-            )}
-            title="Group material variants under their base program"
-          >
-            <Layers className="h-3.5 w-3.5" />
-            Grouped
-          </button>
-          <button
-            type="button"
-            onClick={() => setView("flat")}
-            className={cn(
-              "inline-flex items-center gap-1.5 px-2.5 h-8 rounded text-sm cursor-pointer transition-colors",
-              view === "flat"
-                ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
-                : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-            )}
-            title="Show every program as its own row"
-          >
-            <List className="h-3.5 w-3.5" />
-            Flat
-          </button>
-        </div>
+        <Tabs
+          value={view}
+          onChange={(v) => setView(v as ViewMode)}
+          tabs={[
+            { value: "family", label: <span className="inline-flex items-center gap-1.5"><Layers className="h-3.5 w-3.5" />Grouped</span> },
+            { value: "flat", label: <span className="inline-flex items-center gap-1.5"><List className="h-3.5 w-3.5" />Flat</span> },
+          ]}
+        />
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <FilterChip label="All" count={initialOperations.length} active={machineFilter === "all"} onClick={() => setMachineFilter("all")} />
           {OPERATION_MACHINES.map((m) => (
             <FilterChip key={m} label={OPERATION_MACHINE_LABELS[m]} count={counts[m] ?? 0} active={machineFilter === m} onClick={() => setMachineFilter(m)} />
           ))}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center gap-1.5 flex-wrap">
           <FilterChip label="All Labels" count={initialOperations.length} active={labelFilter === "all"} onClick={() => setLabelFilter("all")} />
           {distinctLabels.map((l) => (
             <FilterChip key={l} label={l} count={labelCounts[l] ?? 0} active={labelFilter === l} onClick={() => setLabelFilter(labelFilter === l ? "all" : l)} />
           ))}
         </div>
-        <div className="flex items-center gap-1.5 ml-auto">
+        <ToolbarSpacer />
+        <div className="flex items-center gap-1.5 flex-wrap">
           <FilterChip label="Ready" tone="green" count={matchCounts.ready} active={matchFilter === "ready"} onClick={() => setMatchFilter(matchFilter === "ready" ? "all" : "ready")} />
           <FilterChip label="Needs mapping" tone="amber" count={matchCounts.unmatched} active={matchFilter === "unmatched"} onClick={() => setMatchFilter(matchFilter === "unmatched" ? "all" : "unmatched")} />
           <FilterChip label="Pending" count={initialOperations.length - auditedCount} active={auditFilter === "pending"} onClick={() => setAuditFilter(auditFilter === "pending" ? "all" : "pending")} />
           <FilterChip label="Audited" tone="green" count={auditedCount} active={auditFilter === "audited"} onClick={() => setAuditFilter(auditFilter === "audited" ? "all" : "audited")} />
         </div>
-      </div>
+      </Toolbar>
 
       {showGroupChrome && multiGroupKeys.length > 0 && !forceExpandAll && (
         <div className="mb-2 flex items-center gap-3 text-xs text-[var(--muted-foreground)]">
@@ -681,8 +666,8 @@ export function ProgramsClient({
       )}
 
       <div className="card-surface overflow-hidden">
-        <Table>
-          <TableHeader>
+        <Table density="compact">
+          <TableHeader sticky>
             <TableRow>
               <TableHead className="w-10 text-center" title="Audited">✓</TableHead>
               <TableHead className="w-[180px]">{showGroupChrome ? "Code / Variants" : "Code"}</TableHead>
@@ -697,12 +682,17 @@ export function ProgramsClient({
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow className="hover:bg-transparent">
-                <TableCell colSpan={8} className="text-center py-12 text-[var(--muted-foreground)] text-sm">
-                  {initialOperations.length === 0
-                    ? "No programs yet."
-                    : hasQuery && (searching || !matchIds)
-                      ? "Searching…"
-                      : "No programs match your filters."}
+                <TableCell colSpan={8} className="p-0">
+                  <EmptyState
+                    icon={<Cog size={28} />}
+                    title={
+                      initialOperations.length === 0
+                        ? "No programs yet."
+                        : hasQuery && (searching || !matchIds)
+                          ? "Searching…"
+                          : "No programs match your filters."
+                    }
+                  />
                 </TableCell>
               </TableRow>
             ) : view === "flat" ? (
@@ -777,16 +767,16 @@ function FilterChip({
 }) {
   const activeClass =
     tone === "green"
-      ? "border-emerald-300 bg-emerald-50 text-emerald-700 font-medium"
+      ? "border-[var(--success-border)] bg-[var(--success-bg)] text-[var(--success)] font-medium"
       : tone === "amber"
-        ? "border-amber-300 bg-amber-50 text-amber-700 font-medium"
+        ? "border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] font-medium"
         : "border-[var(--primary)] bg-[var(--accent)] text-[var(--accent-foreground)] font-medium";
   return (
     <button
       type="button"
       onClick={onClick}
       className={cn(
-        "inline-flex items-center gap-1.5 px-2.5 h-9 rounded-md text-sm border cursor-pointer transition-colors",
+        "inline-flex items-center gap-1.5 px-2.5 h-8 rounded-md text-sm border cursor-pointer transition-colors",
         active
           ? activeClass
           : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]",

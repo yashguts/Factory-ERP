@@ -80,7 +80,7 @@ export function CategoryPickerModal({
   }, [paths, search, existingPaths]);
 
   return (
-    <Modal title="Add Section From Inventory" onClose={onClose} className="max-w-2xl">
+    <Modal title="Add Section From Inventory" onClose={onClose} size="lg">
       <div className="space-y-3">
         <p className="text-sm text-[var(--muted-foreground)]">
           Pick any inventory category. Items in this category (and all its

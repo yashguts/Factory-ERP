@@ -179,13 +179,13 @@ function ItemSearchSelect({
                 key={item.id}
                 className={`px-3 py-2 text-sm cursor-pointer transition-colors ${
                   idx === highlightIdx
-                    ? "bg-blue-600 text-white"
+                    ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
                     : "text-[var(--foreground)] hover:bg-[var(--muted)]"
                 }`}
                 onMouseEnter={() => setHighlightIdx(idx)}
                 onClick={() => choose(item)}
               >
-                <span className={idx === highlightIdx ? "text-blue-200" : "text-[var(--muted-foreground)]"}>
+                <span className={idx === highlightIdx ? "opacity-80" : "text-[var(--muted-foreground)]"}>
                   {item.code}
                 </span>
                 {" — "}
@@ -247,7 +247,7 @@ export function StockAdjustModal({
 
   return (
     <Modal title="Stock Adjustment" onClose={onClose}>
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form onSubmit={handleSubmit} className="space-y-3">
         {error && (
           <div className="p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
             {error}
@@ -264,66 +264,70 @@ export function StockAdjustModal({
           />
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
-            Warehouse
-          </label>
-          <Select
-            value={form.warehouse_id}
-            onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}
-            required
-          >
-            <option value="">Select warehouse</option>
-            {warehouses.map((wh) => (
-              <option key={wh.id} value={wh.id}>
-                {wh.name}
-              </option>
-            ))}
-          </Select>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+              Warehouse
+            </label>
+            <Select
+              value={form.warehouse_id}
+              onChange={(e) => setForm({ ...form, warehouse_id: e.target.value })}
+              required
+            >
+              <option value="">Select warehouse</option>
+              {warehouses.map((wh) => (
+                <option key={wh.id} value={wh.id}>
+                  {wh.name}
+                </option>
+              ))}
+            </Select>
+          </div>
+
+          <div>
+            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+              Transaction Type
+            </label>
+            <Select
+              value={form.transaction_type}
+              onChange={(e) =>
+                setForm({ ...form, transaction_type: e.target.value as TransactionType })
+              }
+            >
+              <option value="purchase_in">Purchase In</option>
+              <option value="production_in">Production In</option>
+              <option value="production_out">Production Out (deducts)</option>
+              <option value="adjustment">Adjustment</option>
+              <option value="transfer">Transfer</option>
+              <option value="scrap">Scrap (deducts)</option>
+            </Select>
+          </div>
         </div>
 
-        <div>
-          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
-            Transaction Type
-          </label>
-          <Select
-            value={form.transaction_type}
-            onChange={(e) =>
-              setForm({ ...form, transaction_type: e.target.value as TransactionType })
-            }
-          >
-            <option value="purchase_in">Purchase In</option>
-            <option value="production_in">Production In</option>
-            <option value="production_out">Production Out (deducts)</option>
-            <option value="adjustment">Adjustment</option>
-            <option value="transfer">Transfer</option>
-            <option value="scrap">Scrap (deducts)</option>
-          </Select>
-        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+              Quantity
+            </label>
+            <Input
+              type="number"
+              value={form.quantity || ""}
+              onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
+              required
+              min={0.001}
+              step="0.001"
+            />
+          </div>
 
-        <div>
-          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
-            Quantity
-          </label>
-          <Input
-            type="number"
-            value={form.quantity || ""}
-            onChange={(e) => setForm({ ...form, quantity: Number(e.target.value) })}
-            required
-            min={0.001}
-            step="0.001"
-          />
-        </div>
-
-        <div>
-          <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
-            Notes
-          </label>
-          <Input
-            value={form.notes}
-            onChange={(e) => setForm({ ...form, notes: e.target.value })}
-            placeholder="e.g., Invoice #1234, PO reference"
-          />
+          <div>
+            <label className="block text-sm font-medium text-[var(--foreground)] mb-1">
+              Notes
+            </label>
+            <Input
+              value={form.notes}
+              onChange={(e) => setForm({ ...form, notes: e.target.value })}
+              placeholder="e.g., Invoice #1234, PO reference"
+            />
+          </div>
         </div>
 
         <div className="flex justify-end gap-2 pt-4 border-t border-[var(--border)]">

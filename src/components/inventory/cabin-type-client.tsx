@@ -19,6 +19,9 @@ import { ArrowLeft, Search, Container, Plus, ChevronLeft, ChevronRight } from "l
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { PageHeader } from "@/components/ui/page-header";
+import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
   TableHeader,
@@ -146,34 +149,35 @@ export function CabinTypeClient({
 
   return (
     <div>
-      <div className="mb-6">
-        <Link
-          href="/cabin-inventory"
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Cabin Inventory
-        </Link>
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-              <Container className="h-6 w-6" /> {typeName}
-            </h1>
-            <p className="text-sm text-[var(--muted-foreground)] mt-1">
-              {total.toLocaleString()} of {typeTotal.toLocaleString()} items ·{" "}
-              {inStock.toLocaleString()} in stock
-              {isPending ? " — loading…" : ""}
-            </p>
-          </div>
-          <Button onClick={() => setShowAdd(true)}>
+      <Link
+        href="/cabin-inventory"
+        className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2"
+      >
+        <ArrowLeft className="h-3.5 w-3.5" /> Back to Cabin Inventory
+      </Link>
+
+      <PageHeader
+        icon={<Container size={18} />}
+        title={typeName}
+        meta={
+          <>
+            {total.toLocaleString()} of {typeTotal.toLocaleString()} items ·{" "}
+            {inStock.toLocaleString()} in stock
+            {isPending ? " — loading…" : ""}
+          </>
+        }
+        actions={
+          <Button size="sm" onClick={() => setShowAdd(true)}>
             <Plus className="h-4 w-4 mr-1.5" /> Add item
           </Button>
-        </div>
-      </div>
+        }
+      />
 
-      <div className="flex flex-wrap gap-3 mb-4">
-        <div className="relative flex-1 min-w-[220px] max-w-sm">
+      <Toolbar>
+        <div className="relative w-full max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <Input
+            size="sm"
             placeholder="Search code or name..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
@@ -182,6 +186,7 @@ export function CabinTypeClient({
         </div>
         {subCategories.length > 0 && (
           <Select
+            size="sm"
             value={subFilter}
             onChange={(e) => setSubFilter(e.target.value)}
             className="w-[200px]"
@@ -194,22 +199,26 @@ export function CabinTypeClient({
             ))}
           </Select>
         )}
-      </div>
+        <ToolbarSpacer />
+      </Toolbar>
 
       {rows.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {isPending
-              ? "Loading…"
-              : typeTotal === 0
-                ? "No items in this type yet."
-                : "No items match your filters."}
-          </p>
+        <div className="card-surface">
+          <EmptyState
+            icon={<Container size={28} />}
+            title={
+              isPending
+                ? "Loading…"
+                : typeTotal === 0
+                  ? "No items in this type yet"
+                  : "No items match your filters"
+            }
+          />
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table>
-            <TableHeader>
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <TableHead>Code</TableHead>
                 <TableHead>Name</TableHead>
@@ -225,8 +234,8 @@ export function CabinTypeClient({
                   onClick={() => router.push(`/inventory/${it.id}`)}
                 >
                   <TableCell className="font-mono text-xs">{it.code}</TableCell>
-                  <TableCell className="font-medium text-sm">{it.name}</TableCell>
-                  <TableCell className="text-sm text-[var(--muted-foreground)]">
+                  <TableCell className="font-medium">{it.name}</TableCell>
+                  <TableCell className="text-[var(--muted-foreground)]">
                     {it.sub_category ?? "—"}
                   </TableCell>
                   <TableCell className="text-right font-medium tabular-nums">
@@ -235,7 +244,7 @@ export function CabinTypeClient({
                         it.total_stock > 0
                           ? "text-[var(--foreground)]"
                           : it.total_stock < 0
-                            ? "text-red-600"
+                            ? "text-[var(--destructive)]"
                             : "text-[var(--muted-foreground)]"
                       }
                     >
