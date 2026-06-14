@@ -14,24 +14,54 @@ import {
   ClipboardCheck,
   Search,
   PlayCircle,
+  LucideIcon,
 } from "lucide-react";
 
-const navItems = [
-  { href: "/inventory", label: "Inventory", icon: Package },
-  { href: "/cabin-inventory", label: "Cabin Inventory", icon: Container },
-  { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
-  { href: "/inventory/changes", label: "Daily Changes", icon: History },
-  { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
-  { href: "/programs", label: "Programs", icon: Cog },
-  { href: "/program-runs", label: "Daily Program Runs", icon: PlayCircle },
-  { href: "/jobs", label: "Job Orders", icon: ClipboardList },
-  { href: "/mrp", label: "MRP", icon: Calculator },
+interface NavItem {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+}
+
+// Grouped, data-driven nav. The flat href set (derived below) still feeds the
+// exact longest-prefix active-match logic — grouping only changes how items are
+// visually bucketed, never which hrefs the matcher sees.
+const navGroups: { label: string; items: NavItem[] }[] = [
+  {
+    label: "Inventory",
+    items: [
+      { href: "/inventory", label: "Inventory", icon: Package },
+      { href: "/cabin-inventory", label: "Cabin Inventory", icon: Container },
+      { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
+      { href: "/inventory/changes", label: "Daily Changes", icon: History },
+    ],
+  },
+  {
+    label: "Production",
+    items: [
+      { href: "/programs", label: "Programs", icon: Cog },
+      { href: "/program-runs", label: "Program Runs", icon: PlayCircle },
+    ],
+  },
+  {
+    label: "Orders",
+    items: [
+      { href: "/jobs", label: "Job Orders", icon: ClipboardList },
+      { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
+    ],
+  },
+  {
+    label: "Planning",
+    items: [{ href: "/mrp", label: "MRP", icon: Calculator }],
+  },
 ];
+
+const allItems = navGroups.flatMap((g) => g.items);
 
 export function Sidebar() {
   const pathname = usePathname();
 
-  const activeHref = navItems
+  const activeHref = allItems
     .map((i) => i.href)
     .filter((href) =>
       href === "/"
@@ -41,10 +71,10 @@ export function Sidebar() {
     .sort((a, b) => b.length - a.length)[0];
 
   return (
-    <aside className="w-64 border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] h-screen sticky top-0 flex flex-col">
-      <div className="px-5 py-4 border-b border-[var(--sidebar-border)]">
-        <h1 className="text-base font-bold tracking-tight">Factory ERP</h1>
-        <p className="text-xs text-[var(--muted-foreground)] mt-0.5">
+    <aside className="w-56 border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] h-screen sticky top-0 flex flex-col">
+      <div className="px-4 py-3.5 border-b border-[var(--sidebar-border)]">
+        <h1 className="text-sm font-bold tracking-tight">Factory ERP</h1>
+        <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
           Elevator Manufacturing
         </p>
       </div>
@@ -55,37 +85,45 @@ export function Sidebar() {
           onClick={() =>
             window.dispatchEvent(new CustomEvent("open-global-search"))
           }
-          className="w-full flex items-center gap-2.5 px-3 py-2 rounded-md text-sm text-[var(--muted-foreground)] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
+          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm text-[var(--muted-foreground)] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
         >
           <Search size={15} strokeWidth={1.75} />
-          <span className="flex-1 text-left">Search everything…</span>
+          <span className="flex-1 text-left">Search…</span>
           <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--muted)]">
             Ctrl K
           </kbd>
         </button>
       </div>
 
-      <nav className="flex-1 px-3 py-3 space-y-0.5">
-        {navItems.map((item) => {
-          const Icon = item.icon;
-          const isActive = item.href === activeHref;
-
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex items-center gap-3 px-3 py-2 rounded-md text-sm transition-all duration-150",
-                isActive
-                  ? "bg-[var(--sidebar-accent)] text-[var(--primary)] font-medium shadow-[var(--shadow-xs)]"
-                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              )}
-            >
-              <Icon size={18} strokeWidth={isActive ? 2.25 : 1.75} />
-              {item.label}
-            </Link>
-          );
-        })}
+      <nav className="flex-1 px-3 py-3 overflow-y-auto">
+        {navGroups.map((group, gi) => (
+          <div key={group.label} className={cn(gi > 0 && "mt-4")}>
+            <div className="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+              {group.label}
+            </div>
+            <div className="space-y-0.5">
+              {group.items.map((item) => {
+                const Icon = item.icon;
+                const isActive = item.href === activeHref;
+                return (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className={cn(
+                      "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm transition-all duration-150",
+                      isActive
+                        ? "bg-[var(--sidebar-accent)] text-[var(--primary)] font-medium shadow-[var(--shadow-xs)]"
+                        : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                    )}
+                  >
+                    <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
+                    {item.label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
     </aside>
   );
