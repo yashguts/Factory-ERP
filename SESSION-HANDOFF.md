@@ -1,11 +1,107 @@
-# Session Handoff — 2026-06-14
+# Session Handoff — 2026-06-14 (session B · UI refactor + procurement + data)
 
 > For the next Claude session. Read **CLAUDE.md** (deep technical reference) and
 > **AI-JOB-BUILDER-PROGRAM.md** (the AI Job Builder SSOT) first; this file is the
-> *what-just-happened + what's-open* picture. Earlier handoffs (06-11 → 06-13) are
-> preserved below — still-valid context.
+> *what-just-happened + what's-open* picture. Newest session on top; earlier
+> handoffs (06-14 session A, 06-11 → 06-13) preserved below — still-valid context.
 
-## This session — all SHIPPED, LIVE on main, verified
+## What shipped this session — all LIVE on main, verified (tsc + build green)
+
+1. **Whole-app compact/professional UI refactor** (owner brief: "professional,
+   clean, COMPACT" without losing any functionality/data/mappings). Audit-first
+   via parallel agent workflows; every flip adversarially verified against a
+   per-area preserve-list. **Presentation only — no locked logic touched**
+   (make-plan optimiser, dispatch≠inventory, name=lookup_key, weekly Σruns proof,
+   seedRow useMemo, cabin auto-cover, save semantics — all byte-identical).
+   - New primitives in `src/components/ui/`: `PageHeader`, `Toolbar`/`ToolbarSpacer`,
+     `Tabs` (segmented + underline), `StatStrip`/`StatTile` (tone ok/warn/danger),
+     `EmptyState`, `Card`/`CardBody`/`SectionHeader`. Enhanced: `Input`/`Select`
+     `size="sm"`, `Table` `density="comfortable|compact|dense"` (context) + sticky
+     header, `Modal` `size`. Inter wired to `--font-sans`. Sidebar grouped
+     (Inventory / Production / Orders / Planning), w-56.
+   - **Every list uses `density="dense"`** (~26px rows) — the owner kept asking for
+     tighter; dense is now the standard. New lists should match.
+   - Job detail: dead progress bar → REAL shipped %; 18-field meta grid collapses
+     blank legacy columns; per-job stock readiness (in-stock vs required by phase).
+
+2. **Procurement** (`/procurement`, `lib/actions/procurement.ts` + `po-outstanding.ts`).
+   New tables `purchase_orders` / `purchase_order_lines` (migrations
+   `add_purchase_orders` + `po_line_description`). Three views (Tabs): **Orders /
+   By item / By supplier** (`getProcurementData`, tag `purchase-orders`). PO# column
+   on Orders. "Generate draft POs from Trade shortfall" (orders the net `to_buy`).
+   Receiving posts inventory via `recordTransaction(purchase_in)` into MAIN_STORE —
+   the one stock writer, idempotent, honours dispatch≠inventory.
+
+3. **Outstanding POs net into MRP.** `MrpRow` gained `on_order` + `to_buy`
+   (= max(0, shortfall − on_order)); shortfall/demand UNCHANGED. **Owner rule: a
+   shortfall item STILL shows even when a PO fully covers it** (flagged "on order",
+   To-buy 0) — never filtered. `getMrpData` tags += `purchase-orders`. Weekly trade
+   lane time-phases POs by `expected_date` (`cumulativeShortfall` nets on-order by
+   arrival week; no date → arrives now). Optimiser / Σruns untouched (make has no
+   POs → provable no-op).
+
+4. **Machine-load tab** on `/mrp/weekly` (per-machine×week planned hours vs editable
+   capacity in localStorage; read-only on the locked plan). **Plan-vs-actual** on
+   `/program-runs` (this week's planned runs vs logged-today + one-click Log).
+
+5. **Perf wins** (merged `feature/perf-wins`). **THE bug:** `getMakeProductionPlan`/
+   `getProductionPlan` called the CACHED `getMrpData`/`getItemsWithStock` *inside*
+   their own `unstable_cache` → Next degrades the OUTER cache to pass-through → the
+   optimiser re-ran ~5-6s every load. Fixed via un-nested `_getMrpDataUncached` /
+   `_getItemsWithStockUncached`. **LESSON: never call a cached read inside another
+   `unstable_cache`.** Also cached `getJobDispatchSummary`, `getJobsDispatchStatus`
+   (`/jobs` now ISR), `getStockForItems`. Measured live: make-plan warm 5-6s → ~2.2s.
+   **REGION MOVE (Netlify us-east-2 → Mumbai) is STILL the #1 perf fix** — excluded
+   on purpose (owner one-click; ~270 ms/query saved; see the perf deep-dive below).
+
+6. **Data loaded** (via PostgREST REST + anon key, **matched ONLY by item `code`**):
+   - Suppliers on **1,030 active trade items**.
+   - **33 open POs / 80 lines** (status `ordered`, source descriptions preserved).
+   - **57 no-category phantom parts** → set `stock_behaviour='phantom'` + AI-mapped
+     to existing categories (adversarial verify; every path validated against the
+     live taxonomy). 4 wrongly-STOCKED parts now phantom (LP-076, SA-003, SA-004,
+     SA-005). Owner reviewed the Swing Door ones → LP-024/LP-025 moved to
+     `Swing Door › Swing Door`; LP-021 kept in `Swing Door › Swing Door Cover`.
+     Result sheet: `Downloads/Phantom Parts - Category Assigned 14.06.2026.xlsx`.
+
+## Open items / next-session candidates
+
+- **★ Weekly week-labels (owner asked at end of session, NOT yet built):** replace
+  the "This week / Next week / In N weeks" wording with **actual date ranges**, and
+  switch weeks to **Sunday–Saturday** (currently Monday-start). Target labels like
+  **"14–20 Jun"** (Sun→Sat). Touch points: `buildWeeks` in `lib/actions/mrp-weekly.ts`
+  (week start → Sunday), the `WeekMeta` label/title, the weekly board
+  (`weekly-board.tsx` / `weekly-mrp-client.tsx`), and `curWeek` wherever program-runs
+  plan-vs-actual / weekly capacity compute "this week". **CAREFUL:** moving the week
+  boundary re-buckets which jobs/POs land in which week — re-verify the Σruns/
+  allocation proof still holds (it should; only bucket edges move, the optimiser
+  still runs once on the full horizon). Keep the "Overdue" lane. Labelling +
+  bucketing change only — do NOT touch the locked optimiser.
+- **4 belt-component items** `FG-GR-066/067/068/069` to create + add to PO
+  `LTE/PO/26-27/098` (owner has the list; skipped because not yet in inventory).
+- **Expected dates on POs**: owner to enter per PO (editable on PO detail) so the
+  weekly trade time-phasing is precise; until then on-order = arrives now.
+- **No-link queue**: 2 exports in Downloads (`Trade Items - No Link` 436 +
+  `Make Items - No Link` 132) for the owner to link/categorize. The 57 phantom just
+  done shrank it; many now classify as Jobs/Formula.
+- **Wave 1d polish (deferred, low priority):** remaining `window.confirm/alert` →
+  `ConfirmDialog`/`useToast`.
+- **Data-dependent no-ops (need owner data first):** below-reorder filter/sort +
+  reorder-point replenishment POs, lead-time "order by" — all need
+  `reorder_point`/`lead_time_days` populated (currently ~0).
+
+## Working agreements (this session)
+
+- **Verify on the LIVE deploy** — OneDrive makes local dev/`unstable_cache` flaky.
+- **Out-of-band DB writes (REST/SQL) need an empty commit** to wipe app caches.
+- **Match imports by CODE, never name.** Preview/count before bulk writes.
+- Scratch scripts live in the session temp `tasks/` dir (recon / import / export /
+  categorize). Branches `feature/erp-refactor` + `feature/planning-features` +
+  `feature/perf-wins` preserved for revert.
+
+---
+
+# (Earlier · 2026-06-14 session A) Weekly MRP + AI/dispatch — SHIPPED, LIVE on main, verified
 
 1. **Weekly MRP plan** (`/mrp/weekly`) — the headline. MRP broken into an Overdue
    lane + the next 8 Monday-start weeks, sub-tabs **Make / Trade / Programs to run /
