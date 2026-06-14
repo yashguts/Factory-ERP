@@ -301,23 +301,11 @@ export async function generateDraftPosFromShortfall(
     );
     if (rows.length === 0) return { ok: true, orders: 0, lines: 0, skipped: 0 };
 
-    // Skip items already sitting on an open (draft/ordered) PO so repeated
-    // clicks don't pile up duplicate lines.
-    const { data: openPos } = await supabase
-      .from("purchase_orders")
-      .select("id")
-      .in("status", OPEN_STATUSES);
-    const openIds = (openPos ?? []).map((p) => p.id);
-    const onOpenPo = new Set<string>();
-    if (openIds.length > 0) {
-      const { data: openLines } = await supabase
-        .from("purchase_order_lines")
-        .select("item_id")
-        .in("po_id", openIds);
-      for (const l of openLines ?? []) onOpenPo.add(l.item_id);
-    }
-
-    const candidates = rows.filter((r) => !onOpenPo.has(r.item_id));
+    // Order only the NET gap (to_buy = shortfall − on-order). Items already
+    // fully covered by an open PO have to_buy === 0 and are skipped. A newly
+    // created draft PO itself counts as on-order, so re-running won't pile up
+    // duplicate lines.
+    const candidates = rows.filter((r) => r.to_buy > 0);
     const skipped = rows.length - candidates.length;
     if (candidates.length === 0) return { ok: true, orders: 0, lines: 0, skipped };
 
@@ -353,7 +341,7 @@ export async function generateDraftPosFromShortfall(
       const lines = group.map((r, i) => ({
         po_id: po.id,
         item_id: r.item_id,
-        qty: Math.ceil(r.shortfall),
+        qty: Math.ceil(r.to_buy),
         unit_cost: meta.get(r.item_id)?.cost ?? null,
         sort_order: i,
       }));

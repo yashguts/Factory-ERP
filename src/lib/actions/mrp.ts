@@ -3,6 +3,7 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { _getItemsWithStockUncached } from "@/lib/actions/inventory";
+import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
@@ -16,6 +17,11 @@ export interface MrpRow {
   total_required: number;
   total_stock: number;
   shortfall: number;
+  /** Outstanding (on-order, not-yet-received) qty from open purchase orders. */
+  on_order: number;
+  /** Net still to procure = max(0, shortfall − on_order). The item still shows
+   *  when shortfall>0 even if to_buy is 0 (i.e. fully covered by a PO). */
+  to_buy: number;
   job_count: number;
   /**
    * Effective procurement type. items.procurement_type takes precedence;
@@ -31,7 +37,10 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   return unstable_cache(
     _getMrpDataUncached,
     ["mrp-data", key],
-    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock"] },
+    // "purchase-orders" tag: MRP now nets outstanding POs into on_order/to_buy,
+    // so a PO create/receive must refresh the figures (procurement mutations
+    // revalidate this tag).
+    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock", "purchase-orders"] },
   )(cutoffDate);
 }
 
@@ -192,6 +201,10 @@ export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]
     }
   }
 
+  // Outstanding PO qty per item (un-nested read — this fn runs inside the MRP
+  // unstable_cache; the cached getOutstandingByItem would nest and break it).
+  const onOrder = await _getOutstandingByItemUncached();
+
   const rows: MrpRow[] = allItems.map((item) => {
     const req = reqMap.get(item.id)!;
     const totalStock = (item.inventory ?? []).reduce(
@@ -213,6 +226,8 @@ export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]
         | "trade"
         | null);
 
+    const shortfall = Math.max(0, req.total - totalStock);
+    const on_order = onOrder[item.id] ?? 0;
     return {
       item_id: item.id,
       item_code: item.code,
@@ -222,7 +237,9 @@ export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]
       uom_abbreviation: item.uom?.abbreviation ?? null,
       total_required: req.total,
       total_stock: totalStock,
-      shortfall: Math.max(0, req.total - totalStock),
+      shortfall,
+      on_order,
+      to_buy: Math.max(0, shortfall - on_order),
       job_count: jobIds.size,
       procurement_type,
     };

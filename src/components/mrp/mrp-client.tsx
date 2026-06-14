@@ -71,6 +71,9 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   const [procurementTab, setProcurementTab] = useState<ProcurementTab>(
     () => readParam(sp, "tab", "trade", ["all", "trade", "make"]) as ProcurementTab,
   );
+  // On-order / To-buy (outstanding-PO netting) applies to purchased Trade
+  // items; hide those columns on the Make tab where POs don't apply.
+  const showPo = procurementTab !== "make";
   const [sortKey, setSortKey] = useState<SortKey>(
     () => readParam(sp, "sort", "shortfall", ["code", "name", "category", "required", "stock", "shortfall", "jobs"]) as SortKey,
   );
@@ -310,6 +313,8 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
                 <SortHeader label="Required" sortField="required" className="text-right" />
                 <SortHeader label="In Stock" sortField="stock" className="text-right" />
                 <SortHeader label="Shortfall" sortField="shortfall" className="text-right" />
+                {showPo && <TableHead className="text-right" title="On order — outstanding purchase-order qty not yet received">On order</TableHead>}
+                {showPo && <TableHead className="text-right" title="To buy — net still to procure after subtracting open POs">To buy</TableHead>}
                 <SortHeader label="Jobs" sortField="jobs" className="text-right" />
               </TableRow>
             </TableHeader>
@@ -347,6 +352,26 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
                         </span>
                       )}
                     </TableCell>
+                    {showPo && (
+                      <TableCell className="text-right">
+                        {row.on_order > 0 ? (
+                          <span className="text-[var(--primary)] font-medium">{row.on_order.toLocaleString()}</span>
+                        ) : (
+                          <span className="text-[var(--muted-foreground)]">—</span>
+                        )}
+                      </TableCell>
+                    )}
+                    {showPo && (
+                      <TableCell className="text-right font-medium">
+                        {row.shortfall === 0 ? (
+                          <span className="text-[var(--muted-foreground)]">—</span>
+                        ) : row.to_buy > 0 ? (
+                          <span className="text-[var(--destructive)]">{row.to_buy.toLocaleString()}</span>
+                        ) : (
+                          <Badge variant="blue" title="Shortfall is fully covered by an open PO">on order</Badge>
+                        )}
+                      </TableCell>
+                    )}
                     <TableCell className="text-right text-sm">
                       {row.total_required > 0 ? (
                         <MrpJobsPopover

@@ -335,7 +335,11 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
     return {
       item_id: id, item_code: m.code, item_name: m.name, item_type: m.item_type,
       category_name: m.category_name, uom_abbreviation: m.uom, total_required: total,
-      total_stock: m.stock, shortfall: Math.max(0, total - m.stock), job_count: 0, procurement_type: m.procurement_type,
+      total_stock: m.stock, shortfall: Math.max(0, total - m.stock),
+      // PO netting is applied to the trade lane separately (Phase C); the
+      // optimiser input only uses shortfall, so on_order is 0 here.
+      on_order: 0, to_buy: Math.max(0, total - m.stock),
+      job_count: 0, procurement_type: m.procurement_type,
     };
   });
   const core = await computeMakePlanCore(excludeCodes, mrpRows);
