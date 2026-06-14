@@ -2,8 +2,8 @@
 
 /**
  * WEEKLY MRP PLAN — the same MRP, broken into an Overdue lane + the next 8
- * Monday-start weeks so the team can plan week by week. MRP is CUMULATIVE: the
- * plan "by end of week N" covers every job due on/before that week.
+ * Sunday-start weeks (Sun–Sat) so the team can plan week by week. MRP is
+ * CUMULATIVE: the plan "by end of week N" covers every job due on/before that week.
  *
  * The hard rule (owner): do NOT optimise each week separately — that
  * over-provisions. Instead the sheet-minimising optimiser runs ONCE on the full
@@ -95,8 +95,8 @@ function istToday(): Date {
   const d = new Date(Date.now() + 5.5 * 3600 * 1000);
   return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
 }
-function startOfWeekMonday(d: Date): Date {
-  const dow = (d.getUTCDay() + 6) % 7; // Mon=0 … Sun=6
+function startOfWeekSunday(d: Date): Date {
+  const dow = d.getUTCDay(); // Sun=0 … Sat=6
   return new Date(d.getTime() - dow * DAY_MS);
 }
 function parseDate(s: string): Date | null {
@@ -106,8 +106,13 @@ function parseDate(s: string): Date | null {
 function ymd(d: Date): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}-${String(d.getUTCDate()).padStart(2, "0")}`;
 }
-function fmtDayMonth(d: Date): string {
-  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCDate()}`;
+/** Compact inclusive date range, e.g. "14–20 Jun" or cross-month "29 Jun – 5 Jul". */
+function fmtRange(start: Date, end: Date): string {
+  const sm = MONTHS[start.getUTCMonth()];
+  const em = MONTHS[end.getUTCMonth()];
+  return sm === em
+    ? `${start.getUTCDate()}–${end.getUTCDate()} ${sm}`
+    : `${start.getUTCDate()} ${sm} – ${end.getUTCDate()} ${em}`;
 }
 function sheetThicknessMm(name: string): number | null {
   const dims = /\d{3,4}\s*[xX]\s*\d{3,4}\s*[xX]\s*(\d+(?:\.\d+)?)\s*mm/.exec(name);
@@ -128,12 +133,13 @@ function buildWeeks(today: Date, curWeek: Date): WeekMeta[] {
   for (let w = 0; w < HORIZON_WEEKS; w++) {
     const start = new Date(curWeek.getTime() + w * 7 * DAY_MS);
     const end = new Date(start.getTime() + 6 * DAY_MS);
+    const range = fmtRange(start, end); // "14–20 Jun" (Sun–Sat)
     weeks.push({
       index: w,
       key: `w${w}`,
-      label: w === 0 ? "This wk" : w === 1 ? "Next wk" : fmtDayMonth(start),
-      title: w === 0 ? "This Week" : w === 1 ? "Next Week" : `In ${w} weeks`,
-      subtitle: `${fmtDayMonth(start)} – ${fmtDayMonth(end)}`,
+      label: range,
+      title: range,
+      subtitle: w === 0 ? "This week" : w === 1 ? "Next week" : `In ${w} weeks`,
       weekStartIso: ymd(start),
       isCurrent: w === 0,
       isOverdue: false,
@@ -173,7 +179,7 @@ interface LoadedDemand {
 export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   const supabase = createCacheClient();
   const today = istToday();
-  const curWeek = startOfWeekMonday(today);
+  const curWeek = startOfWeekSunday(today);
   const weeks = buildWeeks(today, curWeek);
   const N = weeks.length; // Overdue + 8
   const pos = (bucket: number) => bucket + 1; // bucket -1 → 0, w0 → 1 …
@@ -199,7 +205,7 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
     if (d.getTime() > horizonEndDate.getTime()) { laterCount++; continue; }
     const bucket = d.getTime() < today.getTime()
       ? -1
-      : Math.floor((startOfWeekMonday(d).getTime() - curWeek.getTime()) / (7 * DAY_MS));
+      : Math.floor((startOfWeekSunday(d).getTime() - curWeek.getTime()) / (7 * DAY_MS));
     stageByJob.set(j.id, j.requirement_stage ?? "new");
     bucketByJob.set(j.id, Math.min(7, Math.max(-1, bucket)));
   }
