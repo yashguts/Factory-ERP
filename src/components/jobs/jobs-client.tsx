@@ -14,11 +14,14 @@ import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
+import { PageHeader } from "@/components/ui/page-header";
+import { Toolbar } from "@/components/ui/toolbar";
+import { Tabs } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
-import { cn } from "@/lib/utils";
 import { updateJob } from "@/lib/actions/jobs";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
@@ -267,26 +270,28 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Job Orders</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
+      <PageHeader
+        title="Job Orders"
+        meta={
+          <>
             {sorted.length} of {view === "dispatched" ? dispatchedCount : activeCount}{" "}
             {view === "dispatched" ? "fully dispatched" : "active"} jobs
             {savingJobId ? " — saving..." : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => router.push("/jobs/new")}>
-            <Plus size={16} className="mr-2" />
-            New Job
-          </Button>
-          <Button variant="secondary" onClick={() => router.push("/jobs/import")}>
-            <Upload size={16} className="mr-2" />
-            Import Excel
-          </Button>
-        </div>
-      </div>
+          </>
+        }
+        actions={
+          <>
+            <Button size="sm" onClick={() => router.push("/jobs/new")}>
+              <Plus size={16} className="mr-2" />
+              New Job
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => router.push("/jobs/import")}>
+              <Upload size={16} className="mr-2" />
+              Import Excel
+            </Button>
+          </>
+        }
+      />
 
       {/* Unmatched BOM banner */}
       {unmatchedCount > 0 && (
@@ -305,51 +310,33 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
       )}
 
       {/* Tabs: Active vs. Fully Dispatched */}
-      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
-        {([
-          { key: "active", label: "Active", count: activeCount },
-          { key: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
-          { key: "plan", label: "Dispatch Plan", count: activeCount },
-        ] as const).map((t) => (
-          <button
-            key={t.key}
-            type="button"
-            onClick={() => { setView(t.key); resetPage(); }}
-            className={cn(
-              "inline-flex items-center gap-2 px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer",
-              view === t.key
-                ? "border-[var(--primary)] text-[var(--foreground)]"
-                : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-            )}
-          >
-            {t.label}
-            <span
-              className={cn(
-                "text-[11px] rounded-full px-1.5 py-0.5",
-                view === t.key
-                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)]",
-              )}
-            >
-              {t.count}
-            </span>
-          </button>
-        ))}
-      </div>
+      <Tabs
+        variant="underline"
+        className="mb-3"
+        value={view}
+        onChange={(v) => { setView(v as "active" | "dispatched" | "plan"); resetPage(); }}
+        tabs={[
+          { value: "active", label: "Active", count: activeCount },
+          { value: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
+          { value: "plan", label: "Dispatch Plan", count: activeCount },
+        ]}
+      />
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <Toolbar>
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+          <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <Input
+            size="sm"
             placeholder="Search job #, customer, location..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-            className="pl-9"
+            className="pl-8"
           />
         </div>
 
         <Select
+          size="sm"
           value={statusFilter}
           onChange={(e) => { setStatusFilter(e.target.value as JobStatus | "all"); resetPage(); }}
           className="w-[150px]"
@@ -361,6 +348,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
         </Select>
 
         <Select
+          size="sm"
           value={stageFilter}
           onChange={(e) => { setStageFilter(e.target.value as JobStage | "all"); resetPage(); }}
           className="w-[150px]"
@@ -373,6 +361,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
 
         {doorTypes.length > 0 && (
           <Select
+            size="sm"
             value={doorTypeFilter}
             onChange={(e) => { setDoorTypeFilter(e.target.value); resetPage(); }}
             className="w-[140px]"
@@ -386,6 +375,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
 
         {brands.length > 0 && (
           <Select
+            size="sm"
             value={brandFilter}
             onChange={(e) => { setBrandFilter(e.target.value); resetPage(); }}
             className="w-[140px]"
@@ -396,26 +386,35 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
             ))}
           </Select>
         )}
-      </div>
+      </Toolbar>
 
       {/* Week-by-week dispatch board (visual of the same active set) */}
       {view === "plan" ? (
         <DispatchPlanBoard jobs={sorted} dispatchStatus={dispatchStatus} />
       ) : /* Table */ paginated.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <ClipboardList size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
-          <p className="text-[var(--muted-foreground)]">
-            {initialJobs.length === 0
-              ? "No jobs yet. Import from Excel to get started."
-              : view === "dispatched" && dispatchedCount === 0
-                ? "No fully dispatched jobs yet — a job moves here once every BOM line has been dispatched."
-                : "No jobs match your filters."}
-          </p>
+        <div className="card-surface">
+          <EmptyState
+            icon={<ClipboardList size={40} />}
+            title={
+              initialJobs.length === 0
+                ? "No jobs yet"
+                : view === "dispatched" && dispatchedCount === 0
+                  ? "No fully dispatched jobs yet"
+                  : "No jobs match your filters"
+            }
+            description={
+              initialJobs.length === 0
+                ? "Import from Excel to get started."
+                : view === "dispatched" && dispatchedCount === 0
+                  ? "A job moves here once every BOM line has been dispatched."
+                  : "Try clearing the search or filters."
+            }
+          />
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table>
-            <TableHeader>
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
@@ -509,15 +508,9 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
                       if (st === "none")
                         return <span className="text-xs text-[var(--muted-foreground)]">—</span>;
                       return (
-                        <span
-                          className={`text-[11px] font-medium uppercase tracking-wide rounded-full px-2 py-0.5 border ${
-                            st === "full"
-                              ? "text-green-700 bg-green-50 border-green-200"
-                              : "text-amber-700 bg-amber-50 border-amber-200"
-                          }`}
-                        >
+                        <Badge variant={st === "full" ? "green" : "amber"}>
                           {st === "full" ? "Dispatched" : "Partial"}
-                        </span>
+                        </Badge>
                       );
                     })()}
                   </TableCell>

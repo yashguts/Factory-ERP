@@ -15,6 +15,11 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { Tabs } from "@/components/ui/tabs";
+import { Toolbar } from "@/components/ui/toolbar";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import type { MrpRow } from "@/lib/actions/mrp";
@@ -202,84 +207,56 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   return (
     <div>
       <MrpToolbar view="requirements" date={cutoffDate} />
-      {/* Header */}
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">MRP - Material Requirements</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          {sorted.length} of {tabRows.length} items in this tab
-          {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
-        </p>
-      </div>
+
+      {/* Header — title + inline item count / cutoff meta */}
+      <PageHeader
+        title="MRP — Material Requirements"
+        meta={
+          <>
+            {sorted.length} of {tabRows.length} items in this tab
+            {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
+          </>
+        }
+      />
 
       {/* Procurement Type Tabs — split MRP into procurement vs production
           planning views. Switching tabs scopes the table, summary cards
           and all downstream filters. */}
-      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
-        {([
-          { key: "trade", label: "Trade · To Procure", count: tabCounts.trade },
-          { key: "make",  label: "Make · To Manufacture", count: tabCounts.make },
-          { key: "all",   label: "All", count: tabCounts.all },
-        ] as const).map((t) => {
-          const active = procurementTab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => { setProcurementTab(t.key); resetPage(); }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${
-                active
-                  ? "border-[var(--primary)] text-[var(--primary)]"
-                  : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              }`}
-            >
-              {t.label}
-              <span
-                className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded-full ${
-                  active
-                    ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                    : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-                }`}
-              >
-                {t.count.toLocaleString()}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      <Tabs
+        variant="underline"
+        className="mb-4"
+        value={procurementTab}
+        onChange={(v) => { setProcurementTab(v as ProcurementTab); resetPage(); }}
+        tabs={[
+          { value: "trade", label: "Trade · To Procure", count: tabCounts.trade },
+          { value: "make", label: "Make · To Manufacture", count: tabCounts.make },
+          { value: "all", label: "All", count: tabCounts.all },
+        ]}
+      />
 
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <div className="card-surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Items</p>
-          <p className="text-2xl font-bold tabular-nums">{totals.totalItems.toLocaleString()}</p>
-        </div>
-        <div className="card-surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Required</p>
-          <p className="text-2xl font-bold tabular-nums">{totals.totalRequired.toLocaleString()}</p>
-        </div>
-        <div className="card-surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Items with Shortfall</p>
-          <p className="text-2xl font-bold tabular-nums text-[var(--destructive)]">{totals.itemsWithShortfall.toLocaleString()}</p>
-        </div>
-        <div className="card-surface p-4">
-          <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">Total Shortfall Units</p>
-          <p className="text-2xl font-bold tabular-nums text-[var(--destructive)]">{totals.totalShortfall.toLocaleString()}</p>
-        </div>
-      </div>
+      {/* Summary stats — computed off the active-tab slice */}
+      <StatStrip className="mb-3">
+        <StatTile label="Total Items" value={totals.totalItems.toLocaleString()} />
+        <StatTile label="Total Required" value={totals.totalRequired.toLocaleString()} />
+        <StatTile label="Items with Shortfall" value={totals.itemsWithShortfall.toLocaleString()} tone="danger" />
+        <StatTile label="Total Shortfall Units" value={totals.totalShortfall.toLocaleString()} tone="danger" />
+      </StatStrip>
 
       {/* Filters Row */}
-      <div className="flex flex-wrap gap-3 mb-4">
+      <Toolbar>
         <div className="relative flex-1 min-w-[200px] max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+          <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <Input
+            size="sm"
             placeholder="Search code, name, category..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); resetPage(); }}
-            className="pl-9"
+            className="pl-8"
           />
         </div>
 
         <Select
+          size="sm"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); resetPage(); }}
           className="w-[170px]"
@@ -293,6 +270,7 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
         </Select>
 
         <Select
+          size="sm"
           value={shortfallFilter}
           onChange={(e) => { setShortfallFilter(e.target.value as ShortfallFilter); resetPage(); }}
           className="w-[160px]"
@@ -301,22 +279,29 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
           <option value="shortfall">Shortfall Only</option>
           <option value="excess">Sufficient Only</option>
         </Select>
-      </div>
+      </Toolbar>
 
       {/* Table */}
       {paginated.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <Calculator size={48} className="mx-auto mb-4 text-[var(--muted-foreground)]" />
-          <p className="text-[var(--muted-foreground)]">
-            {initialData.length === 0
-              ? "No material requirements found. Ensure jobs have BOM lines with mapped items."
-              : "No items match your filters."}
-          </p>
+        <div className="card-surface overflow-hidden">
+          <EmptyState
+            icon={<Calculator size={28} />}
+            title={
+              initialData.length === 0
+                ? "No material requirements found"
+                : "No items match your filters"
+            }
+            description={
+              initialData.length === 0
+                ? "Ensure jobs have BOM lines with mapped items."
+                : undefined
+            }
+          />
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table>
-            <TableHeader>
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <SortHeader label="Code" sortField="code" />
                 <SortHeader label="Item Name" sortField="name" />
@@ -353,11 +338,11 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
                     </TableCell>
                     <TableCell className="text-right font-bold">
                       {row.shortfall > 0 ? (
-                        <span className="text-red-600">
+                        <span className="text-[var(--destructive)]">
                           -{row.shortfall.toLocaleString()}
                         </span>
                       ) : (
-                        <span className="text-green-600">
+                        <span className="text-[var(--success)]">
                           +{excess.toLocaleString()}
                         </span>
                       )}

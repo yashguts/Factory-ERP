@@ -41,9 +41,9 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
     : null;
 
   return (
-    <div className="mb-5 flex flex-col gap-3">
+    <div className="mb-4 flex items-center gap-2 flex-wrap">
       {/* View switcher */}
-      <div className="inline-flex w-fit rounded-lg border border-[var(--border)] bg-[var(--muted)]/40 p-1">
+      <div className="inline-flex w-fit rounded-lg border border-[var(--border)] bg-[var(--muted)]/40 p-0.5">
         {VIEWS.map((v) => {
           const Icon = v.icon;
           const active = v.key === view;
@@ -52,7 +52,7 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
               key={v.key}
               href={`${v.href}${q(date)}`}
               className={cn(
-                "inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-md text-sm font-medium cursor-pointer transition-colors",
+                "inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-sm font-medium cursor-pointer transition-colors",
                 active
                   ? "bg-[var(--card)] shadow-sm text-[var(--foreground)]"
                   : "text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
@@ -67,40 +67,38 @@ export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
 
       {/* Date control (the weekly view has a fixed today-relative horizon) */}
       {view === "weekly" ? (
-        <div className="flex items-center gap-2 p-3 card-surface text-sm text-[var(--muted-foreground)]">
+        <span className="inline-flex items-center gap-1.5 text-sm text-[var(--muted-foreground)]">
           <CalendarRange className="h-4 w-4 shrink-0 text-[var(--primary)]" />
-          Planning the next <strong className="text-[var(--foreground)]">8 weeks</strong> from today, cumulatively — Overdue plus each week.
-        </div>
+          Next <strong className="text-[var(--foreground)]">8 weeks</strong> from today, cumulatively (Overdue + each week).
+        </span>
       ) : (
-      <div className="flex items-center gap-2.5 flex-wrap p-3 card-surface">
+      <div
+        className="inline-flex items-center gap-2 flex-wrap"
+        title={
+          date
+            ? `Counting jobs due on or before ${pretty}`
+            : "No date set: counting every in-production job"
+        }
+      >
         <CalendarDays className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
         <span className="text-sm font-medium whitespace-nowrap">Plan jobs due by</span>
         <input
           type="date"
           value={date}
           onChange={(e) => go(e.target.value)}
-          className="h-9 w-[170px] rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] [color-scheme:dark]"
+          className="h-8 w-[170px] rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] [color-scheme:dark]"
         />
-        {date ? (
-          <>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              → counting jobs due on or before <strong className="text-[var(--foreground)]">{pretty}</strong>
-            </span>
-            <button
-              type="button"
-              onClick={() => go("")}
-              className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-[var(--border)] text-xs cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-              title="Remove the date limit"
-            >
-              <X className="h-3 w-3" /> Clear — all jobs
-            </button>
-          </>
-        ) : (
-          <span className="text-sm text-[var(--muted-foreground)]">
-            → no date set: counting <strong className="text-[var(--foreground)]">every</strong> in-production job
-          </span>
+        {date && (
+          <button
+            type="button"
+            onClick={() => go("")}
+            className="inline-flex items-center gap-1 h-7 px-2 rounded-md border border-[var(--border)] text-xs cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+            title="Remove the date limit"
+          >
+            <X className="h-3 w-3" /> Clear
+          </button>
         )}
-        <div className="flex items-center gap-1 ml-auto">
+        <div className="flex items-center gap-1">
           <span className="text-[11px] text-[var(--muted-foreground)] mr-1">Quick:</span>
           {presets.map((p) => (
             <button

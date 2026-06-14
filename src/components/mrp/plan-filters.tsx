@@ -55,8 +55,9 @@ export function PlanFilters({
   const active = value.type !== "all" || value.category !== "all" || value.sub !== "all";
 
   return (
-    <div className="flex flex-wrap items-center gap-2 mb-4">
+    <div className="flex flex-wrap items-center gap-2 mb-3">
       <Select
+        size="sm"
         value={value.type}
         onChange={(e) => onChange({ ...value, type: e.target.value })}
         className="w-auto min-w-[150px]"
@@ -67,6 +68,7 @@ export function PlanFilters({
         ))}
       </Select>
       <Select
+        size="sm"
         value={value.category}
         onChange={(e) => onChange({ ...value, category: e.target.value, sub: "all" })}
         className="w-auto min-w-[160px]"
@@ -77,6 +79,7 @@ export function PlanFilters({
         ))}
       </Select>
       <Select
+        size="sm"
         value={value.sub}
         onChange={(e) => onChange({ ...value, sub: e.target.value })}
         className="w-auto min-w-[170px]"

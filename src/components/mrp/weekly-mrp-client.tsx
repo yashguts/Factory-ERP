@@ -3,9 +3,11 @@
 import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { cn } from "@/lib/utils";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { WeeklyBoard } from "@/components/mrp/weekly-board";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { Tabs } from "@/components/ui/tabs";
 import { Hammer, ShoppingCart, Wrench, Package, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
@@ -94,27 +96,28 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
 
   return (
     <div>
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight">MRP — Weekly Plan</h1>
-        <p className="text-sm text-[var(--muted-foreground)]">
-          Cumulative material plan, week by week — {plan.totals.globalRuns} program runs · {plan.totals.globalSheets} sheets across the next 8 weeks.
-        </p>
-      </div>
-
       <MrpToolbar view="weekly" date="" />
 
+      <PageHeader
+        title="MRP — Weekly Plan"
+        meta={`${plan.totals.globalRuns} program runs · ${plan.totals.globalSheets} sheets · next 8 weeks`}
+        subtitle="Cumulative material plan, week by week."
+      />
+
       {/* Totals */}
-      <div className="flex flex-wrap gap-3 mb-3">
-        <Stat label="Program runs" value={plan.totals.globalRuns} />
-        <Stat label="Sheets to cut" value={plan.totals.globalSheets} />
-        <Stat label="Make items" value={plan.totals.makeShortfallItems} />
-        <Stat label="Trade items" value={plan.totals.tradeShortfallItems} />
-        {plan.blocked.length > 0 && <Stat label="Blocked" value={plan.blocked.length} warn />}
-      </div>
+      <StatStrip className="mb-3">
+        <StatTile label="Program runs" value={plan.totals.globalRuns} />
+        <StatTile label="Sheets to cut" value={plan.totals.globalSheets} />
+        <StatTile label="Make items" value={plan.totals.makeShortfallItems} />
+        <StatTile label="Trade items" value={plan.totals.tradeShortfallItems} />
+        {plan.blocked.length > 0 && (
+          <StatTile label="Blocked" value={plan.blocked.length} tone="warn" />
+        )}
+      </StatStrip>
 
       {/* No-over-provisioning proof + out-of-scope note */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-4 text-xs text-[var(--muted-foreground)]">
-        <span className="inline-flex items-center gap-1.5 text-emerald-600">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 mb-3 text-xs text-[var(--muted-foreground)]">
+        <span className="inline-flex items-center gap-1.5 text-[var(--success)]">
           <CheckCircle2 size={14} />
           Optimised once across all 8 weeks, then scheduled by deadline — {plan.totals.allocatedRuns} runs allocated = {plan.totals.globalRuns} in the optimum (no over-provisioning).
         </span>
@@ -128,27 +131,25 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       </div>
 
       {/* Sub-tabs */}
-      <div className="flex gap-1 mb-4 border-b border-[var(--border)] flex-wrap">
-        {TABS.map((t) => {
+      <Tabs
+        variant="underline"
+        className="mb-4 flex-wrap"
+        value={tab}
+        onChange={(v) => setTab(v as Tab)}
+        tabs={TABS.map((t) => {
           const Icon = t.icon;
-          const active = tab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => setTab(t.key)}
-              className={cn(
-                "inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer",
-                active ? "border-[var(--primary)] text-[var(--foreground)]" : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]",
-              )}
-            >
-              <Icon className="h-4 w-4" />
-              {t.label}
-              <span className={cn("text-[11px] rounded-full px-1.5 py-0.5", active ? "bg-[var(--primary)] text-[var(--primary-foreground)]" : "bg-[var(--muted)] text-[var(--muted-foreground)]")}>{t.count}</span>
-            </button>
-          );
+          return {
+            value: t.key,
+            label: (
+              <span className="inline-flex items-center gap-1.5">
+                <Icon className="h-4 w-4" />
+                {t.label}
+              </span>
+            ),
+            count: t.count,
+          };
         })}
-      </div>
+      />
 
       <WeeklyBoard
         weeks={weeks}
@@ -161,7 +162,7 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       />
 
       {tab === "programs" && plan.blocked.length > 0 && (
-        <div className="mt-6">
+        <div className="mt-4">
           <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5 text-[var(--warning)]">
             <AlertTriangle size={14} /> Can&apos;t make — no audited program ({plan.blocked.length})
           </h3>
@@ -176,15 +177,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
           </div>
         </div>
       )}
-    </div>
-  );
-}
-
-function Stat({ label, value, warn }: { label: string; value: number; warn?: boolean }) {
-  return (
-    <div className={cn("card-surface px-4 py-2.5 min-w-[120px]", warn && "border-[var(--warning-border)]")}>
-      <div className={cn("text-xl font-bold tabular-nums", warn && "text-[var(--warning)]")}>{value}</div>
-      <div className="text-xs text-[var(--muted-foreground)]">{label}</div>
     </div>
   );
 }

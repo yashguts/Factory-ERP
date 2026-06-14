@@ -11,6 +11,10 @@ import {
 } from "@/components/ui/table";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { Card, SectionHeader } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Factory, Layers, ShoppingCart, AlertTriangle, Clock } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
@@ -31,20 +35,14 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
   return (
     <div>
       <MrpToolbar view="buy" date={plan.cutoffDate ?? ""} />
-      {/* Header */}
-      <div className="mb-4">
-        <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-          <Factory className="h-6 w-6 text-[var(--muted-foreground)]" />
-          Raw Material Plan
-        </h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          Job demand exploded through programs &amp; parts lists down to the
-          steel and bought parts to buy
-        </p>
-      </div>
+      <PageHeader
+        icon={<Factory size={18} />}
+        title="Raw Material Plan"
+        subtitle="Job demand exploded through programs & parts lists down to the steel and bought parts to buy"
+      />
 
       {/* Estimate caveat */}
-      <div className="flex items-start gap-2 mb-4 px-4 py-3 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] text-sm">
+      <div className="flex items-start gap-2 mb-3 px-3 py-2 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] text-sm">
         <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
         <span>
           <strong>Estimate.</strong> Sheet demand is rolled up per program at
@@ -54,18 +52,21 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         </span>
       </div>
 
-
       {/* Summary */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-        <SummaryCard label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
-        <SummaryCard label="Purchased parts" value={purchased.length} />
-        <SummaryCard
+      <StatStrip className="mb-3">
+        <StatTile label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
+        <StatTile label="Purchased parts" value={purchased.length} />
+        <StatTile
           label="Programs to run"
           value={plan.programRuns.length}
           sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
         />
-        <SummaryCard label="Can't explode" value={plan.unresolved.length} tone={plan.unresolved.length > 0 ? "warn" : undefined} />
-      </div>
+        <StatTile
+          label="Can't explode"
+          value={plan.unresolved.length}
+          tone={plan.unresolved.length > 0 ? "warn" : "default"}
+        />
+      </StatStrip>
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
 
@@ -77,7 +78,7 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         empty="No raw-material demand — make items may be missing their program link."
       />
 
-      <div className="mt-6">
+      <div className="mt-4">
         <LeafTable
           title="Purchased parts to buy"
           subtitle="trade items (operators, fixings, …)"
@@ -87,21 +88,23 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
         />
       </div>
 
-      <div className="mt-6">
+      <div className="mt-4">
         <ProgramRunsSection runs={plan.programRuns} />
       </div>
 
       {plan.unresolved.length > 0 && (
-        <div className="mt-6 card-surface overflow-hidden">
-          <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--warning-bg)]/40">
-            <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />
-            <h2 className="text-sm font-semibold">Can&apos;t explode yet</h2>
-            <span className="text-xs text-[var(--muted-foreground)]">
-              · make items with no program and no parts list
-            </span>
-          </div>
-          <Table>
-            <TableHeader>
+        <Card className="mt-4">
+          <SectionHeader
+            title={
+              <span className="flex items-center gap-2">
+                <AlertTriangle className="h-4 w-4 text-[var(--warning)]" />
+                Can&apos;t explode yet
+              </span>
+            }
+            count="· make items with no program and no parts list"
+          />
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <TableHead className="w-[160px]">Code</TableHead>
                 <TableHead>Item</TableHead>
@@ -116,13 +119,13 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
                       {u.code}
                     </Link>
                   </TableCell>
-                  <TableCell className="text-sm">{u.name}</TableCell>
+                  <TableCell>{u.name}</TableCell>
                   <TableCell className="text-right tabular-nums">{u.qty.toLocaleString()}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </div>
+        </Card>
       )}
     </div>
   );
@@ -175,8 +178,8 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
   if (runs.length === 0) return null;
 
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
+    <Card>
+      <div className="flex items-center gap-2 px-3 py-2 border-b border-[var(--border)] bg-[var(--muted)]/40">
         <Clock className="h-4 w-4" />
         <h2 className="text-sm font-semibold">Program runs &amp; machine time</h2>
         <span className="text-xs text-[var(--muted-foreground)]">
@@ -195,14 +198,14 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
         </span>
       </div>
       {missingTime > 0 && (
-        <p className="px-4 py-2 text-[11px] text-[var(--warning)] bg-[var(--warning-bg)]/40 border-b border-[var(--border)]">
+        <p className="px-3 py-2 text-[11px] text-[var(--warning)] bg-[var(--warning-bg)]/40 border-b border-[var(--border)]">
           {missingTime} selected program{missingTime === 1 ? "" : "s"} have no
           machining time captured — they count 0 in the totals. Add it on the
           program (Edit → Machining time / run).
         </p>
       )}
-      <Table>
-        <TableHeader>
+      <Table density="compact">
+        <TableHeader sticky>
           <TableRow>
             <TableHead className="w-10 text-center">
               <input
@@ -239,7 +242,7 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
                   {r.code ?? "—"}
                 </Link>
               </TableCell>
-              <TableCell className="text-sm">{r.name}</TableCell>
+              <TableCell>{r.name}</TableCell>
               <TableCell className="font-mono text-xs text-[var(--muted-foreground)]" title={r.sheet_name ?? undefined}>
                 {r.sheet_code ?? "—"}
               </TableCell>
@@ -257,13 +260,13 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
 
       {bySheet.length > 0 && (
         <div className="border-t border-[var(--border)]">
-          <div className="flex items-center gap-2 px-4 py-2 bg-[var(--muted)]/40">
+          <div className="flex items-center gap-2 px-3 py-2 bg-[var(--muted)]/40">
             <Layers className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
             <h3 className="text-xs font-semibold">
               Machine time by input sheet (selected programs)
             </h3>
           </div>
-          <Table>
+          <Table density="compact">
             <TableHeader>
               <TableRow>
                 <TableHead className="w-[160px]">Sheet</TableHead>
@@ -277,7 +280,7 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
               {bySheet.map((s) => (
                 <TableRow key={s.code}>
                   <TableCell className="font-mono text-xs">{s.code}</TableCell>
-                  <TableCell className="text-sm">{s.name}</TableCell>
+                  <TableCell>{s.name}</TableCell>
                   <TableCell className="text-right tabular-nums">{s.programs}</TableCell>
                   <TableCell className="text-right tabular-nums">{s.runs.toLocaleString()}</TableCell>
                   <TableCell className="text-right tabular-nums font-medium">
@@ -289,31 +292,7 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
           </Table>
         </div>
       )}
-    </div>
-  );
-}
-
-function SummaryCard({
-  label,
-  value,
-  sub,
-  tone,
-}: {
-  label: string;
-  value: number;
-  sub?: string;
-  tone?: "warn";
-}) {
-  return (
-    <div className="card-surface p-4">
-      <p className="text-xs font-medium uppercase tracking-wider text-[var(--muted-foreground)] mb-1">
-        {label}
-      </p>
-      <p className={`text-2xl font-bold tabular-nums ${tone === "warn" ? "text-[var(--warning)]" : ""}`}>
-        {value.toLocaleString()}
-      </p>
-      {sub && <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">{sub}</p>}
-    </div>
+    </Card>
   );
 }
 
@@ -331,20 +310,26 @@ function LeafTable({
   empty: string;
 }) {
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
-        {icon}
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">· {subtitle}</span>
-        <span className="ml-auto text-xs text-[var(--muted-foreground)]">
-          {rows.length} {rows.length === 1 ? "item" : "items"}
-        </span>
-      </div>
+    <Card>
+      <SectionHeader
+        title={
+          <span className="flex items-center gap-2">
+            {icon}
+            {title}
+            <span className="text-xs font-normal text-[var(--muted-foreground)]">· {subtitle}</span>
+          </span>
+        }
+        actions={
+          <span className="text-xs font-normal text-[var(--muted-foreground)]">
+            {rows.length} {rows.length === 1 ? "item" : "items"}
+          </span>
+        }
+      />
       {rows.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-[var(--muted-foreground)] text-center">{empty}</p>
+        <EmptyState className="py-8" title={empty} />
       ) : (
-        <Table>
-          <TableHeader>
+        <Table density="compact">
+          <TableHeader sticky>
             <TableRow>
               <TableHead className="w-[150px]">Code</TableHead>
               <TableHead>Item</TableHead>
@@ -361,7 +346,7 @@ function LeafTable({
                     {r.code}
                   </Link>
                 </TableCell>
-                <TableCell className="font-medium text-sm">{r.name}</TableCell>
+                <TableCell className="font-medium">{r.name}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {r.qty.toLocaleString()}{" "}
                   <span className="text-xs text-[var(--muted-foreground)]">{r.uom}</span>
@@ -381,6 +366,6 @@ function LeafTable({
           </TableBody>
         </Table>
       )}
-    </div>
+    </Card>
   );
 }

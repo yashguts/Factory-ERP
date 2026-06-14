@@ -4,7 +4,6 @@ import { useMemo, useState, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
-  ArrowLeft,
   Pencil,
   Trash2,
   Loader2,
@@ -20,6 +19,8 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
+import { PageHeader } from "@/components/ui/page-header";
+import { Card, SectionHeader } from "@/components/ui/card";
 import { cn, formatDuration } from "@/lib/utils";
 import {
   Table,
@@ -129,67 +130,58 @@ export function ProgramDetailClient({
 
   return (
     <div>
-      {/* Header */}
-      <div className="mb-6">
-        {/* Smart back: return to the (filtered) list view the user came from;
-            hardcoded /programs only on a direct deep-link with no history. */}
-        <button
-          onClick={() =>
-            window.history.length > 1 ? router.back() : router.push("/programs")
-          }
-          className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] mb-2 cursor-pointer"
-        >
-          <ArrowLeft className="h-3.5 w-3.5" />
-          Back to Programs
-        </button>
-        <div className="flex items-start justify-between gap-4">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-bold tracking-tight">{operation.name}</h1>
-            <div className="flex items-center gap-2 mt-1.5 flex-wrap">
-              {operation.code && (
-                <span className="font-mono text-xs text-[var(--muted-foreground)]">
-                  {operation.code}
-                </span>
-              )}
-              <Badge variant={operation.machine === "assembly_fit" ? "purple" : operation.machine === "cnc_laser" ? "cyan" : "blue"}>
-                {OPERATION_MACHINE_LABELS[operation.machine]}
-              </Badge>
-              {operation.machining_time_seconds != null && (
-                <Badge
-                  variant="neutral"
-                  title="Machining time per run (from the set-up schedule)"
-                >
-                  <Clock className="h-3 w-3 mr-1" />
-                  {formatDuration(operation.machining_time_seconds)} / run
-                </Badge>
-              )}
-            </div>
-            {operation.description && (
-              <p className="text-sm text-[var(--muted-foreground)] mt-2 max-w-2xl">
-                {operation.description}
-              </p>
+      {/* Header. Smart back: return to the (filtered) list view the user came
+          from; hardcoded /programs only on a direct deep-link with no history. */}
+      <PageHeader
+        title={operation.name}
+        onBack={() =>
+          window.history.length > 1 ? router.back() : router.push("/programs")
+        }
+        meta={
+          <span className="inline-flex items-center gap-2 flex-wrap">
+            {operation.code && (
+              <span className="font-mono text-xs text-[var(--muted-foreground)]">
+                {operation.code}
+              </span>
             )}
-          </div>
-          <div className="flex items-center gap-2 shrink-0">
+            <Badge variant={operation.machine === "assembly_fit" ? "purple" : operation.machine === "cnc_laser" ? "cyan" : "blue"}>
+              {OPERATION_MACHINE_LABELS[operation.machine]}
+            </Badge>
+            {operation.machining_time_seconds != null && (
+              <Badge
+                variant="neutral"
+                title="Machining time per run (from the set-up schedule)"
+              >
+                <Clock className="h-3 w-3 mr-1" />
+                {formatDuration(operation.machining_time_seconds)} / run
+              </Badge>
+            )}
+          </span>
+        }
+        subtitle={operation.description || undefined}
+        actions={
+          <>
             <Button
+              size="sm"
               variant={audited ? "primary" : "secondary"}
               onClick={requestAudit}
               disabled={isPending}
-              className={audited ? "bg-emerald-600 hover:bg-emerald-700 text-white" : ""}
+              className={audited ? "bg-[var(--success)] hover:bg-emerald-700 text-white" : ""}
               title={audited ? "Audited — click to unmark" : "Mark this program audited"}
             >
               <Check className="h-3.5 w-3.5 mr-1.5" />
               {audited ? "Audited" : "Mark audited"}
             </Button>
-            <Button variant="secondary" onClick={() => setShowClone(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setShowClone(true)}>
               <Copy className="h-3.5 w-3.5 mr-1.5" />
               Clone
             </Button>
-            <Button variant="secondary" onClick={() => setShowEdit(true)}>
+            <Button size="sm" variant="secondary" onClick={() => setShowEdit(true)}>
               <Pencil className="h-3.5 w-3.5 mr-1.5" />
               Edit
             </Button>
             <Button
+              size="sm"
               variant="destructive"
               onClick={handleDelete}
               disabled={isPending}
@@ -201,14 +193,14 @@ export function ProgramDetailClient({
               )}
               Delete
             </Button>
-          </div>
-        </div>
-      </div>
+          </>
+        }
+      />
 
       {/* Material variants — jump between same-program-different-material
           siblings. Only shown when the family has more than one member. */}
       {variants.length > 1 && (
-        <div className="card-surface p-3 mb-4">
+        <div className="card-surface p-3 mb-3">
           <div className="flex items-center gap-2 mb-2">
             <Layers className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
             <span className="text-xs font-medium text-[var(--muted-foreground)]">
@@ -240,14 +232,14 @@ export function ProgramDetailClient({
                 >
                   {v.audited_at && (
                     <span
-                      className="h-1.5 w-1.5 rounded-full bg-emerald-500"
+                      className="h-1.5 w-1.5 rounded-full bg-[var(--success)]"
                       title="Audited"
                     />
                   )}
                   {v.material_label ?? v.code ?? "Variant"}
                   {vUnmatched > 0 && (
                     <span
-                      className="text-[10px] text-amber-600 tabular-nums"
+                      className="text-[10px] text-[var(--warning)] tabular-nums"
                       title={`${vUnmatched} item(s) need mapping`}
                     >
                       {vUnmatched}⚠
@@ -264,7 +256,7 @@ export function ProgramDetailClient({
       {match.total > 0 && (
         <div
           className={cn(
-            "flex items-center gap-2 mb-4 px-4 py-3 rounded-lg border text-sm",
+            "flex items-center gap-2 mb-3 px-3 py-2 rounded-md border text-sm",
             match.unmatched === 0
               ? "border-[var(--success-border)] bg-[var(--success-bg)] text-[var(--success)]"
               : "border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)]",
@@ -290,8 +282,8 @@ export function ProgramDetailClient({
       )}
 
       {/* Body: lines on the left, sketch on the right */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
-        <div className="space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+        <div className="space-y-3">
           <LineTable
             title="Inputs"
             subtitle="Consumed per run"
@@ -302,17 +294,15 @@ export function ProgramDetailClient({
           <LineTable
             title="Outputs"
             subtitle="Produced per run"
-            icon={<ArrowUpFromLine className="h-4 w-4 text-blue-700" />}
+            icon={<ArrowUpFromLine className="h-4 w-4 text-[var(--primary)]" />}
             lines={operation.outputs}
             emptyText="No outputs recorded yet. Edit the program to add what it produces."
           />
           {operation.notes && (
-            <div className="rounded-md border border-[var(--border)] p-3">
-              <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-1">
-                Notes
-              </h3>
-              <p className="text-sm whitespace-pre-wrap">{operation.notes}</p>
-            </div>
+            <Card>
+              <SectionHeader title="Notes" />
+              <p className="p-3 text-sm whitespace-pre-wrap">{operation.notes}</p>
+            </Card>
           )}
         </div>
 
@@ -397,23 +387,25 @@ function LineTable({
   emptyText: string;
 }) {
   return (
-    <div className="card-surface overflow-hidden">
-      <div className="flex items-center gap-2 px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
-        {icon}
-        <h2 className="text-sm font-semibold">{title}</h2>
-        <span className="text-xs text-[var(--muted-foreground)]">
-          · {subtitle}
-        </span>
-        <span className="ml-auto text-xs text-[var(--muted-foreground)]">
-          {lines.length} {lines.length === 1 ? "item" : "items"}
-        </span>
-      </div>
+    <Card>
+      <SectionHeader
+        title={
+          <span className="inline-flex items-center gap-2">
+            {icon}
+            {title}
+            <span className="text-xs font-normal text-[var(--muted-foreground)]">
+              · {subtitle}
+            </span>
+          </span>
+        }
+        count={`${lines.length} ${lines.length === 1 ? "item" : "items"}`}
+      />
       {lines.length === 0 ? (
-        <p className="px-4 py-6 text-xs text-[var(--muted-foreground)] text-center">
+        <p className="px-3 py-5 text-xs text-[var(--muted-foreground)] text-center">
           {emptyText}
         </p>
       ) : (
-        <Table>
+        <Table density="compact">
           <TableHeader>
             <TableRow>
               <TableHead>Item</TableHead>
@@ -465,6 +457,6 @@ function LineTable({
           </TableBody>
         </Table>
       )}
-    </div>
+    </Card>
   );
 }

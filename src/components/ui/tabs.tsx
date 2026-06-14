@@ -53,7 +53,7 @@ export function Tabs({ tabs, value, onChange, variant = "segmented", className }
                     active ? "text-[var(--primary)]" : "text-[var(--muted-foreground)]"
                   )}
                 >
-                  {t.count}
+                  {t.count.toLocaleString()}
                 </span>
               )}
             </button>
@@ -88,7 +88,9 @@ export function Tabs({ tabs, value, onChange, variant = "segmented", className }
           >
             {t.label}
             {t.count !== undefined && (
-              <span className="text-xs text-[var(--muted-foreground)]">{t.count}</span>
+              <span className="text-xs text-[var(--muted-foreground)]">
+                {t.count.toLocaleString()}
+              </span>
             )}
           </button>
         );

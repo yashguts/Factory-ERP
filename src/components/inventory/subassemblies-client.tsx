@@ -14,6 +14,9 @@ import {
   Layers3,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Input } from "@/components/ui/input";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import type { SubassemblyRow } from "@/lib/actions/item-bom";
 import { cn } from "@/lib/utils";
@@ -38,13 +41,11 @@ export function SubassembliesClient({ rows }: Props) {
 
   return (
     <div>
-      <div className="mb-6">
-        <h1 className="text-2xl font-bold tracking-tight">Sub-assemblies</h1>
-        <p className="text-sm text-[var(--muted-foreground)] mt-1">
-          Items that are built from other parts. Define one at a time — pick an
-          item below to lay out its parts list, and it shows up here.
-        </p>
-      </div>
+      <PageHeader
+        icon={<Layers3 size={18} />}
+        title="Sub-assemblies"
+        subtitle="Items that are built from other parts. Define one at a time — pick an item below to lay out its parts list, and it shows up here."
+      />
 
       {/* Start defining a new sub-assembly */}
       <DefineSearch
@@ -52,7 +53,7 @@ export function SubassembliesClient({ rows }: Props) {
       />
 
       {/* Existing sub-assemblies */}
-      <div className="mt-6">
+      <div className="mt-4">
         <div className="flex items-center justify-between gap-3 mb-3">
           <h2 className="text-sm font-semibold text-[var(--muted-foreground)]">
             {rows.length === 0
@@ -61,37 +62,36 @@ export function SubassembliesClient({ rows }: Props) {
           </h2>
           {rows.length > 0 && (
             <div className="relative w-64 max-w-full">
-              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--muted-foreground)] pointer-events-none" />
-              <input
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--muted-foreground)] pointer-events-none z-10" />
+              <Input
+                size="sm"
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder="Filter the list..."
-                className="w-full h-8 pl-8 pr-3 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1"
+                className="pl-8"
               />
             </div>
           )}
         </div>
 
         {rows.length === 0 ? (
-          <div className="card-surface p-8 text-center">
-            <Layers3 className="h-8 w-8 mx-auto text-[var(--muted-foreground)] opacity-50" />
-            <p className="text-sm text-[var(--muted-foreground)] mt-3 max-w-md mx-auto">
-              Search for any made item above and define what it is built from
-              (stocked sub-parts) and its assembly parts (loose parts cut on
-              programs). Saved structures appear here.
-            </p>
-          </div>
+          <EmptyState
+            icon={<Layers3 size={28} />}
+            title="No sub-assemblies defined yet"
+            description="Search for any made item above and define what it is built from (stocked sub-parts) and its assembly parts (loose parts cut on programs). Saved structures appear here."
+          />
         ) : filtered.length === 0 ? (
-          <div className="card-surface p-6 text-center text-sm text-[var(--muted-foreground)]">
-            No sub-assembly matches that filter.
-          </div>
+          <EmptyState
+            icon={<Search size={28} />}
+            title="No sub-assembly matches that filter."
+          />
         ) : (
           <div className="card-surface overflow-hidden divide-y divide-[var(--border)]">
             {filtered.map((r) => (
               <Link
                 key={r.id}
                 href={`/inventory/${r.id}`}
-                className="flex items-center gap-3 px-4 py-3 hover:bg-[var(--muted)]/50 transition-colors cursor-pointer group"
+                className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)]/50 transition-colors cursor-pointer group"
               >
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 flex-wrap">
@@ -125,7 +125,7 @@ export function SubassembliesClient({ rows }: Props) {
                   )}
                   {r.loose_count > 0 && (
                     <span
-                      className="inline-flex items-center gap-1 text-purple-600"
+                      className="inline-flex items-center gap-1 text-purple-700"
                       title="Assembly parts (loose parts)"
                     >
                       <Puzzle className="h-3.5 w-3.5" />
@@ -189,13 +189,13 @@ function DefineSearch({ onPick }: { onPick: (item: SearchableItem) => void }) {
   }, [open]);
 
   return (
-    <div ref={containerRef} className="card-surface p-4">
+    <div ref={containerRef} className="card-surface p-3">
       <label className="text-xs font-semibold text-[var(--muted-foreground)] flex items-center gap-1.5 mb-2">
         <Boxes className="h-3.5 w-3.5" /> Define a sub-assembly
       </label>
       <div className="relative max-w-xl">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
-        <input
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none z-10" />
+        <Input
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -203,7 +203,7 @@ function DefineSearch({ onPick }: { onPick: (item: SearchableItem) => void }) {
           }}
           onFocus={() => setOpen(true)}
           placeholder="Search an item (a door, a frame, a car...) to lay out its parts"
-          className="w-full h-10 pl-9 pr-9 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1"
+          className="pl-9 pr-9"
         />
         {loading && (
           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-[var(--muted-foreground)]" />

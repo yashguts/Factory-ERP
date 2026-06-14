@@ -7,6 +7,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge as UIBadge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { EmptyState } from "@/components/ui/empty-state";
 import {
   Undo2,
   Pencil,
@@ -197,41 +199,42 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   return (
     <div>
       {/* Header */}
-      <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight flex items-center gap-2">
-            <History size={22} /> Inventory Changes
-          </h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {historyItem
-              ? `Full change history for ${historyItem.name}`
-              : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"} on this day`}
-            {isPending ? " — refreshing..." : ""}
-          </p>
-        </div>
-        <div className="flex items-center gap-2">
-          <CalendarDays size={16} className="text-[var(--muted-foreground)]" />
-          <input
-            type="date"
-            value={date}
-            max={maxDate}
-            onChange={(e) => changeDate(e.target.value)}
-            disabled={!!historyItem}
-            title={
-              historyItem
-                ? "Clear the item history to browse by day"
-                : "Browse changes by day"
-            }
-            className="h-10 rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          />
-          <Link href="/inventory">
-            <Button variant="secondary">Back to Inventory</Button>
-          </Link>
-        </div>
-      </div>
+      <PageHeader
+        icon={<History size={18} />}
+        title="Inventory Changes"
+        meta={`${
+          historyItem
+            ? `Full change history for ${historyItem.name}`
+            : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"} on this day`
+        }${isPending ? " — refreshing..." : ""}`}
+        actions={
+          <>
+            <CalendarDays size={16} className="text-[var(--muted-foreground)]" />
+            <Input
+              size="sm"
+              type="date"
+              value={date}
+              max={maxDate}
+              onChange={(e) => changeDate(e.target.value)}
+              disabled={!!historyItem}
+              title={
+                historyItem
+                  ? "Clear the item history to browse by day"
+                  : "Browse changes by day"
+              }
+              className="w-auto cursor-pointer disabled:cursor-not-allowed"
+            />
+            <Link href="/inventory">
+              <Button size="sm" variant="secondary">
+                Back to Inventory
+              </Button>
+            </Link>
+          </>
+        }
+      />
 
       {/* Item-history search */}
-      <div className="mb-5">
+      <div className="mb-4">
         <ItemHistorySearch
           selected={historyItem}
           onPick={loadHistory}
@@ -242,40 +245,25 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
       {/* Body: item history OR single-day feed */}
       {historyItem ? (
         historyLoading ? (
-          <div className="card-surface p-12 text-center">
-            <Loader2
-              size={28}
-              className="mx-auto mb-3 animate-spin text-[var(--muted-foreground)]"
-            />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              Loading history...
-            </p>
-          </div>
+          <EmptyState
+            icon={<Loader2 size={28} className="animate-spin" />}
+            title="Loading history..."
+          />
         ) : historyRows.length === 0 ? (
-          <div className="card-surface p-12 text-center">
-            <History
-              size={32}
-              className="mx-auto mb-3 text-[var(--muted-foreground)]"
-            />
-            <p className="text-sm text-[var(--muted-foreground)]">
-              No recorded changes for this item yet.
-            </p>
-          </div>
+          <EmptyState
+            icon={<History size={28} />}
+            title="No recorded changes for this item yet."
+          />
         ) : (
-          <div className="space-y-3">{historyRows.map(renderRow)}</div>
+          <div className="space-y-2">{historyRows.map(renderRow)}</div>
         )
       ) : initialRows.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <History
-            size={32}
-            className="mx-auto mb-3 text-[var(--muted-foreground)]"
-          />
-          <p className="text-sm text-[var(--muted-foreground)]">
-            No inventory changes were recorded on this date.
-          </p>
-        </div>
+        <EmptyState
+          icon={<History size={28} />}
+          title="No inventory changes were recorded on this date."
+        />
       ) : (
-        <div className="space-y-3">{initialRows.map(renderRow)}</div>
+        <div className="space-y-2">{initialRows.map(renderRow)}</div>
       )}
     </div>
   );
@@ -362,8 +350,8 @@ function ItemHistorySearch({
         <Search size={13} /> Find an item to see its full history
       </label>
       <div className="relative max-w-xl">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none" />
-        <input
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-[var(--muted-foreground)] pointer-events-none z-10" />
+        <Input
           value={search}
           onChange={(e) => {
             setSearch(e.target.value);
@@ -371,7 +359,7 @@ function ItemHistorySearch({
           }}
           onFocus={() => setOpen(true)}
           placeholder="Search by code or name across all categories..."
-          className="w-full h-10 pl-9 pr-9 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1"
+          className="pl-9 pr-9"
         />
         {loading && (
           <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
@@ -437,7 +425,7 @@ function CardShell({
 }) {
   return (
     <div
-      className={`card-surface p-4 ${
+      className={`card-surface p-3 ${
         dimmed ? "opacity-60" : ""
       }`}
     >
@@ -551,7 +539,7 @@ function ItemChangeCard({
               </span>
             )}
             {isReverted && (
-              <span className="text-[11px] font-medium text-amber-700">
+              <span className="text-[11px] font-medium text-[var(--warning)]">
                 · Reverted
               </span>
             )}
@@ -659,7 +647,7 @@ function StockChangeCard({
           <div className="mt-2 text-sm flex items-center gap-2 flex-wrap">
             <span
               className={`font-semibold ${
-                positive ? "text-green-700" : "text-red-700"
+                positive ? "text-[var(--success)]" : "text-[var(--destructive)]"
               }`}
             >
               {positive ? "+" : ""}

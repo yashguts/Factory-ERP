@@ -118,7 +118,7 @@ export function MrpJobsPopover({
               Loading…
             </div>
           ) : error ? (
-            <div className="px-3 py-3 text-xs text-red-600">{error}</div>
+            <div className="px-3 py-3 text-xs text-[var(--destructive)]">{error}</div>
           ) : !data || data.length === 0 ? (
             <div className="px-3 py-3 text-xs text-[var(--muted-foreground)]">
               No jobs reference this item.

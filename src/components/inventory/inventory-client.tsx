@@ -16,6 +16,10 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { PageHeader } from "@/components/ui/page-header";
+import { Toolbar } from "@/components/ui/toolbar";
+import { Tabs } from "@/components/ui/tabs";
+import { EmptyState } from "@/components/ui/empty-state";
 import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
@@ -349,69 +353,47 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
   return (
     <div>
       {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold tracking-tight">Inventory</h1>
-          <p className="text-sm text-[var(--muted-foreground)]">
-            {total.toLocaleString()} items{isPending ? " — loading..." : ""}
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Link href="/inventory/changes">
-            <Button variant="secondary" title="See what changed on a given day">
-              <History size={16} className="mr-2" />
-              Daily Changes
+      <PageHeader
+        title="Inventory"
+        icon={<Package size={18} />}
+        meta={`${total.toLocaleString()} items${isPending ? " — loading..." : ""}`}
+        actions={
+          <>
+            <Link href="/inventory/changes">
+              <Button variant="secondary" size="sm" title="See what changed on a given day">
+                <History size={16} className="mr-2" />
+                Daily Changes
+              </Button>
+            </Link>
+            <Button variant="secondary" size="sm" onClick={() => setShowStockAdjust(true)}>
+              Stock Adjustment
             </Button>
-          </Link>
-          <Button variant="secondary" onClick={() => setShowStockAdjust(true)}>
-            Stock Adjustment
-          </Button>
-          <Button onClick={() => { setSelectedItem(null); setCloneSource(null); setSuggestedCode(null); setShowItemForm(true); }}>
-            <Plus size={16} className="mr-2" />
-            Add Item
-          </Button>
-        </div>
-      </div>
+            <Button size="sm" onClick={() => { setSelectedItem(null); setCloneSource(null); setSuggestedCode(null); setShowItemForm(true); }}>
+              <Plus size={16} className="mr-2" />
+              Add Item
+            </Button>
+          </>
+        }
+      />
 
-      {/* Make / Trade tabs — same pattern as the MRP page so the split reads
-          the same everywhere. Counts are the global universe, not the current
-          filter result (mirrors MRP). */}
-      <div className="flex gap-1 mb-4 border-b border-[var(--border)]">
-        {([
-          { key: "all", label: "All", count: tabCounts.all },
-          { key: "make", label: "Make · Manufactured", count: tabCounts.make },
-          { key: "trade", label: "Trade · Purchased", count: tabCounts.trade },
-        ] as const).map((t) => {
-          const active = mtTab === t.key;
-          return (
-            <button
-              key={t.key}
-              type="button"
-              onClick={() => { setMtTab(t.key); resetPage(); }}
-              className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors cursor-pointer ${
-                active
-                  ? "border-[var(--primary)] text-[var(--primary)]"
-                  : "border-transparent text-[var(--muted-foreground)] hover:text-[var(--foreground)]"
-              }`}
-            >
-              {t.label}
-              <span className={`ml-2 inline-block text-[10px] px-1.5 py-0.5 rounded-full ${
-                active
-                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
-                  : "bg-[var(--muted)] text-[var(--muted-foreground)]"
-              }`}>
-                {t.count.toLocaleString()}
-              </span>
-            </button>
-          );
-        })}
-      </div>
+      {/* Make / Trade tabs + filters in one toolbar band. Tab counts are the
+          global universe, not the current filter result (mirrors MRP). */}
+      <Toolbar>
+        <Tabs
+          variant="underline"
+          value={mtTab}
+          onChange={(v) => { setMtTab(v as "all" | "make" | "trade"); resetPage(); }}
+          tabs={[
+            { value: "all", label: "All", count: tabCounts.all },
+            { value: "make", label: "Make · Manufactured", count: tabCounts.make },
+            { value: "trade", label: "Trade · Purchased", count: tabCounts.trade },
+          ]}
+        />
 
-      {/* Filters Row */}
-      <div className="flex flex-wrap gap-3 mb-4">
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
           <Input
+            size="sm"
             placeholder="Search name, code, or spec..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); resetPage(); }}
@@ -420,6 +402,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         </div>
 
         <Select
+          size="sm"
           value={typeFilter}
           onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); setCategoryFilter("all"); setSubCategoryFilter("all"); resetPage(); }}
           className="w-[150px]"
@@ -433,6 +416,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         </Select>
 
         <Select
+          size="sm"
           value={categoryFilter}
           onChange={(e) => { setCategoryFilter(e.target.value); setSubCategoryFilter("all"); resetPage(); }}
           className="w-[160px]"
@@ -445,6 +429,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
 
         {subCategoryOptions.length > 0 && (
           <Select
+            size="sm"
             value={subCategoryFilter}
             onChange={(e) => { setSubCategoryFilter(e.target.value); resetPage(); }}
             className="w-[220px]"
@@ -457,6 +442,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         )}
 
         <Select
+          size="sm"
           value={stockFilter}
           onChange={(e) => { setStockFilter(e.target.value as typeof stockFilter); resetPage(); }}
           className="w-[140px]"
@@ -468,6 +454,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         </Select>
 
         <Select
+          size="sm"
           value={behaviourFilter}
           onChange={(e) => { setBehaviourFilter(e.target.value as typeof behaviourFilter); resetPage(); }}
           className="w-[150px]"
@@ -479,6 +466,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         </Select>
 
         <Select
+          size="sm"
           value={demandFilter}
           onChange={(e) => { setDemandFilter(e.target.value as typeof demandFilter); resetPage(); }}
           className="w-[170px]"
@@ -489,22 +477,25 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
           <option value="formula">Formula (program/parts)</option>
           <option value="none">No link</option>
         </Select>
-      </div>
+      </Toolbar>
 
       {/* Table */}
       {rows.length === 0 ? (
-        <div className="card-surface p-12 text-center">
-          <Package size={48} className="mx-auto mb-4 text-[var(--muted-foreground)] opacity-50" />
-          <p className="text-[var(--muted-foreground)]">
-            {total === 0 && !isPending
-              ? "No items match your filters."
-              : "Loading..."}
-          </p>
+        <div className="card-surface">
+          {total === 0 && !isPending ? (
+            <EmptyState
+              icon={<Package size={28} />}
+              title="No items match your filters"
+              description="Try clearing the search or adjusting the filters above."
+            />
+          ) : (
+            <EmptyState icon={<Package size={28} />} title="Loading..." />
+          )}
         </div>
       ) : (
         <div className="card-surface overflow-hidden">
-          <Table>
-            <TableHeader>
+          <Table density="compact">
+            <TableHeader sticky>
               <TableRow>
                 <SortHeader label="Code" sortField="code" />
                 <SortHeader label="Name" sortField="name" />
@@ -519,8 +510,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />
                 <TableHead>Status</TableHead>
-                <TableHead className="w-8"></TableHead>
-                <TableHead className="w-10"></TableHead>
+                <TableHead className="w-16"></TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -542,12 +532,12 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                       </Link>
                     </TableCell>
                     <TableCell>
-                      <div className="font-medium">{item.name}</div>
-                      {item.description && (
-                        <div className="text-xs text-[var(--muted-foreground)] truncate max-w-[300px]">
-                          {item.description}
-                        </div>
-                      )}
+                      <span
+                        className="font-medium"
+                        title={item.description ?? undefined}
+                      >
+                        {item.name}
+                      </span>
                     </TableCell>
                     <TableCell>
                       <span className="inline-flex items-center gap-1">
@@ -659,28 +649,28 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                         <Badge variant="success">OK</Badge>
                       )}
                     </TableCell>
-                    <TableCell className="w-8 px-1" onClick={(e) => e.stopPropagation()}>
-                      <button
-                        type="button"
-                        onClick={() => handleClone(item)}
-                        title="Clone this item — pre-fills a new item with the same category, UOM, Make/Trade and suppliers"
-                        className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                      </button>
-                    </TableCell>
-                    <TableCell className="w-10 px-1" onClick={(e) => e.stopPropagation()}>
-                      <InlineStockAdjust
-                        item={{
-                          id: item.id,
-                          code: item.code,
-                          name: item.name,
-                          lookup_key: null,
-                          uom: item.uom_abbreviation ? { id: "", abbreviation: item.uom_abbreviation } : null,
-                        }}
-                        warehouses={warehouses}
-                        onSuccess={runQuery}
-                      />
+                    <TableCell className="w-16 px-1" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex items-center justify-end gap-0.5">
+                        <button
+                          type="button"
+                          onClick={() => handleClone(item)}
+                          title="Clone this item — pre-fills a new item with the same category, UOM, Make/Trade and suppliers"
+                          className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                        </button>
+                        <InlineStockAdjust
+                          item={{
+                            id: item.id,
+                            code: item.code,
+                            name: item.name,
+                            lookup_key: null,
+                            uom: item.uom_abbreviation ? { id: "", abbreviation: item.uom_abbreviation } : null,
+                          }}
+                          warehouses={warehouses}
+                          onSuccess={runQuery}
+                        />
+                      </div>
                     </TableCell>
                   </TableRow>
                 );
