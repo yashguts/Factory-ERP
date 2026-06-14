@@ -53,8 +53,8 @@ export function SubassembliesClient({ rows }: Props) {
       />
 
       {/* Existing sub-assemblies */}
-      <div className="mt-4">
-        <div className="flex items-center justify-between gap-3 mb-3">
+      <div className="mt-3">
+        <div className="flex items-center justify-between gap-3 mb-2">
           <h2 className="text-sm font-semibold text-[var(--muted-foreground)]">
             {rows.length === 0
               ? "No sub-assemblies defined yet"
@@ -91,28 +91,29 @@ export function SubassembliesClient({ rows }: Props) {
               <Link
                 key={r.id}
                 href={`/inventory/${r.id}`}
-                className="flex items-center gap-3 px-3 py-2 hover:bg-[var(--muted)]/50 transition-colors cursor-pointer group"
+                className="flex items-center gap-2.5 px-3 py-1.5 text-[13px] hover:bg-[var(--muted)]/50 transition-colors cursor-pointer group"
               >
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <span className="font-medium text-sm truncate">{r.name}</span>
-                    {r.family && (
-                      <Badge variant="neutral" title="Finish family">
-                        {r.family}
-                        {r.finish ? ` · ${r.finish}` : ""}
-                      </Badge>
-                    )}
-                    {r.effective_procurement_type === "trade" && (
-                      <Badge variant="amber">
-                        <ShoppingCart className="h-3 w-3 mr-1" />
-                        bought?
-                      </Badge>
-                    )}
-                  </div>
-                  <span className="font-mono text-[11px] text-[var(--muted-foreground)]">
-                    {r.code}
-                  </span>
-                </div>
+                <span
+                  className="font-mono text-[11px] text-[var(--muted-foreground)] shrink-0 w-24 truncate"
+                  title={r.code}
+                >
+                  {r.code}
+                </span>
+                <span className="font-medium truncate min-w-0 flex-1" title={r.name}>
+                  {r.name}
+                </span>
+                {r.family && (
+                  <Badge variant="neutral" className="shrink-0" title="Finish family">
+                    {r.family}
+                    {r.finish ? ` · ${r.finish}` : ""}
+                  </Badge>
+                )}
+                {r.effective_procurement_type === "trade" && (
+                  <Badge variant="amber" className="shrink-0">
+                    <ShoppingCart className="h-3 w-3 mr-1" />
+                    bought?
+                  </Badge>
+                )}
                 <div className="flex items-center gap-3 shrink-0 text-xs text-[var(--muted-foreground)]">
                   {r.built_count > 0 && (
                     <span
