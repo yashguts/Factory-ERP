@@ -30,6 +30,9 @@ export interface PoLineDetail {
   sort_order: number;
   item_code: string;
   item_name: string;
+  /** Original line description from the source PO (may differ from the catalog
+   *  item name — the same code can carry several descriptions on one order). */
+  description: string | null;
   uom_abbreviation: string | null;
   on_hand: number;
   reorder_point: number | null;
@@ -118,7 +121,7 @@ async function _getPurchaseOrderUncached(
   const { data: rawLines, error: lErr } = await supabase
     .from("purchase_order_lines")
     .select(
-      `id, item_id, qty, unit_cost, received_qty, sort_order,
+      `id, item_id, qty, unit_cost, received_qty, sort_order, description,
        item:items(code, name, reorder_point, uom:units_of_measurement(abbreviation))`,
     )
     .eq("po_id", id)
@@ -149,6 +152,7 @@ async function _getPurchaseOrderUncached(
       sort_order: l.sort_order,
       item_code: item?.code ?? "—",
       item_name: item?.name ?? "—",
+      description: (l.description as string | null) ?? null,
       uom_abbreviation: uom?.abbreviation ?? null,
       on_hand: onHand.get(l.item_id) ?? 0,
       reorder_point: item?.reorder_point != null ? Number(item.reorder_point) : null,

@@ -248,7 +248,14 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
                     {r.item_code}
                   </Link>
                 </TableCell>
-                <TableCell className="font-medium">{r.item_name}</TableCell>
+                <TableCell className="font-medium">
+                  {r.item_name}
+                  {r.description && r.description !== r.item_name && (
+                    <span className="block text-[11px] font-normal text-[var(--muted-foreground)]" title="Description on the original purchase order">
+                      PO: {r.description}
+                    </span>
+                  )}
+                </TableCell>
                 <TableCell className="text-right">{r.on_hand.toLocaleString()}</TableCell>
                 <TableCell className="text-right text-[var(--muted-foreground)]">
                   {r.reorder_point != null ? r.reorder_point.toLocaleString() : "—"}
