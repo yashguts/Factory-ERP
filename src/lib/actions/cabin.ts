@@ -5,6 +5,60 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import { CABIN_PARENT, cabinCodePrefix } from "@/lib/cabin/cabin-types";
 
+/** Resolve a sub-type under a cabin type to its category id (creating it if new),
+ *  else the type itself. Shared by createCabinItem + createCabinPanelVariants. */
+async function resolveCabinCategory(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  typeId: string,
+  subCategory?: string | null,
+): Promise<{ ok: true; categoryId: string } | { ok: false; error: string }> {
+  let categoryId = typeId;
+  const sub = (subCategory ?? "").trim();
+  if (sub) {
+    const { data: existing } = await supabase
+      .from("item_categories")
+      .select("id")
+      .eq("parent_id", typeId)
+      .ilike("name", sub)
+      .limit(1)
+      .maybeSingle();
+    if (existing) categoryId = existing.id as string;
+    else {
+      const { data: created, error } = await supabase
+        .from("item_categories")
+        .insert({ name: sub, parent_id: typeId, procurement_type: "make" })
+        .select("id")
+        .single();
+      if (error) return { ok: false, error: error.message };
+      categoryId = created.id as string;
+    }
+  }
+  return { ok: true, categoryId };
+}
+
+/** Highest existing numeric suffix for a code prefix (paged past the 1000-row cap). */
+async function maxCabinCodeNumber(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  prefix: string,
+): Promise<number> {
+  let max = 0;
+  const re = new RegExp(`^${prefix}-(\\d+)$`, "i");
+  for (let off = 0; ; off += 1000) {
+    const { data: codes } = await supabase
+      .from("items")
+      .select("code")
+      .ilike("code", `${prefix}-%`)
+      .order("code")
+      .range(off, off + 999);
+    for (const r of codes ?? []) {
+      const m = re.exec(String((r as any).code));
+      if (m) max = Math.max(max, parseInt(m[1], 10));
+    }
+    if (!codes || codes.length < 1000) break;
+  }
+  return max;
+}
+
 const MAIN_STORE = "0ebcfb80-19e2-43e7-b15c-e6020bd5506d";
 
 export interface CabinTypeSummary {
@@ -355,4 +409,85 @@ export async function createCabinItem(input: {
   revalidatePath("/cabin-inventory");
   revalidatePath(`/cabin-inventory/${input.typeId}`);
   return { ok: true, id: item.id as string, code };
+}
+
+export type CabinPanelVariantsResult =
+  | { ok: true; created: string[]; skipped: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Blow up a base panel name into one item per finish ("{base} {finish}"),
+ * matching the existing finish-fanned families (family = base, finish set, Make /
+ * stocked / nos, 0 stock, auto-codes). Idempotent: any "{base} {finish}" that
+ * already exists is skipped, so re-running only fills in the missing finishes.
+ */
+export async function createCabinPanelVariants(input: {
+  typeId: string;
+  subCategory?: string | null;
+  baseName: string;
+  finishes: string[];
+}): Promise<CabinPanelVariantsResult> {
+  const baseName = (input.baseName ?? "").trim();
+  if (!baseName) return { ok: false, error: "Base panel name is required." };
+  if (!input.typeId) return { ok: false, error: "Missing cabin type." };
+  const finishes = [...new Set((input.finishes ?? []).map((f) => f.trim()).filter(Boolean))];
+  if (finishes.length === 0) return { ok: false, error: "Pick at least one finish." };
+
+  const supabase = await createClient();
+
+  const cat = await resolveCabinCategory(supabase, input.typeId, input.subCategory);
+  if (!cat.ok) return cat;
+
+  const { data: uoms } = await supabase.from("units_of_measurement").select("id, abbreviation");
+  const nos =
+    (uoms ?? []).find((u: any) => String(u.abbreviation).toLowerCase() === "nos") ?? (uoms ?? [])[0];
+  if (!nos) return { ok: false, error: "No unit of measurement configured." };
+
+  const { data: typeCat } = await supabase
+    .from("item_categories")
+    .select("name")
+    .eq("id", input.typeId)
+    .maybeSingle();
+  const prefix = cabinCodePrefix(typeCat?.name as string | undefined);
+
+  // Existing "{base} {finish}" names (case-insensitive) → skip, so re-running
+  // only adds the finishes that aren't there yet.
+  const { data: existingRows } = await supabase
+    .from("items")
+    .select("name")
+    .ilike("name", `${baseName} %`);
+  const existing = new Set((existingRows ?? []).map((r: any) => String(r.name).trim().toLowerCase()));
+
+  const candidates = finishes.map((finish) => ({ finish, name: `${baseName} ${finish}` }));
+  const toCreate = candidates.filter((c) => !existing.has(c.name.toLowerCase()));
+  const skipped = candidates.filter((c) => existing.has(c.name.toLowerCase())).map((c) => c.finish);
+  if (toCreate.length === 0) return { ok: true, created: [], skipped };
+
+  let n = await maxCabinCodeNumber(supabase, prefix);
+  const rows = toCreate.map((c) => ({
+    code: `${prefix}-${String(++n).padStart(3, "0")}`,
+    name: c.name,
+    lookup_key: c.name,
+    item_type: "mechanical_finished_stock",
+    stock_behaviour: "stocked",
+    procurement_type: "make",
+    uom_id: nos.id,
+    category_id: cat.categoryId,
+    family: baseName,
+    finish: c.finish,
+    is_active: true,
+  }));
+
+  const { error } = await supabase.from("items").insert(rows);
+  if (error) {
+    const msg = (error as any).code === "23505" ? "Some of these item names already exist." : error.message;
+    return { ok: false, error: msg };
+  }
+
+  revalidateTag("items");
+  revalidateTag("inventory-stock");
+  revalidateTag("categories");
+  revalidatePath("/cabin-inventory");
+  revalidatePath(`/cabin-inventory/${input.typeId}`);
+  return { ok: true, created: rows.map((r) => r.code), skipped };
 }

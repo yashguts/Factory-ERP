@@ -86,3 +86,23 @@ export function isFinishSplitType(jobType: string): boolean {
     cabinInventoryType(jobType),
   );
 }
+
+/**
+ * Canonical finish fan-out set for a cabin panel (Side Panel / Front Wall):
+ * MS + the three stocking SS grades + the 24 designer finishes = 28. Used by the
+ * "create all finish variants" action so a new panel can be blown up into every
+ * finish at once, matching the existing P2C-350-style families. The grade rows
+ * come first (the everyday ones), then the designers.
+ */
+export const CABIN_PANEL_GRADE_FINISHES = ["MS", "SS 304", "SS 430", "SS 441"] as const;
+export const CABIN_PANEL_DESIGNER_FINISHES = [
+  "Black Hairline", "Black Mirror", "Blue Flower", "Bronze", "Champagne", "Chequered",
+  "Designer IPF01", "Golden", "Golden Hairline", "Golden Jewellery", "Golden Mirror",
+  "Grade 430 Mirror", "Honey Comb", "Mirror", "Moon Rock", "Rose Gold", "Rose Gold Etching",
+  "Rose Gold Lilen", "Rose Gold Mirror", "Silver Horizontal", "Silver Linen", "Silver Vertical",
+  "White Mirror Silver", "Wooden",
+] as const;
+export const CABIN_PANEL_FINISHES: string[] = [
+  ...CABIN_PANEL_GRADE_FINISHES,
+  ...CABIN_PANEL_DESIGNER_FINISHES,
+];
