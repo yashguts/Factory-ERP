@@ -100,7 +100,10 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
         <div className="flex items-end gap-2 overflow-x-auto pb-1">
           {weeks.map((w, i) => {
             const v = barValues[i];
-            const barPx = v > 0 ? Math.max(8, Math.round((v / max) * CHART_H)) : 0;
+            // Reserve ~18px at the top of the column for the value label that now
+            // sits directly on top of the bar (so short bars don't leave a big gap
+            // between a top-floating number and a tiny stub at the bottom).
+            const barPx = v > 0 ? Math.max(8, Math.round((v / max) * (CHART_H - 18))) : 0;
             return (
               <button
                 key={w.key}
@@ -112,15 +115,15 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
                   w.isOverdue ? "hover:bg-[var(--destructive-bg)]" : "hover:bg-[var(--muted)]",
                 )}
               >
-                <span
-                  className={cn(
-                    "text-xs font-semibold tabular-nums",
-                    v === 0 ? "text-transparent" : w.isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]",
-                  )}
-                >
-                  {v === 0 ? "0" : fmt(v)}
-                </span>
-                <div className="flex w-full items-end justify-center" style={{ height: CHART_H }}>
+                <div className="flex w-full flex-col items-center justify-end gap-1" style={{ height: CHART_H }}>
+                  <span
+                    className={cn(
+                      "text-xs font-semibold tabular-nums leading-none",
+                      v === 0 ? "text-transparent" : w.isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]",
+                    )}
+                  >
+                    {v === 0 ? "0" : fmt(v)}
+                  </span>
                   {v === 0 ? (
                     <div className="h-px w-7 rounded bg-[var(--border)]" />
                   ) : (
