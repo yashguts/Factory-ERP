@@ -6,7 +6,9 @@
  * Asserts (self-consistent against getMrpData's own frame demand):
  *  1. each guide shoe's required === Σ over rules (frame total_required × qty)
  *  2. the 4 guide shoes are make + shortfall = max(0, req − stock)
- *  3. absent from the default (flag-off) path → production plan / make-plan untouched
+ *  3. present in BOTH the flag-on AND flag-off paths with identical required — the
+ *     make-plan optimiser reads the flag-off path, so it MUST see this demand to
+ *     schedule the children's programs (component rules are real, no-double-count demand)
  *  4. flag only ADDS — every flag-off row preserved with the same required
  */
 import * as fs from "fs";
@@ -58,10 +60,16 @@ const SHOES = ["SA-DC-078", "SA-DC-079", "SA-DC-080", "SA-DC-081"];
     }
   }
 
-  console.log("[2] Absent from the default (flag-off) path");
+  console.log("[2] Present in BOTH paths — the make-plan (flag-off) needs this demand");
+  const nByIdRow = new Map(noFlag.map((r) => [r.item_id, r]));
   for (const code of SHOES) {
     const row = byCode.get(code);
-    if (row) ok(`${code} absent flag-off`, !nById.has(row.item_id));
+    const exp = row ? expected.get(row.item_id) ?? 0 : 0;
+    if (row && exp > 0) {
+      ok(`${code} present flag-off`, nById.has(row.item_id));
+      const nRow = nByIdRow.get(row.item_id);
+      ok(`${code} required identical in both paths`, !!nRow && near(nRow.total_required, row.total_required), nRow ? `${nRow.total_required} vs ${row.total_required}` : "absent");
+    }
   }
 
   console.log("[3] Flag only ADDS — flag-off rows preserved");

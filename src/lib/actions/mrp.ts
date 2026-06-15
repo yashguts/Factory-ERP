@@ -220,11 +220,16 @@ export async function _getMrpDataUncached(
   // purchased list), and resolves children by the stored representative
   // (child_item_id) — exact for the current data (all 'neutral'); revisit to share
   // getProductionPlan's finish resolution if finish-banded trade sub-parts appear.
+  // Component-demand rules (e.g. guide shoes per safety frame) are REAL make/trade
+  // demand that no parts-list explosion will ever re-derive (by design they don't
+  // touch the production plan), so they apply to EVERY consumer — crucially the
+  // make-plan optimiser (production-plan.ts calls this with includeDerivedTrade=false),
+  // which otherwise never sees the guide-shoe demand and so never schedules its
+  // programs. No double-count: the make-plan's own explosion goes through item_bom_lines,
+  // and these rules are deliberately NOT in item_bom_lines. Must run before
+  // addTradeLeafDemand so a rule-added child's own trade leaves get exploded below.
+  await addComponentRuleDemand(supabase, reqMap);
   if (includeDerivedTrade) {
-    // Component-demand rules FIRST (e.g. guide shoes per safety frame): adds the
-    // child as demand off the parent's demand, so the newly-added children then get
-    // their own trade leaves exploded by addTradeLeafDemand below.
-    await addComponentRuleDemand(supabase, reqMap);
     await addTradeLeafDemand(supabase, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
     // even when the BOM sum is empty, so the emptiness check comes AFTER this.

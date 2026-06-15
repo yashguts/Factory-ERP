@@ -260,6 +260,38 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
     arr[pos(bucket)] += qty;
     demandByItemWeek.set(line.item_id, arr);
   }
+
+  // Component-demand rules (e.g. guide shoes per safety frame): a child is needed
+  // `qty` per demanded PARENT. Apply per week off the parent's job-BOM demand so the
+  // weekly make-plan schedules the children's programs too — mirrors getMrpData's
+  // addComponentRuleDemand, just bucketed by Req.-Dispatch week. Single pass: build
+  // all additions off the un-mutated parent demand (children aren't re-expanded as
+  // parents), then fold them in. These rules are NOT item_bom_lines, so the
+  // optimiser's parts-list explosion never re-derives them — no double-count.
+  {
+    const rules = await fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
+      (from, to, withCount) =>
+        supabase
+          .from("item_demand_rules")
+          .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+          .range(from, to),
+    );
+    const additions = new Map<string, number[]>();
+    for (const r of rules) {
+      const parentArr = demandByItemWeek.get(r.parent_item_id);
+      const q = Number(r.qty) || 0;
+      if (!parentArr || q <= 0) continue;
+      const add = additions.get(r.child_item_id) ?? new Array(N).fill(0);
+      for (let i = 0; i < N; i++) add[i] += parentArr[i] * q;
+      additions.set(r.child_item_id, add);
+    }
+    for (const [child, add] of additions) {
+      const arr = demandByItemWeek.get(child) ?? new Array(N).fill(0);
+      for (let i = 0; i < N; i++) arr[i] += add[i];
+      demandByItemWeek.set(child, arr);
+    }
+  }
+
   if (demandByItemWeek.size === 0) return empty;
 
   // item meta + stock for every demanded item (same shape as getMrpData)
