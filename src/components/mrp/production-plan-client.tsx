@@ -35,6 +35,12 @@ export function ProductionPlanClient({
   const rawMaterials = plan.rawMaterials.filter((r) => planMatches(r, filter));
   const purchased = plan.purchased.filter((r) => planMatches(r, filter));
   const rawShortfall = rawMaterials.filter((r) => r.shortfall > 0).length;
+  // Trade buy list = ONE list of everything to buy (steel sheets + bought parts;
+  // under Trade MRP the raw/purchased split is meaningless), shortfall only
+  // (covered items hidden), grouped by category in GroupedBuyList.
+  const toBuy = [...plan.rawMaterials, ...plan.purchased].filter(
+    (r) => planMatches(r, filter) && r.shortfall > 0,
+  );
   const totalMachineSeconds = plan.programRuns.reduce(
     (s, r) => s + (r.machine_seconds ?? 0),
     0,
@@ -44,9 +50,13 @@ export function ProductionPlanClient({
     <div>
       <MrpToolbar view="buy" date={plan.cutoffDate ?? ""} section={section} />
       <PageHeader
-        icon={<Factory size={18} />}
-        title="Raw Material Plan"
-        subtitle="Job demand exploded through programs & parts lists down to the steel and bought parts to buy"
+        icon={section === "trade" ? <ShoppingCart size={18} /> : <Factory size={18} />}
+        title={section === "trade" ? "Buy List" : "Raw Material Plan"}
+        subtitle={
+          section === "trade"
+            ? "What to buy for current job demand — grouped by category; items already covered by stock are hidden"
+            : "Job demand exploded through programs & parts lists down to the steel and bought parts to buy"
+        }
       />
 
       {/* Estimate caveat */}
@@ -55,54 +65,62 @@ export function ProductionPlanClient({
         <span>
           <strong>Estimate.</strong> Sheet demand is rolled up per program at
           whole runs (nesting/yield not optimised), so it is conservative —
-          validate against a real job before ordering. Make items still missing
-          a program or parts list are listed under Cannot explode.
+          validate against a real job before ordering.
+          {section === "make" && " Make items still missing a program or parts list are listed under Cannot explode."}
         </span>
       </div>
 
       {/* Summary */}
       <StatStrip className="mb-3">
-        <StatTile label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
-        <StatTile label="Purchased parts" value={purchased.length} />
-        {/* Programs to run / machine time is a Make concern (it's on Make Plan),
-            not part of the Trade buy list — only show it on the make section. */}
-        {section === "make" && (
-          <StatTile
-            label="Programs to run"
-            value={plan.programRuns.length}
-            sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
-          />
-        )}
-        {/* "Can't explode" = make items missing a program/parts list — a Make
-            data-quality flag, not relevant to the Trade buy list. */}
-        {section === "make" && (
-          <StatTile
-            label="Can't explode"
-            value={plan.unresolved.length}
-            tone={plan.unresolved.length > 0 ? "warn" : "default"}
-          />
+        {section === "trade" ? (
+          <>
+            <StatTile label="Items to buy" value={toBuy.length} />
+            <StatTile label="Categories" value={new Set(toBuy.map((r) => r.category || "Uncategorised")).size} />
+          </>
+        ) : (
+          <>
+            <StatTile label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
+            <StatTile label="Purchased parts" value={purchased.length} />
+            <StatTile
+              label="Programs to run"
+              value={plan.programRuns.length}
+              sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
+            />
+            <StatTile
+              label="Can't explode"
+              value={plan.unresolved.length}
+              tone={plan.unresolved.length > 0 ? "warn" : "default"}
+            />
+          </>
         )}
       </StatStrip>
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
 
-      <LeafTable
-        title="Raw materials to buy"
-        subtitle="sheets & materials consumed by the programs"
-        icon={<Layers className="h-4 w-4" />}
-        rows={rawMaterials}
-        empty="No raw-material demand — make items may be missing their program link."
-      />
-
-      <div className="mt-4">
-        <LeafTable
-          title="Purchased parts to buy"
-          subtitle="trade items (operators, fixings, …)"
-          icon={<ShoppingCart className="h-4 w-4" />}
-          rows={purchased}
-          empty="No purchased-part demand."
-        />
-      </div>
+      {section === "trade" ? (
+        <div className="mt-3">
+          <GroupedBuyList rows={toBuy} />
+        </div>
+      ) : (
+        <>
+          <LeafTable
+            title="Raw materials to buy"
+            subtitle="sheets & materials consumed by the programs"
+            icon={<Layers className="h-4 w-4" />}
+            rows={rawMaterials}
+            empty="No raw-material demand — make items may be missing their program link."
+          />
+          <div className="mt-4">
+            <LeafTable
+              title="Purchased parts to buy"
+              subtitle="trade items (operators, fixings, …)"
+              icon={<ShoppingCart className="h-4 w-4" />}
+              rows={purchased}
+              empty="No purchased-part demand."
+            />
+          </div>
+        </>
+      )}
 
       {/* Program runs & machine time = shop workload, lives on Make Plan. The
           Trade buy list is only "what to buy", so this is hidden here. */}
@@ -313,6 +331,98 @@ function ProgramRunsSection({ runs }: { runs: ProgramRunPlan[] }) {
         </div>
       )}
     </Card>
+  );
+}
+
+/**
+ * The Trade buy list: everything to buy in one list, grouped by (top-level)
+ * category, sorted alphabetically by category; within a category the biggest
+ * shortfall first. Covered items are already filtered out by the caller.
+ */
+function GroupedBuyList({ rows }: { rows: PlanLeaf[] }) {
+  const groups = useMemo(() => {
+    const m = new Map<string, PlanLeaf[]>();
+    for (const r of rows) {
+      const key = r.category && r.category !== "(none)" ? r.category : "Uncategorised";
+      const arr = m.get(key) ?? [];
+      arr.push(r);
+      m.set(key, arr);
+    }
+    return [...m.entries()]
+      .map(([cat, items]) => ({
+        cat,
+        items: [...items].sort((a, b) => b.shortfall - a.shortfall || a.code.localeCompare(b.code)),
+        toBuy: items.reduce((s, i) => s + i.shortfall, 0),
+      }))
+      .sort((a, b) => a.cat.localeCompare(b.cat));
+  }, [rows]);
+
+  if (rows.length === 0) {
+    return (
+      <Card>
+        <EmptyState
+          className="py-8"
+          title="Nothing to buy"
+          description="Current job demand is covered by stock — or the make items still need a program / parts-list link."
+        />
+      </Card>
+    );
+  }
+
+  return (
+    <div className="space-y-3">
+      {groups.map((g) => (
+        <Card key={g.cat}>
+          <SectionHeader
+            title={
+              <span className="flex items-center gap-2">
+                <Layers className="h-4 w-4" />
+                {g.cat}
+              </span>
+            }
+            actions={
+              <span className="text-xs font-normal text-[var(--muted-foreground)]">
+                {g.items.length} {g.items.length === 1 ? "item" : "items"} to buy
+              </span>
+            }
+          />
+          <Table density="dense">
+            <TableHeader sticky>
+              <TableRow>
+                <TableHead className="w-[150px]">Code</TableHead>
+                <TableHead>Item</TableHead>
+                <TableHead>Sub-category</TableHead>
+                <TableHead className="text-right w-[110px]">Required</TableHead>
+                <TableHead className="text-right w-[110px]">In stock</TableHead>
+                <TableHead className="text-right w-[120px]">To buy</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {g.items.map((r) => (
+                <TableRow key={r.item_id}>
+                  <TableCell className="font-mono text-xs">
+                    <Link href={`/inventory/${r.item_id}`} className="text-[var(--primary)] hover:underline">
+                      {r.code}
+                    </Link>
+                  </TableCell>
+                  <TableCell className="font-medium">{r.name}</TableCell>
+                  <TableCell className="text-xs text-[var(--muted-foreground)]">{r.subCategory}</TableCell>
+                  <TableCell className="text-right tabular-nums">
+                    {r.qty.toLocaleString()} <span className="text-xs text-[var(--muted-foreground)]">{r.uom}</span>
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">
+                    {r.in_stock.toLocaleString()}
+                  </TableCell>
+                  <TableCell className="text-right tabular-nums font-bold text-[var(--destructive)]">
+                    {r.shortfall.toLocaleString()}
+                  </TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </Card>
+      ))}
+    </div>
   );
 }
 
