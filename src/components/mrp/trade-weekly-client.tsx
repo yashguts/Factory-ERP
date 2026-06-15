@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import { WeeklyBoard, groupedItemBucket, CategoryTable, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
+import { WeeklyBoard, groupedItemBucket, CategoryTable, QtyCell, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
@@ -52,28 +52,31 @@ export function TradeWeeklyClient({ plan }: { plan: WeeklyMrpPlan }) {
         }
         const keys = [...byThick.keys()].sort((a, b) => (parseFloat(a) || 1e9) - (parseFloat(b) || 1e9));
         return (
-          <div className="space-y-3">
-            {keys.map((k) => {
+          <div className="space-y-2.5">
+            {keys.map((k, ki) => {
               const items = byThick.get(k)!.sort((a, b) => b.perWeek[i] - a.perWeek[i]);
               const tot = items.reduce((s, r) => s + r.perWeek[i], 0);
               return (
                 <CategoryTable
                   key={k}
                   title={k === "Other" ? "Other sheets" : `${k} sheets`}
-                  meta={`${items.length} type${items.length === 1 ? "" : "s"} · +${fmtQty(tot)} sheets`}
+                  showHead={ki === 0}
+                  meta={
+                    <>
+                      <span className="font-medium text-[var(--foreground)]">+{fmtQty(tot)}</span> · {items.length}
+                    </>
+                  }
                   cols={[
-                    { label: "Code", width: "20%", className: "font-mono text-xs" },
+                    { label: "Code", width: "92px", className: "font-mono text-[11px] text-[var(--muted-foreground)]" },
                     { label: "Sheet / plate" },
-                    { label: "Buy", align: "right", width: "16%" },
-                    { label: "Cumulative", align: "right", width: "18%" },
+                    { label: "Buy", align: "right", width: "26%" },
                   ]}
                   rows={items.map((r) => ({
                     id: r.item_id,
                     cells: [
                       r.code,
                       <span key="n" className="block truncate" title={r.name}>{r.name}</span>,
-                      <span key="q" className="font-semibold text-[var(--foreground)]">+{fmtQty(r.perWeek[i])}</span>,
-                      <span key="c" className="text-[var(--muted-foreground)]">{fmtQty(r.cumulative[i])}</span>,
+                      <QtyCell key="q" prefix="+" qty={r.perWeek[i]} cum={r.cumulative[i]} />,
                     ],
                   }))}
                 />
@@ -82,16 +85,16 @@ export function TradeWeeklyClient({ plan }: { plan: WeeklyMrpPlan }) {
           </div>
         );
       };
-      return { barValues, bucketCounts, unit: "sheets", countNoun: "sheet", renderBucket, empty: "No raw sheets to buy in this window." };
+      return { barValues, bucketCounts, unit: "sheets", countNoun: "type", renderBucket, empty: "No raw sheets to buy in this window." };
     }
 
     const rows: WeeklyGroupRow[] = plan.trade.map((r) => ({ id: r.item_id, code: r.code, name: r.name, topCategory: r.topCategory, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
-    const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.perWeek[i], 0));
+    // Headline = number of distinct items to buy (summing quantities across
+    // different bought parts is meaningless); per-row qty stays in each table.
     const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.perWeek[i] > 1e-9).length);
-    return { barValues, bucketCounts, unit: "units", countNoun: "item", renderBucket: (i: number) => groupedItemBucket(rows, i), empty: "No trade shortfall in this window." };
+    return { barValues: bucketCounts, bucketCounts, unit: "items", countNoun: "item", renderBucket: (i: number) => groupedItemBucket(rows, i), empty: "No trade shortfall in this window." };
   }, [tab, plan, weeks]);
 
-  const tradeUnits = useMemo(() => plan.trade.reduce((s, r) => s + r.total, 0), [plan.trade]);
   const sheetTotal = useMemo(() => plan.buy.reduce((s, r) => s + r.total, 0), [plan.buy]);
 
   const TABS = [
@@ -111,7 +114,6 @@ export function TradeWeeklyClient({ plan }: { plan: WeeklyMrpPlan }) {
 
       <StatStrip className="mb-3">
         <StatTile label="Trade items short" value={plan.trade.length} />
-        <StatTile label="Units to procure" value={fmtQty(tradeUnits)} tone="danger" />
         <StatTile label="Sheets to buy" value={fmtQty(sheetTotal)} />
       </StatStrip>
 

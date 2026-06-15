@@ -9,10 +9,40 @@ import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
 
-/* ── Shared category table ─────────────────────────────────────────────────
- * One clean, full-width table per category (header row + column headers). Used
- * for the Make/Trade item lanes and the Programs lane so every weekly board reads
- * the same way. */
+/* ── Row building blocks (shared by every lane) ────────────────────────────*/
+
+/** The action quantity per row: the qty is the one bold token, the running
+ * cumulative folded in quietly beside it (e.g. "×3 / 8" or "+12 / 40"). */
+export function QtyCell({ prefix, qty, cum }: { prefix: string; qty: number; cum: number }): ReactNode {
+  return (
+    <>
+      <span className="font-medium text-[var(--foreground)] tabular-nums">
+        <span className="font-normal text-[var(--muted-foreground)]">{prefix}</span>
+        {fmtQty(qty)}
+      </span>
+      <span className="ml-1 text-[11px] text-[var(--muted-foreground)] tabular-nums">/ {fmtQty(cum)}</span>
+    </>
+  );
+}
+
+/** A small in-row chip for machine / sheet thickness (thickness rhymes with the
+ * filter chips above the board). */
+export function MiniChip({ children, tone }: { children: ReactNode; tone?: "thickness" }): ReactNode {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center whitespace-nowrap rounded-md px-1.5 py-0.5 text-[11px]",
+        tone === "thickness"
+          ? "bg-[var(--primary)]/10 font-mono tabular-nums text-[var(--primary)]"
+          : "border border-[var(--border)] text-[var(--muted-foreground)]",
+      )}
+    >
+      {children}
+    </span>
+  );
+}
+
+/* ── Shared category table ─────────────────────────────────────────────────*/
 
 export interface WeeklyCol {
   label: string;
@@ -26,11 +56,13 @@ export function CategoryTable({
   meta,
   cols,
   rows,
+  showHead = false,
 }: {
   title: string;
-  meta: string;
+  meta: ReactNode;
   cols: WeeklyCol[];
   rows: { id: string; cells: ReactNode[] }[];
+  showHead?: boolean;
 }): ReactNode {
   return (
     <div className="overflow-hidden rounded-lg border border-[var(--border)]">
@@ -44,29 +76,31 @@ export function CategoryTable({
             <col key={i} style={c.width ? { width: c.width } : undefined} />
           ))}
         </colgroup>
-        <thead>
-          <tr>
-            {cols.map((c, i) => (
-              <th
-                key={i}
-                className={cn(
-                  "px-3.5 pb-1 pt-1.5 text-[11px] font-normal text-[var(--muted-foreground)]",
-                  c.align === "right" ? "text-right" : "text-left",
-                )}
-              >
-                {c.label}
-              </th>
-            ))}
-          </tr>
-        </thead>
+        {showHead && (
+          <thead>
+            <tr>
+              {cols.map((c, i) => (
+                <th
+                  key={i}
+                  className={cn(
+                    "px-3.5 pb-1.5 pt-2 text-[10px] font-medium uppercase tracking-wider text-[var(--muted-foreground)]",
+                    c.align === "right" ? "text-right" : "text-left",
+                  )}
+                >
+                  {c.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+        )}
         <tbody>
           {rows.map((r) => (
-            <tr key={r.id} className="border-t border-[var(--border)] hover:bg-[var(--muted)]/40">
+            <tr key={r.id} className="border-t border-[var(--border)] transition-colors hover:bg-[var(--muted)]/60">
               {r.cells.map((cell, ci) => (
                 <td
                   key={ci}
                   className={cn(
-                    "px-3.5 py-2 align-middle",
+                    "px-3.5 py-1.5 align-middle",
                     cols[ci].align === "right" ? "text-right tabular-nums" : "",
                     cols[ci].className,
                   )}
@@ -95,8 +129,10 @@ export interface WeeklyGroupRow {
 }
 
 /**
- * Render one week's item list as clean per-category tables (Code · Item · Need ·
- * Cumulative). Shared by the Make and Trade weekly boards. Pass as renderBucket.
+ * One week's items as clean per-category tables. The per-row Need (this item's
+ * own qty + cumulative) is shown, but category/section AGGREGATES are item COUNTS
+ * — summing quantities across different kinds of bought/made parts is meaningless,
+ * so "how many distinct items" is the useful number. Column headers print once.
  */
 export function groupedItemBucket(rows: WeeklyGroupRow[], i: number): ReactNode {
   const present = rows.filter((r) => r.perWeek[i] > 1e-9);
@@ -109,20 +145,23 @@ export function groupedItemBucket(rows: WeeklyGroupRow[], i: number): ReactNode 
   }
   const cats = [...byCat.keys()].sort((a, b) => a.localeCompare(b));
   return (
-    <div className="space-y-3">
-      {cats.map((cat) => {
+    <div className="space-y-2.5">
+      {cats.map((cat, ci) => {
         const items = byCat.get(cat)!.sort((a, b) => b.perWeek[i] - a.perWeek[i]);
-        const catTotal = items.reduce((s, r) => s + r.perWeek[i], 0);
         return (
           <CategoryTable
             key={cat}
             title={cat}
-            meta={`${items.length} item${items.length === 1 ? "" : "s"} · +${fmtQty(catTotal)} this week`}
+            showHead={ci === 0}
+            meta={
+              <>
+                <span className="font-medium text-[var(--foreground)]">{items.length}</span> item{items.length === 1 ? "" : "s"}
+              </>
+            }
             cols={[
-              { label: "Code", width: "20%", className: "font-mono text-xs" },
+              { label: "Code", width: "92px", className: "font-mono text-[11px] text-[var(--muted-foreground)]" },
               { label: "Item" },
-              { label: "Need", align: "right", width: "15%" },
-              { label: "Cumulative", align: "right", width: "17%" },
+              { label: "Need", align: "right", width: "26%" },
             ]}
             rows={items.map((r) => ({
               id: r.id,
@@ -132,8 +171,7 @@ export function groupedItemBucket(rows: WeeklyGroupRow[], i: number): ReactNode 
                   {r.name}
                   {r.sub ? <span className="ml-1.5 text-[11px] text-[var(--muted-foreground)]">{r.sub}</span> : null}
                 </span>,
-                <span key="q" className="font-semibold text-[var(--foreground)]">+{fmtQty(r.perWeek[i])}</span>,
-                <span key="c" className="text-[var(--muted-foreground)]">{fmtQty(r.cumulative[i])}</span>,
+                <QtyCell key="q" prefix="+" qty={r.perWeek[i]} cum={r.cumulative[i]} />,
               ],
             }))}
           />
@@ -147,49 +185,57 @@ export function groupedItemBucket(rows: WeeklyGroupRow[], i: number): ReactNode 
 
 export interface WeeklyBoardProps {
   weeks: WeekMeta[];
-  /** Per-bucket headline value (units / runs / sheets this week). */
+  /** Per-bucket headline magnitude shown on the strip + week banner. For item
+   * lanes pass the item COUNT (== bucketCounts); for programs/sheets the total. */
   barValues: number[];
-  /** Per-bucket row count — drives the "N" label and hides empty sections. */
+  /** Per-bucket distinct-row count. */
   bucketCounts: number[];
-  /** Unit noun for the strip cards, e.g. "runs". */
+  /** Unit for the headline magnitude, e.g. "runs" / "sheets" / "items". */
   unit: string;
-  /** Noun for the per-section count, e.g. "program". */
+  /** Noun for the row count, e.g. "program". */
   countNoun?: string;
-  /** Render the list for bucket i. */
   renderBucket: (i: number) => ReactNode;
   emptyLabel?: string;
 }
 
 /**
- * Week-by-week board: a clean strip of week cards up top (click to jump to that
- * week), then every week's plan stacked below (cumulative). Parameterised over
- * the metric so Make / Trade / Programs / sheets all share it.
+ * Week-by-week board: an urgency-weighted week strip up top (proportional fill
+ * bars, click to jump), then every week's plan stacked below (cumulative), each
+ * under an urgency-banded banner. Parameterised over the metric.
  */
 export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = "item", renderBucket, emptyLabel }: WeeklyBoardProps) {
   const hasAny = bucketCounts.some((c) => c > 0);
+  const max = Math.max(1, ...barValues);
   const fmt = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
   const scrollTo = (key: string) =>
     document.getElementById(`wk-${key}`)?.scrollIntoView({ behavior: "smooth", block: "start" });
 
   return (
     <div className="space-y-4">
-      {/* Week strip — at-a-glance workload + jump nav */}
+      {/* Week strip — workload heat overview + jump nav */}
       <div className="flex gap-2 overflow-x-auto pb-1">
         {weeks.map((w, i) => {
           const v = barValues[i];
-          const empty = bucketCounts[i] === 0;
+          if (bucketCounts[i] === 0) {
+            return (
+              <div
+                key={w.key}
+                title={`${w.title} · nothing due`}
+                className="flex w-[46px] shrink-0 flex-col items-center justify-center rounded-lg border border-[var(--border)] py-2 opacity-50"
+              >
+                <span className="text-[10px] text-[var(--muted-foreground)]">—</span>
+              </div>
+            );
+          }
+          const fillPct = Math.max(8, Math.round((v / max) * 100));
           return (
             <button
               key={w.key}
               type="button"
-              onClick={() => !empty && scrollTo(w.key)}
-              disabled={empty}
+              onClick={() => scrollTo(w.key)}
               title={`${w.title} · ${fmt(v)} ${unit}`}
               className={cn(
-                "flex w-[104px] shrink-0 flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors",
-                empty
-                  ? "border-[var(--border)] opacity-50"
-                  : "cursor-pointer hover:border-[var(--border-strong)] hover:bg-[var(--muted)]",
+                "flex w-[104px] shrink-0 cursor-pointer flex-col gap-0.5 rounded-lg border px-3 py-2 text-left transition-colors hover:border-[var(--border-strong)]",
                 w.isOverdue
                   ? "border-[var(--destructive)]/40 bg-[var(--destructive-bg)]/40"
                   : w.isCurrent
@@ -207,15 +253,21 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
               </span>
               <span
                 className={cn(
-                  "text-xl font-semibold leading-tight tabular-nums",
-                  empty ? "text-[var(--muted-foreground)]" : w.isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]",
+                  "font-medium leading-tight tabular-nums",
+                  w.isOverdue || w.isCurrent ? "text-2xl" : "text-xl",
+                  w.isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]",
                 )}
               >
                 {fmt(v)}
               </span>
-              <span className="truncate text-[10px] text-[var(--muted-foreground)]">
-                {unit}{!w.isOverdue && !w.isCurrent ? "" : ` · ${w.label}`}
-              </span>
+              <span className="truncate text-[10px] text-[var(--muted-foreground)]">{unit}</span>
+              <span
+                className={cn(
+                  "mt-1 block h-[3px] rounded-full",
+                  w.isOverdue ? "bg-[var(--destructive)]" : w.isCurrent ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]",
+                )}
+                style={{ width: `${fillPct}%` }}
+              />
             </button>
           );
         })}
@@ -231,19 +283,43 @@ export function WeeklyBoard({ weeks, barValues, bucketCounts, unit, countNoun = 
           {weeks.map((w, i) =>
             bucketCounts[i] > 0 ? (
               <section key={w.key} id={`wk-${w.key}`} className="scroll-mt-4">
-                <div className="mb-2.5 flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1 border-b border-[var(--border)] pb-2">
-                  <div className="flex items-baseline gap-2">
+                <div
+                  className={cn(
+                    "mb-2.5 flex flex-wrap items-center justify-between gap-x-3 gap-y-1 rounded-md px-3 py-2",
+                    w.isOverdue ? "bg-[var(--destructive-bg)]/60" : w.isCurrent ? "bg-[var(--primary)]/10" : "bg-[var(--muted)]/50",
+                  )}
+                >
+                  <div className="flex items-center gap-2">
                     <span
                       className={cn(
-                        "h-2.5 w-2.5 shrink-0 translate-y-0.5 rounded-full",
+                        "h-2.5 w-2.5 shrink-0 rounded-full",
                         w.isOverdue ? "bg-[var(--destructive)]" : w.isCurrent ? "bg-[var(--primary)]" : "bg-[var(--border-strong)]",
                       )}
                     />
-                    <h3 className={cn("text-sm font-semibold", w.isOverdue && "text-[var(--destructive)]")}>{w.title}</h3>
+                    <h3
+                      className={cn(
+                        "font-medium",
+                        w.isOverdue || w.isCurrent ? "text-base text-[var(--foreground)]" : "text-sm text-[var(--muted-foreground)]",
+                        w.isOverdue && "text-[var(--destructive)]",
+                      )}
+                    >
+                      {w.title}
+                    </h3>
+                    {w.isOverdue && (
+                      <span className="rounded-md bg-[var(--destructive)] px-2 py-0.5 text-[11px] font-medium text-[var(--card)]">PAST DUE</span>
+                    )}
                     <span className="text-xs text-[var(--muted-foreground)]">{w.subtitle}</span>
                   </div>
-                  <span className="text-xs font-medium text-[var(--muted-foreground)]">
-                    {bucketCounts[i]} {bucketCounts[i] === 1 ? countNoun : `${countNoun}s`}
+                  <span className="text-sm tabular-nums">
+                    <span className={cn("font-medium", w.isOverdue ? "text-[var(--destructive)]" : "text-[var(--foreground)]")}>
+                      {fmt(barValues[i])} {unit}
+                    </span>
+                    {barValues[i] !== bucketCounts[i] && (
+                      <span className="text-[var(--muted-foreground)]">
+                        {" · "}
+                        {bucketCounts[i]} {bucketCounts[i] === 1 ? countNoun : `${countNoun}s`}
+                      </span>
+                    )}
                   </span>
                 </div>
                 {renderBucket(i)}

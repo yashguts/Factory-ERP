@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import { WeeklyBoard, groupedItemBucket, CategoryTable, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
+import { WeeklyBoard, groupedItemBucket, CategoryTable, QtyCell, MiniChip, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
 import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
@@ -46,6 +46,13 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.runsPerWeek[i] > 0).length);
       const renderBucket = (i: number): ReactNode => {
         const present = rows.filter((r) => r.runsPerWeek[i] > 0);
+        // Sheets to cut this week, per thickness (filter-aware — rows already filtered).
+        const byThick = new Map<number, number>();
+        for (const r of present)
+          for (const inp of r.inputs)
+            if (inp.thicknessMm != null)
+              byThick.set(inp.thicknessMm, (byThick.get(inp.thicknessMm) ?? 0) + r.runsPerWeek[i] * inp.perRun);
+        const thickTally = [...byThick.entries()].sort((a, b) => a[0] - b[0]);
         const byCat = new Map<string, typeof present>();
         for (const r of present) {
           const arr = byCat.get(r.category);
@@ -54,22 +61,36 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         }
         const cats = [...byCat.keys()].sort((a, b) => a.localeCompare(b));
         return (
-          <div className="space-y-3">
-            {cats.map((cat) => {
+          <div className="space-y-2.5">
+            {thickTally.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 text-xs">
+                <span className="text-[var(--muted-foreground)]">Sheets to cut</span>
+                {thickTally.map(([mm, n]) => (
+                  <span key={mm} className="rounded-md border border-[var(--border)] px-2 py-0.5 font-medium tabular-nums">
+                    {mm}mm × {Math.round(n)}
+                  </span>
+                ))}
+              </div>
+            )}
+            {cats.map((cat, ci) => {
               const items = byCat.get(cat)!.sort((a, b) => b.runsPerWeek[i] - a.runsPerWeek[i]);
               const catRuns = items.reduce((s, r) => s + r.runsPerWeek[i], 0);
               return (
                 <CategoryTable
                   key={cat}
                   title={cat}
-                  meta={`${items.length} program${items.length === 1 ? "" : "s"} · ×${catRuns} runs`}
+                  showHead={ci === 0}
+                  meta={
+                    <>
+                      <span className="font-medium text-[var(--foreground)]">×{catRuns}</span> · {items.length}
+                    </>
+                  }
                   cols={[
-                    { label: "Code", width: "19%", className: "font-mono text-xs" },
+                    { label: "Code", width: "92px", className: "font-mono text-[11px] text-[var(--muted-foreground)]" },
                     { label: "Program" },
-                    { label: "Machine", width: "13%" },
-                    { label: "Sheet", width: "9%" },
-                    { label: "Runs", align: "right", width: "10%" },
-                    { label: "Cumulative", align: "right", width: "14%" },
+                    { label: "Machine", width: "84px" },
+                    { label: "Sheet", width: "66px" },
+                    { label: "Runs", align: "right", width: "108px" },
                   ]}
                   rows={items.map((r) => {
                     const sheet = r.inputs[0];
@@ -78,10 +99,13 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
                       cells: [
                         r.code,
                         <span key="n" className="block truncate" title={r.name}>{r.name}</span>,
-                        <span key="m" className="text-[var(--muted-foreground)]">{machineLabel(r.machine)}</span>,
-                        sheet?.thicknessMm != null ? `${sheet.thicknessMm}mm` : "—",
-                        <span key="r" className="font-semibold text-[var(--foreground)]">×{r.runsPerWeek[i]}</span>,
-                        <span key="c" className="text-[var(--muted-foreground)]">{r.cumulativeRuns[i]}</span>,
+                        <MiniChip key="m">{machineLabel(r.machine)}</MiniChip>,
+                        sheet?.thicknessMm != null ? (
+                          <MiniChip key="s" tone="thickness">{sheet.thicknessMm}mm</MiniChip>
+                        ) : (
+                          <span key="s" className="text-[var(--muted-foreground)]">—</span>
+                        ),
+                        <QtyCell key="r" prefix="×" qty={r.runsPerWeek[i]} cum={r.cumulativeRuns[i]} />,
                       ],
                     };
                   })}
@@ -97,11 +121,13 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
     // Only the Make items board reaches here (programs handled above; capacity
     // renders WeeklyCapacity, not a board). Grouped by top-level category.
     const rows: WeeklyGroupRow[] = plan.make.map((r) => ({ id: r.item_id, code: r.code, name: r.name, topCategory: r.topCategory, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
-    const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.perWeek[i], 0));
+    // Headline = number of distinct make items (summing quantities across different
+    // parts is meaningless); per-row qty is still shown in each table.
     const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.perWeek[i] > 1e-9).length);
     return {
-      barValues, bucketCounts,
-      unit: "units",
+      barValues: bucketCounts,
+      bucketCounts,
+      unit: "items",
       countNoun: "item",
       renderBucket: (i: number) => groupedItemBucket(rows, i),
       empty: "No make shortfall in this window.",
