@@ -1,3 +1,72 @@
+# Session Handoff — 2026-06-16 (MRP Make/Trade split + weekly-plan redesign + component demand)
+
+> For the next Claude session. Read **CLAUDE.md** first. Working dir is on **`main`**;
+> every change below is committed and pushed to `main` (Netlify auto-deploys, ~1 min).
+> Commits go out via `git push origin HEAD:main`; if it's rejected, `git fetch` +
+> `git rebase origin/main` then push (origin moved once when the owner pushed a
+> cabin-jobs commit — no conflict, MRP files weren't touched).
+
+## ⚠️ Environment gotcha that shaped the whole session
+**Local dev/preview is BROKEN on this OneDrive setup** — the page hydration stalls,
+`preview_screenshot` times out, navigation lands on a half-rendered shell. I could NOT
+visually verify any UI change. Workflow that actually worked: `npx tsc --noEmit` +
+`npm run build` for correctness, **mockups via the `visualize` tool for owner sign-off
+before building**, and the owner sends **PDFs of the deployed page** to point at issues
+(render them with `python -c "import fitz; d=fitz.open('x.pdf'); d[0].get_pixmap(matrix=fitz.Matrix(2,2)).save('x.png')"` then Read the PNG). Also: I pushed many deploys
+back-to-back and the owner hit **stale-tab "looks broken"** errors several times — a
+hard-refresh fixed each. Don't trust "it looks crazy" reports until after a hard refresh.
+
+## 🔴 OPEN — needs action next session
+
+1. **SA-DC-078 "Safety Guide Shoe Main Std" is still NOT scheduled in Programs-to-run.**
+   It now has demand (component rules, below) but is wrongly **`item_bom_lines` "built from
+   LP-050"** — and LP-050 "Guide Shoe Housing" is a **trade phantom** (made by an unrelated
+   cover-plate program). The make-plan explodes SA-DC-078 → LP-050, sees a trade-only leaf,
+   marks it `no-make`, and **drops it**. Its **7 real CNC programs cut it directly from 3 mm
+   steel** (RM-006/RM-007). **FIX (owner asked to confirm, never answered — confirm then do):**
+   delete the one `item_bom_lines` row `(parent=SA-DC-078, child=LP-050)` so the shoe is made
+   by its programs; then empty-commit to wipe cache. Verify it then appears under Programs-to-run.
+2. **Weekly-plan UI redesign needs the owner's eyes.** Shipped but unverifiable by me — ask
+   the owner to review deployed Make + Trade weekly and request tweaks. **Sticky week banners
+   were deliberately NOT built** (translucent-bg bleed risk I couldn't verify) — add only after
+   visual confirmation. See [[project_weekly_mrp]] for the locked "count not summed-qty" rule.
+3. Rule-children **SA-DC-021/024/026/231** (Machine Beam Plates) have **no audited program** —
+   they have demand but can't be made; the weekly "Can't make" list was removed at owner's
+   request, so this gap is now invisible there. They need programs defined eventually.
+
+## What shipped this session — all LIVE on main (tsc + build green each)
+
+1. **Cabin "create all finish variants"** — toggle on the cabin Add-item modal blows a base
+   panel name into all 28 finishes at once (`createCabinPanelVariants` in cabin.ts). Soft-
+   deleted the stray bare "P2C 350 WITH TOUCH COP STD" (on a cabin job, so hidden not deleted).
+2. **MRP split into two sidebar sections** — **Make MRP** (`/mrp`: Requirements · Programs to
+   run · Weekly) and **Trade MRP** (`/mrp/trade`: Requirements · **Buy list** · Weekly). Owner
+   rule: **Make = manufacture, Trade = buy**. The **Buy list (sheets/plates) MOVED to Trade**
+   (`/mrp/plan` → `/mrp/trade/buy`, old path 302-redirects); weekly sheets moved to a Trade-
+   weekly tab. Section-aware `MrpToolbar` + `MrpClient`/`ProductionPlanClient` `section` prop.
+   See [[project_mrp_make_trade_split]].
+3. **Component-demand rules now drive production, not just the MRP table.** `item_demand_rules`
+   (child needed N per demanded parent, e.g. guide shoes per safety frame) were folded into
+   demand ONLY in getMrpData's `includeDerivedTrade` path; the make-plan + weekly read demand
+   with that flag OFF and never saw them. Fix: `addComponentRuleDemand` now runs on **every**
+   demand pass (mrp.ts), and `loadWeeklyDemand` replicates it per-week. Uses the parent's
+   **total requirement × qty** (owner: NOT shortfall). No double-count (these aren't
+   item_bom_lines). Verifier `scripts/verify-component-demand.ts` updated + green. See
+   [[project_component_demand_rules]].
+4. **Weekly plan — category grouping + thickness filter + big UI redesign.** Items grouped by
+   top-level category, programs by produced-part category. Per-week **sheet-thickness filter**
+   on Make Programs (`?thick=`). Then a full redesign (owner called the first cut "pathetic"):
+   urgency-weighted week heat-strip, urgency-banded week banners (Overdue + PAST DUE pill),
+   `QtyCell`/`MiniChip`/`CategoryTable(showHead)` in weekly-board.tsx, **item lanes headline
+   COUNT of distinct items not summed qty**, "Sheets to cut" per-thickness summary on Programs,
+   removed the "Can't make" list. Signed off via a `visualize` mockup. See [[project_weekly_mrp]].
+5. **Daily Program Runs** — trimmed `operation_runs` to the **June 12** entries only (per owner)
+   and removed the plan-derived **"Planned this week" auto-suggest** (page is a pure manual
+   logbook now).
+6. **Machine-beam Excel export** — `scripts/export-machine-beams.js` → `Desktop\Machine-Beam-Items.xlsx` (47 items). Re-runnable.
+
+---
+
 # Session Handoff — 2026-06-14 (session B · UI refactor + procurement + data)
 
 > For the next Claude session. Read **CLAUDE.md** (deep technical reference) and
