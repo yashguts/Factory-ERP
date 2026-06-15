@@ -35,7 +35,9 @@ export interface MrpRow {
 export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   const key = cutoffDate ?? "__all__";
   return unstable_cache(
-    _getMrpDataUncached,
+    // The MRP table + Procurement want trade parts that sit under made items
+    // (e.g. door shoes inside collapsible gates) folded in — that's the opt-in.
+    (c?: string) => _getMrpDataUncached(c, true),
     ["mrp-data", key],
     // "purchase-orders" tag: MRP now nets outstanding POs into on_order/to_buy,
     // so a PO create/receive must refresh the figures (procurement mutations
@@ -44,7 +46,17 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   )(cutoffDate);
 }
 
-export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]> {
+/**
+ * @param includeDerivedTrade  Fold trade parts consumed by made items (via
+ *   item_bom_lines) into demand. OFF by default so explosion/optimiser consumers
+ *   (getProductionPlan, the locked make-plan) keep exploding DIRECT demand and
+ *   surface those leaves themselves — turning it on for them would double-count.
+ *   getMrpData (the table + Procurement) opts in.
+ */
+export async function _getMrpDataUncached(
+  cutoffDate?: string,
+  includeDerivedTrade = false,
+): Promise<MrpRow[]> {
   const supabase = createCacheClient();
 
   // Demand comes ONLY from jobs in production (exclude new/hold), optionally within
@@ -174,6 +186,20 @@ export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]
 
   if (reqMap.size === 0) return [];
 
+  // ── Derived demand: trade parts consumed by made items ────────────────────
+  // A purchased (trade) part can sit UNDER a made item via its assembly parts
+  // list (item_bom_lines) — e.g. a Collapsible Gate is "built from" 15 cast-iron
+  // door shoes. Those shoes are real procurement demand but never appear on a job
+  // BOM directly, so the direct sum above misses them (the item shows as "No
+  // link"). Walk each demanded MAKE item down its parts list and add any TRADE
+  // leaves to demand, attributed to the same jobs. Make sub-parts are left to the
+  // production plan — this only surfaces things to BUY. Mirrors getProductionPlan's
+  // explode: based on REQUIRED (not shortfall, so it agrees with /mrp/plan's
+  // purchased list), and resolves children by the stored representative
+  // (child_item_id) — exact for the current data (all 'neutral'); revisit to share
+  // getProductionPlan's finish resolution if finish-banded trade sub-parts appear.
+  if (includeDerivedTrade) await addTradeLeafDemand(supabase, reqMap);
+
   const itemIds = Array.from(reqMap.keys());
 
   // Fetch the items (with stock) for the required item ids. The header -> job map
@@ -247,6 +273,148 @@ export async function _getMrpDataUncached(cutoffDate?: string): Promise<MrpRow[]
 
   rows.sort((a, b) => b.shortfall - a.shortfall);
   return rows;
+}
+
+/** Effective procurement (item override, else category) for a set of item ids. */
+async function effectiveProcurement(
+  supabase: ReturnType<typeof createCacheClient>,
+  ids: string[],
+): Promise<Map<string, "make" | "trade" | null>> {
+  const out = new Map<string, "make" | "trade" | null>();
+  const batches = [];
+  for (let i = 0; i < ids.length; i += 200) {
+    batches.push(
+      supabase
+        .from("items")
+        .select("id, procurement_type, category:item_categories!items_category_id_fkey(procurement_type)")
+        .in("id", ids.slice(i, i + 200)),
+    );
+  }
+  const results = await Promise.all(batches);
+  for (const r of results) {
+    if (r.error) throw r.error;
+    for (const it of r.data ?? []) {
+      const cat = Array.isArray(it.category) ? it.category[0] : it.category;
+      out.set(
+        it.id as string,
+        (it.procurement_type as "make" | "trade" | null) ??
+          ((cat?.procurement_type ?? null) as "make" | "trade" | null),
+      );
+    }
+  }
+  return out;
+}
+
+/**
+ * Folds TRADE parts that sit under demanded MAKE items (via item_bom_lines) into
+ * `reqMap`, attributed to the parent's jobs. Mutates reqMap in place. Trade leaves
+ * only — make sub-assemblies are recursed through but not themselves added (the
+ * production plan handles manufacturing). Required-based, representative-child
+ * resolution, depth-capped + cycle-guarded. See the call site for the rationale.
+ */
+async function addTradeLeafDemand(
+  supabase: ReturnType<typeof createCacheClient>,
+  reqMap: Map<string, { total: number; bomIds: Set<string> }>,
+): Promise<void> {
+  const bomRows = await fetchAllRanged<{ parent_item_id: string; child_item_id: string | null; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_bom_lines")
+        .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+        .not("child_item_id", "is", null)
+        .range(from, to),
+  );
+  if (bomRows.length === 0) return;
+
+  const bomByParent = new Map<string, { child: string; qty: number }[]>();
+  const participantIds = new Set<string>();
+  for (const b of bomRows) {
+    if (!b.child_item_id) continue;
+    participantIds.add(b.parent_item_id);
+    participantIds.add(b.child_item_id);
+    const arr = bomByParent.get(b.parent_item_id) ?? [];
+    arr.push({ child: b.child_item_id, qty: Number(b.qty) || 0 });
+    bomByParent.set(b.parent_item_id, arr);
+  }
+
+  const effProc = await effectiveProcurement(supabase, [...participantIds]);
+
+  const derived = new Map<string, { total: number; bomIds: Set<string> }>();
+  const explode = (itemId: string, qty: number, bomIds: Set<string>, visited: Set<string>, depth: number) => {
+    if (qty <= 0 || depth > 12 || visited.has(itemId)) return;
+    const lines = bomByParent.get(itemId);
+    if (!lines) return;
+    const nv = new Set(visited);
+    nv.add(itemId);
+    for (const ln of lines) {
+      const childQty = qty * ln.qty;
+      if (childQty <= 0) continue;
+      if (effProc.get(ln.child) === "trade") {
+        const ex = derived.get(ln.child);
+        if (ex) { ex.total += childQty; for (const b of bomIds) ex.bomIds.add(b); }
+        else derived.set(ln.child, { total: childQty, bomIds: new Set(bomIds) });
+      } else {
+        explode(ln.child, childQty, bomIds, nv, depth + 1); // make sub-assembly → keep walking
+      }
+    }
+  };
+
+  for (const [itemId, req] of Array.from(reqMap.entries())) {
+    if (!bomByParent.has(itemId)) continue; // no parts list → nothing to explode
+    if (effProc.get(itemId) === "trade") continue; // a bought item isn't "made"
+    explode(itemId, req.total, req.bomIds, new Set(), 0);
+  }
+
+  for (const [leaf, d] of derived) {
+    const ex = reqMap.get(leaf);
+    if (ex) { ex.total += d.total; for (const b of d.bomIds) ex.bomIds.add(b); }
+    else reqMap.set(leaf, { total: d.total, bomIds: new Set(d.bomIds) });
+  }
+}
+
+/**
+ * The set of item ids whose job-BOM demand drives demand for `itemId`, each with a
+ * multiplier. Always includes {itemId: 1}; adds every assembly that is "built from"
+ * `itemId` (directly or transitively, via item_bom_lines), with the product of the
+ * qtys along the path (summed across multiple paths). Lets the per-item job
+ * breakdown attribute a trade part (e.g. a door shoe) back to the jobs whose made
+ * parents (the gates) require it — keeping the popover consistent with getMrpData.
+ */
+async function computeDemandSources(
+  supabase: ReturnType<typeof createCacheClient>,
+  itemId: string,
+): Promise<Map<string, number>> {
+  const sources = new Map<string, number>([[itemId, 1]]);
+  const rows = await fetchAllRanged<{ parent_item_id: string; child_item_id: string | null; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_bom_lines")
+        .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+        .not("child_item_id", "is", null)
+        .range(from, to),
+  );
+  if (rows.length === 0) return sources;
+  const parentsOf = new Map<string, { parent: string; qty: number }[]>();
+  for (const r of rows) {
+    if (!r.child_item_id) continue;
+    const arr = parentsOf.get(r.child_item_id) ?? [];
+    arr.push({ parent: r.parent_item_id, qty: Number(r.qty) || 0 });
+    parentsOf.set(r.child_item_id, arr);
+  }
+  let frontier: { id: string; mult: number }[] = [{ id: itemId, mult: 1 }];
+  for (let depth = 0; depth < 12 && frontier.length > 0; depth++) {
+    const next: { id: string; mult: number }[] = [];
+    for (const { id, mult } of frontier) {
+      for (const { parent, qty } of parentsOf.get(id) ?? []) {
+        const m = mult * qty;
+        if (m <= 0) continue;
+        sources.set(parent, (sources.get(parent) ?? 0) + m);
+        next.push({ id: parent, mult: m });
+      }
+    }
+    frontier = next;
+  }
+  return sources;
 }
 
 /* ================================================================== */
@@ -647,21 +815,31 @@ async function _getMrpItemJobsUncached(
 ): Promise<MrpJobBreakdown[]> {
   const supabase = createCacheClient();
 
-  // 1) Fetch BOM lines referencing this item with qty > 0. `category` lets us
-  // apply the same requirement-stage scoping as getMrpData below.
+  // Demand for `itemId` may come directly (its own job-BOM lines) AND/OR via
+  // assemblies that are "built from" it (e.g. a door shoe inside a collapsible
+  // gate). `sources` maps every driver item to its multiplier ({itemId:1} for a
+  // plain item). Keeps the popover consistent with getMrpData, which folds the
+  // same trade-leaf demand into the table.
+  const sources = await computeDemandSources(supabase, itemId);
+  const sourceIds = [...sources.keys()];
+
+  // 1) Fetch BOM lines referencing ANY source item with qty > 0. `category` lets
+  // us apply the same requirement-stage scoping as getMrpData below; `item_id`
+  // tells us which source (and thus which multiplier) a line belongs to.
   const allLines = await fetchAllRanged<{
     id: string;
     job_bom_id: string;
     required_quantity: number;
     category: string | null;
+    item_id: string;
   }>((from, to, withCount) =>
     supabase
       .from("job_bom_lines")
       .select(
-        "id, job_bom_id, required_quantity, category",
+        "id, job_bom_id, required_quantity, category, item_id",
         withCount ? { count: "exact" } : {},
       )
-      .eq("item_id", itemId)
+      .in("item_id", sourceIds)
       .gt("required_quantity", 0)
       .range(from, to),
   );
@@ -781,10 +959,15 @@ async function _getMrpItemJobsUncached(
       dispatchPhaseOf((line.category as string) ?? "") !== "first"
     )
       continue;
-    const net = Math.max(
-      0,
-      (Number(line.required_quantity) || 0) - (dispatchedByLine.get(line.id) ?? 0),
-    );
+    // net is in the SOURCE item's units; the multiplier converts it to `itemId`
+    // units (e.g. gates remaining × 15 shoes/gate). Dispatch is netted on the
+    // source line, matching how getMrpData folds the derived demand.
+    const mult = sources.get(line.item_id) ?? 1;
+    const net =
+      Math.max(
+        0,
+        (Number(line.required_quantity) || 0) - (dispatchedByLine.get(line.id) ?? 0),
+      ) * mult;
     if (net <= 0) continue; // fully dispatched on this line
     const agg = byJob.get(jobId) ?? { line_count: 0, total_quantity: 0 };
     agg.line_count += 1;
