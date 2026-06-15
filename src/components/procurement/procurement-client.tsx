@@ -164,7 +164,13 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                     <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
                       <TableCell className="font-mono text-xs">{o.note || "—"}</TableCell>
                       <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
-                      <TableCell><Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge></TableCell>
+                      <TableCell>
+                        {o.status === "ordered" && o.received_lines > 0 && o.received_lines < o.line_count ? (
+                          <Badge variant="amber">Partial</Badge>
+                        ) : (
+                          <Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
+                        )}
+                      </TableCell>
                       <TableCell className="text-right">
                         {o.received_lines > 0 && o.received_lines < o.line_count
                           ? <span className="text-[var(--muted-foreground)]">{o.received_lines}/{o.line_count}</span>
