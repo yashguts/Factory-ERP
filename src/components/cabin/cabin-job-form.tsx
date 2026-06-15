@@ -8,6 +8,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, SectionHeader } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 import { CabinItemPicker } from "@/components/cabin/cabin-item-picker";
 import { CabinBaseFinishPicker } from "@/components/cabin/cabin-base-finish-picker";
 import { CABIN_TYPES, isFinishSplitType } from "@/lib/cabin/cabin-types";
@@ -53,6 +54,7 @@ const coverNameFor = (supportName: string) =>
 
 export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
   const router = useRouter();
+  const toast = useToast();
   const isEditing = !!job;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -165,7 +167,8 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
     .flat()
     .filter((r) => r.item_id).length;
 
-  const save = () => {
+  // stay = save but keep editing this job (don't leave for the list).
+  const save = (stay = false) => {
     setError(null);
     if (!jobNumber.trim()) {
       setError("Job number is required.");
@@ -184,8 +187,16 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
         setError(res.error);
         return;
       }
-      router.push("/cabin-jobs");
-      router.refresh();
+      if (stay) {
+        toast.success(`Cabin job ${jobNumber} saved.`);
+        // On first save of a new job, switch into edit mode for the saved job
+        // so further saves update it instead of creating a duplicate.
+        if (!isEditing && res.id) router.replace(`/cabin-jobs/${res.id}`);
+        router.refresh();
+      } else {
+        router.push("/cabin-jobs");
+        router.refresh();
+      }
     });
   };
 
@@ -221,13 +232,21 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
                 <Trash2 className="h-4 w-4 mr-1" /> Delete
               </Button>
             )}
-            <Button size="sm" onClick={save} disabled={isPending}>
+            <Button size="sm" variant="secondary" onClick={() => save(true)} disabled={isPending}>
               {isPending ? (
                 <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
               ) : (
                 <Save className="h-4 w-4 mr-1.5" />
               )}
-              {isEditing ? "Save changes" : "Create cabin job"}
+              Save
+            </Button>
+            <Button size="sm" onClick={() => save(false)} disabled={isPending}>
+              {isPending ? (
+                <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />
+              ) : (
+                <Save className="h-4 w-4 mr-1.5" />
+              )}
+              {isEditing ? "Save & Close" : "Create cabin job"}
             </Button>
           </>
         }
