@@ -55,6 +55,8 @@ export interface WeeklyProgramRow {
   code: string;
   name: string;
   machine: string;
+  /** Top-level category of the program's primary produced part (board grouping). */
+  category: string;
   runsPerWeek: number[];
   cumulativeRuns: number[];
   totalRuns: number;
@@ -520,6 +522,20 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   const code = (id: string) => (core.itemInfo.get(id)?.code as string) ?? id;
   const name = (id: string) => (core.itemInfo.get(id)?.name as string) ?? "";
   const cum = (arr: number[]) => { const out: number[] = []; let s = 0; for (const v of arr) { s += v; out.push(s); } return out; };
+  // Top-level category of an item (walk the category tree to the root) — same as
+  // production-plan.ts so the weekly Programs lane groups like the make-plan cards.
+  const topCatName = (id: string): string => {
+    let cid = core.itemInfo.get(id)?.category_id as string | null | undefined;
+    const seen = new Set<string>();
+    while (cid && !seen.has(cid)) {
+      seen.add(cid);
+      const c = core.catProc.get(cid);
+      if (!c) break;
+      if (!c.parent_id) return c.name ?? "(none)";
+      cid = c.parent_id;
+    }
+    return (cid && core.catProc.get(cid)?.name) || "(none)";
+  };
 
   const programs: WeeklyProgramRow[] = [];
   let allocatedRuns = 0;
@@ -529,11 +545,14 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
     if (totalRuns <= 0) continue;
     allocatedRuns += totalRuns;
     const opi = core.ops.get(op);
+    // Group by the program's primary (largest qty/run) produced part's category.
+    const primaryPart = [...(core.fullOut.get(op) ?? new Map<string, number>())].sort((a, b) => b[1] - a[1])[0]?.[0];
     programs.push({
       program_id: op,
       code: (opi?.code as string) ?? op,
       name: (opi?.name as string) ?? "",
       machine: (opi?.machine as string) ?? "",
+      category: primaryPart ? topCatName(primaryPart) : "(none)",
       runsPerWeek: arr,
       cumulativeRuns: cum(arr),
       totalRuns,

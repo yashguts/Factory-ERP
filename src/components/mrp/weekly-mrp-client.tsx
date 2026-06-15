@@ -33,28 +33,50 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       const rows = plan.programs;
       const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.runsPerWeek[i], 0));
       const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.runsPerWeek[i] > 0).length);
-      const renderBucket = (i: number): ReactNode => (
-        <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
-          {rows
-            .filter((r) => r.runsPerWeek[i] > 0)
-            .sort((a, b) => b.runsPerWeek[i] - a.runsPerWeek[i])
-            .map((r) => {
-              const sheet = r.inputs[0];
+      const renderRow = (r: (typeof rows)[number], i: number): ReactNode => {
+        const sheet = r.inputs[0];
+        return (
+          <div key={r.program_id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--muted)]">
+            <span className="font-mono text-xs font-semibold shrink-0">{r.code}</span>
+            <span className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)]" title={r.name}>{r.name}</span>
+            {sheet?.thicknessMm != null && (
+              <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 hidden sm:inline">{sheet.thicknessMm}mm</span>
+            )}
+            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)] shrink-0 hidden md:inline w-16 text-right">{machineLabel(r.machine)}</span>
+            <span className="text-sm font-semibold tabular-nums shrink-0">×{r.runsPerWeek[i]}</span>
+            <span className="text-[11px] text-[var(--muted-foreground)] tabular-nums shrink-0 w-[58px] text-right">cum {r.cumulativeRuns[i]}</span>
+          </div>
+        );
+      };
+      const renderBucket = (i: number): ReactNode => {
+        const present = rows.filter((r) => r.runsPerWeek[i] > 0);
+        const byCat = new Map<string, typeof present>();
+        for (const r of present) {
+          const arr = byCat.get(r.category);
+          if (arr) arr.push(r);
+          else byCat.set(r.category, [r]);
+        }
+        const cats = [...byCat.keys()].sort((a, b) => a.localeCompare(b));
+        return (
+          <div className="space-y-2.5">
+            {cats.map((cat) => {
+              const items = byCat.get(cat)!.sort((a, b) => b.runsPerWeek[i] - a.runsPerWeek[i]);
+              const catRuns = items.reduce((s, r) => s + r.runsPerWeek[i], 0);
               return (
-                <div key={r.program_id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--muted)]">
-                  <span className="font-mono text-xs font-semibold shrink-0">{r.code}</span>
-                  <span className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)]" title={r.name}>{r.name}</span>
-                  {sheet?.thicknessMm != null && (
-                    <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 hidden sm:inline">{sheet.thicknessMm}mm</span>
-                  )}
-                  <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)] shrink-0 hidden md:inline w-16 text-right">{machineLabel(r.machine)}</span>
-                  <span className="text-sm font-semibold tabular-nums shrink-0">×{r.runsPerWeek[i]}</span>
-                  <span className="text-[11px] text-[var(--muted-foreground)] tabular-nums shrink-0 w-[58px] text-right">cum {r.cumulativeRuns[i]}</span>
+                <div key={cat}>
+                  <div className="mb-1 flex items-baseline justify-between gap-2 px-2">
+                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{cat}</span>
+                    <span className="text-[11px] tabular-nums text-[var(--muted-foreground)]">{items.length} · ×{catRuns}</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
+                    {items.map((r) => renderRow(r, i))}
+                  </div>
                 </div>
               );
             })}
-        </div>
-      );
+          </div>
+        );
+      };
       return { barValues, bucketCounts, unit: "runs", countNoun: "program", renderBucket, empty: "No programs to run in this window." };
     }
 
