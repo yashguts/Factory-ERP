@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import { WeeklyBoard, groupedItemBucket, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
+import { WeeklyBoard, groupedItemBucket, CategoryTable, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
 import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
@@ -44,21 +44,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         : plan.programs.filter((r) => r.inputs.some((inp) => String(inp.thicknessMm) === thickFilter));
       const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.runsPerWeek[i], 0));
       const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.runsPerWeek[i] > 0).length);
-      const renderRow = (r: (typeof rows)[number], i: number): ReactNode => {
-        const sheet = r.inputs[0];
-        return (
-          <div key={r.program_id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--muted)]">
-            <span className="font-mono text-xs font-semibold shrink-0">{r.code}</span>
-            <span className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)]" title={r.name}>{r.name}</span>
-            {sheet?.thicknessMm != null && (
-              <span className="text-[11px] text-[var(--muted-foreground)] shrink-0 hidden sm:inline">{sheet.thicknessMm}mm</span>
-            )}
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)] shrink-0 hidden md:inline w-16 text-right">{machineLabel(r.machine)}</span>
-            <span className="text-sm font-semibold tabular-nums shrink-0">×{r.runsPerWeek[i]}</span>
-            <span className="text-[11px] text-[var(--muted-foreground)] tabular-nums shrink-0 w-[58px] text-right">cum {r.cumulativeRuns[i]}</span>
-          </div>
-        );
-      };
       const renderBucket = (i: number): ReactNode => {
         const present = rows.filter((r) => r.runsPerWeek[i] > 0);
         const byCat = new Map<string, typeof present>();
@@ -69,20 +54,38 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         }
         const cats = [...byCat.keys()].sort((a, b) => a.localeCompare(b));
         return (
-          <div className="space-y-2.5">
+          <div className="space-y-3">
             {cats.map((cat) => {
               const items = byCat.get(cat)!.sort((a, b) => b.runsPerWeek[i] - a.runsPerWeek[i]);
               const catRuns = items.reduce((s, r) => s + r.runsPerWeek[i], 0);
               return (
-                <div key={cat}>
-                  <div className="mb-1 flex items-baseline justify-between gap-2 px-2">
-                    <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{cat}</span>
-                    <span className="text-[11px] tabular-nums text-[var(--muted-foreground)]">{items.length} · ×{catRuns}</span>
-                  </div>
-                  <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
-                    {items.map((r) => renderRow(r, i))}
-                  </div>
-                </div>
+                <CategoryTable
+                  key={cat}
+                  title={cat}
+                  meta={`${items.length} program${items.length === 1 ? "" : "s"} · ×${catRuns} runs`}
+                  cols={[
+                    { label: "Code", width: "19%", className: "font-mono text-xs" },
+                    { label: "Program" },
+                    { label: "Machine", width: "13%" },
+                    { label: "Sheet", width: "9%" },
+                    { label: "Runs", align: "right", width: "10%" },
+                    { label: "Cumulative", align: "right", width: "14%" },
+                  ]}
+                  rows={items.map((r) => {
+                    const sheet = r.inputs[0];
+                    return {
+                      id: r.program_id,
+                      cells: [
+                        r.code,
+                        <span key="n" className="block truncate" title={r.name}>{r.name}</span>,
+                        <span key="m" className="text-[var(--muted-foreground)]">{machineLabel(r.machine)}</span>,
+                        sheet?.thicknessMm != null ? `${sheet.thicknessMm}mm` : "—",
+                        <span key="r" className="font-semibold text-[var(--foreground)]">×{r.runsPerWeek[i]}</span>,
+                        <span key="c" className="text-[var(--muted-foreground)]">{r.cumulativeRuns[i]}</span>,
+                      ],
+                    };
+                  })}
+                />
               );
             })}
           </div>
