@@ -221,6 +221,10 @@ export async function _getMrpDataUncached(
   // (child_item_id) — exact for the current data (all 'neutral'); revisit to share
   // getProductionPlan's finish resolution if finish-banded trade sub-parts appear.
   if (includeDerivedTrade) {
+    // Component-demand rules FIRST (e.g. guide shoes per safety frame): adds the
+    // child as demand off the parent's demand, so the newly-added children then get
+    // their own trade leaves exploded by addTradeLeafDemand below.
+    await addComponentRuleDemand(supabase, reqMap);
     await addTradeLeafDemand(supabase, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
     // even when the BOM sum is empty, so the emptiness check comes AFTER this.
@@ -440,6 +444,47 @@ async function addJobDriveDemand(
 }
 
 /**
+ * Folds `item_demand_rules` into reqMap: a child needed `qty` per unit of a demanded
+ * PARENT item (e.g. guide shoes per safety frame). Unlike item_bom_lines these are
+ * DEMAND-ONLY — the production plan never sees them, so a parent's own cutting
+ * program is left intact (a parts list would override it and drop the parent's
+ * steel from the buy list). Adds child demand = Σ(parent demand × qty), attributed
+ * to the parent's jobs (bomIds) so job_count resolves. The child's own procurement
+ * decides which MRP tab it lands in (guide shoes are make → Make MRP).
+ */
+async function addComponentRuleDemand(
+  supabase: ReturnType<typeof createCacheClient>,
+  reqMap: Map<string, ReqEntry>,
+): Promise<void> {
+  const rules = await fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_demand_rules")
+        .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+        .range(from, to),
+  );
+  if (rules.length === 0) return;
+
+  // Compute additions off the PARENT demand snapshot (children aren't parents here).
+  const add = new Map<string, { total: number; bomIds: Set<string> }>();
+  for (const r of rules) {
+    const parent = reqMap.get(r.parent_item_id);
+    if (!parent || parent.total <= 0) continue;
+    const q = Number(r.qty) || 0;
+    if (q <= 0) continue;
+    const ex = add.get(r.child_item_id) ?? { total: 0, bomIds: new Set<string>() };
+    ex.total += parent.total * q;
+    for (const b of parent.bomIds) ex.bomIds.add(b);
+    add.set(r.child_item_id, ex);
+  }
+  for (const [child, d] of add) {
+    const ex = reqMap.get(child);
+    if (ex) { ex.total += d.total; for (const b of d.bomIds) ex.bomIds.add(b); }
+    else reqMap.set(child, { total: d.total, bomIds: new Set(d.bomIds) });
+  }
+}
+
+/**
  * The set of item ids whose job-BOM demand drives demand for `itemId`, each with a
  * multiplier. Always includes {itemId: 1}; adds every assembly that is "built from"
  * `itemId` (directly or transitively, via item_bom_lines), with the product of the
@@ -460,26 +505,41 @@ async function computeDemandSources(
         .not("child_item_id", "is", null)
         .range(from, to),
   );
-  if (rows.length === 0) return sources;
-  const parentsOf = new Map<string, { parent: string; qty: number }[]>();
-  for (const r of rows) {
-    if (!r.child_item_id) continue;
-    const arr = parentsOf.get(r.child_item_id) ?? [];
-    arr.push({ parent: r.parent_item_id, qty: Number(r.qty) || 0 });
-    parentsOf.set(r.child_item_id, arr);
-  }
-  let frontier: { id: string; mult: number }[] = [{ id: itemId, mult: 1 }];
-  for (let depth = 0; depth < 12 && frontier.length > 0; depth++) {
-    const next: { id: string; mult: number }[] = [];
-    for (const { id, mult } of frontier) {
-      for (const { parent, qty } of parentsOf.get(id) ?? []) {
-        const m = mult * qty;
-        if (m <= 0) continue;
-        sources.set(parent, (sources.get(parent) ?? 0) + m);
-        next.push({ id: parent, mult: m });
-      }
+  if (rows.length > 0) {
+    const parentsOf = new Map<string, { parent: string; qty: number }[]>();
+    for (const r of rows) {
+      if (!r.child_item_id) continue;
+      const arr = parentsOf.get(r.child_item_id) ?? [];
+      arr.push({ parent: r.parent_item_id, qty: Number(r.qty) || 0 });
+      parentsOf.set(r.child_item_id, arr);
     }
-    frontier = next;
+    let frontier: { id: string; mult: number }[] = [{ id: itemId, mult: 1 }];
+    for (let depth = 0; depth < 12 && frontier.length > 0; depth++) {
+      const next: { id: string; mult: number }[] = [];
+      for (const { id, mult } of frontier) {
+        for (const { parent, qty } of parentsOf.get(id) ?? []) {
+          const m = mult * qty;
+          if (m <= 0) continue;
+          sources.set(parent, (sources.get(parent) ?? 0) + m);
+          next.push({ id: parent, mult: m });
+        }
+      }
+      frontier = next;
+    }
+  }
+  // Component-demand-rule parents (e.g. the safety frames that need this guide
+  // shoe) — demand-only rules, so the popover lists the contributing frames' jobs.
+  const ruleRows = await fetchAllRanged<{ parent_item_id: string; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_demand_rules")
+        .select("parent_item_id, qty", withCount ? { count: "exact" } : {})
+        .eq("child_item_id", itemId)
+        .range(from, to),
+  );
+  for (const r of ruleRows) {
+    const m = Number(r.qty) || 0;
+    if (m > 0) sources.set(r.parent_item_id, (sources.get(r.parent_item_id) ?? 0) + m);
   }
   return sources;
 }
