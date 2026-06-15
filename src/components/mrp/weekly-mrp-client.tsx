@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
 import { Hammer, Wrench, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { cn } from "@/lib/utils";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
 // Trade has its own sidebar section (/mrp/trade/weekly), so the Make weekly
@@ -24,13 +25,23 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const [tab, setTab] = useState<Tab>(
     () => readParam(sp, "tab", "programs", ["programs", "make", "capacity"]) as Tab,
   );
-  useUrlListSync({ tab }, { tab: "programs" });
+  // Sheet-thickness filter (Programs tab): "all" or a thickness like "3" (mm).
+  const [thickFilter, setThickFilter] = useState<string>(() => readParam(sp, "thick", "all"));
+  useUrlListSync({ tab, thick: thickFilter }, { tab: "programs", thick: "all" });
 
   const weeks = plan.weeks;
 
+  // Distinct sheet thicknesses across all programs' inputs, ascending.
+  const thicknesses = useMemo(
+    () => [...new Set(plan.programs.flatMap((p) => p.inputs.map((i) => i.thicknessMm)).filter((t): t is number => t != null))].sort((a, b) => a - b),
+    [plan.programs],
+  );
+
   const lane = useMemo(() => {
     if (tab === "programs") {
-      const rows = plan.programs;
+      const rows = thickFilter === "all"
+        ? plan.programs
+        : plan.programs.filter((r) => r.inputs.some((inp) => String(inp.thicknessMm) === thickFilter));
       const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.runsPerWeek[i], 0));
       const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.runsPerWeek[i] > 0).length);
       const renderRow = (r: (typeof rows)[number], i: number): ReactNode => {
@@ -92,7 +103,7 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       renderBucket: (i: number) => groupedItemBucket(rows, i),
       empty: "No make shortfall in this window.",
     };
-  }, [tab, plan, weeks]);
+  }, [tab, plan, weeks, thickFilter]);
 
   const machineCount = useMemo(
     () => new Set(plan.programs.filter((p) => p.totalRuns > 0).map((p) => p.machine)).size,
@@ -160,6 +171,28 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
           };
         })}
       />
+
+      {/* Sheet-thickness filter — scopes the Programs board to one thickness */}
+      {tab === "programs" && thicknesses.length > 1 && (
+        <div className="mb-4 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-xs font-medium text-[var(--muted-foreground)]">Sheet thickness</span>
+          {["all", ...thicknesses.map(String)].map((t) => (
+            <button
+              key={t}
+              type="button"
+              onClick={() => setThickFilter(t)}
+              className={cn(
+                "cursor-pointer rounded-md border px-2.5 py-1 text-xs transition-colors",
+                thickFilter === t
+                  ? "border-[var(--primary)] bg-[var(--primary)]/10 font-medium text-[var(--foreground)]"
+                  : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]",
+              )}
+            >
+              {t === "all" ? "All" : `${t}mm`}
+            </button>
+          ))}
+        </div>
+      )}
 
       {tab === "capacity" ? (
         <WeeklyCapacity plan={plan} />
