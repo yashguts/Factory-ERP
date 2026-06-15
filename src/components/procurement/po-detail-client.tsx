@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
@@ -15,15 +15,18 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { PackageCheck, Trash2, Loader2 } from "lucide-react";
+import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2 } from "lucide-react";
 import {
   updatePurchaseOrder,
   updatePoLine,
   deletePoLine,
   deletePurchaseOrder,
-  receivePurchaseOrder,
+  deleteReceipt,
+  uploadReceiptInvoice,
   type PoLineDetail,
+  type PoReceipt,
 } from "@/lib/actions/procurement";
+import { ReceiveModal } from "@/components/procurement/receive-modal";
 import type { PurchaseOrder, PurchaseOrderStatus } from "@/lib/supabase/types";
 
 const STATUS_BADGE: Record<PurchaseOrderStatus, BadgeVariant> = {
@@ -39,8 +42,18 @@ const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
   cancelled: "Cancelled",
 };
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
+const rate = (n: number) => `₹${(Math.round(n * 100) / 100).toLocaleString("en-IN")}`;
+const fmtDate = (s: string) => new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
 
-export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLineDetail[] }) {
+export function PoDetailClient({
+  po,
+  lines,
+  receipts,
+}: {
+  po: PurchaseOrder;
+  lines: PoLineDetail[];
+  receipts: PoReceipt[];
+}) {
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
@@ -51,20 +64,26 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
   const [orderDate, setOrderDate] = useState(po.order_date ?? "");
   const [expectedDate, setExpectedDate] = useState(po.expected_date ?? "");
   const [note, setNote] = useState(po.note ?? "");
-  const [confirmReceive, setConfirmReceive] = useState(false);
+  const [showReceive, setShowReceive] = useState(false);
+  const [confirmUndo, setConfirmUndo] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const totals = useMemo(() => {
     let qty = 0;
     let cost = 0;
     let unreceived = 0;
+    let receivedLines = 0;
     for (const r of rows) {
       qty += r.qty;
       cost += r.qty * (r.unit_cost ?? 0);
       unreceived += Math.max(0, r.qty - r.received_qty);
+      if (r.received_qty >= r.qty && r.qty > 0) receivedLines += 1;
     }
-    return { qty, cost, unreceived };
+    return { qty, cost, unreceived, receivedLines };
   }, [rows]);
+
+  const anyReceived = rows.some((r) => r.received_qty > 0);
+  const partial = po.status !== "received" && po.status !== "cancelled" && anyReceived;
 
   const saveHeader = () => {
     startTransition(async () => {
@@ -108,15 +127,15 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
     });
   };
 
-  const doReceive = () => {
+  const undoReceipt = (receiptId: string) => {
     startTransition(async () => {
-      const res = await receivePurchaseOrder(po.id);
-      setConfirmReceive(false);
+      const res = await deleteReceipt(receiptId, po.id);
+      setConfirmUndo(null);
       if (!res.ok) {
         toast.error(res.error);
         return;
       }
-      toast.success(`Received — added ${res.posted} line${res.posted === 1 ? "" : "s"} to stock.`);
+      toast.success("Receipt undone — stock reversed.");
       router.refresh();
     });
   };
@@ -141,6 +160,11 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
           <span className="flex items-center gap-2">
             {supplier.trim() || "Unassigned supplier"}
             <Badge variant={STATUS_BADGE[po.status]}>{STATUS_LABEL[po.status]}</Badge>
+            {partial && (
+              <span className="text-[11px] font-medium text-[var(--warning)]">
+                · {totals.receivedLines}/{rows.length} lines received
+              </span>
+            )}
           </span>
         }
         subtitle={`${po.note ? `${po.note} · ` : ""}Purchase order · created ${new Date(po.created_at).toLocaleDateString("en-IN")}`}
@@ -162,9 +186,9 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
             )}
             <Button
               size="sm"
-              onClick={() => setConfirmReceive(true)}
-              disabled={isPending || received || totals.unreceived <= 0}
-              title="Add the ordered quantities to stock"
+              onClick={() => setShowReceive(true)}
+              disabled={isPending || received || po.status === "cancelled" || totals.unreceived <= 0}
+              title="Record a goods receipt (full or partial)"
             >
               <PackageCheck className="h-4 w-4 mr-1" />
               {received ? "Received" : "Receive"}
@@ -304,9 +328,13 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
                 </TableCell>
                 <TableCell className="text-right">
                   {r.received_qty >= r.qty && r.qty > 0 ? (
-                    <Badge variant="green">✓</Badge>
+                    <Badge variant="green">✓ {r.received_qty.toLocaleString()}</Badge>
+                  ) : r.received_qty > 0 ? (
+                    <span className="text-[var(--warning)] font-medium tabular-nums">
+                      {r.received_qty.toLocaleString()} / {r.qty.toLocaleString()}
+                    </span>
                   ) : (
-                    <span className="text-[var(--muted-foreground)]">{r.received_qty.toLocaleString()}</span>
+                    <span className="text-[var(--muted-foreground)]">—</span>
                   )}
                 </TableCell>
                 <TableCell>
@@ -333,21 +361,44 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
         </Table>
       </div>
 
-      {confirmReceive && (
+      {/* Receipt history */}
+      {receipts.length > 0 && (
+        <div className="mt-4">
+          <h3 className="text-sm font-semibold mb-2">
+            Receipts <span className="text-[var(--muted-foreground)] font-normal">({receipts.length})</span>
+          </h3>
+          <div className="space-y-2">
+            {receipts.map((rec) => (
+              <ReceiptCard
+                key={rec.id}
+                receipt={rec}
+                poId={po.id}
+                busy={isPending}
+                onUndo={() => setConfirmUndo(rec.id)}
+                onChanged={() => router.refresh()}
+              />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {showReceive && (
+        <ReceiveModal
+          poId={po.id}
+          lines={rows}
+          onClose={() => setShowReceive(false)}
+          onSaved={() => router.refresh()}
+        />
+      )}
+      {confirmUndo && (
         <ConfirmDialog
-          title="Receive purchase order?"
-          message={
-            <>
-              This adds <span className="font-semibold">{totals.unreceived.toLocaleString()}</span> units across{" "}
-              {rows.filter((r) => r.qty - r.received_qty > 0).length} line
-              {rows.filter((r) => r.qty - r.received_qty > 0).length === 1 ? "" : "s"} to Main Store stock and marks the
-              PO received. This posts an inventory receipt (purchase-in).
-            </>
-          }
-          confirmLabel="Receive"
+          title="Undo this receipt?"
+          message="This reverses the stock it added (a negative inventory adjustment) and reopens the purchase order. It does not change any purchase price already recorded."
+          confirmLabel="Undo receipt"
+          confirmVariant="destructive"
           busy={isPending}
-          onConfirm={doReceive}
-          onCancel={() => setConfirmReceive(false)}
+          onConfirm={() => undoReceipt(confirmUndo)}
+          onCancel={() => setConfirmUndo(null)}
         />
       )}
       {confirmDelete && (
@@ -361,6 +412,114 @@ export function PoDetailClient({ po, lines }: { po: PurchaseOrder; lines: PoLine
           onCancel={() => setConfirmDelete(false)}
         />
       )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+
+function ReceiptCard({
+  receipt,
+  poId,
+  busy,
+  onUndo,
+  onChanged,
+}: {
+  receipt: PoReceipt;
+  poId: string;
+  busy: boolean;
+  onUndo: () => void;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const totalQty = receipt.lines.reduce((a, l) => a + l.qty, 0);
+  const totalValue = receipt.lines.reduce((a, l) => a + l.qty * (l.unit_rate ?? 0), 0);
+
+  const attach = async (file: File) => {
+    setUploading(true);
+    const fd = new FormData();
+    fd.set("receiptId", receipt.id);
+    fd.set("poId", poId);
+    fd.set("file", file);
+    const res = await uploadReceiptInvoice(fd);
+    setUploading(false);
+    if (!res.ok) toast.error(res.error);
+    else {
+      toast.success("Invoice attached.");
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="card-surface p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 text-sm">
+          <span className="font-semibold">{fmtDate(receipt.receipt_date)}</span>
+          {receipt.invoice_number && (
+            <span className="text-[var(--muted-foreground)]">Inv {receipt.invoice_number}</span>
+          )}
+          <span className="text-[var(--muted-foreground)]">
+            · {receipt.lines.length} item{receipt.lines.length === 1 ? "" : "s"} · {totalQty.toLocaleString()} qty
+            {totalValue > 0 ? ` · ${rate(totalValue)}` : ""}
+          </span>
+          {receipt.note && <span className="italic text-[var(--muted-foreground)]">· {receipt.note}</span>}
+        </div>
+        <div className="flex items-center gap-1.5">
+          {receipt.invoice_url ? (
+            <a
+              href={receipt.invoice_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"
+            >
+              <FileText className="h-3.5 w-3.5" />
+              {receipt.invoice_filename ?? "Invoice"}
+            </a>
+          ) : (
+            <button
+              type="button"
+              onClick={() => fileRef.current?.click()}
+              disabled={uploading}
+              className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+            >
+              {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5" />}
+              Attach invoice
+            </button>
+          )}
+          <input
+            ref={fileRef}
+            type="file"
+            accept="application/pdf,image/png,image/jpeg,image/webp"
+            className="hidden"
+            onChange={(e) => {
+              const f = e.target.files?.[0];
+              if (f) attach(f);
+              e.target.value = "";
+            }}
+          />
+          <button
+            type="button"
+            onClick={onUndo}
+            disabled={busy}
+            title="Undo this receipt (reverses stock)"
+            className="inline-flex items-center gap-1 text-xs text-[var(--muted-foreground)] hover:text-[var(--destructive)] cursor-pointer"
+          >
+            <Undo2 className="h-3.5 w-3.5" /> Undo
+          </button>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs">
+        {receipt.lines.map((l) => (
+          <span key={l.id} className="text-[var(--muted-foreground)]">
+            <span className="font-mono text-[var(--foreground)]">{l.item_code}</span>{" "}
+            {l.qty.toLocaleString()} {l.uom_abbreviation ?? ""}
+            {l.unit_rate != null && <span> @ {rate(l.unit_rate)}</span>}
+          </span>
+        ))}
+      </div>
     </div>
   );
 }
