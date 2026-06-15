@@ -265,10 +265,13 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
           const rows = rowsByType[type] ?? [];
           const picked = rows.filter((r) => r.item_id).length;
           return (
-            <Card key={type}>
+            // overflow-visible: let the item-search dropdown escape the card
+            // (the default Card clips it, cropping the results — see picker menus).
+            <Card key={type} className="overflow-visible">
               <SectionHeader
                 title={type}
                 count={picked > 0 ? `· ${picked}` : undefined}
+                className="rounded-t-[var(--radius)]"
               />
               <div className="p-3">
                 {rows.length > 0 && (
