@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, useMemo, useTransition } from "react";
+import { useState, useEffect, useRef, useCallback, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   PlayCircle,
@@ -49,24 +49,13 @@ const MACHINE: Record<string, string> = {
   assembly_fit: "Assembly",
 };
 
-export interface PlannedProgram {
-  program_id: string;
-  code: string;
-  name: string;
-  machine: string;
-  planned: number;
-}
-
 interface Props {
   date: string;
   maxDate: string;
   initialRows: DailyRunRow[];
-  /** This week's planned runs from the weekly plan (read-only checklist). */
-  planned: PlannedProgram[];
-  weekLabel: string;
 }
 
-export function DailyRunsClient({ date, maxDate, initialRows, planned, weekLabel }: Props) {
+export function DailyRunsClient({ date, maxDate, initialRows }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
@@ -103,27 +92,6 @@ export function DailyRunsClient({ date, maxDate, initialRows, planned, weekLabel
       setPicked(null);
       setCount(1);
       setNote("");
-      router.refresh();
-    });
-  };
-
-  // Plan-vs-actual: this week's planned runs vs what's logged on this date.
-  const isToday = date === maxDate;
-  const loggedByProgram = useMemo(() => {
-    const m = new Map<string, number>();
-    for (const r of initialRows) m.set(r.operation_id, (m.get(r.operation_id) ?? 0) + r.runs_count);
-    return m;
-  }, [initialRows]);
-  const plannedDone = planned.filter((p) => loggedByProgram.has(p.program_id)).length;
-
-  const logPlanned = (p: PlannedProgram) => {
-    startTransition(async () => {
-      const res = await recordRun({ operation_id: p.program_id, run_date: date, runs_count: p.planned });
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
-      }
-      toast.success(`Logged ${p.code ?? p.name} ×${p.planned}.`);
       router.refresh();
     });
   };
@@ -230,63 +198,6 @@ export function DailyRunsClient({ date, maxDate, initialRows, planned, weekLabel
           </p>
         </CardBody>
       </Card>
-
-      {/* Planned this week — a checklist from the weekly plan vs today's log */}
-      {isToday && planned.length > 0 && (
-        <Card className="mb-4">
-          <SectionHeader
-            title={`Planned this week${weekLabel ? ` · ${weekLabel}` : ""}`}
-            count={`${plannedDone}/${planned.length} logged today`}
-          />
-          <Table density="compact">
-            <TableHeader>
-              <TableRow>
-                <TableHead>Machine</TableHead>
-                <TableHead>Code</TableHead>
-                <TableHead>Program</TableHead>
-                <TableHead className="text-right">Planned</TableHead>
-                <TableHead className="text-right">Today</TableHead>
-                <TableHead className="w-28" />
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {planned.map((p) => {
-                const logged = loggedByProgram.get(p.program_id) ?? 0;
-                return (
-                  <TableRow key={p.program_id}>
-                    <TableCell>
-                      <Badge variant="neutral" className="font-mono text-[11px]">
-                        {MACHINE[p.machine] ?? p.machine}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="font-mono text-xs text-[var(--muted-foreground)]">{p.code}</TableCell>
-                    <TableCell className="text-sm font-medium max-w-[260px] truncate" title={p.name}>{p.name}</TableCell>
-                    <TableCell className="text-right font-semibold tabular-nums">×{p.planned}</TableCell>
-                    <TableCell className="text-right tabular-nums">
-                      {logged > 0 ? (
-                        <span className="text-[var(--success)]">×{logged}</span>
-                      ) : (
-                        <span className="text-[var(--muted-foreground)]">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right">
-                      {logged > 0 ? (
-                        <span className="inline-flex items-center gap-1 text-[11px] text-[var(--success)]">
-                          <Check className="h-3.5 w-3.5" /> logged
-                        </span>
-                      ) : (
-                        <Button size="sm" variant="secondary" onClick={() => logPlanned(p)} disabled={isPending}>
-                          <Plus className="h-3.5 w-3.5 mr-1" /> Log ×{p.planned}
-                        </Button>
-                      )}
-                    </TableCell>
-                  </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </Card>
-      )}
 
       {/* Day summary */}
       <StatStrip className="mb-4">
