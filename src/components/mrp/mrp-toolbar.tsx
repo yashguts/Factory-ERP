@@ -3,7 +3,7 @@
 import { useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { CalendarDays, CalendarRange, ListChecks, Hammer, ShoppingCart, X } from "lucide-react";
+import { CalendarDays, CalendarRange, ListChecks, Hammer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 export type MrpView = "requirements" | "programs" | "buy" | "weekly";
@@ -19,9 +19,10 @@ const MAKE_VIEWS: ViewDef[] = [
   { key: "programs", label: "Programs to run", href: "/mrp/make-plan", icon: Hammer },
   { key: "weekly", label: "Weekly plan", href: "/mrp/weekly", icon: CalendarRange },
 ];
+// Trade is now a single "what to buy" page (steel sheets are folded into the
+// Requirements view as their own category group) + the weekly plan.
 const TRADE_VIEWS: ViewDef[] = [
-  { key: "requirements", label: "Requirements", href: "/mrp/trade", icon: ListChecks },
-  { key: "buy", label: "Buy list", href: "/mrp/trade/buy", icon: ShoppingCart },
+  { key: "requirements", label: "What to buy", href: "/mrp/trade", icon: ListChecks },
   { key: "weekly", label: "Weekly plan", href: "/mrp/trade/weekly", icon: CalendarRange },
 ];
 

@@ -1,14 +1,13 @@
-import { getProductionPlan } from "@/lib/actions/mrp";
-import { ProductionPlanClient } from "@/components/mrp/production-plan-client";
+import { redirect } from "next/navigation";
 
 interface Props {
   searchParams: Promise<{ date?: string }>;
 }
 
-// Buy list — steel sheets/plates + bought parts to procure (job demand exploded
-// through programs & parts lists). All purchased, so it lives under Trade MRP.
+// The Buy list is now folded into the Trade "what to buy" page (steel sheets show
+// as their own category group there). Keep this route as a redirect so old links /
+// bookmarks land on the merged view.
 export default async function TradeBuyPage({ searchParams }: Props) {
   const { date } = await searchParams;
-  const plan = await getProductionPlan(date || undefined);
-  return <ProductionPlanClient plan={plan} section="trade" />;
+  redirect(`/mrp/trade${date ? `?date=${date}` : ""}`);
 }

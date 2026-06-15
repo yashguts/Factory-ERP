@@ -2,272 +2,225 @@
 
 import { useState, useMemo } from "react";
 import { useSearchParams } from "next/navigation";
-import {
-  readParam,
-  readIntParam,
-  useUrlListSync,
-} from "@/lib/hooks/use-url-list-state";
-import { Button } from "@/components/ui/button";
+import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import {
-  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
-} from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { Tabs } from "@/components/ui/tabs";
 import { Toolbar } from "@/components/ui/toolbar";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, Calculator, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
+import {
+  Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
+} from "@/components/ui/table";
+import { Search, Calculator, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import type { MrpRow } from "@/lib/actions/mrp";
-import type { ItemType } from "@/lib/supabase/types";
+import type { MrpRow, PlanLeaf } from "@/lib/actions/mrp";
 import { MrpJobsPopover } from "@/components/mrp/mrp-jobs-popover";
 
-const TYPE_LABELS: Record<string, string> = {
-  raw_material: "Raw Material",
-  sub_assembly: "Sub Assembly",
-  finished_good: "Finished Good",
-  mechanical_finished_stock: "Mech. Finished Stock",
-  door_panel: "Door Panel",
-};
+type ShortfallFilter = "shortfall" | "all" | "excess";
 
-const TYPE_BADGE_VARIANT: Record<string, BadgeVariant> = {
-  raw_material: "blue",
-  sub_assembly: "purple",
-  finished_good: "green",
-  mechanical_finished_stock: "amber",
-  door_panel: "pink",
-};
-
-type SortKey = "code" | "name" | "category" | "required" | "stock" | "shortfall" | "jobs";
-type SortDir = "asc" | "desc";
-type ShortfallFilter = "all" | "shortfall" | "excess" | "zero";
-type ProcurementTab = "all" | "trade" | "make";
-
-const PAGE_SIZE = 50;
+/** Group key used for the exploded steel sheets (one group, regardless of each
+ *  sheet's real top-level category). */
+const SHEET_GROUP = "Raw steel / sheets";
+const UNCATEGORISED = "Uncategorised";
 
 interface Props {
   initialData: MrpRow[];
   initialCutoffDate?: string;
   /**
-   * When set, the page is locked to one procurement side (its own sidebar
-   * section): the Make/Trade/All tab row is hidden and every total, filter and
-   * the toolbar are scoped to this side. Omit for the legacy combined view.
+   * The page is locked to one procurement side (its own sidebar section). Drives
+   * the title and whether PO columns / the sheets group show.
    */
   section?: "make" | "trade";
+  /**
+   * Trade only: exploded raw steel / sheets to buy (from getProductionPlan), folded
+   * in as a "Raw steel / sheets" category group so the buy list is complete on one
+   * page. These never appear on a job BOM, so they're shown but carry no job links.
+   */
+  sheets?: PlanLeaf[];
 }
 
-export function MrpClient({ initialData, initialCutoffDate, section }: Props) {
-  // Tab + filters live in the URL too (alongside ?date=), so switching to the
-  // Programs/Buy-list views and coming back — or pressing Back from a job —
-  // restores the exact same view.
+/** Unified display row — a trade/make item or an exploded sheet. */
+type ViewRow = {
+  item_id: string;
+  item_code: string;
+  item_name: string;
+  category_name: string | null;
+  group: string;
+  uom: string | null;
+  total_required: number;
+  total_stock: number;
+  shortfall: number;
+  on_order: number;
+  to_buy: number;
+  job_count: number;
+  is_sheet: boolean;
+};
+
+export function MrpClient({ initialData, initialCutoffDate, section, sheets }: Props) {
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
-  const [typeFilter, setTypeFilter] = useState<ItemType | "all">(
-    () => readParam(sp, "type", "all", ["all", "raw_material", "sub_assembly", "finished_good", "mechanical_finished_stock", "door_panel"]) as ItemType | "all",
-  );
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>(
-    () => readParam(sp, "show", "all", ["all", "shortfall", "excess", "zero"]) as ShortfallFilter,
+    () => readParam(sp, "show", "shortfall", ["shortfall", "all", "excess"]) as ShortfallFilter,
   );
-  // Top-level Make/Trade split. When the page belongs to a Make-only or
-  // Trade-only sidebar section, `section` locks the scope and the tab row is
-  // hidden; otherwise it defaults to "trade" (the actionable bottleneck) and the
-  // user can flip to "make" or "all".
-  const [procurementTab, setProcurementTab] = useState<ProcurementTab>(
-    () => section ?? (readParam(sp, "tab", "trade", ["all", "trade", "make"]) as ProcurementTab),
-  );
-  // On-order / To-buy (outstanding-PO netting) applies to purchased Trade
-  // items; hide those columns on the Make tab where POs don't apply.
-  const showPo = procurementTab !== "make";
-  const [sortKey, setSortKey] = useState<SortKey>(
-    () => readParam(sp, "sort", "shortfall", ["code", "name", "category", "required", "stock", "shortfall", "jobs"]) as SortKey,
-  );
-  const [sortDir, setSortDir] = useState<SortDir>(
-    () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
-  );
-  const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
-  // Date cutoff comes from the URL (?date=); the shared MrpToolbar drives changes.
+  const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const cutoffDate = initialCutoffDate ?? "";
+  const isTrade = section === "trade";
+  // On-order / To-buy (outstanding-PO netting) only matters for purchased Trade
+  // items; the Make side never has POs.
+  const showPo = section !== "make";
 
-  // When locked to a section the scope lives in the route, so don't write ?tab=.
   useUrlListSync(
-    section
-      ? { q: search, type: typeFilter, show: shortfallFilter, sort: sortKey, dir: sortDir, page }
-      : { q: search, type: typeFilter, show: shortfallFilter, tab: procurementTab, sort: sortKey, dir: sortDir, page },
-    section
-      ? { q: "", type: "all", show: "all", sort: "shortfall", dir: "desc", page: 1 }
-      : { q: "", type: "all", show: "all", tab: "trade", sort: "shortfall", dir: "desc", page: 1 },
+    { q: search, show: shortfallFilter },
+    { q: "", show: "shortfall" },
   );
 
-  // Rows restricted to the active Make/Trade tab. All downstream filters
-  // (search, type, shortfall) and the summary card totals are computed
-  // off this slice so the page is self-consistent within a tab.
-  const tabRows = useMemo(() => {
-    if (procurementTab === "all") return initialData;
-    return initialData.filter((r) => r.procurement_type === procurementTab);
-  }, [initialData, procurementTab]);
-
-  /** Counts per tab — drives the badge numbers on the tab buttons. */
-  const tabCounts = useMemo(() => {
-    let trade = 0;
-    let make = 0;
+  // Scope to the page's procurement side, then fold the sheets in (trade only).
+  const viewRows = useMemo<ViewRow[]>(() => {
+    const out: ViewRow[] = [];
+    const seen = new Set<string>();
     for (const r of initialData) {
-      if (r.procurement_type === "trade") trade++;
-      else if (r.procurement_type === "make") make++;
+      if (section && r.procurement_type !== section) continue;
+      seen.add(r.item_id);
+      out.push({
+        item_id: r.item_id,
+        item_code: r.item_code,
+        item_name: r.item_name,
+        category_name: r.category_name,
+        group: r.top_category_name ?? UNCATEGORISED,
+        uom: r.uom_abbreviation,
+        total_required: r.total_required,
+        total_stock: r.total_stock,
+        shortfall: r.shortfall,
+        on_order: r.on_order,
+        to_buy: r.to_buy,
+        job_count: r.job_count,
+        is_sheet: false,
+      });
     }
-    return { all: initialData.length, trade, make };
-  }, [initialData]);
-
-  const totals = useMemo(() => {
-    let totalRequired = 0;
-    let totalShortfall = 0;
-    let itemsWithShortfall = 0;
-    for (const row of tabRows) {
-      totalRequired += row.total_required;
-      totalShortfall += row.shortfall;
-      if (row.shortfall > 0) itemsWithShortfall++;
+    if (isTrade && sheets) {
+      for (const s of sheets) {
+        // A sheet shown as its own group must not also appear as a trade row.
+        if (seen.has(s.item_id)) continue;
+        out.push({
+          item_id: s.item_id,
+          item_code: s.code,
+          item_name: s.name,
+          category_name: s.subCategory,
+          group: SHEET_GROUP,
+          uom: s.uom,
+          total_required: s.qty,
+          total_stock: s.in_stock,
+          shortfall: s.shortfall,
+          on_order: 0,
+          to_buy: s.shortfall,
+          job_count: 0,
+          is_sheet: true,
+        });
+      }
     }
-    return { totalRequired, totalShortfall, itemsWithShortfall, totalItems: tabRows.length };
-  }, [tabRows]);
+    return out;
+  }, [initialData, section, isTrade, sheets]);
 
-  // Multi-token fuzzy search across code / name / category.
   const searchTokens = useMemo(
-    () =>
-      search
-        .trim()
-        .toLowerCase()
-        .split(/\s+/)
-        .filter(Boolean),
+    () => search.trim().toLowerCase().split(/\s+/).filter(Boolean),
     [search],
   );
 
   const filtered = useMemo(() => {
-    return tabRows.filter((row) => {
+    return viewRows.filter((row) => {
       if (searchTokens.length > 0) {
-        const haystack = [row.item_code, row.item_name, row.category_name]
+        const haystack = [row.item_code, row.item_name, row.category_name, row.group]
           .filter(Boolean)
           .join(" ")
           .toLowerCase();
-        for (const token of searchTokens) {
-          if (!haystack.includes(token)) return false;
-        }
+        for (const token of searchTokens) if (!haystack.includes(token)) return false;
       }
-      if (typeFilter !== "all" && row.item_type !== typeFilter) return false;
+      // Owner's rule: items without a shortfall are hidden by default. Items WITH a
+      // shortfall stay even when a PO fully covers them (shortfall>0 already).
       if (shortfallFilter === "shortfall" && row.shortfall <= 0) return false;
       if (shortfallFilter === "excess" && row.total_stock <= row.total_required) return false;
-      if (shortfallFilter === "zero" && row.shortfall !== 0) return false;
       return true;
     });
-  }, [tabRows, searchTokens, typeFilter, shortfallFilter]);
+  }, [viewRows, searchTokens, shortfallFilter]);
 
-  const sorted = useMemo(() => {
-    const copy = [...filtered];
-    copy.sort((a, b) => {
-      let cmp = 0;
-      switch (sortKey) {
-        case "code":
-          cmp = a.item_code.localeCompare(b.item_code);
-          break;
-        case "name":
-          cmp = a.item_name.localeCompare(b.item_name);
-          break;
-        case "category":
-          cmp = (a.category_name ?? "").localeCompare(b.category_name ?? "");
-          break;
-        case "required":
-          cmp = a.total_required - b.total_required;
-          break;
-        case "stock":
-          cmp = a.total_stock - b.total_stock;
-          break;
-        case "shortfall":
-          cmp = a.shortfall - b.shortfall;
-          break;
-        case "jobs":
-          cmp = a.job_count - b.job_count;
-          break;
-      }
-      return sortDir === "asc" ? cmp : -cmp;
-    });
-    return copy;
-  }, [filtered, sortKey, sortDir]);
-
-  const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
-  const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
-  const resetPage = () => setPage(1);
-
-  const handleSort = (key: SortKey) => {
-    if (sortKey === key) {
-      setSortDir(sortDir === "asc" ? "desc" : "asc");
-    } else {
-      setSortKey(key);
-      setSortDir(key === "shortfall" || key === "required" || key === "jobs" ? "desc" : "asc");
+  // Group by top-level category. Categories ordered by total shortfall desc (most
+  // urgent first); the steel-sheets group is always pinned last (different axis).
+  const groups = useMemo(() => {
+    const byGroup = new Map<string, ViewRow[]>();
+    for (const r of filtered) {
+      const arr = byGroup.get(r.group) ?? [];
+      arr.push(r);
+      byGroup.set(r.group, arr);
     }
-  };
+    const list = Array.from(byGroup.entries()).map(([name, rows]) => {
+      rows.sort((a, b) => b.shortfall - a.shortfall || b.to_buy - a.to_buy);
+      return {
+        name,
+        rows,
+        shortfall: rows.reduce((s, r) => s + r.shortfall, 0),
+        toBuy: rows.reduce((s, r) => s + r.to_buy, 0),
+      };
+    });
+    list.sort((a, b) => {
+      if (a.name === SHEET_GROUP) return 1;
+      if (b.name === SHEET_GROUP) return -1;
+      return b.shortfall - a.shortfall || a.name.localeCompare(b.name);
+    });
+    return list;
+  }, [filtered]);
 
-  const SortHeader = ({ label, sortField, className }: { label: string; sortField: SortKey; className?: string }) => (
-    <TableHead
-      className={`cursor-pointer select-none hover:bg-[var(--muted)] transition-colors ${className ?? ""}`}
-      onClick={() => { handleSort(sortField); resetPage(); }}
-    >
-      <span className="inline-flex items-center gap-1">
-        {label}
-        <ArrowUpDown size={12} className={sortKey === sortField ? "text-[var(--primary)]" : "opacity-30"} />
-      </span>
-    </TableHead>
-  );
+  const stats = useMemo(() => {
+    let itemsShort = 0;
+    let coveredByPo = 0;
+    for (const r of viewRows) {
+      if (r.shortfall > 0) {
+        itemsShort++;
+        if (r.to_buy <= 0) coveredByPo++;
+      }
+    }
+    return { itemsShort, coveredByPo, shown: filtered.length };
+  }, [viewRows, filtered]);
+
+  const toggle = (name: string) =>
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
+
+  const title = isTrade
+    ? "Trade MRP — what to buy"
+    : section === "make"
+      ? "Make MRP — Requirements"
+      : "MRP — Material Requirements";
+
+  // Column count for the group-header colspan.
+  const colCount = isTrade ? 7 : 6;
 
   return (
     <div>
       <MrpToolbar view="requirements" date={cutoffDate} section={section} />
 
-      {/* Header — title + inline item count / cutoff meta */}
       <PageHeader
-        title={
-          section === "make"
-            ? "Make MRP — Requirements"
-            : section === "trade"
-              ? "Trade MRP — Requirements"
-              : "MRP — Material Requirements"
-        }
+        title={title}
         meta={
           <>
-            {sorted.length} of {tabRows.length} items in this tab
-            {cutoffDate && ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
+            {isTrade ? "By category · only items short or on order" : "By category"}
+            {cutoffDate &&
+              ` — up to ${new Date(cutoffDate).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
           </>
         }
       />
 
-      {/* Procurement Type Tabs — split MRP into procurement vs production
-          planning views. Switching tabs scopes the table, summary cards
-          and all downstream filters. Hidden when the page is already locked to
-          one side via its sidebar section (Make MRP / Trade MRP). */}
-      {!section && (
-        <Tabs
-          variant="underline"
-          className="mb-4"
-          value={procurementTab}
-          onChange={(v) => { setProcurementTab(v as ProcurementTab); resetPage(); }}
-          tabs={[
-            { value: "trade", label: "Trade · To Procure", count: tabCounts.trade },
-            { value: "make", label: "Make · To Manufacture", count: tabCounts.make },
-            { value: "all", label: "All", count: tabCounts.all },
-          ]}
-        />
-      )}
-
-      {/* Summary stats — computed off the active-tab slice */}
       <StatStrip className="mb-3">
-        <StatTile label="Total Items" value={totals.totalItems.toLocaleString()} />
-        <StatTile label="Total Required" value={totals.totalRequired.toLocaleString()} />
-        <StatTile label="Items with Shortfall" value={totals.itemsWithShortfall.toLocaleString()} tone="danger" />
-        <StatTile label="Total Shortfall Units" value={totals.totalShortfall.toLocaleString()} tone="danger" />
+        <StatTile label={isTrade ? "Items to buy" : "Items to make"} value={stats.shown.toLocaleString()} />
+        <StatTile label="Short" value={stats.itemsShort.toLocaleString()} tone="danger" />
+        {isTrade && <StatTile label="Covered by PO" value={stats.coveredByPo.toLocaleString()} tone="primary" />}
       </StatStrip>
 
-      {/* Filters Row */}
       <Toolbar>
         <div className="relative flex-1 min-w-[200px] max-w-sm">
           <Search size={16} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
@@ -275,51 +228,35 @@ export function MrpClient({ initialData, initialCutoffDate, section }: Props) {
             size="sm"
             placeholder="Search code, name, category..."
             value={search}
-            onChange={(e) => { setSearch(e.target.value); resetPage(); }}
+            onChange={(e) => setSearch(e.target.value)}
             className="pl-8"
           />
         </div>
-
-        <Select
-          size="sm"
-          value={typeFilter}
-          onChange={(e) => { setTypeFilter(e.target.value as ItemType | "all"); resetPage(); }}
-          className="w-[170px]"
-        >
-          <option value="all">All Types</option>
-          <option value="raw_material">Raw Material</option>
-          <option value="sub_assembly">Sub Assembly</option>
-          <option value="finished_good">Finished Good</option>
-          <option value="mechanical_finished_stock">Mech. Finished Stock</option>
-          <option value="door_panel">Door Panel</option>
-        </Select>
-
         <Select
           size="sm"
           value={shortfallFilter}
-          onChange={(e) => { setShortfallFilter(e.target.value as ShortfallFilter); resetPage(); }}
+          onChange={(e) => setShortfallFilter(e.target.value as ShortfallFilter)}
           className="w-[160px]"
         >
-          <option value="all">All Items</option>
-          <option value="shortfall">Shortfall Only</option>
-          <option value="excess">Sufficient Only</option>
+          <option value="shortfall">Only short</option>
+          <option value="all">All items</option>
+          <option value="excess">Sufficient only</option>
         </Select>
       </Toolbar>
 
-      {/* Table */}
-      {paginated.length === 0 ? (
+      {filtered.length === 0 ? (
         <div className="card-surface overflow-hidden">
           <EmptyState
             icon={<Calculator size={28} />}
             title={
-              initialData.length === 0
+              viewRows.length === 0
                 ? "No material requirements found"
-                : "No items match your filters"
+                : shortfallFilter === "shortfall"
+                  ? "Nothing short — everything is covered"
+                  : "No items match your filters"
             }
             description={
-              initialData.length === 0
-                ? "Ensure jobs have BOM lines with mapped items."
-                : undefined
+              viewRows.length === 0 ? "Ensure jobs have BOM lines with mapped items." : undefined
             }
           />
         </div>
@@ -328,113 +265,156 @@ export function MrpClient({ initialData, initialCutoffDate, section }: Props) {
           <Table density="dense">
             <TableHeader sticky>
               <TableRow>
-                <SortHeader label="Code" sortField="code" />
-                <SortHeader label="Item Name" sortField="name" />
-                <TableHead>Type</TableHead>
-                <SortHeader label="Category" sortField="category" />
-                <SortHeader label="Required" sortField="required" className="text-right" />
-                <SortHeader label="In Stock" sortField="stock" className="text-right" />
-                <SortHeader label="Shortfall" sortField="shortfall" className="text-right" />
+                <TableHead>Code</TableHead>
+                <TableHead>Item Name</TableHead>
+                <TableHead className="text-right">Required</TableHead>
+                <TableHead className="text-right">In Stock</TableHead>
+                {!isTrade && <TableHead className="text-right">Shortfall</TableHead>}
                 {showPo && <TableHead className="text-right" title="On order — outstanding purchase-order qty not yet received">On order</TableHead>}
                 {showPo && <TableHead className="text-right" title="To buy — net still to procure after subtracting open POs">To buy</TableHead>}
-                <SortHeader label="Jobs" sortField="jobs" className="text-right" />
+                <TableHead className="text-right">Jobs</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {paginated.map((row) => {
-                const excess = row.total_stock - row.total_required;
+              {groups.map((g) => {
+                const isCollapsed = collapsed.has(g.name);
+                const isSheetGroup = g.name === SHEET_GROUP;
                 return (
-                  <TableRow key={row.item_id}>
-                    <TableCell className="font-mono text-xs">{row.item_code}</TableCell>
-                    <TableCell>
-                      <div className="font-medium">{row.item_name}</div>
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={TYPE_BADGE_VARIANT[row.item_type] ?? "neutral"}>
-                        {TYPE_LABELS[row.item_type] ?? row.item_type}
-                      </Badge>
-                    </TableCell>
-                    <TableCell className="text-sm">{row.category_name ?? "-"}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      {row.total_required.toLocaleString()}{" "}
-                      <span className="text-xs text-[var(--muted-foreground)]">{row.uom_abbreviation}</span>
-                    </TableCell>
-                    <TableCell className="text-right font-medium">
-                      {row.total_stock.toLocaleString()}{" "}
-                      <span className="text-xs text-[var(--muted-foreground)]">{row.uom_abbreviation}</span>
-                    </TableCell>
-                    <TableCell className="text-right font-bold">
-                      {row.shortfall > 0 ? (
-                        <span className="text-[var(--destructive)]">
-                          -{row.shortfall.toLocaleString()}
-                        </span>
-                      ) : (
-                        <span className="text-[var(--success)]">
-                          +{excess.toLocaleString()}
-                        </span>
-                      )}
-                    </TableCell>
-                    {showPo && (
-                      <TableCell className="text-right">
-                        {row.on_order > 0 ? (
-                          <span className="text-[var(--primary)] font-medium">{row.on_order.toLocaleString()}</span>
-                        ) : (
-                          <span className="text-[var(--muted-foreground)]">—</span>
-                        )}
-                      </TableCell>
-                    )}
-                    {showPo && (
-                      <TableCell className="text-right font-medium">
-                        {row.shortfall === 0 ? (
-                          <span className="text-[var(--muted-foreground)]">—</span>
-                        ) : row.to_buy > 0 ? (
-                          <span className="text-[var(--destructive)]">{row.to_buy.toLocaleString()}</span>
-                        ) : (
-                          <Badge variant="blue" title="Shortfall is fully covered by an open PO">on order</Badge>
-                        )}
-                      </TableCell>
-                    )}
-                    <TableCell className="text-right text-sm">
-                      {row.total_required > 0 ? (
-                        <MrpJobsPopover
-                          itemId={row.item_id}
-                          itemName={row.item_name}
-                          uom={row.uom_abbreviation}
-                          cutoffDate={cutoffDate || undefined}
-                        >
-                          <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
-                            {row.job_count}
-                          </span>
-                        </MrpJobsPopover>
-                      ) : (
-                        row.job_count
-                      )}
-                    </TableCell>
-                  </TableRow>
+                  <GroupRows
+                    key={g.name}
+                    group={g}
+                    isCollapsed={isCollapsed}
+                    isSheetGroup={isSheetGroup}
+                    isTrade={isTrade}
+                    showPo={showPo}
+                    colCount={colCount}
+                    cutoffDate={cutoffDate}
+                    onToggle={() => toggle(g.name)}
+                  />
                 );
               })}
             </TableBody>
           </Table>
         </div>
       )}
-
-      {/* Pagination */}
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between mt-4">
-          <p className="text-sm text-[var(--muted-foreground)]">
-            Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, sorted.length)} of {sorted.length}
-          </p>
-          <div className="flex items-center gap-2">
-            <Button variant="secondary" size="sm" onClick={() => setPage(page - 1)} disabled={page === 1}>
-              <ChevronLeft size={16} />
-            </Button>
-            <span className="text-sm font-medium">{page} / {totalPages}</span>
-            <Button variant="secondary" size="sm" onClick={() => setPage(page + 1)} disabled={page === totalPages}>
-              <ChevronRight size={16} />
-            </Button>
-          </div>
-        </div>
-      )}
     </div>
+  );
+}
+
+function GroupRows({
+  group,
+  isCollapsed,
+  isSheetGroup,
+  isTrade,
+  showPo,
+  colCount,
+  cutoffDate,
+  onToggle,
+}: {
+  group: { name: string; rows: ViewRow[]; shortfall: number; toBuy: number };
+  isCollapsed: boolean;
+  isSheetGroup: boolean;
+  isTrade: boolean;
+  showPo: boolean;
+  colCount: number;
+  cutoffDate: string;
+  onToggle: () => void;
+}) {
+  return (
+    <>
+      {/* Category header row — click to collapse / expand */}
+      <TableRow
+        className="cursor-pointer bg-[var(--muted)]/40 hover:bg-[var(--muted)]/70 transition-colors"
+        onClick={onToggle}
+      >
+        <TableCell colSpan={colCount - 1} className="font-medium">
+          <span className="inline-flex items-center gap-1.5">
+            {isCollapsed ? (
+              <ChevronRight size={14} className="text-[var(--muted-foreground)]" />
+            ) : (
+              <ChevronDown size={14} className="text-[var(--muted-foreground)]" />
+            )}
+            {isSheetGroup && <Layers size={14} className="text-[var(--muted-foreground)]" />}
+            {group.name}
+            <span className="text-[var(--muted-foreground)] font-normal">
+              · {group.rows.length} {group.rows.length === 1 ? "item" : "items"}
+              {isSheetGroup && " · from programs"}
+            </span>
+          </span>
+        </TableCell>
+        <TableCell className="text-right font-medium">
+          {group.shortfall > 0 ? (
+            <span className="text-[var(--destructive)]">{group.shortfall.toLocaleString()}</span>
+          ) : (
+            <span className="text-[var(--muted-foreground)]">—</span>
+          )}
+        </TableCell>
+      </TableRow>
+
+      {!isCollapsed &&
+        group.rows.map((row) => (
+          <TableRow key={`${isSheetGroup ? "sheet-" : ""}${row.item_id}`}>
+            <TableCell className="font-mono text-xs">{row.item_code}</TableCell>
+            <TableCell>
+              <div className="font-medium">{row.item_name}</div>
+            </TableCell>
+            <TableCell className="text-right font-medium">
+              {row.total_required.toLocaleString()}{" "}
+              <span className="text-xs text-[var(--muted-foreground)]">{row.uom}</span>
+            </TableCell>
+            <TableCell className="text-right font-medium">
+              {row.total_stock.toLocaleString()}{" "}
+              <span className="text-xs text-[var(--muted-foreground)]">{row.uom}</span>
+            </TableCell>
+            {!isTrade && (
+              <TableCell className="text-right font-bold">
+                {row.shortfall > 0 ? (
+                  <span className="text-[var(--destructive)]">-{row.shortfall.toLocaleString()}</span>
+                ) : (
+                  <span className="text-[var(--success)]">+{(row.total_stock - row.total_required).toLocaleString()}</span>
+                )}
+              </TableCell>
+            )}
+            {showPo && (
+              <TableCell className="text-right">
+                {row.on_order > 0 ? (
+                  <span className="text-[var(--primary)] font-medium">{row.on_order.toLocaleString()}</span>
+                ) : (
+                  <span className="text-[var(--muted-foreground)]">—</span>
+                )}
+              </TableCell>
+            )}
+            {showPo && (
+              <TableCell className="text-right font-medium">
+                {row.shortfall === 0 ? (
+                  <span className="text-[var(--muted-foreground)]">—</span>
+                ) : row.to_buy > 0 ? (
+                  <span className="text-[var(--destructive)]">{row.to_buy.toLocaleString()}</span>
+                ) : (
+                  <Badge variant="blue" title="Shortfall is fully covered by an open PO">on order</Badge>
+                )}
+              </TableCell>
+            )}
+            <TableCell className="text-right text-sm">
+              {row.is_sheet ? (
+                <span className="text-[var(--muted-foreground)]">—</span>
+              ) : row.total_required > 0 ? (
+                <MrpJobsPopover
+                  itemId={row.item_id}
+                  itemName={row.item_name}
+                  uom={row.uom}
+                  cutoffDate={cutoffDate || undefined}
+                >
+                  <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
+                    {row.job_count}
+                  </span>
+                </MrpJobsPopover>
+              ) : (
+                row.job_count
+              )}
+            </TableCell>
+          </TableRow>
+        ))}
+    </>
   );
 }
