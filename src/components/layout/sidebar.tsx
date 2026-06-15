@@ -16,6 +16,8 @@ import {
   PlayCircle,
   ShoppingCart,
   Truck,
+  PackageSearch,
+  Settings,
   LucideIcon,
 } from "lucide-react";
 
@@ -57,7 +59,14 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/mrp", label: "Make MRP", icon: Calculator },
       { href: "/mrp/trade", label: "Trade MRP", icon: Truck },
+      { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
+    ],
+  },
+  {
+    label: "Admin",
+    items: [
+      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
