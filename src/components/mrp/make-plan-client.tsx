@@ -413,28 +413,35 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
             <span>Items whose parts need a program <strong>audited</strong> (shown) or <strong>created</strong> (no program). Audit those to unlock them, then re-run.</span>
           </div>
           <Card>
-            <Table density="compact">
+            {/* table-fixed so the columns keep their proportions: Item takes the
+                remaining width (widest), Sub-category / Missing are capped and
+                truncate (full text on hover). Auto-layout used to collapse Item to
+                near-0 and let Sub-category sprawl. */}
+            <Table density="compact" className="table-fixed">
               <TableHeader>
                 <TableRow>
-                  <TableHead className="w-28">Code</TableHead>
+                  <TableHead className="w-32">Code</TableHead>
                   <TableHead>Item</TableHead>
-                  <TableHead>Sub-category</TableHead>
-                  <TableHead className="text-right w-16">Need</TableHead>
-                  <TableHead className="text-right">Missing program</TableHead>
+                  <TableHead className="w-44">Sub-category</TableHead>
+                  <TableHead className="text-right w-20">Need</TableHead>
+                  <TableHead className="w-56">Missing program</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {shownBlocked.map((b) => (
-                  <TableRow key={b.code}>
-                    <TableCell className="font-mono text-[var(--muted-foreground)]">{b.code}</TableCell>
-                    <TableCell className="max-w-0 truncate">{b.name}</TableCell>
-                    <TableCell className="italic text-[var(--muted-foreground)]">{b.subCategory}</TableCell>
-                    <TableCell className="tabular-nums text-right">need {b.need}</TableCell>
-                    <TableCell className="text-right text-[var(--muted-foreground)] max-w-0 truncate">
-                      {b.missing.map((m) => m.auditProgram ? `audit ${m.auditProgram}` : `${m.code}: no program`).join(", ")}
-                    </TableCell>
-                  </TableRow>
-                ))}
+                {shownBlocked.map((b) => {
+                  const missing = b.missing
+                    .map((m) => (m.auditProgram ? `audit ${m.auditProgram}` : `${m.code}: no program`))
+                    .join(", ");
+                  return (
+                    <TableRow key={b.code}>
+                      <TableCell className="font-mono text-[var(--muted-foreground)] truncate" title={b.code}>{b.code}</TableCell>
+                      <TableCell className="font-medium truncate" title={b.name}>{b.name}</TableCell>
+                      <TableCell className="italic text-[var(--muted-foreground)] truncate" title={b.subCategory ?? ""}>{b.subCategory}</TableCell>
+                      <TableCell className="tabular-nums text-right whitespace-nowrap">need {b.need}</TableCell>
+                      <TableCell className="text-[var(--muted-foreground)] truncate" title={missing}>{missing}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
             </Table>
           </Card>
