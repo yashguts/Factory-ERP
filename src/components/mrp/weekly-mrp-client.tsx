@@ -9,12 +9,13 @@ import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
-import { Hammer, Wrench, Package, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Hammer, Wrench, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
 // Trade has its own sidebar section (/mrp/trade/weekly), so the Make weekly
-// board no longer carries a Trade tab.
-type Tab = "programs" | "make" | "buy" | "capacity";
+// board no longer carries a Trade or a Buy-list (sheets) tab — buying sheets is
+// a trade activity and lives under Trade weekly.
+type Tab = "programs" | "make" | "capacity";
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
 const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
@@ -22,7 +23,7 @@ const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
 export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState<Tab>(
-    () => readParam(sp, "tab", "programs", ["programs", "make", "buy", "capacity"]) as Tab,
+    () => readParam(sp, "tab", "programs", ["programs", "make", "capacity"]) as Tab,
   );
   useUrlListSync({ tab }, { tab: "programs" });
 
@@ -58,11 +59,10 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
       return { barValues, bucketCounts, unit: "runs", countNoun: "program", renderBucket, empty: "No programs to run in this window." };
     }
 
+    // Only the Make items board reaches here (programs handled above; capacity
+    // renders WeeklyCapacity, not a board).
     type Row = { id: string; code: string; name: string; perWeek: number[]; cumulative: number[]; sub?: string };
-    const rows: Row[] =
-      tab === "buy"
-        ? plan.buy.map((r) => ({ id: r.item_id, code: r.code, name: r.name, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.thicknessMm != null ? `${r.thicknessMm}mm` : undefined }))
-        : (tab === "make" ? plan.make : plan.trade).map((r) => ({ id: r.item_id, code: r.code, name: r.name, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
+    const rows: Row[] = plan.make.map((r) => ({ id: r.item_id, code: r.code, name: r.name, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
     const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.perWeek[i], 0));
     const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.perWeek[i] > 1e-9).length);
     const renderBucket = (i: number): ReactNode => (
@@ -83,10 +83,10 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
     );
     return {
       barValues, bucketCounts,
-      unit: tab === "buy" ? "sheets" : "units",
-      countNoun: tab === "buy" ? "sheet" : "item",
+      unit: "units",
+      countNoun: "item",
       renderBucket,
-      empty: tab === "buy" ? "No raw sheets to cut in this window." : `No ${tab} shortfall in this window.`,
+      empty: "No make shortfall in this window.",
     };
   }, [tab, plan, weeks]);
 
@@ -98,7 +98,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const TABS: { key: Tab; label: string; icon: typeof Hammer; count: number }[] = [
     { key: "programs", label: "Programs to run", icon: Hammer, count: plan.programs.length },
     { key: "make", label: "Make", icon: Wrench, count: plan.make.length },
-    { key: "buy", label: "Buy list (sheets)", icon: Package, count: plan.buy.length },
     { key: "capacity", label: "Machine load", icon: Gauge, count: machineCount },
   ];
 
