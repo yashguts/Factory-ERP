@@ -73,11 +73,15 @@ export function ProductionPlanClient({
             sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
           />
         )}
-        <StatTile
-          label="Can't explode"
-          value={plan.unresolved.length}
-          tone={plan.unresolved.length > 0 ? "warn" : "default"}
-        />
+        {/* "Can't explode" = make items missing a program/parts list — a Make
+            data-quality flag, not relevant to the Trade buy list. */}
+        {section === "make" && (
+          <StatTile
+            label="Can't explode"
+            value={plan.unresolved.length}
+            tone={plan.unresolved.length > 0 ? "warn" : "default"}
+          />
+        )}
       </StatStrip>
 
       <PlanFilters rows={filterRows} value={filter} onChange={setFilter} />
@@ -108,7 +112,7 @@ export function ProductionPlanClient({
         </div>
       )}
 
-      {plan.unresolved.length > 0 && (
+      {section === "make" && plan.unresolved.length > 0 && (
         <Card className="mt-4">
           <SectionHeader
             title={
