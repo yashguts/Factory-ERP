@@ -64,11 +64,15 @@ export function ProductionPlanClient({
       <StatStrip className="mb-3">
         <StatTile label="Raw materials" value={rawMaterials.length} sub={`${rawShortfall} short`} />
         <StatTile label="Purchased parts" value={purchased.length} />
-        <StatTile
-          label="Programs to run"
-          value={plan.programRuns.length}
-          sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
-        />
+        {/* Programs to run / machine time is a Make concern (it's on Make Plan),
+            not part of the Trade buy list — only show it on the make section. */}
+        {section === "make" && (
+          <StatTile
+            label="Programs to run"
+            value={plan.programRuns.length}
+            sub={totalMachineSeconds > 0 ? `${formatDuration(totalMachineSeconds)} machine time (gross)` : undefined}
+          />
+        )}
         <StatTile
           label="Can't explode"
           value={plan.unresolved.length}
@@ -96,9 +100,13 @@ export function ProductionPlanClient({
         />
       </div>
 
-      <div className="mt-4">
-        <ProgramRunsSection runs={plan.programRuns} />
-      </div>
+      {/* Program runs & machine time = shop workload, lives on Make Plan. The
+          Trade buy list is only "what to buy", so this is hidden here. */}
+      {section === "make" && (
+        <div className="mt-4">
+          <ProgramRunsSection runs={plan.programRuns} />
+        </div>
+      )}
 
       {plan.unresolved.length > 0 && (
         <Card className="mt-4">
