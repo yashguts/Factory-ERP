@@ -52,9 +52,15 @@ const PAGE_SIZE = 50;
 interface Props {
   initialData: MrpRow[];
   initialCutoffDate?: string;
+  /**
+   * When set, the page is locked to one procurement side (its own sidebar
+   * section): the Make/Trade/All tab row is hidden and every total, filter and
+   * the toolbar are scoped to this side. Omit for the legacy combined view.
+   */
+  section?: "make" | "trade";
 }
 
-export function MrpClient({ initialData, initialCutoffDate }: Props) {
+export function MrpClient({ initialData, initialCutoffDate, section }: Props) {
   // Tab + filters live in the URL too (alongside ?date=), so switching to the
   // Programs/Buy-list views and coming back — or pressing Back from a job —
   // restores the exact same view.
@@ -66,10 +72,12 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>(
     () => readParam(sp, "show", "all", ["all", "shortfall", "excess", "zero"]) as ShortfallFilter,
   );
-  // Top-level Make/Trade split. Defaults to "trade" since procurement is
-  // usually the actionable bottleneck — flip to "make" or "all" any time.
+  // Top-level Make/Trade split. When the page belongs to a Make-only or
+  // Trade-only sidebar section, `section` locks the scope and the tab row is
+  // hidden; otherwise it defaults to "trade" (the actionable bottleneck) and the
+  // user can flip to "make" or "all".
   const [procurementTab, setProcurementTab] = useState<ProcurementTab>(
-    () => readParam(sp, "tab", "trade", ["all", "trade", "make"]) as ProcurementTab,
+    () => section ?? (readParam(sp, "tab", "trade", ["all", "trade", "make"]) as ProcurementTab),
   );
   // On-order / To-buy (outstanding-PO netting) applies to purchased Trade
   // items; hide those columns on the Make tab where POs don't apply.
@@ -84,9 +92,14 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
   // Date cutoff comes from the URL (?date=); the shared MrpToolbar drives changes.
   const cutoffDate = initialCutoffDate ?? "";
 
+  // When locked to a section the scope lives in the route, so don't write ?tab=.
   useUrlListSync(
-    { q: search, type: typeFilter, show: shortfallFilter, tab: procurementTab, sort: sortKey, dir: sortDir, page },
-    { q: "", type: "all", show: "all", tab: "trade", sort: "shortfall", dir: "desc", page: 1 },
+    section
+      ? { q: search, type: typeFilter, show: shortfallFilter, sort: sortKey, dir: sortDir, page }
+      : { q: search, type: typeFilter, show: shortfallFilter, tab: procurementTab, sort: sortKey, dir: sortDir, page },
+    section
+      ? { q: "", type: "all", show: "all", sort: "shortfall", dir: "desc", page: 1 }
+      : { q: "", type: "all", show: "all", tab: "trade", sort: "shortfall", dir: "desc", page: 1 },
   );
 
   // Rows restricted to the active Make/Trade tab. All downstream filters
@@ -209,11 +222,17 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
 
   return (
     <div>
-      <MrpToolbar view="requirements" date={cutoffDate} />
+      <MrpToolbar view="requirements" date={cutoffDate} section={section} />
 
       {/* Header — title + inline item count / cutoff meta */}
       <PageHeader
-        title="MRP — Material Requirements"
+        title={
+          section === "make"
+            ? "Make MRP — Requirements"
+            : section === "trade"
+              ? "Trade MRP — Requirements"
+              : "MRP — Material Requirements"
+        }
         meta={
           <>
             {sorted.length} of {tabRows.length} items in this tab
@@ -224,18 +243,21 @@ export function MrpClient({ initialData, initialCutoffDate }: Props) {
 
       {/* Procurement Type Tabs — split MRP into procurement vs production
           planning views. Switching tabs scopes the table, summary cards
-          and all downstream filters. */}
-      <Tabs
-        variant="underline"
-        className="mb-4"
-        value={procurementTab}
-        onChange={(v) => { setProcurementTab(v as ProcurementTab); resetPage(); }}
-        tabs={[
-          { value: "trade", label: "Trade · To Procure", count: tabCounts.trade },
-          { value: "make", label: "Make · To Manufacture", count: tabCounts.make },
-          { value: "all", label: "All", count: tabCounts.all },
-        ]}
-      />
+          and all downstream filters. Hidden when the page is already locked to
+          one side via its sidebar section (Make MRP / Trade MRP). */}
+      {!section && (
+        <Tabs
+          variant="underline"
+          className="mb-4"
+          value={procurementTab}
+          onChange={(v) => { setProcurementTab(v as ProcurementTab); resetPage(); }}
+          tabs={[
+            { value: "trade", label: "Trade · To Procure", count: tabCounts.trade },
+            { value: "make", label: "Make · To Manufacture", count: tabCounts.make },
+            { value: "all", label: "All", count: tabCounts.all },
+          ]}
+        />
+      )}
 
       {/* Summary stats — computed off the active-tab slice */}
       <StatStrip className="mb-3">

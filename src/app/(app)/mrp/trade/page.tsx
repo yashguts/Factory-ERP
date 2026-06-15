@@ -5,7 +5,10 @@ interface Props {
   searchParams: Promise<{ date?: string }>;
 }
 
-export default async function MrpPage({ searchParams }: Props) {
+// Trade MRP — the bought-in side of the requirements table, locked to trade
+// items (its own sidebar section). Shares getMrpData with the Make side, so the
+// on-order / to-buy PO netting and derived trade-part demand are identical.
+export default async function TradeMrpPage({ searchParams }: Props) {
   const params = await searchParams;
   const cutoffDate = params.date || undefined;
   const data = await getMrpData(cutoffDate);
@@ -14,7 +17,7 @@ export default async function MrpPage({ searchParams }: Props) {
     <MrpClient
       initialData={data}
       initialCutoffDate={cutoffDate}
-      section="make"
+      section="trade"
     />
   );
 }

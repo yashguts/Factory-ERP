@@ -9,10 +9,12 @@ import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
-import { Hammer, ShoppingCart, Wrench, Package, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Hammer, Wrench, Package, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
-type Tab = "programs" | "make" | "trade" | "buy" | "capacity";
+// Trade has its own sidebar section (/mrp/trade/weekly), so the Make weekly
+// board no longer carries a Trade tab.
+type Tab = "programs" | "make" | "buy" | "capacity";
 
 const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
 const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
@@ -20,7 +22,7 @@ const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
 export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState<Tab>(
-    () => readParam(sp, "tab", "programs", ["programs", "make", "trade", "buy", "capacity"]) as Tab,
+    () => readParam(sp, "tab", "programs", ["programs", "make", "buy", "capacity"]) as Tab,
   );
   useUrlListSync({ tab }, { tab: "programs" });
 
@@ -96,19 +98,18 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const TABS: { key: Tab; label: string; icon: typeof Hammer; count: number }[] = [
     { key: "programs", label: "Programs to run", icon: Hammer, count: plan.programs.length },
     { key: "make", label: "Make", icon: Wrench, count: plan.make.length },
-    { key: "trade", label: "Trade", icon: ShoppingCart, count: plan.trade.length },
     { key: "buy", label: "Buy list (sheets)", icon: Package, count: plan.buy.length },
     { key: "capacity", label: "Machine load", icon: Gauge, count: machineCount },
   ];
 
   return (
     <div>
-      <MrpToolbar view="weekly" date="" />
+      <MrpToolbar view="weekly" date="" section="make" />
 
       <PageHeader
-        title="MRP — Weekly Plan"
+        title="Make MRP — Weekly Plan"
         meta={`${plan.totals.globalRuns} program runs · ${plan.totals.globalSheets} sheets · next 8 weeks`}
-        subtitle="Cumulative material plan, week by week."
+        subtitle="Cumulative production plan, week by week."
       />
 
       {/* Totals */}
@@ -116,7 +117,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         <StatTile label="Program runs" value={plan.totals.globalRuns} />
         <StatTile label="Sheets to cut" value={plan.totals.globalSheets} />
         <StatTile label="Make items" value={plan.totals.makeShortfallItems} />
-        <StatTile label="Trade items" value={plan.totals.tradeShortfallItems} />
         {plan.blocked.length > 0 && (
           <StatTile label="Blocked" value={plan.blocked.length} tone="warn" />
         )}

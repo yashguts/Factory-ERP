@@ -7,12 +7,22 @@ import { CalendarDays, CalendarRange, ListChecks, Hammer, ShoppingCart, X } from
 import { cn } from "@/lib/utils";
 
 export type MrpView = "requirements" | "programs" | "buy" | "weekly";
+export type MrpSection = "make" | "trade";
 
-const VIEWS: { key: MrpView; label: string; href: string; icon: typeof ListChecks }[] = [
+type ViewDef = { key: MrpView; label: string; href: string; icon: typeof ListChecks };
+
+// The MRP is split into two sidebar sections: Make (the manufacturing side —
+// requirements, programs to run, sheets, weekly) and Trade (the bought-in side —
+// requirements + a weekly short-list). Each section gets its own view switcher.
+const MAKE_VIEWS: ViewDef[] = [
   { key: "requirements", label: "Requirements", href: "/mrp", icon: ListChecks },
   { key: "programs", label: "Programs to run", href: "/mrp/make-plan", icon: Hammer },
   { key: "buy", label: "Buy list", href: "/mrp/plan", icon: ShoppingCart },
   { key: "weekly", label: "Weekly plan", href: "/mrp/weekly", icon: CalendarRange },
+];
+const TRADE_VIEWS: ViewDef[] = [
+  { key: "requirements", label: "Requirements", href: "/mrp/trade", icon: ListChecks },
+  { key: "weekly", label: "Weekly plan", href: "/mrp/trade/weekly", icon: CalendarRange },
 ];
 
 const ymd = (d: Date) =>
@@ -23,9 +33,18 @@ const ymd = (d: Date) =>
  * Buy list) plus one date control. Pick the cutoff once and switch views with it
  * preserved. Changing the date navigates within the CURRENT view.
  */
-export function MrpToolbar({ view, date }: { view: MrpView; date: string }) {
+export function MrpToolbar({
+  view,
+  date,
+  section = "make",
+}: {
+  view: MrpView;
+  date: string;
+  section?: MrpSection;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const VIEWS = section === "trade" ? TRADE_VIEWS : MAKE_VIEWS;
   const current = VIEWS.find((v) => v.key === view)!;
   const q = (d: string) => (d ? `?date=${d}` : "");
   const go = (d: string) => startTransition(() => router.push(`${current.href}${q(d)}`));
