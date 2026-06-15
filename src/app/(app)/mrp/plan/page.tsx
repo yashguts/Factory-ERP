@@ -1,12 +1,12 @@
-import { getProductionPlan } from "@/lib/actions/mrp";
-import { ProductionPlanClient } from "@/components/mrp/production-plan-client";
+import { redirect } from "next/navigation";
 
 interface Props {
   searchParams: Promise<{ date?: string }>;
 }
 
-export default async function ProductionPlanPage({ searchParams }: Props) {
+// The Buy list moved to Trade MRP (/mrp/trade/buy) — buying steel/parts is a
+// trade activity. Keep this path working for old links/bookmarks.
+export default async function ProductionPlanRedirect({ searchParams }: Props) {
   const { date } = await searchParams;
-  const plan = await getProductionPlan(date || undefined);
-  return <ProductionPlanClient plan={plan} />;
+  redirect(`/mrp/trade/buy${date ? `?date=${encodeURIComponent(date)}` : ""}`);
 }

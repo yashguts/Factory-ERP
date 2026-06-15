@@ -21,7 +21,15 @@ import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } fro
 import { formatDuration } from "@/lib/utils";
 import type { ProductionPlan, PlanLeaf, ProgramRunPlan } from "@/lib/actions/mrp";
 
-export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
+export function ProductionPlanClient({
+  plan,
+  section = "trade",
+}: {
+  plan: ProductionPlan;
+  // The raw-material buy list (steel sheets/plates + bought parts) is all
+  // purchased, so it lives under the Trade MRP section.
+  section?: "make" | "trade";
+}) {
   const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
   const filterRows = [...plan.rawMaterials, ...plan.purchased].map((r) => ({ type: r.type, category: r.category, subCategory: r.subCategory }));
   const rawMaterials = plan.rawMaterials.filter((r) => planMatches(r, filter));
@@ -34,7 +42,7 @@ export function ProductionPlanClient({ plan }: { plan: ProductionPlan }) {
 
   return (
     <div>
-      <MrpToolbar view="buy" date={plan.cutoffDate ?? ""} />
+      <MrpToolbar view="buy" date={plan.cutoffDate ?? ""} section={section} />
       <PageHeader
         icon={<Factory size={18} />}
         title="Raw Material Plan"

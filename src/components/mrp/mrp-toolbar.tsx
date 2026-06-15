@@ -17,11 +17,11 @@ type ViewDef = { key: MrpView; label: string; href: string; icon: typeof ListChe
 const MAKE_VIEWS: ViewDef[] = [
   { key: "requirements", label: "Requirements", href: "/mrp", icon: ListChecks },
   { key: "programs", label: "Programs to run", href: "/mrp/make-plan", icon: Hammer },
-  { key: "buy", label: "Buy list", href: "/mrp/plan", icon: ShoppingCart },
   { key: "weekly", label: "Weekly plan", href: "/mrp/weekly", icon: CalendarRange },
 ];
 const TRADE_VIEWS: ViewDef[] = [
   { key: "requirements", label: "Requirements", href: "/mrp/trade", icon: ListChecks },
+  { key: "buy", label: "Buy list", href: "/mrp/trade/buy", icon: ShoppingCart },
   { key: "weekly", label: "Weekly plan", href: "/mrp/trade/weekly", icon: CalendarRange },
 ];
 
