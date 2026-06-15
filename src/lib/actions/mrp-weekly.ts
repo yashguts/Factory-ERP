@@ -42,7 +42,9 @@ export interface WeeklyItemRow {
   code: string;
   name: string;
   uom: string | null;
-  category: string | null;
+  category: string | null; // direct (sub-)category
+  /** Top-level category name — the weekly board groups items under this. */
+  topCategory: string | null;
   procurement_type: "make" | "trade" | null;
   perWeek: number[]; // incremental shortfall per bucket
   cumulative: number[]; // cumulative shortfall by end of bucket
@@ -154,6 +156,7 @@ interface ItemMeta {
   item_type: string;
   uom: string | null;
   category_name: string | null;
+  top_category: string | null;
   procurement_type: "make" | "trade" | null;
   stock: number;
 }
@@ -297,13 +300,33 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   // item meta + stock for every demanded item (same shape as getMrpData)
   const itemMeta = new Map<string, ItemMeta>();
   {
+    // Top-level category per item, for the board's category-wise grouping.
+    const catTree = new Map<string, { name: string | null; parent_id: string | null }>();
+    {
+      const { data } = await supabase.from("item_categories").select("id, name, parent_id");
+      for (const c of data ?? []) catTree.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
+    }
+    const topCatOf = (catId: string | null): string | null => {
+      let id = catId, last: string | null = null;
+      const seen = new Set<string>();
+      while (id && !seen.has(id)) {
+        seen.add(id);
+        const c = catTree.get(id);
+        if (!c) break;
+        last = c.name ?? last;
+        if (!c.parent_id) return c.name ?? last;
+        id = c.parent_id;
+      }
+      return last;
+    };
+
     const ids = [...demandByItemWeek.keys()];
     const batches = [];
     for (let i = 0; i < ids.length; i += 200) {
       batches.push(
         supabase
           .from("items")
-          .select(`id, code, name, item_type, procurement_type, category:item_categories!items_category_id_fkey(name, procurement_type), uom:units_of_measurement(abbreviation), inventory(quantity)`)
+          .select(`id, code, name, item_type, procurement_type, category_id, category:item_categories!items_category_id_fkey(name, procurement_type), uom:units_of_measurement(abbreviation), inventory(quantity)`)
           .in("id", ids.slice(i, i + 200)),
       );
     }
@@ -318,7 +341,8 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
           (item.procurement_type as "make" | "trade" | null) ?? ((cat?.procurement_type ?? null) as "make" | "trade" | null);
         itemMeta.set(item.id as string, {
           code: item.code as string, name: item.name as string, item_type: item.item_type as string,
-          uom: (uom?.abbreviation as string) ?? null, category_name: (cat?.name as string) ?? null, procurement_type, stock,
+          uom: (uom?.abbreviation as string) ?? null, category_name: (cat?.name as string) ?? null,
+          top_category: topCatOf((item.category_id as string | null) ?? null), procurement_type, stock,
         });
       }
     }
@@ -395,7 +419,7 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
       const { cumulative, incremental } = cumulativeShortfall(l.demandByItemWeek.get(id)!, m.stock, onOrderByItemWeek.get(id) ?? []);
       const total = cumulative[N - 1];
       if (total <= 0) continue;
-      rows.push({ item_id: id, code: m.code, name: m.name, uom: m.uom, category: m.category_name, procurement_type: m.procurement_type, perWeek: incremental, cumulative, total });
+      rows.push({ item_id: id, code: m.code, name: m.name, uom: m.uom, category: m.category_name, topCategory: m.top_category, procurement_type: m.procurement_type, perWeek: incremental, cumulative, total });
     }
     rows.sort((a, b) => b.total - a.total);
     return rows;

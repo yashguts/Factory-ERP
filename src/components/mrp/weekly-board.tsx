@@ -9,6 +9,62 @@ import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
 const CHART_H = 110; // px, tallest bar
 
+const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
+
+export interface WeeklyGroupRow {
+  id: string;
+  code: string;
+  name: string;
+  topCategory: string | null;
+  perWeek: number[];
+  cumulative: number[];
+  sub?: string;
+}
+
+/**
+ * Render one week's item list GROUPED BY TOP-LEVEL CATEGORY (a sub-header per
+ * category with its item count + weekly total, items sorted by qty). Shared by the
+ * Make and Trade weekly boards so both split the same way. Pass as renderBucket.
+ */
+export function groupedItemBucket(rows: WeeklyGroupRow[], i: number): ReactNode {
+  const present = rows.filter((r) => r.perWeek[i] > 1e-9);
+  const byCat = new Map<string, WeeklyGroupRow[]>();
+  for (const r of present) {
+    const cat = r.topCategory || "Uncategorised";
+    const arr = byCat.get(cat);
+    if (arr) arr.push(r);
+    else byCat.set(cat, [r]);
+  }
+  const cats = [...byCat.keys()].sort((a, b) => a.localeCompare(b));
+  return (
+    <div className="space-y-2.5">
+      {cats.map((cat) => {
+        const items = byCat.get(cat)!.sort((a, b) => b.perWeek[i] - a.perWeek[i]);
+        const catTotal = items.reduce((s, r) => s + r.perWeek[i], 0);
+        return (
+          <div key={cat}>
+            <div className="mb-1 flex items-baseline justify-between gap-2 px-2">
+              <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{cat}</span>
+              <span className="text-[11px] tabular-nums text-[var(--muted-foreground)]">{items.length} · +{fmtQty(catTotal)}</span>
+            </div>
+            <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
+              {items.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--muted)]">
+                  <span className="shrink-0 font-mono text-xs font-semibold">{r.code}</span>
+                  <span className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)]" title={r.name}>{r.name}</span>
+                  {r.sub && <span className="shrink-0 text-[11px] text-[var(--muted-foreground)]">{r.sub}</span>}
+                  <span className="shrink-0 text-sm font-semibold tabular-nums">+{fmtQty(r.perWeek[i])}</span>
+                  <span className="w-[68px] shrink-0 text-right text-[11px] tabular-nums text-[var(--muted-foreground)]">cum {fmtQty(r.cumulative[i])}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export interface WeeklyBoardProps {
   weeks: WeekMeta[];
   /** Per-bucket bar value (units / runs / sheets this week). */

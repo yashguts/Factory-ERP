@@ -4,7 +4,7 @@ import { useMemo, useState, type ReactNode } from "react";
 import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import { WeeklyBoard } from "@/components/mrp/weekly-board";
+import { WeeklyBoard, groupedItemBucket, type WeeklyGroupRow } from "@/components/mrp/weekly-board";
 import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
@@ -17,7 +17,6 @@ import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 // a trade activity and lives under Trade weekly.
 type Tab = "programs" | "make" | "capacity";
 
-const fmtQty = (n: number) => (Number.isInteger(n) ? n.toString() : (Math.round(n * 10) / 10).toString());
 const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
 
 export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
@@ -60,32 +59,15 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
     }
 
     // Only the Make items board reaches here (programs handled above; capacity
-    // renders WeeklyCapacity, not a board).
-    type Row = { id: string; code: string; name: string; perWeek: number[]; cumulative: number[]; sub?: string };
-    const rows: Row[] = plan.make.map((r) => ({ id: r.item_id, code: r.code, name: r.name, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
+    // renders WeeklyCapacity, not a board). Grouped by top-level category.
+    const rows: WeeklyGroupRow[] = plan.make.map((r) => ({ id: r.item_id, code: r.code, name: r.name, topCategory: r.topCategory, perWeek: r.perWeek, cumulative: r.cumulative, sub: r.uom ?? undefined }));
     const barValues = weeks.map((_, i) => rows.reduce((s, r) => s + r.perWeek[i], 0));
     const bucketCounts = weeks.map((_, i) => rows.filter((r) => r.perWeek[i] > 1e-9).length);
-    const renderBucket = (i: number): ReactNode => (
-      <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
-        {rows
-          .filter((r) => r.perWeek[i] > 1e-9)
-          .sort((a, b) => b.perWeek[i] - a.perWeek[i])
-          .map((r) => (
-            <div key={r.id} className="flex items-center gap-2 rounded-md px-2 py-1.5 hover:bg-[var(--muted)]">
-              <span className="font-mono text-xs font-semibold shrink-0">{r.code}</span>
-              <span className="min-w-0 flex-1 truncate text-sm text-[var(--muted-foreground)]" title={r.name}>{r.name}</span>
-              {r.sub && <span className="text-[11px] text-[var(--muted-foreground)] shrink-0">{r.sub}</span>}
-              <span className="text-sm font-semibold tabular-nums shrink-0">+{fmtQty(r.perWeek[i])}</span>
-              <span className="text-[11px] text-[var(--muted-foreground)] tabular-nums shrink-0 w-[68px] text-right">cum {fmtQty(r.cumulative[i])}</span>
-            </div>
-          ))}
-      </div>
-    );
     return {
       barValues, bucketCounts,
       unit: "units",
       countNoun: "item",
-      renderBucket,
+      renderBucket: (i: number) => groupedItemBucket(rows, i),
       empty: "No make shortfall in this window.",
     };
   }, [tab, plan, weeks]);
