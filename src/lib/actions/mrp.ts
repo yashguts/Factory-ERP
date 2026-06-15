@@ -13,6 +13,10 @@ export interface MrpRow {
   item_name: string;
   item_type: string;
   category_name: string | null;
+  /** Top-level (root) category, resolved by walking parent_id to the tree root.
+   *  Drives the category grouping on the Requirements pages. Null when the item
+   *  has no category at all. */
+  top_category_name: string | null;
   uom_abbreviation: string | null;
   total_required: number;
   total_stock: number;
@@ -67,6 +71,27 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
 }
 
 /**
+ * Ad-hoc shortfall for an explicit set of jobs (the /mrp/shortfall tool). NOT
+ * cached — the job set is user-chosen and effectively unique per request, so a
+ * cache would rarely hit and would need awkward invalidation. Mirrors the MRP
+ * table math (includeDerivedTrade on: trade leaves + component rules + drive-type
+ * demand), scoped to exactly these jobs. Returns make AND trade rows; the client
+ * groups them by category. status/cutoff are ignored — the owner picked the jobs.
+ */
+export async function getAdHocShortfall(jobIds: string[]): Promise<MrpRow[]> {
+  if (!jobIds || jobIds.length === 0) return [];
+  return _getMrpDataUncached(undefined, true, jobIds);
+}
+
+/** The hard-coded drive-type demand rules, exposed for the Settings rule doc.
+ *  (Can't export the const itself from a "use server" module.) */
+export async function getJobDriveDemandRules(): Promise<
+  { code: string; driveTypes: string[]; qtyPerJob: number }[]
+> {
+  return JOB_DRIVE_DEMAND;
+}
+
+/**
  * @param includeDerivedTrade  Fold trade parts consumed by made items (via
  *   item_bom_lines) into demand. OFF by default so explosion/optimiser consumers
  *   (getProductionPlan, the locked make-plan) keep exploding DIRECT demand and
@@ -76,12 +101,23 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
 export async function _getMrpDataUncached(
   cutoffDate?: string,
   includeDerivedTrade = false,
+  /**
+   * Ad-hoc scope: when a non-null list is given, demand is computed for EXACTLY
+   * these job ids (the status=in_production filter and the cutoff date are both
+   * ignored — the owner explicitly picked the jobs). Requirement-stage scoping and
+   * dispatch netting still apply, so the result matches what MRP would attribute to
+   * those jobs. Used by getAdHocShortfall; null/undefined keeps the normal behaviour.
+   */
+  jobIds?: string[] | null,
 ): Promise<MrpRow[]> {
   const supabase = createCacheClient();
+  const adHoc = jobIds != null;
+  if (adHoc && jobIds!.length === 0) return [];
 
   // Demand comes ONLY from jobs in production (exclude new/hold), optionally within
   // the "dispatch date up to" cutoff. Capture each job's requirement_stage so a
-  // first-phase job pulls only its first-phase material.
+  // first-phase job pulls only its first-phase material. In ad-hoc mode we scope to
+  // the explicit id list instead.
   const stageByJob = new Map<string, string>();
   // drive_type per in-production (in-scope) job, for the job-attribute demand rules.
   const driveByJob = new Map<string, string | null>();
@@ -90,9 +126,13 @@ export async function _getMrpDataUncached(
       (from, to, withCount) => {
         let q = supabase
           .from("jobs")
-          .select("id, requirement_stage, drive_type", withCount ? { count: "exact" } : {})
-          .eq("status", "in_production");
-        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+          .select("id, requirement_stage, drive_type", withCount ? { count: "exact" } : {});
+        if (adHoc) {
+          q = q.in("id", jobIds!);
+        } else {
+          q = q.eq("status", "in_production");
+          if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        }
         return q.range(from, to);
       },
     );
@@ -240,8 +280,14 @@ export async function _getMrpDataUncached(
 
   const itemIds = Array.from(reqMap.keys());
 
+  // Category tree -> resolve each item's TOP-LEVEL category (walk parent_id to the
+  // root). Drives the by-category grouping on the Requirements pages. Cheap: the
+  // categories table is small, one read.
+  const topCatOf = await buildTopCategoryResolver(supabase);
+
   // Fetch the items (with stock) for the required item ids. The header -> job map
-  // was already built up front (and used for the stage scope above).
+  // was already built up front (and used for the stage scope above). category_id is
+  // selected alongside the joined category so we can resolve the top-level parent.
   const allItems: any[] = [];
   {
     const batches = [];
@@ -250,7 +296,7 @@ export async function _getMrpDataUncached(
         supabase
           .from("items")
           .select(`
-            id, code, name, item_type, procurement_type,
+            id, code, name, item_type, procurement_type, category_id,
             category:item_categories!items_category_id_fkey(name, procurement_type),
             uom:units_of_measurement(abbreviation),
             inventory(quantity)
@@ -298,6 +344,7 @@ export async function _getMrpDataUncached(
       item_name: item.name,
       item_type: item.item_type,
       category_name: item.category?.name ?? null,
+      top_category_name: topCatOf(item.category_id ?? null),
       uom_abbreviation: item.uom?.abbreviation ?? null,
       total_required: req.total,
       total_stock: totalStock,
@@ -341,6 +388,40 @@ async function effectiveProcurement(
     }
   }
   return out;
+}
+
+/**
+ * Loads the category tree and returns a resolver that maps an item's (leaf)
+ * category_id to its TOP-LEVEL category name (walking parent_id to the root).
+ * Cycle-guarded. Returns null for items with no category. Mirrors the topCatOf
+ * helper inside getProductionPlan; kept local so the MRP read stays self-contained.
+ */
+async function buildTopCategoryResolver(
+  supabase: ReturnType<typeof createCacheClient>,
+): Promise<(catId: string | null) => string | null> {
+  const { data, error } = await supabase
+    .from("item_categories")
+    .select("id, name, parent_id");
+  if (error) throw error;
+  const catById = new Map<string, { name: string | null; parent_id: string | null }>();
+  for (const c of data ?? [])
+    catById.set(c.id as string, {
+      name: (c.name as string) ?? null,
+      parent_id: (c.parent_id as string | null) ?? null,
+    });
+  return (catId: string | null): string | null => {
+    if (!catId) return null;
+    let cid = catId;
+    const seen = new Set<string>();
+    for (;;) {
+      if (seen.has(cid)) break;
+      seen.add(cid);
+      const parent = catById.get(cid)?.parent_id;
+      if (!parent) break;
+      cid = parent;
+    }
+    return catById.get(cid)?.name ?? null;
+  };
 }
 
 /**
