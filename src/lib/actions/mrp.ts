@@ -32,6 +32,26 @@ export interface MrpRow {
   procurement_type: "make" | "trade" | null;
 }
 
+/** A demand accumulator entry. `jobIds` carries the contributing jobs directly
+ *  for demand that isn't tied to a BOM header (job-attribute rules below). */
+type ReqEntry = { total: number; bomIds: Set<string>; jobIds?: Set<string> };
+
+/**
+ * Job-attribute demand rules — parts a lift needs based on the job's drive_type,
+ * NOT via the BOM (these parts aren't components of any BOM item, so they can't be
+ * modelled with item_bom_lines). Counted per in-production job whose drive_type
+ * matches, `qtyPerJob` each, regardless of requirement stage (owner's rule).
+ * Owner (2026-06-15): Home/Belt lifts need 4× Main guide-shoe liner (GS-002) and
+ * 4× Home guide-shoe liner (GS-005). Add new drive-type rules here.
+ *
+ * Only folded in when includeDerivedTrade is on (getMrpData table + Procurement);
+ * the optimiser / production plan never see these (they're bought, not made).
+ */
+const JOB_DRIVE_DEMAND: { code: string; driveTypes: string[]; qtyPerJob: number }[] = [
+  { code: "GS-002", driveTypes: ["HOME", "BELT"], qtyPerJob: 4 },
+  { code: "GS-005", driveTypes: ["HOME", "BELT"], qtyPerJob: 4 },
+];
+
 export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
   const key = cutoffDate ?? "__all__";
   return unstable_cache(
@@ -63,12 +83,14 @@ export async function _getMrpDataUncached(
   // the "dispatch date up to" cutoff. Capture each job's requirement_stage so a
   // first-phase job pulls only its first-phase material.
   const stageByJob = new Map<string, string>();
+  // drive_type per in-production (in-scope) job, for the job-attribute demand rules.
+  const driveByJob = new Map<string, string | null>();
   {
-    const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null }>(
+    const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; drive_type: string | null }>(
       (from, to, withCount) => {
         let q = supabase
           .from("jobs")
-          .select("id, requirement_stage", withCount ? { count: "exact" } : {})
+          .select("id, requirement_stage, drive_type", withCount ? { count: "exact" } : {})
           .eq("status", "in_production");
         if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
         return q.range(from, to);
@@ -76,8 +98,10 @@ export async function _getMrpDataUncached(
     );
     // No Required set ⇒ treat as "new" (counts nothing), never "full". A blank
     // requirement must not silently pull a job's entire BOM into demand.
-    for (const j of jobs)
+    for (const j of jobs) {
       stageByJob.set(j.id, j.requirement_stage ?? "new");
+      driveByJob.set(j.id, j.drive_type ?? null);
+    }
   }
   if (stageByJob.size === 0) return [];
   const prodJobIds = Array.from(stageByJob.keys());
@@ -156,7 +180,7 @@ export async function _getMrpDataUncached(
   // total = sum of NET required_quantity across all BOM lines for the item,
   // where net = required − dispatched (floored at 0). Lines fully dispatched
   // contribute nothing; an item whose lines all net to 0 drops out entirely.
-  const reqMap = new Map<string, { total: number; bomIds: Set<string> }>();
+  const reqMap = new Map<string, ReqEntry>();
   for (const line of allLines) {
     // Requirement-stage scope: full_material -> all sections; first_phase ->
     // first-phase sections only; new -> nothing (not yet required).
@@ -184,8 +208,6 @@ export async function _getMrpDataUncached(
     }
   }
 
-  if (reqMap.size === 0) return [];
-
   // ── Derived demand: trade parts consumed by made items ────────────────────
   // A purchased (trade) part can sit UNDER a made item via its assembly parts
   // list (item_bom_lines) — e.g. a Collapsible Gate is "built from" 15 cast-iron
@@ -198,7 +220,14 @@ export async function _getMrpDataUncached(
   // purchased list), and resolves children by the stored representative
   // (child_item_id) — exact for the current data (all 'neutral'); revisit to share
   // getProductionPlan's finish resolution if finish-banded trade sub-parts appear.
-  if (includeDerivedTrade) await addTradeLeafDemand(supabase, reqMap);
+  if (includeDerivedTrade) {
+    await addTradeLeafDemand(supabase, reqMap);
+    // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
+    // even when the BOM sum is empty, so the emptiness check comes AFTER this.
+    await addJobDriveDemand(supabase, reqMap, driveByJob);
+  }
+
+  if (reqMap.size === 0) return [];
 
   const itemIds = Array.from(reqMap.keys());
 
@@ -237,7 +266,7 @@ export async function _getMrpDataUncached(
       (sum: number, inv: { quantity: number }) => sum + Number(inv.quantity),
       0,
     );
-    const jobIds = new Set<string>();
+    const jobIds = new Set<string>(req.jobIds);
     for (const bid of req.bomIds) {
       const jid = headerToJob.get(bid);
       if (jid) jobIds.add(jid);
@@ -314,7 +343,7 @@ async function effectiveProcurement(
  */
 async function addTradeLeafDemand(
   supabase: ReturnType<typeof createCacheClient>,
-  reqMap: Map<string, { total: number; bomIds: Set<string> }>,
+  reqMap: Map<string, ReqEntry>,
 ): Promise<void> {
   const bomRows = await fetchAllRanged<{ parent_item_id: string; child_item_id: string | null; qty: number }>(
     (from, to, withCount) =>
@@ -369,6 +398,44 @@ async function addTradeLeafDemand(
     const ex = reqMap.get(leaf);
     if (ex) { ex.total += d.total; for (const b of d.bomIds) ex.bomIds.add(b); }
     else reqMap.set(leaf, { total: d.total, bomIds: new Set(d.bomIds) });
+  }
+}
+
+/**
+ * Folds JOB_DRIVE_DEMAND (parts a lift needs by drive_type, not via the BOM) into
+ * `reqMap`. For each rule, qtyPerJob × (in-scope in-production jobs whose drive_type
+ * matches) is added to the item's demand, attributed to those jobs (jobIds), so the
+ * row's job_count is right. driveByJob already reflects the status/cutoff scope; the
+ * owner's rule counts every such in-production job regardless of requirement stage.
+ */
+async function addJobDriveDemand(
+  supabase: ReturnType<typeof createCacheClient>,
+  reqMap: Map<string, ReqEntry>,
+  driveByJob: Map<string, string | null>,
+): Promise<void> {
+  if (JOB_DRIVE_DEMAND.length === 0 || driveByJob.size === 0) return;
+  const codes = [...new Set(JOB_DRIVE_DEMAND.map((r) => r.code))];
+  const { data: items, error } = await supabase.from("items").select("id, code").in("code", codes);
+  if (error) throw error;
+  const idByCode = new Map<string, string>((items ?? []).map((it) => [it.code as string, it.id as string]));
+
+  for (const rule of JOB_DRIVE_DEMAND) {
+    const itemId = idByCode.get(rule.code);
+    if (!itemId) continue;
+    const jobIds = new Set<string>();
+    for (const [jobId, drive] of driveByJob) {
+      if (drive && rule.driveTypes.includes(drive)) jobIds.add(jobId);
+    }
+    if (jobIds.size === 0) continue;
+    const total = rule.qtyPerJob * jobIds.size;
+    const ex = reqMap.get(itemId);
+    if (ex) {
+      ex.total += total;
+      ex.jobIds = ex.jobIds ?? new Set();
+      for (const j of jobIds) ex.jobIds.add(j);
+    } else {
+      reqMap.set(itemId, { total, bomIds: new Set(), jobIds });
+    }
   }
 }
 
@@ -809,11 +876,50 @@ export async function getMrpItemJobs(
   )(itemId, cutoffDate);
 }
 
+/** If `itemId` is a JOB_DRIVE_DEMAND item, the matching in-production jobs as a
+ *  breakdown (qtyPerJob each); otherwise []. Mirrors getMrpData's drive-demand. */
+async function jobDriveBreakdown(
+  supabase: ReturnType<typeof createCacheClient>,
+  itemId: string,
+  cutoffDate?: string,
+): Promise<MrpJobBreakdown[]> {
+  if (JOB_DRIVE_DEMAND.length === 0) return [];
+  const { data: item } = await supabase.from("items").select("code").eq("id", itemId).maybeSingle();
+  const code = (item?.code as string | undefined) ?? undefined;
+  const rule = code ? JOB_DRIVE_DEMAND.find((r) => r.code === code) : undefined;
+  if (!rule) return [];
+  const jobs = await fetchAllRanged<{ id: string; job_number: string; customer_name: string | null; requirement_dispatch_date: string | null }>(
+    (from, to, withCount) => {
+      let q = supabase
+        .from("jobs")
+        .select("id, job_number, customer_name, requirement_dispatch_date", withCount ? { count: "exact" } : {})
+        .eq("status", "in_production")
+        .in("drive_type", rule.driveTypes);
+      if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+      return q.range(from, to);
+    },
+  );
+  return jobs
+    .map((j) => ({
+      job_id: j.id,
+      job_number: j.job_number,
+      customer_name: j.customer_name ?? null,
+      requirement_dispatch_date: j.requirement_dispatch_date ?? null,
+      line_count: 1,
+      total_quantity: rule.qtyPerJob,
+    }))
+    .sort((a, b) => (a.job_number || "").localeCompare(b.job_number || ""));
+}
+
 async function _getMrpItemJobsUncached(
   itemId: string,
   cutoffDate?: string,
 ): Promise<MrpJobBreakdown[]> {
   const supabase = createCacheClient();
+
+  // Job-attribute (drive_type) demand items aren't on any BOM — list their matching
+  // in-production jobs directly so the popover matches the table's job count.
+  const driveJobs = await jobDriveBreakdown(supabase, itemId, cutoffDate);
 
   // Demand for `itemId` may come directly (its own job-BOM lines) AND/OR via
   // assemblies that are "built from" it (e.g. a door shoe inside a collapsible
@@ -843,7 +949,9 @@ async function _getMrpItemJobsUncached(
       .gt("required_quantity", 0)
       .range(from, to),
   );
-  if (allLines.length === 0) return [];
+  // No BOM lines reference this item: if it's a job-attribute item, its breakdown
+  // is the drive-type job list; otherwise there's nothing to show.
+  if (allLines.length === 0) return driveJobs;
 
   // The dispatched-qty batches and the header->job batches both depend only on
   // `allLines` (not on each other), and the chunks within each are independent.
