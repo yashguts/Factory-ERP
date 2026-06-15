@@ -67,6 +67,12 @@ const STAGE_SELECT_COLORS: Record<JobStage, string> = {
   full_material: "bg-emerald-50 text-emerald-700",
 };
 
+// Structure (factory-made / site-fabricated / none) shown per job. NA renders muted.
+const STRUCTURE_BADGE: Record<string, BadgeVariant> = {
+  "Factory-made": "blue",
+  "Site-fabricated": "amber",
+};
+
 type SortKey = "job_number" | "customer" | "status" | "stage" | "req_stage" | "req_dispatch";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
@@ -102,6 +108,9 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   );
   const [doorTypeFilter, setDoorTypeFilter] = useState<string>(() => readParam(sp, "door", "all"));
   const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
+  const [structureFilter, setStructureFilter] = useState<string>(
+    () => readParam(sp, "structure", "all", ["all", "Factory-made", "Site-fabricated", "NA"]),
+  );
   const [sortKey, setSortKey] = useState<SortKey>(
     () => readParam(sp, "sort", "req_dispatch", ["job_number", "customer", "status", "stage", "req_stage", "req_dispatch"]) as SortKey,
   );
@@ -111,8 +120,8 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
-    { view: "active", q: "", status: "all", stage: "all", door: "all", brand: "all", sort: "req_dispatch", dir: "asc", page: 1 },
+    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, structure: structureFilter, sort: sortKey, dir: sortDir, page },
+    { view: "active", q: "", status: "all", stage: "all", door: "all", brand: "all", structure: "all", sort: "req_dispatch", dir: "asc", page: 1 },
   );
 
   // Tab buckets (computed across ALL jobs, independent of the other filters, so
@@ -175,9 +184,10 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
       if (stageFilter !== "all" && job.stage !== stageFilter) return false;
       if (doorTypeFilter !== "all" && job.door_type !== doorTypeFilter) return false;
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
+      if (structureFilter !== "all" && (job.structure_included ?? "NA") !== structureFilter) return false;
       return true;
     });
-  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter]);
+  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter, structureFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -386,6 +396,19 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
             ))}
           </Select>
         )}
+
+        <Select
+          size="sm"
+          value={structureFilter}
+          onChange={(e) => { setStructureFilter(e.target.value); resetPage(); }}
+          className="w-[150px]"
+          title="Filter by structure supply"
+        >
+          <option value="all">All Structure</option>
+          <option value="Factory-made">Factory-made</option>
+          <option value="Site-fabricated">Site-fabricated</option>
+          <option value="NA">No structure</option>
+        </Select>
       </Toolbar>
 
       {/* Week-by-week dispatch board (visual of the same active set) */}
@@ -419,6 +442,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
+                <TableHead title="Structure supply: Factory-made / Site-fabricated / none">Structure</TableHead>
                 <SortHeader
                   label="Sent"
                   sortField="stage"
@@ -456,6 +480,15 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
                     {job.spec_string ? (
                       <span className="font-mono text-xs">{job.spec_string}</span>
                     ) : "-"}
+                  </TableCell>
+                  <TableCell>
+                    {job.structure_included && job.structure_included !== "NA" ? (
+                      <Badge variant={STRUCTURE_BADGE[job.structure_included] ?? "neutral"}>
+                        {job.structure_included}
+                      </Badge>
+                    ) : (
+                      <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                    )}
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <select
