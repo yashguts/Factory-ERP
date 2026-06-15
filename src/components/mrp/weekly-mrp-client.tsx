@@ -9,7 +9,7 @@ import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
 import { PageHeader } from "@/components/ui/page-header";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Tabs } from "@/components/ui/tabs";
-import { Hammer, Wrench, Gauge, AlertTriangle, CheckCircle2 } from "lucide-react";
+import { Hammer, Wrench, Gauge, CheckCircle2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { WeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
 
@@ -134,9 +134,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
         <StatTile label="Program runs" value={plan.totals.globalRuns} />
         <StatTile label="Sheets to cut" value={plan.totals.globalSheets} />
         <StatTile label="Make items" value={plan.totals.makeShortfallItems} />
-        {plan.blocked.length > 0 && (
-          <StatTile label="Blocked" value={plan.blocked.length} tone="warn" />
-        )}
       </StatStrip>
 
       {/* No-over-provisioning proof + out-of-scope note */}
@@ -209,23 +206,6 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
           renderBucket={lane.renderBucket}
           emptyLabel={lane.empty}
         />
-      )}
-
-      {tab === "programs" && plan.blocked.length > 0 && (
-        <div className="mt-4">
-          <h3 className="text-sm font-semibold mb-2 flex items-center gap-1.5 text-[var(--warning)]">
-            <AlertTriangle size={14} /> Can&apos;t make — no audited program ({plan.blocked.length})
-          </h3>
-          <div className="grid grid-cols-1 gap-x-8 lg:grid-cols-2">
-            {plan.blocked.map((b) => (
-              <div key={b.code} className="flex items-center gap-2 px-2 py-1.5 text-sm">
-                <span className="font-mono text-xs font-semibold shrink-0">{b.code}</span>
-                <span className="min-w-0 flex-1 truncate text-[var(--muted-foreground)]" title={b.name}>{b.name}</span>
-                <span className="tabular-nums shrink-0 text-[var(--muted-foreground)]">need {b.need}</span>
-              </div>
-            ))}
-          </div>
-        </div>
       )}
     </div>
   );
