@@ -130,6 +130,87 @@ export const getJobsImportMeta = unstable_cache(
   { revalidate: 600, tags: ["jobs", "bom-lines"] },
 );
 
+/**
+ * Readiness flags for the Dispatch Plan board, so each job row can show — at a
+ * glance — whether it has a Job BOM and a Cabin BOM. (Drawing readiness comes
+ * straight off `jobs.gad_drawing_url`, so it isn't computed here.)
+ *
+ * Returned as plain arrays because this crosses the server→client boundary
+ * (Sets don't serialise). `cabinJobNumbers` are normalised lower(btrim(...)) to
+ * match how `cabin_jobs` is keyed (there is no FK from jobs to cabin_jobs — the
+ * link is the job number text).
+ */
+export interface JobReadinessFlags {
+  /** Job ids that have at least one job_bom_lines row. */
+  bomJobIds: string[];
+  /** Normalised cabin job_numbers that have at least one cabin_job_line. */
+  cabinJobNumbers: string[];
+}
+
+const _getJobReadinessFlagsUncached =
+  async (): Promise<JobReadinessFlags> => {
+    const supabase = createCacheClient();
+
+    // Job BOM: a job is "filled" when one of its headers has ≥1 line.
+    // Read headers (id→job) and lines independently, then join in memory.
+    const [headerRows, lineRows, cabinRows, cabinLineRows] = await Promise.all([
+      fetchAllRanged<{ id: string; job_id: string }>((from, to, withCount) =>
+        supabase
+          .from("job_bom_headers")
+          .select("id, job_id", withCount ? { count: "exact" } : {})
+          .range(from, to),
+      ),
+      fetchAllRanged<{ job_bom_id: string }>((from, to, withCount) =>
+        supabase
+          .from("job_bom_lines")
+          .select("job_bom_id", withCount ? { count: "exact" } : {})
+          .range(from, to),
+      ),
+      fetchAllRanged<{ id: string; job_number: string }>((from, to, withCount) =>
+        supabase
+          .from("cabin_jobs")
+          .select("id, job_number", withCount ? { count: "exact" } : {})
+          .range(from, to),
+      ),
+      fetchAllRanged<{ cabin_job_id: string }>((from, to, withCount) =>
+        supabase
+          .from("cabin_job_lines")
+          .select("cabin_job_id", withCount ? { count: "exact" } : {})
+          .range(from, to),
+      ),
+    ]);
+
+    const headerToJob = new Map<string, string>();
+    for (const h of headerRows) headerToJob.set(h.id, h.job_id);
+    const bomJobIds = new Set<string>();
+    for (const l of lineRows) {
+      const jid = headerToJob.get(l.job_bom_id);
+      if (jid) bomJobIds.add(jid);
+    }
+
+    // Cabin BOM: cabin job ids that have ≥1 line → their normalised numbers.
+    const cabinIdToNumber = new Map<string, string>();
+    for (const c of cabinRows) {
+      cabinIdToNumber.set(c.id, (c.job_number ?? "").trim().toLowerCase());
+    }
+    const cabinJobNumbers = new Set<string>();
+    for (const l of cabinLineRows) {
+      const num = cabinIdToNumber.get(l.cabin_job_id);
+      if (num) cabinJobNumbers.add(num);
+    }
+
+    return {
+      bomJobIds: [...bomJobIds],
+      cabinJobNumbers: [...cabinJobNumbers],
+    };
+  };
+
+export const getJobReadinessFlags = unstable_cache(
+  _getJobReadinessFlagsUncached,
+  ["job-readiness-flags"],
+  { revalidate: 600, tags: ["jobs", "bom-lines", "cabin-jobs"] },
+);
+
 export async function getJobDetail(jobId: string) {
   const supabase = await createClient();
 

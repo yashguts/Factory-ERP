@@ -22,7 +22,7 @@ import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, 
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
-import { updateJob } from "@/lib/actions/jobs";
+import { updateJob, type JobReadinessFlags } from "@/lib/actions/jobs";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
@@ -81,9 +81,15 @@ interface Props {
   initialJobs: Job[];
   unmatchedCount?: number;
   dispatchStatus?: Record<string, DispatchStatus>;
+  readiness?: JobReadinessFlags;
 }
 
-export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {} }: Props) {
+export function JobsClient({
+  initialJobs,
+  unmatchedCount = 0,
+  dispatchStatus = {},
+  readiness = { bomJobIds: [], cabinJobNumbers: [] },
+}: Props) {
   const router = useRouter();
   const toast = useToast();
   const [, startTransition] = useTransition();
@@ -413,7 +419,7 @@ export function JobsClient({ initialJobs, unmatchedCount = 0, dispatchStatus = {
 
       {/* Week-by-week dispatch board (visual of the same active set) */}
       {view === "plan" ? (
-        <DispatchPlanBoard jobs={sorted} dispatchStatus={dispatchStatus} />
+        <DispatchPlanBoard jobs={sorted} dispatchStatus={dispatchStatus} readiness={readiness} />
       ) : /* Table */ paginated.length === 0 ? (
         <div className="card-surface">
           <EmptyState

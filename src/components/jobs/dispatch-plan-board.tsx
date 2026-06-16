@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { CalendarClock, AlertTriangle } from "lucide-react";
+import { CalendarClock, AlertTriangle, FileText, ClipboardList, Package } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -91,6 +91,10 @@ interface PlanJob {
   state: PlanState;
   /** Recorded dispatches still leave items short (only meaningful when sent). */
   hasDues: boolean;
+  /** Readiness at a glance: GAD drawing uploaded, Job BOM filled, Cabin BOM filled. */
+  hasDrawing: boolean;
+  hasBom: boolean;
+  hasCabin: boolean;
 }
 
 interface Display {
@@ -138,13 +142,22 @@ interface Bucket {
 interface Props {
   jobs: Job[];
   dispatchStatus: Record<string, DispatchStatus>;
+  readiness?: { bomJobIds: string[]; cabinJobNumbers: string[] };
 }
 
-export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
+export function DispatchPlanBoard({
+  jobs,
+  dispatchStatus,
+  readiness = { bomJobIds: [], cabinJobNumbers: [] },
+}: Props) {
   const { buckets, chartBuckets, maxTotal, totals } = useMemo(() => {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     const curWeek = startOfWeekMonday(today);
+
+    // Readiness lookups — Job BOM keyed by job id, Cabin BOM by normalised number.
+    const bomSet = new Set(readiness.bomJobIds);
+    const cabinSet = new Set(readiness.cabinJobNumbers);
 
     const overdue: PlanJob[] = [];
     const unscheduled: PlanJob[] = [];
@@ -167,6 +180,9 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
         customer_name: job.customer_name,
         state,
         hasDues: ds === "partial",
+        hasDrawing: !!job.gad_drawing_url,
+        hasBom: bomSet.has(job.id),
+        hasCabin: cabinSet.has(job.job_number.trim().toLowerCase()),
       };
 
       const date = job.requirement_dispatch_date
@@ -271,7 +287,7 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
         total: jobs.length,
       },
     };
-  }, [jobs, dispatchStatus]);
+  }, [jobs, dispatchStatus, readiness]);
 
   if (totals.total === 0) {
     return (
@@ -303,6 +319,19 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
             <span className="font-medium">{totals.overdue}</span> overdue
           </span>
         )}
+
+        {/* Readiness icon key (green = present on a row) */}
+        <span className="ml-auto inline-flex items-center gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
+          <span className="inline-flex items-center gap-1.5">
+            <FileText size={14} className="text-emerald-600" /> Drawing
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <ClipboardList size={14} className="text-emerald-600" /> Job BOM
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <Package size={14} className="text-emerald-600" /> Cabin BOM
+          </span>
+        </span>
       </div>
 
       {/* ── Chart: workload by week, left → right ── */}
@@ -458,6 +487,26 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
                     >
                       {job.customer_name || "—"}
                     </span>
+                    <span className="flex shrink-0 items-center gap-1.5">
+                      <ReadyIcon
+                        Icon={FileText}
+                        on={job.hasDrawing}
+                        onLabel="Drawing attached"
+                        offLabel="No drawing"
+                      />
+                      <ReadyIcon
+                        Icon={ClipboardList}
+                        on={job.hasBom}
+                        onLabel="Job BOM filled"
+                        offLabel="Job BOM empty"
+                      />
+                      <ReadyIcon
+                        Icon={Package}
+                        on={job.hasCabin}
+                        onLabel="Cabin BOM filled"
+                        offLabel="No cabin BOM"
+                      />
+                    </span>
                     <Badge variant={d.variant} className="shrink-0">
                       {d.badge}
                     </Badge>
@@ -469,6 +518,32 @@ export function DispatchPlanBoard({ jobs, dispatchStatus }: Props) {
         ))}
       </div>
     </div>
+  );
+}
+
+/** One readiness indicator: solid emerald when present, faded when missing. */
+function ReadyIcon({
+  Icon,
+  on,
+  onLabel,
+  offLabel,
+}: {
+  Icon: typeof FileText;
+  on: boolean;
+  onLabel: string;
+  offLabel: string;
+}) {
+  return (
+    <Icon
+      size={14}
+      className={cn(
+        "shrink-0",
+        on ? "text-emerald-600" : "text-[var(--muted-foreground)] opacity-25",
+      )}
+      aria-label={on ? onLabel : offLabel}
+    >
+      <title>{on ? onLabel : offLabel}</title>
+    </Icon>
   );
 }
 
