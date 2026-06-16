@@ -3,7 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2 } from "lucide-react";
+import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -52,19 +52,28 @@ const SUPPORT_TO_COVER: Record<string, string> = {
 const coverNameFor = (supportName: string) =>
   supportName.replace("(Glass)", "(Glass) Cover");
 
-export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
+export function CabinJobForm({
+  job,
+  cloneFrom,
+}: {
+  job?: CabinJobDetail | null;
+  /** Seed a NEW job from this existing job's items (job number stays blank). */
+  cloneFrom?: CabinJobDetail | null;
+}) {
   const router = useRouter();
   const toast = useToast();
   const isEditing = !!job;
+  const cloning = !job && !!cloneFrom;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
+  // Editing keeps the job's number; cloning starts blank (it's a new job).
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
 
   const [rowsByType, setRowsByType] = useState<Record<string, Row[]>>(() => {
     const map: Record<string, Row[]> = {};
     for (const t of CABIN_TYPES) map[t] = [];
-    for (const l of job?.lines ?? []) {
+    for (const l of (job ?? cloneFrom)?.lines ?? []) {
       if (!map[l.cabin_type]) map[l.cabin_type] = [];
       map[l.cabin_type].push({
         _key: makeKey(),
@@ -228,6 +237,13 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
         actions={
           <>
             {isEditing && (
+              <Link href={`/cabin-jobs/new?from=${job!.id}`} title="Clone this job into a new one">
+                <Button size="sm" variant="secondary">
+                  <Copy className="h-4 w-4 mr-1.5" /> Clone
+                </Button>
+              </Link>
+            )}
+            {isEditing && (
               <Button size="sm" variant="destructive" onClick={onDelete} disabled={isPending}>
                 <Trash2 className="h-4 w-4 mr-1" /> Delete
               </Button>
@@ -255,6 +271,14 @@ export function CabinJobForm({ job }: { job?: CabinJobDetail | null }) {
       {error && (
         <div className="mb-3 p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
           {error}
+        </div>
+      )}
+
+      {cloning && (
+        <div className="mb-3 p-3 text-sm bg-[var(--info-bg,var(--muted))] text-[var(--foreground)] rounded-md border border-[var(--border)] inline-flex items-center gap-1.5">
+          <Copy className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
+          Cloned from <strong>{cloneFrom!.job_number}</strong> — enter a new job
+          number, adjust items, and save as a separate job.
         </div>
       )}
 

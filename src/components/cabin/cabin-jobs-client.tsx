@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -87,6 +87,7 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
                 <TableHead>Customer</TableHead>
                 <TableHead className="text-right">Items</TableHead>
                 <TableHead>Created</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -101,6 +102,19 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
                   <TableCell className="text-right tabular-nums">{j.line_count}</TableCell>
                   <TableCell className="text-[var(--muted-foreground)]">
                     {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      title={`Clone ${j.job_number} into a new job`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        router.push(`/cabin-jobs/new?from=${j.id}`);
+                      }}
+                    >
+                      <Copy size={14} className="mr-1.5" /> Clone
+                    </Button>
                   </TableCell>
                 </TableRow>
               ))}
