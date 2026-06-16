@@ -29,7 +29,7 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     if (!tokens.length) return jobs;
     return jobs.filter((j) => {
-      const hay = `${j.job_number} ${j.customer_name ?? ""}`.toLowerCase();
+      const hay = `${j.job_number} ${j.customer_name ?? ""} ${j.platform ?? ""} ${j.side_panel_material ?? ""}`.toLowerCase();
       return tokens.every((t) => hay.includes(t));
     });
   }, [jobs, search]);
@@ -85,6 +85,8 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
               <TableRow>
                 <TableHead>Job #</TableHead>
                 <TableHead>Customer</TableHead>
+                <TableHead>Platform</TableHead>
+                <TableHead>Side Panel</TableHead>
                 <TableHead className="text-right">Items</TableHead>
                 <TableHead>Created</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
@@ -99,6 +101,8 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
                 >
                   <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
                   <TableCell>{j.customer_name || "—"}</TableCell>
+                  <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
+                  <TableCell>{j.side_panel_material || "—"}</TableCell>
                   <TableCell className="text-right tabular-nums">{j.line_count}</TableCell>
                   <TableCell className="text-[var(--muted-foreground)]">
                     {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}

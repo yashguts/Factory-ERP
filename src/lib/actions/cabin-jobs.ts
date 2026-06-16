@@ -282,6 +282,10 @@ export interface CabinJobListRow {
   job_number: string;
   customer_name: string | null;
   line_count: number;
+  /** The job's Platform item name (its size/measurement), if one is added. */
+  platform: string | null;
+  /** Distinct Side Panel finishes for the job, e.g. "SS 430" or "MS + Golden". */
+  side_panel_material: string | null;
   created_at: string;
 }
 
@@ -293,24 +297,42 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
     .order("created_at", { ascending: false });
   const ids = (jobs ?? []).map((j: any) => j.id as string);
   const countByJob = new Map<string, number>();
+  const platformByJob = new Map<string, string>();
+  const finishesByJob = new Map<string, Set<string>>();
   if (ids.length) {
     const { data: lines } = await supabase
       .from("cabin_job_lines")
-      .select("cabin_job_id")
+      .select(
+        `cabin_job_id, cabin_type,
+         item:items!cabin_job_lines_item_id_fkey(name, finish)`,
+      )
       .in("cabin_job_id", ids);
-    for (const l of lines ?? [])
-      countByJob.set(
-        l.cabin_job_id as string,
-        (countByJob.get(l.cabin_job_id as string) ?? 0) + 1,
-      );
+    for (const l of lines ?? []) {
+      const jid = l.cabin_job_id as string;
+      countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
+      const it = flatten<any>((l as any).item);
+      if (l.cabin_type === "Platform" && it?.name && !platformByJob.has(jid)) {
+        platformByJob.set(jid, it.name as string);
+      }
+      if (l.cabin_type === "Side Panel" && it?.finish) {
+        const set = finishesByJob.get(jid) ?? new Set<string>();
+        set.add(it.finish as string);
+        finishesByJob.set(jid, set);
+      }
+    }
   }
-  return (jobs ?? []).map((j: any) => ({
-    id: j.id as string,
-    job_number: j.job_number as string,
-    customer_name: (j.customer_name as string | null) ?? null,
-    line_count: countByJob.get(j.id as string) ?? 0,
-    created_at: j.created_at as string,
-  }));
+  return (jobs ?? []).map((j: any) => {
+    const fset = finishesByJob.get(j.id as string);
+    return {
+      id: j.id as string,
+      job_number: j.job_number as string,
+      customer_name: (j.customer_name as string | null) ?? null,
+      line_count: countByJob.get(j.id as string) ?? 0,
+      platform: platformByJob.get(j.id as string) ?? null,
+      side_panel_material: fset ? [...fset].sort().join(" + ") : null,
+      created_at: j.created_at as string,
+    };
+  });
 }
 
 export interface CabinJobLine {
