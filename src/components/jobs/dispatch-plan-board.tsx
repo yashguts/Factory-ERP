@@ -2,7 +2,7 @@
 
 import { useMemo } from "react";
 import Link from "next/link";
-import { CalendarClock, AlertTriangle, FileText, ClipboardList, Package } from "lucide-react";
+import { CalendarClock, AlertTriangle } from "lucide-react";
 import { Badge, type BadgeVariant } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -320,16 +320,16 @@ export function DispatchPlanBoard({
           </span>
         )}
 
-        {/* Readiness icon key (green = present on a row) */}
+        {/* Readiness chip key (solid green = present on a row, grey outline = missing) */}
         <span className="ml-auto inline-flex items-center gap-x-4 gap-y-1 text-xs text-[var(--muted-foreground)]">
           <span className="inline-flex items-center gap-1.5">
-            <FileText size={14} className="text-emerald-600" /> Drawing
+            <ReadyChip letter="D" on /> Drawing
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <ClipboardList size={14} className="text-emerald-600" /> Job BOM
+            <ReadyChip letter="B" on /> Job BOM
           </span>
           <span className="inline-flex items-center gap-1.5">
-            <Package size={14} className="text-emerald-600" /> Cabin BOM
+            <ReadyChip letter="C" on /> Cabin BOM
           </span>
         </span>
       </div>
@@ -487,21 +487,21 @@ export function DispatchPlanBoard({
                     >
                       {job.customer_name || "—"}
                     </span>
-                    <span className="flex shrink-0 items-center gap-1.5">
-                      <ReadyIcon
-                        Icon={FileText}
+                    <span className="flex shrink-0 items-center gap-1">
+                      <ReadyChip
+                        letter="D"
                         on={job.hasDrawing}
                         onLabel="Drawing attached"
                         offLabel="No drawing"
                       />
-                      <ReadyIcon
-                        Icon={ClipboardList}
+                      <ReadyChip
+                        letter="B"
                         on={job.hasBom}
                         onLabel="Job BOM filled"
                         offLabel="Job BOM empty"
                       />
-                      <ReadyIcon
-                        Icon={Package}
+                      <ReadyChip
+                        letter="C"
                         on={job.hasCabin}
                         onLabel="Cabin BOM filled"
                         offLabel="No cabin BOM"
@@ -521,29 +521,35 @@ export function DispatchPlanBoard({
   );
 }
 
-/** One readiness indicator: solid emerald when present, faded when missing. */
-function ReadyIcon({
-  Icon,
+/**
+ * One readiness slot as a lettered chip (D = Drawing, B = Job BOM, C = Cabin BOM).
+ * Solid green when present, hollow grey outline when missing — so each slot is
+ * instantly identifiable and gaps read at a glance.
+ */
+function ReadyChip({
+  letter,
   on,
   onLabel,
   offLabel,
 }: {
-  Icon: typeof FileText;
+  letter: string;
   on: boolean;
-  onLabel: string;
-  offLabel: string;
+  onLabel?: string;
+  offLabel?: string;
 }) {
   return (
-    <Icon
-      size={14}
-      className={cn(
-        "shrink-0",
-        on ? "text-emerald-600" : "text-[var(--muted-foreground)] opacity-25",
-      )}
+    <span
+      title={on ? onLabel : offLabel}
       aria-label={on ? onLabel : offLabel}
+      className={cn(
+        "inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded px-0.5 text-[10px] font-bold leading-none",
+        on
+          ? "bg-emerald-600 text-white"
+          : "border border-[var(--border-strong)] text-[var(--muted-foreground)] opacity-60",
+      )}
     >
-      <title>{on ? onLabel : offLabel}</title>
-    </Icon>
+      {letter}
+    </span>
   );
 }
 
