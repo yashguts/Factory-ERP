@@ -88,31 +88,52 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   } | null>(null);
   const [historyRows, setHistoryRows] = useState<InventoryChangeRow[]>([]);
   const [historyLoading, setHistoryLoading] = useState(false);
+  // Optional date range when viewing a single item's history ("" = no bound).
+  const [histFrom, setHistFrom] = useState("");
+  const [histTo, setHistTo] = useState("");
 
-  const loadHistory = (item: { id: string; code: string; name: string }) => {
+  const fetchHistory = (
+    item: { id: string; code: string; name: string },
+    from: string,
+    to: string,
+  ) => {
     setHistoryItem(item);
     setHistoryLoading(true);
     startTransition(async () => {
-      const rows = await getItemChangeHistory(item.id);
+      const rows = await getItemChangeHistory(
+        item.id,
+        from || undefined,
+        to || undefined,
+      );
       setHistoryRows(rows);
       setHistoryLoading(false);
     });
   };
 
+  // Picking a new item starts from its full history (range cleared).
+  const loadHistory = (item: { id: string; code: string; name: string }) => {
+    setHistFrom("");
+    setHistTo("");
+    fetchHistory(item, "", "");
+  };
+
+  const setHistoryRange = (from: string, to: string) => {
+    setHistFrom(from);
+    setHistTo(to);
+    if (historyItem) fetchHistory(historyItem, from, to);
+  };
+
   const clearHistory = () => {
     setHistoryItem(null);
     setHistoryRows([]);
+    setHistFrom("");
+    setHistTo("");
   };
 
   // After an undo/note edit: refresh the right view (history list or day feed).
   const afterMutation = () => {
     if (historyItem) {
-      setHistoryLoading(true);
-      startTransition(async () => {
-        const rows = await getItemChangeHistory(historyItem.id);
-        setHistoryRows(rows);
-        setHistoryLoading(false);
-      });
+      fetchHistory(historyItem, histFrom, histTo);
     } else {
       router.refresh();
     }
@@ -204,26 +225,50 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         title="Inventory Changes"
         meta={`${
           historyItem
-            ? `Full change history for ${historyItem.name}`
+            ? `Change history for ${historyItem.name}${
+                histFrom || histTo
+                  ? ` · ${histFrom || "…"} → ${histTo || "…"}`
+                  : ""
+              }`
             : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"} on this day`
         }${isPending ? " — refreshing..." : ""}`}
         actions={
           <>
             <CalendarDays size={16} className="text-[var(--muted-foreground)]" />
-            <Input
-              size="sm"
-              type="date"
-              value={date}
-              max={maxDate}
-              onChange={(e) => changeDate(e.target.value)}
-              disabled={!!historyItem}
-              title={
-                historyItem
-                  ? "Clear the item history to browse by day"
-                  : "Browse changes by day"
-              }
-              className="w-auto cursor-pointer disabled:cursor-not-allowed"
-            />
+            {historyItem ? (
+              <>
+                <Input
+                  size="sm"
+                  type="date"
+                  value={histFrom}
+                  max={histTo || maxDate}
+                  onChange={(e) => setHistoryRange(e.target.value, histTo)}
+                  title="From date (leave blank for no lower bound)"
+                  className="w-auto cursor-pointer"
+                />
+                <span className="text-[var(--muted-foreground)]">→</span>
+                <Input
+                  size="sm"
+                  type="date"
+                  value={histTo}
+                  min={histFrom || undefined}
+                  max={maxDate}
+                  onChange={(e) => setHistoryRange(histFrom, e.target.value)}
+                  title="To date (leave blank for no upper bound)"
+                  className="w-auto cursor-pointer"
+                />
+              </>
+            ) : (
+              <Input
+                size="sm"
+                type="date"
+                value={date}
+                max={maxDate}
+                onChange={(e) => changeDate(e.target.value)}
+                title="Browse changes by day"
+                className="w-auto cursor-pointer"
+              />
+            )}
             <Link href="/inventory">
               <Button size="sm" variant="secondary">
                 Back to Inventory

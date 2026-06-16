@@ -148,27 +148,41 @@ export async function getInventoryChanges(
  */
 export async function getItemChangeHistory(
   itemId: string,
+  from?: string,
+  to?: string,
 ): Promise<InventoryChangeRow[]> {
   if (!itemId) return [];
   const supabase = await createClient();
 
+  let logQuery = supabase
+    .from("item_change_log")
+    .select("*")
+    .eq("item_id", itemId);
+  let txnQuery = supabase
+    .from("inventory_transactions")
+    .select(
+      `id, created_at, item_id, warehouse_id, transaction_type, quantity, notes, reference_type, reference_id,
+       item:items(code, name),
+       warehouse:warehouses(name)`,
+    )
+    .eq("item_id", itemId);
+
+  // Optional IST date-range bounds (YYYY-MM-DD). Same day-window helper as the
+  // single-day feed, so the range is inclusive of both calendar days in IST.
+  if (from) {
+    const startIso = istDayRange(from).startIso;
+    logQuery = logQuery.gte("created_at", startIso);
+    txnQuery = txnQuery.gte("created_at", startIso);
+  }
+  if (to) {
+    const endIso = istDayRange(to).endIso;
+    logQuery = logQuery.lt("created_at", endIso);
+    txnQuery = txnQuery.lt("created_at", endIso);
+  }
+
   const [logRes, txnRes, cats, units] = await Promise.all([
-    supabase
-      .from("item_change_log")
-      .select("*")
-      .eq("item_id", itemId)
-      .order("created_at", { ascending: false })
-      .limit(300),
-    supabase
-      .from("inventory_transactions")
-      .select(
-        `id, created_at, item_id, warehouse_id, transaction_type, quantity, notes, reference_type, reference_id,
-         item:items(code, name),
-         warehouse:warehouses(name)`,
-      )
-      .eq("item_id", itemId)
-      .order("created_at", { ascending: false })
-      .limit(300),
+    logQuery.order("created_at", { ascending: false }).limit(300),
+    txnQuery.order("created_at", { ascending: false }).limit(300),
     getCategories(),
     getUnits(),
   ]);
