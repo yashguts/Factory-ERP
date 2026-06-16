@@ -237,8 +237,6 @@ export async function searchCabinBases(
 
 export interface CabinFinishOption {
   finish: string | null; // null = no finish (e.g. Granite type, not yet fanned)
-  /** Floor token parsed from the item name (e.g. "G+5"), or null when none. */
-  floor: string | null;
   item_id: string;
   code: string;
   name: string;
@@ -268,7 +266,6 @@ export async function getCabinBaseFinishes(
   return ((data ?? []) as any[])
     .map((it) => ({
       finish: (it.finish as string | null) ?? null,
-      floor: ((it.name as string)?.match(/G\+\d+/)?.[0] as string | undefined) ?? null,
       item_id: it.id as string,
       code: it.code as string,
       name: it.name as string,
