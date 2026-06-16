@@ -507,9 +507,13 @@ export function DispatchPlanBoard({
                         offLabel="No cabin BOM"
                       />
                     </span>
-                    <Badge variant={d.variant} className="shrink-0">
-                      {d.badge}
-                    </Badge>
+                    {/* Fixed-width slot so the D/B/C chips line up across rows
+                        regardless of the (variable-width) phase badge. */}
+                    <span className="flex w-[116px] shrink-0 justify-end">
+                      <Badge variant={d.variant} className="shrink-0">
+                        {d.badge}
+                      </Badge>
+                    </span>
                   </Link>
                 );
               })}
