@@ -5,9 +5,20 @@ import { Upload, FileText, ImageIcon, Trash2, ExternalLink, Loader2, X } from "l
 import { Button } from "@/components/ui/button";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
-  uploadGadDrawing,
+  recordGadDrawing,
   deleteGadDrawing,
 } from "@/lib/actions/gad-drawings";
+import { createClient } from "@/lib/supabase/client";
+
+const BUCKET = "gad-drawings";
+const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches the bucket limit)
+const ALLOWED_MIME_TYPES = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
 
 interface Props {
   jobId: string | null;
@@ -82,10 +93,44 @@ export function GadDrawingPanel({
           return;
         }
 
-        const fd = new FormData();
-        fd.append("jobId", id);
-        fd.append("file", file);
-        const result = await uploadGadDrawing(fd);
+        // Validate up front for friendly errors (the bucket enforces these too).
+        if (file.size === 0) {
+          setError("File is empty");
+          return;
+        }
+        if (file.size > MAX_SIZE_BYTES) {
+          setError(
+            `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`,
+          );
+          return;
+        }
+        if (!ALLOWED_MIME_TYPES.has(file.type)) {
+          setError(
+            `Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`,
+          );
+          return;
+        }
+
+        // Upload the bytes straight from the browser to Supabase Storage.
+        // Going through the server action would cap the file at the host's
+        // few-MB request-body limit; uploading direct lets the 50 MB bucket
+        // limit apply instead. We then record only the path on the job.
+        const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        const path = `${id}/${Date.now()}-${safeName}`;
+        const supabase = createClient();
+        const { error: uploadError } = await supabase.storage
+          .from(BUCKET)
+          .upload(path, file, { contentType: file.type, upsert: false });
+        if (uploadError) {
+          setError(uploadError.message || "Upload to storage failed");
+          return;
+        }
+
+        const result = await recordGadDrawing({
+          jobId: id,
+          path,
+          filename: file.name,
+        });
 
         setUrl(result.url);
         setFilename(result.filename);
