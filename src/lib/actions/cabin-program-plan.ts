@@ -14,6 +14,7 @@ import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { selectRuns, type OpOuts } from "@/lib/actions/make-plan-core";
 import { sheetThicknessMm } from "@/lib/cabin/cabin-program-meta";
+import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
 export interface CabinPlanInput {
   code: string;
@@ -350,6 +351,221 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     },
   };
 };
+
+/* ============================ Requirements ============================ */
+
+export interface CabinReqRow {
+  item_id: string;
+  code: string;
+  name: string;
+  /** Cabin type (from the cabin-job line, e.g. Platform / Side Panel / Canopy). */
+  type: string;
+  finish: string | null;
+  required: number;
+  stock: number;
+  shortfall: number;
+  job_count: number;
+}
+
+const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
+  const supabase = createCacheClient();
+  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+    (from, to, withCount) =>
+      supabase
+        .from("cabin_job_lines")
+        .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
+        .not("item_id", "is", null)
+        .range(from, to),
+  );
+  if (lines.length === 0) return [];
+
+  const demand = new Map<string, { type: string; qty: number; jobs: Set<string> }>();
+  for (const l of lines) {
+    if (!l.item_id) continue;
+    const ex = demand.get(l.item_id) ?? { type: l.cabin_type, qty: 0, jobs: new Set<string>() };
+    ex.qty += Number(l.qty) || 0;
+    ex.jobs.add(l.cabin_job_id);
+    demand.set(l.item_id, ex);
+  }
+
+  const itemIds = [...demand.keys()];
+  const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
+  for (let i = 0; i < itemIds.length; i += 200) {
+    const { data } = await supabase
+      .from("items")
+      .select("id, code, name, finish, inventory(quantity)")
+      .in("id", itemIds.slice(i, i + 200));
+    for (const it of (data ?? []) as any[]) {
+      const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+      info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+    }
+  }
+
+  const rows: CabinReqRow[] = [];
+  for (const [id, d] of demand) {
+    const it = info.get(id);
+    if (!it) continue;
+    rows.push({
+      item_id: id, code: it.code, name: it.name, type: d.type, finish: it.finish,
+      required: d.qty, stock: it.stock, shortfall: Math.max(0, d.qty - it.stock), job_count: d.jobs.size,
+    });
+  }
+  return rows;
+};
+
+export async function getCabinRequirements(): Promise<CabinReqRow[]> {
+  return unstable_cache(_getCabinRequirementsUncached, ["cabin-requirements"], {
+    revalidate: 300,
+    tags: ["cabin-programs", "jobs", "items", "inventory-stock"],
+  })();
+}
+
+/* ============================ Weekly ============================ */
+
+const DAY_MS = 86_400_000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const HORIZON_WEEKS = 8;
+
+function istToday(): Date {
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+function startOfWeekSunday(d: Date): Date {
+  return new Date(d.getTime() - d.getUTCDay() * DAY_MS);
+}
+function parseDate(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+}
+function fmtRange(start: Date, end: Date): string {
+  const sm = MONTHS[start.getUTCMonth()], em = MONTHS[end.getUTCMonth()];
+  return sm === em ? `${start.getUTCDate()}–${end.getUTCDate()} ${sm}` : `${start.getUTCDate()} ${sm} – ${end.getUTCDate()} ${em}`;
+}
+function buildCabinWeeks(curWeek: Date): WeekMeta[] {
+  const weeks: WeekMeta[] = [
+    { index: -1, key: "overdue", label: "Overdue", title: "Overdue", subtitle: "Linked job date already passed", weekStartIso: null, isCurrent: false, isOverdue: true },
+  ];
+  for (let w = 0; w < HORIZON_WEEKS; w++) {
+    const start = new Date(curWeek.getTime() + w * 7 * DAY_MS);
+    const end = new Date(start.getTime() + 6 * DAY_MS);
+    const range = fmtRange(start, end);
+    weeks.push({
+      index: w, key: `w${w}`, label: range, title: range,
+      subtitle: w === 0 ? "This week" : w === 1 ? "Next week" : `In ${w} weeks`,
+      weekStartIso: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-${String(start.getUTCDate()).padStart(2, "0")}`,
+      isCurrent: w === 0, isOverdue: false,
+    });
+  }
+  return weeks;
+}
+
+export interface CabinWeeklyRow {
+  item_id: string;
+  code: string;
+  name: string;
+  type: string;
+  finish: string | null;
+  perWeek: number[];
+  cumulative: number[];
+  total: number;
+}
+export interface CabinWeeklyPlan {
+  weeks: WeekMeta[];
+  rows: CabinWeeklyRow[];
+  laterCount: number;
+  undatedCount: number;
+}
+
+const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
+  const supabase = createCacheClient();
+  const today = istToday();
+  const curWeek = startOfWeekSunday(today);
+  const weeks = buildCabinWeeks(curWeek);
+  const N = weeks.length;
+
+  // cabin job -> linked elevator job's requirement_dispatch_date.
+  const { data: cjobs } = await supabase.from("cabin_jobs").select("id, job_number");
+  const cabinJobNumbers = (cjobs ?? []).map((c: any) => (c.job_number as string) ?? "");
+  const { data: jobs } = await supabase
+    .from("jobs")
+    .select("job_number, requirement_dispatch_date")
+    .in("job_number", cabinJobNumbers);
+  const dateByNumber = new Map<string, string | null>();
+  for (const j of jobs ?? []) dateByNumber.set(((j.job_number as string) ?? "").trim().toLowerCase(), (j.requirement_dispatch_date as string | null) ?? null);
+  const dateByCabinJob = new Map<string, string | null>();
+  for (const c of cjobs ?? []) dateByCabinJob.set(c.id as string, dateByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase()) ?? null);
+
+  // bucket position for a date: 0 = overdue, 1..N-1 = weeks; null = later/undated.
+  const bucketOf = (iso: string | null): { pos: number | null; later: boolean; undated: boolean } => {
+    if (!iso) return { pos: null, later: false, undated: true };
+    const d = parseDate(iso);
+    if (!d) return { pos: null, later: false, undated: true };
+    const ws = startOfWeekSunday(d);
+    const w = Math.round((ws.getTime() - curWeek.getTime()) / (7 * DAY_MS));
+    if (w < 0) return { pos: 0, later: false, undated: false };
+    if (w >= HORIZON_WEEKS) return { pos: null, later: true, undated: false };
+    return { pos: w + 1, later: false, undated: false };
+  };
+
+  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+    (from, to, withCount) =>
+      supabase.from("cabin_job_lines").select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {}).not("item_id", "is", null).range(from, to),
+  );
+
+  const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();
+  const laterJobs = new Set<string>();
+  const undatedJobs = new Set<string>();
+  for (const l of lines) {
+    if (!l.item_id) continue;
+    const b = bucketOf(dateByCabinJob.get(l.cabin_job_id) ?? null);
+    if (b.later) laterJobs.add(l.cabin_job_id);
+    if (b.undated) undatedJobs.add(l.cabin_job_id);
+    if (b.pos == null) continue; // later / undated demand isn't placed on the 8-week board
+    const ex = demandByItemWeek.get(l.item_id) ?? { type: l.cabin_type, arr: new Array(N).fill(0) };
+    ex.arr[b.pos] += Number(l.qty) || 0;
+    demandByItemWeek.set(l.item_id, ex);
+  }
+
+  const itemIds = [...demandByItemWeek.keys()];
+  const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
+  for (let i = 0; i < itemIds.length; i += 200) {
+    const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", itemIds.slice(i, i + 200));
+    for (const it of (data ?? []) as any[]) {
+      const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+      info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+    }
+  }
+
+  const rows: CabinWeeklyRow[] = [];
+  for (const [id, d] of demandByItemWeek) {
+    const it = info.get(id);
+    if (!it) continue;
+    // cumulative shortfall: gross cumulative demand minus stock (applied to earliest weeks).
+    const cumulative: number[] = new Array(N).fill(0);
+    const perWeek: number[] = new Array(N).fill(0);
+    let gross = 0, prevShort = 0;
+    for (let i = 0; i < N; i++) {
+      gross += d.arr[i];
+      const short = Math.max(0, gross - it.stock);
+      cumulative[i] = short;
+      perWeek[i] = Math.max(0, short - prevShort);
+      prevShort = short;
+    }
+    const total = cumulative[N - 1];
+    if (total <= 0) continue;
+    rows.push({ item_id: id, code: it.code, name: it.name, type: d.type, finish: it.finish, perWeek, cumulative, total });
+  }
+  rows.sort((a, b) => b.total - a.total);
+
+  return { weeks, rows, laterCount: laterJobs.size, undatedCount: undatedJobs.size };
+};
+
+export async function getCabinWeekly(): Promise<CabinWeeklyPlan> {
+  return unstable_cache(_getCabinWeeklyUncached, ["cabin-weekly"], {
+    revalidate: 300,
+    tags: ["cabin-programs", "jobs", "items", "inventory-stock"],
+  })();
+}
 
 export async function getCabinMrp(excludeKeys: string[] = []): Promise<CabinMrpPlan> {
   const key = excludeKeys.length ? [...excludeKeys].sort().join(",") : "__none__";

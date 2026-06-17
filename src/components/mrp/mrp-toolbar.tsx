@@ -7,7 +7,7 @@ import { CalendarDays, CalendarRange, ListChecks, Hammer, X } from "lucide-react
 import { cn } from "@/lib/utils";
 
 export type MrpView = "requirements" | "programs" | "buy" | "weekly";
-export type MrpSection = "make" | "trade";
+export type MrpSection = "make" | "trade" | "cabin";
 
 type ViewDef = { key: MrpView; label: string; href: string; icon: typeof ListChecks };
 
@@ -24,6 +24,12 @@ const MAKE_VIEWS: ViewDef[] = [
 const TRADE_VIEWS: ViewDef[] = [
   { key: "requirements", label: "What to buy", href: "/mrp/trade", icon: ListChecks },
   { key: "weekly", label: "Weekly plan", href: "/mrp/trade/weekly", icon: CalendarRange },
+];
+// Cabin MRP mirrors Make: Requirements (by type + finish) / Programs to run / Weekly.
+const CABIN_VIEWS: ViewDef[] = [
+  { key: "requirements", label: "Requirements", href: "/mrp/cabin", icon: ListChecks },
+  { key: "programs", label: "Programs to run", href: "/mrp/cabin/programs", icon: Hammer },
+  { key: "weekly", label: "Weekly plan", href: "/mrp/cabin/weekly", icon: CalendarRange },
 ];
 
 const ymd = (d: Date) =>
@@ -45,7 +51,7 @@ export function MrpToolbar({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-  const VIEWS = section === "trade" ? TRADE_VIEWS : MAKE_VIEWS;
+  const VIEWS = section === "cabin" ? CABIN_VIEWS : section === "trade" ? TRADE_VIEWS : MAKE_VIEWS;
   const current = VIEWS.find((v) => v.key === view)!;
   const q = (d: string) => (d ? `?date=${d}` : "");
   const go = (d: string) => startTransition(() => router.push(`${current.href}${q(d)}`));
@@ -91,7 +97,7 @@ export function MrpToolbar({
           <CalendarRange className="h-4 w-4 shrink-0 text-[var(--primary)]" />
           Next <strong className="text-[var(--foreground)]">8 weeks</strong> from today, cumulatively (Overdue + each week).
         </span>
-      ) : (
+      ) : section === "cabin" ? null : (
       <div
         className="inline-flex items-center gap-2 flex-wrap"
         title={

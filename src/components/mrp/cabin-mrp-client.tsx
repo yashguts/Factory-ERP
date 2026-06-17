@@ -11,6 +11,7 @@ import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, SectionHeader } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { formatDuration } from "@/lib/utils";
 import type { CabinMrpPlan, CabinPlanProgram } from "@/lib/actions/cabin-program-plan";
 
@@ -28,7 +29,7 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
     const params = new URLSearchParams();
     if (excl.length) params.set("exclude", excl.join(","));
     const qs = params.toString();
-    startTransition(() => router.push(`/mrp/cabin${qs ? `?${qs}` : ""}`));
+    startTransition(() => router.push(`/mrp/cabin/programs${qs ? `?${qs}` : ""}`));
   };
   const excludeProgram = (key: string) => goWithExclusions([...excluded, key]);
   const restoreProgram = (key: string) => goWithExclusions(excluded.filter((c) => c !== key));
@@ -67,6 +68,7 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
 
   return (
     <div>
+      <MrpToolbar view="programs" date="" section="cabin" />
       <PageHeader
         icon={<LayoutGrid size={18} />}
         title="Cabin MRP — programs to cut"

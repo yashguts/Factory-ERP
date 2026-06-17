@@ -1,16 +1,9 @@
-import { getCabinMrp } from "@/lib/actions/cabin-program-plan";
-import { CabinMrpClient } from "@/components/mrp/cabin-mrp-client";
+import { getCabinRequirements } from "@/lib/actions/cabin-program-plan";
+import { CabinRequirementsClient } from "@/components/mrp/cabin-requirements-client";
 
-interface Props {
-  searchParams: Promise<{ exclude?: string }>;
-}
+export const metadata = { title: "Cabin MRP — Requirements" };
 
-export default async function CabinMrpPage({ searchParams }: Props) {
-  const { exclude } = await searchParams;
-  const excludeKeys = (exclude ?? "")
-    .split(",")
-    .map((s) => s.trim())
-    .filter(Boolean);
-  const plan = await getCabinMrp(excludeKeys);
-  return <CabinMrpClient plan={plan} />;
+export default async function CabinRequirementsPage() {
+  const rows = await getCabinRequirements();
+  return <CabinRequirementsClient rows={rows} />;
 }
