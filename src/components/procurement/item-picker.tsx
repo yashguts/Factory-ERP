@@ -80,7 +80,7 @@ export function ItemPicker({
     <div ref={wrapRef} className="relative">
       {value && !open ? (
         <div
-          className="flex items-center justify-between h-9 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer"
+          className="flex items-center justify-between h-10 w-full rounded-md border border-[var(--border)] bg-[var(--background)] px-3 text-sm cursor-pointer hover:border-[var(--border-strong)] transition-colors"
           onClick={reopen}
         >
           <span className="truncate">
@@ -92,7 +92,7 @@ export function ItemPicker({
       ) : (
         <Input
           ref={inputRef}
-          size="sm"
+          size="md"
           placeholder="Search item by name, code, or lookup key…"
           value={query}
           onChange={(e) => { setQuery(e.target.value); setOpen(true); }}

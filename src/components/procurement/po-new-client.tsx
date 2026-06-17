@@ -159,24 +159,24 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
         </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">PO Number *</span>
-            <Input size="sm" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="e.g. PO-2026-001" className="mt-1" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">PO Number *</span>
+            <Input size="md" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="e.g. PO-2026-001" className="mt-1" />
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Supplier</span>
-            <Input size="sm" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Supplier name" className="mt-1" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Supplier</span>
+            <Input size="md" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Supplier name" className="mt-1" />
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Order date</span>
-            <Input size="sm" type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className="mt-1" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Order date</span>
+            <Input size="md" type="date" value={orderDate} onChange={(e) => setOrderDate(e.target.value)} className="mt-1" />
           </label>
           <label className="block">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Expected</span>
-            <Input size="sm" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className="mt-1" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Expected</span>
+            <Input size="md" type="date" value={expectedDate} onChange={(e) => setExpectedDate(e.target.value)} className="mt-1" />
           </label>
           <label className="block md:col-span-4">
-            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Note</span>
-            <Input size="sm" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" className="mt-1" />
+            <span className="text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">Note</span>
+            <Input size="md" value={note} onChange={(e) => setNote(e.target.value)} placeholder="Optional" className="mt-1" />
           </label>
         </div>
       </div>
@@ -192,12 +192,12 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
             Est. total: {estTotal > 0 ? `₹${Math.round(estTotal).toLocaleString("en-IN")}` : "—"}
           </span>
         </div>
-        <div className="hidden sm:flex items-center gap-2 px-2 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+        <div className="hidden sm:flex items-center gap-2.5 px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           <span className="flex-1">Item</span>
-          <span className="w-40">Purchase unit</span>
-          <span className="w-28 text-right">Qty</span>
-          <span className="w-28 text-right">Unit cost</span>
-          <span className="w-7" />
+          <span className="w-44">Purchase unit</span>
+          <span className="w-32 text-right">Qty</span>
+          <span className="w-32 text-right">Unit cost</span>
+          <span className="w-8" />
         </div>
         <div className="space-y-2">
           {rows.map((r) => {
@@ -206,8 +206,8 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
             const orderAbbr = dual ? (unit!.abbreviation || "unit") : (r.item?.uom_abbreviation ?? "");
             const stockAbbr = r.item?.uom_abbreviation ?? "";
             return (
-              <div key={r.key} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2">
-                <div className="flex items-center gap-2">
+              <div key={r.key} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5">
+                <div className="flex items-center gap-2.5">
                   <div className="flex-1 min-w-0">
                     <ItemPicker
                       value={r.item}
@@ -215,10 +215,10 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     />
                   </div>
                   <Select
-                    size="sm"
+                    size="md"
                     value={r.purchase_uom_id}
                     onChange={(e) => patchRow(r.key, { purchase_uom_id: e.target.value })}
-                    className="w-40 shrink-0"
+                    className="w-44 shrink-0"
                     title="Purchase unit for this line (varies by vendor)"
                   >
                     <option value="">Stock unit{stockAbbr ? ` (${stockAbbr})` : ""}</option>
@@ -228,20 +228,20 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                       </option>
                     ))}
                   </Select>
-                  <div className="w-28 shrink-0 flex items-center gap-1">
+                  <div className="w-32 shrink-0 flex items-center gap-1.5">
                     <Input
-                      size="sm" type="number" min={0} step="any" value={r.qty}
+                      size="md" type="number" min={0} step="any" value={r.qty}
                       onChange={(e) => patchRow(r.key, { qty: e.target.value })}
                       placeholder="0" className="flex-1 min-w-0 text-right" title="Order quantity"
                     />
-                    <span className="w-8 shrink-0 text-[11px] text-[var(--muted-foreground)] truncate" title={orderAbbr}>
+                    <span className="w-8 shrink-0 text-xs font-medium text-[var(--muted-foreground)] truncate" title={orderAbbr}>
                       {orderAbbr}
                     </span>
                   </div>
                   <Input
-                    size="sm" type="number" min={0} step="0.01" value={r.unit_cost}
+                    size="md" type="number" min={0} step="0.01" value={r.unit_cost}
                     onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
-                    placeholder="—" className="w-28 shrink-0 text-right"
+                    placeholder="—" className="w-32 shrink-0 text-right"
                     title={dual ? `Unit cost — per ${orderAbbr} (optional)` : "Unit cost (optional)"}
                   />
                   <button
@@ -249,9 +249,9 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     onClick={() => removeRow(r.key)}
                     disabled={rows.length === 1}
                     aria-label="Remove line"
-                    className="w-7 shrink-0 flex items-center justify-center p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
+                    className="w-8 h-8 shrink-0 flex items-center justify-center rounded-md text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
                   >
-                    <Trash2 className="h-3.5 w-3.5" />
+                    <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
                 {dual && (
@@ -266,7 +266,7 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                         size="sm" type="number" min={0} step="any" value={r.tentative}
                         onChange={(e) => patchRow(r.key, { tentative: e.target.value })}
                         placeholder="stock qty"
-                        className="w-20 text-right h-7"
+                        className="w-24 text-right"
                         title="Tentative stock quantity for planning (optional)"
                       />
                       {stockAbbr}
