@@ -3,18 +3,125 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath } from "next/cache";
+import { recordTransaction } from "@/lib/actions/inventory";
+import type { TransactionType } from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ *
  * Daily Program Runs — the factory's logbook of which programs actually
- * ran on a given day. Recording is Phase-0 style: it does NOT consume
- * or produce inventory (that's a future phase). One row per
- * (program, day) with a run count.
+ * ran on a given day. One row per (program, day) with a run count.
+ *
+ * Inventory (owner-enabled 2026-06-17): a logged run now CONSUMES its input
+ * sheets (production_out from Raw Material Store) and PRODUCES its component
+ * outputs (production_in to Main Store), scaled by the run count. FORWARD-ONLY:
+ * the 06-15 manual batch used reference_id=NULL, so it never collides; edits/
+ * deletes only post for runs THIS system already posted (a legacy run with no
+ * reference_id=run_id txn is left untouched). cut_part / tooling / scrap and
+ * unmapped (null item_id) lines are skipped.
  * ------------------------------------------------------------------ */
 
 function flatten<T>(rel: unknown): T | null {
   if (!rel) return null;
   if (Array.isArray(rel)) return (rel[0] ?? null) as T | null;
   return rel as T;
+}
+
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+async function resolveStores(supabase: Db): Promise<{ main: string | null; raw: string | null }> {
+  const { data } = await supabase.from("warehouses").select("id, name");
+  const byName = new Map((data ?? []).map((w: any) => [w.name as string, w.id as string]));
+  return { main: byName.get("Main Store") ?? null, raw: byName.get("Raw Material Store") ?? null };
+}
+
+/** True when this run already has system-posted inventory (reference_id=run_id). */
+async function runHasInventory(supabase: Db, runId: string): Promise<boolean> {
+  const { data } = await supabase
+    .from("inventory_transactions")
+    .select("id")
+    .eq("reference_type", "program_run")
+    .eq("reference_id", runId)
+    .limit(1);
+  return !!(data && data.length);
+}
+
+/**
+ * Reconcile a run's inventory to `count` runs by posting only the DELTA vs what
+ * this run has already posted — correct for record (applied=0 → fresh
+ * production_in/out), count-edit (→ adjustment delta) and delete (count=0 →
+ * restore). Inputs consume from Raw Material Store, component outputs produce
+ * into Main Store. Idempotent (a no-op when already in sync).
+ */
+async function syncRunInventory(supabase: Db, runId: string, count: number): Promise<void> {
+  const { data: run } = await supabase
+    .from("operation_runs")
+    .select("operation_id")
+    .eq("id", runId)
+    .maybeSingle();
+  if (!run) return;
+  const operationId = run.operation_id as string;
+  const stores = await resolveStores(supabase);
+  if (!stores.raw || !stores.main) return;
+
+  const [{ data: ins }, { data: outs }] = await Promise.all([
+    supabase.from("operation_inputs").select("item_id, qty_per_run").eq("operation_id", operationId).not("item_id", "is", null),
+    supabase.from("operation_outputs").select("item_id, qty_per_run").eq("operation_id", operationId).eq("role", "component").not("item_id", "is", null),
+  ]);
+
+  // Desired signed net per `${item}|${warehouse}`.
+  const desired = new Map<string, { item_id: string; warehouse_id: string; net: number }>();
+  const addDesired = (item: string, wh: string, net: number) => {
+    const key = `${item}|${wh}`;
+    const ex = desired.get(key) ?? { item_id: item, warehouse_id: wh, net: 0 };
+    ex.net += net;
+    desired.set(key, ex);
+  };
+  for (const i of ins ?? []) addDesired(i.item_id as string, stores.raw, -(Number(i.qty_per_run) || 0) * count);
+  for (const o of outs ?? []) addDesired(o.item_id as string, stores.main, +(Number(o.qty_per_run) || 0) * count);
+
+  // Already-applied net per key from this run's prior program_run txns.
+  const { data: posted } = await supabase
+    .from("inventory_transactions")
+    .select("item_id, warehouse_id, quantity, transaction_type")
+    .eq("reference_type", "program_run")
+    .eq("reference_id", runId);
+  const applied = new Map<string, number>();
+  const existingKeys = new Set<string>();
+  for (const p of posted ?? []) {
+    const key = `${p.item_id}|${p.warehouse_id}`;
+    existingKeys.add(key);
+    const q = Number(p.quantity) || 0;
+    const type = p.transaction_type as string;
+    const d = type === "adjustment" ? q : type === "production_in" || type === "purchase_in" || type === "transfer" ? Math.abs(q) : -Math.abs(q);
+    applied.set(key, (applied.get(key) ?? 0) + d);
+  }
+
+  for (const key of new Set<string>([...desired.keys(), ...existingKeys])) {
+    const d = desired.get(key);
+    const [keyItem, keyWh] = key.split("|");
+    const delta = (d?.net ?? 0) - (applied.get(key) ?? 0);
+    if (Math.abs(delta) < 1e-9) continue;
+    let type: TransactionType;
+    let qty: number;
+    if (existingKeys.has(key)) {
+      type = "adjustment";
+      qty = delta;
+    } else if (delta > 0) {
+      type = "production_in";
+      qty = delta;
+    } else {
+      type = "production_out";
+      qty = -delta;
+    }
+    await recordTransaction({
+      item_id: d?.item_id ?? keyItem,
+      warehouse_id: d?.warehouse_id ?? keyWh,
+      transaction_type: type,
+      quantity: qty,
+      reference_type: "program_run",
+      reference_id: runId,
+      notes: count === 0 ? "Program run removed — stock restored" : "Program run posted to stock",
+    });
+  }
 }
 
 export interface DailyRunRow {
@@ -171,6 +278,13 @@ export async function recordRun(input: {
         : error.message;
     return { ok: false, error: msg };
   }
+  // Consume sheets + produce items for this run (best-effort: the run is logged,
+  // a stock hiccup must not fail it; the reference_id guard makes a re-post safe).
+  try {
+    await syncRunInventory(supabase, data.id as string, count);
+  } catch (e) {
+    console.error("program run inventory post failed", data.id, e);
+  }
   revalidatePath("/program-runs");
   return { ok: true, id: data.id as string };
 }
@@ -188,6 +302,13 @@ export async function updateRunCount(
     .update({ runs_count: count })
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
+  // Reconcile stock to the new count — but ONLY if this run was already posted by
+  // the system (forward-only: a legacy run that predates auto-posting is left alone).
+  try {
+    if (await runHasInventory(supabase, id)) await syncRunInventory(supabase, id, count);
+  } catch (e) {
+    console.error("program run inventory re-sync failed", id, e);
+  }
   revalidatePath("/program-runs");
   return { ok: true, id };
 }
@@ -217,6 +338,12 @@ export async function updateRunDate(
 export async function deleteRun(id: string): Promise<{ ok: boolean; error?: string }> {
   if (!id) return { ok: false, error: "Missing id." };
   const supabase = await createClient();
+  // Restore the stock this run moved BEFORE deleting it (only if it was posted).
+  try {
+    if (await runHasInventory(supabase, id)) await syncRunInventory(supabase, id, 0);
+  } catch (e) {
+    console.error("program run inventory reversal failed", id, e);
+  }
   const { error } = await supabase.from("operation_runs").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/program-runs");
