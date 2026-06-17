@@ -215,11 +215,11 @@ const _getOperationDetailUncached = async (
       `*,
        inputs:operation_inputs(
          id, item_id, label, qty_per_run, notes, sort_order,
-         item:items(id, code, name, uom:units_of_measurement(abbreviation))
+         item:items(id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))
        ),
        outputs:operation_outputs(
          id, item_id, label, qty_per_run, notes, sort_order, role,
-         item:items(id, code, name, uom:units_of_measurement(abbreviation))
+         item:items(id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))
        )`,
     )
     .eq("id", id)

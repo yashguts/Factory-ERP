@@ -79,7 +79,7 @@ const _getItemBomUncached = async (
     .select(
       `id, code, name, stock_behaviour, procurement_type, family, finish,
        category:item_categories!items_category_id_fkey(procurement_type),
-       uom:units_of_measurement(abbreviation)`,
+       uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
     )
     .eq("id", itemId)
     .maybeSingle();
@@ -90,7 +90,7 @@ const _getItemBomUncached = async (
     .from("item_bom_lines")
     .select(
       `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
-       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, uom:units_of_measurement(abbreviation))`,
+       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("parent_item_id", itemId)
     .order("sort_order");
@@ -256,7 +256,7 @@ export async function searchLooseParts(
   // (a) phantom loose-part items already created
   let pq = supabase
     .from("items")
-    .select(`id, code, name, uom:units_of_measurement(abbreviation)`)
+    .select(`id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`)
     .eq("is_active", true)
     .eq("stock_behaviour", "phantom");
   for (const t of tokens) {
@@ -329,7 +329,7 @@ export async function promoteLoosePartLabel(
   const { data: existing, error: exErr } = await supabase
     .from("items")
     .select(
-      `id, code, name, stock_behaviour, uom:units_of_measurement(abbreviation)`,
+      `id, code, name, stock_behaviour, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
     )
     .eq("is_active", true)
     .ilike("name", label)

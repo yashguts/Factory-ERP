@@ -298,7 +298,7 @@ export async function _getMrpDataUncached(
           .select(`
             id, code, name, item_type, procurement_type, category_id,
             category:item_categories!items_category_id_fkey(name, procurement_type),
-            uom:units_of_measurement(abbreviation),
+            uom:units_of_measurement!items_uom_id_fkey(abbreviation),
             inventory(quantity)
           `)
           .in("id", itemIds.slice(i, i + 200)),

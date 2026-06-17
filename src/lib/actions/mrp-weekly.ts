@@ -328,7 +328,7 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
       batches.push(
         supabase
           .from("items")
-          .select(`id, code, name, item_type, procurement_type, category_id, category:item_categories!items_category_id_fkey(name, procurement_type), uom:units_of_measurement(abbreviation), inventory(quantity)`)
+          .select(`id, code, name, item_type, procurement_type, category_id, category:item_categories!items_category_id_fkey(name, procurement_type), uom:units_of_measurement!items_uom_id_fkey(abbreviation), inventory(quantity)`)
           .in("id", ids.slice(i, i + 200)),
       );
     }

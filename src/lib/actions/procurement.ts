@@ -128,7 +128,7 @@ async function _getPurchaseOrderUncached(
     .from("purchase_order_lines")
     .select(
       `id, item_id, qty, unit_cost, received_qty, sort_order, description,
-       item:items(code, name, reorder_point, uom:units_of_measurement(abbreviation))`,
+       item:items(code, name, reorder_point, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("po_id", id)
     .order("sort_order");
@@ -225,7 +225,7 @@ async function _getProcurementDataUncached(): Promise<ProcurementData> {
     supabase
       .from("purchase_order_lines")
       .select(
-        "po_id, item_id, qty, unit_cost, received_qty, item:items(code, name, uom:units_of_measurement(abbreviation))",
+        "po_id, item_id, qty, unit_cost, received_qty, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
         wc ? { count: "exact" } : {},
       )
       .range(from, to),
@@ -779,7 +779,7 @@ async function _getPoReceiptsUncached(poId: string): Promise<PoReceipt[]> {
   const { data: rawLines, error: lErr } = await supabase
     .from("purchase_order_receipt_lines")
     .select(
-      "id, receipt_id, po_line_id, item_id, qty, unit_rate, item:items(code, name, uom:units_of_measurement(abbreviation))",
+      "id, receipt_id, po_line_id, item_id, qty, unit_rate, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
     )
     .in("receipt_id", receipts.map((r) => r.id));
   if (lErr) throw lErr;

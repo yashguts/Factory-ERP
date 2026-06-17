@@ -72,7 +72,7 @@ async function _getTrainingCorpusUncached(): Promise<TrainingJob[]> {
     supabase
       .from("job_bom_lines")
       .select(
-        "job_bom_id, category, item_id, required_quantity, item:items(code, name, uom:units_of_measurement(abbreviation))",
+        "job_bom_id, category, item_id, required_quantity, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
         withCount ? { count: "exact" } : {},
       )
       .not("item_id", "is", null)

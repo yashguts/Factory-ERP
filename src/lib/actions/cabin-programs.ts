@@ -193,7 +193,7 @@ export async function getCabinProgramDetail(id: string): Promise<CabinProgramDet
   const [{ data: outs }, { data: fins }] = await Promise.all([
     supabase
       .from("cabin_program_outputs")
-      .select(`*, item:items!cabin_program_outputs_item_id_fkey(code, name, uom:units_of_measurement(abbreviation))`)
+      .select(`*, item:items!cabin_program_outputs_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`)
       .eq("cabin_program_id", id)
       .order("sort_order"),
     supabase.from("cabin_program_finishes").select("finish").eq("cabin_program_id", id),

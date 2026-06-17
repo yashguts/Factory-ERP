@@ -16,7 +16,7 @@ export async function getItems() {
     .select(`
       *,
       category:item_categories!items_category_id_fkey(id, name, parent_id),
-      uom:units_of_measurement(id, abbreviation)
+      uom:units_of_measurement!items_uom_id_fkey(id, abbreviation)
     `)
     .order("code");
 
@@ -70,7 +70,7 @@ export const _getItemsWithStockUncached = async () => {
           `
         *,
         category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
-        uom:units_of_measurement(id, abbreviation),
+        uom:units_of_measurement!items_uom_id_fkey(id, abbreviation),
         inventory(quantity, warehouse_id)
       `,
           withCount ? { count: "exact" } : {},
@@ -203,7 +203,7 @@ const _getItemStockSummariesUncached = async (): Promise<ItemStockSummary[]> => 
       .select(
         `id, code, name, procurement_type, category_id,
          category:item_categories!items_category_id_fkey(name, procurement_type),
-         uom:units_of_measurement(abbreviation),
+         uom:units_of_measurement!items_uom_id_fkey(abbreviation),
          inventory(quantity)`,
         withCount ? { count: "exact" } : {},
       )
@@ -643,7 +643,7 @@ export async function getItemForEdit(
     .select(
       `*,
        category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
-       uom:units_of_measurement(id, abbreviation),
+       uom:units_of_measurement!items_uom_id_fkey(id, abbreviation),
        inventory(quantity, warehouse_id)`,
     )
     .eq("id", id)

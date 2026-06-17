@@ -215,7 +215,7 @@ async function _getJobDispatchSummaryUncached(
       .from("job_bom_lines")
       .select(
         `id, category, required_quantity, item_id,
-         item:items!job_bom_lines_item_id_fkey(code, name, uom:units_of_measurement(abbreviation))`,
+         item:items!job_bom_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
       )
       .eq("job_bom_id", header.id)
       .not("category", "is", null)

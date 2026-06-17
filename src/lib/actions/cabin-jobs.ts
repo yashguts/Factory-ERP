@@ -122,7 +122,7 @@ export async function searchCabinItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name, category_id, uom:units_of_measurement(abbreviation), inventory(quantity)`,
+      `id, code, name, category_id, uom:units_of_measurement!items_uom_id_fkey(abbreviation), inventory(quantity)`,
     )
     .eq("is_active", true)
     .in("category_id", subtree.ids);
@@ -158,7 +158,7 @@ export async function getCabinItemByName(
   const supabase = createCacheClient();
   const { data } = await supabase
     .from("items")
-    .select(`id, code, name, uom:units_of_measurement(abbreviation)`)
+    .select(`id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`)
     .eq("is_active", true)
     .ilike("name", n)
     .limit(1)
@@ -205,7 +205,7 @@ export async function searchCabinBases(
   // hand-added panels are unfindable in cabin jobs.
   let q = supabase
     .from("items")
-    .select(`name, family, finish, uom:units_of_measurement(abbreviation)`)
+    .select(`name, family, finish, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`)
     .eq("is_active", true)
     .in("category_id", subtree.ids);
   for (const token of query.trim().toLowerCase().split(/\s+/).filter(Boolean)) {
@@ -259,7 +259,7 @@ export async function getCabinBaseFinishes(
   const safe = family.replace(/"/g, "");
   const { data, error } = await supabase
     .from("items")
-    .select(`id, code, name, finish, uom:units_of_measurement(abbreviation), inventory(quantity)`)
+    .select(`id, code, name, finish, uom:units_of_measurement!items_uom_id_fkey(abbreviation), inventory(quantity)`)
     .eq("is_active", true)
     .in("category_id", ids)
     .or(`family.eq."${safe}",and(family.is.null,name.eq."${safe}")`);
@@ -537,7 +537,7 @@ export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
     .from("cabin_job_lines")
     .select(
       `id, cabin_type, item_id, qty, sort_order,
-       item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement(abbreviation))`,
+       item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("cabin_job_id", id)
     .order("sort_order");

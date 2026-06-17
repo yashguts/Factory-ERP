@@ -65,7 +65,7 @@ export async function searchItems(
     .select(
       `id, code, name, lookup_key, family, finish, procurement_type,
       category:item_categories!items_category_id_fkey(name, procurement_type),
-      uom:units_of_measurement(abbreviation),
+      uom:units_of_measurement!items_uom_id_fkey(abbreviation),
       inventory(quantity)`,
     )
     .eq("is_active", true);

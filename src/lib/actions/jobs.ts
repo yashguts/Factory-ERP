@@ -227,7 +227,7 @@ export async function getJobDetail(jobId: string) {
         *,
         item:items(id, code, name, item_type, category_id, uom_id,
           category:item_categories(name),
-          uom:units_of_measurement(abbreviation)
+          uom:units_of_measurement!items_uom_id_fkey(abbreviation)
         )
       `)
       .eq("job_bom_id", bomHeader.id)
@@ -502,7 +502,7 @@ export async function getJobTemplate(jobId: string) {
     .select(`
       category, variant, value_text, required_quantity, item_id,
       item:items!job_bom_lines_item_id_fkey(code, name, lookup_key,
-        uom:units_of_measurement(abbreviation)
+        uom:units_of_measurement!items_uom_id_fkey(abbreviation)
       )
     `)
     .eq("job_bom_id", headerResult.data.id)
@@ -564,7 +564,7 @@ export async function getJobBomItemLines(jobId: string) {
     .select(`
       category, variant, value_text, required_quantity, item_id,
       item:items!job_bom_lines_item_id_fkey(code, name,
-        uom:units_of_measurement(abbreviation)
+        uom:units_of_measurement!items_uom_id_fkey(abbreviation)
       )
     `)
     .eq("job_bom_id", header.id)
