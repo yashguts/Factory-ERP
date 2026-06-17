@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { Search, X, Plus, Trash2, Loader2, Check } from "lucide-react";
-import { cn } from "@/lib/utils";
+import { cn, formatDuration, parseDuration } from "@/lib/utils";
 import {
   createCabinProgram,
   updateCabinProgram,
@@ -64,6 +64,12 @@ export function CabinProgramFormModal({
     initial?.input_sheet_item_id ? { id: initial.input_sheet_item_id, name: initial.input_sheet_name ?? "" } : null,
   );
   const [sheetsPerRun, setSheetsPerRun] = useState(String(initial?.sheets_per_run ?? 1));
+  const [machiningTime, setMachiningTime] = useState(
+    initial?.machining_time_seconds ? formatDuration(initial.machining_time_seconds) : "",
+  );
+  const [scrapPercent, setScrapPercent] = useState(
+    initial?.scrap_percent != null ? String(initial.scrap_percent) : "",
+  );
   const [outputs, setOutputs] = useState<OutputRow[]>(
     initial?.outputs.length
       ? initial.outputs.map((o) => ({
@@ -99,6 +105,16 @@ export function CabinProgramFormModal({
     const cleanOut = outputs.filter((o) => o.item_id && Number(o.qty) > 0);
     if (cleanOut.length === 0) return toast.error("Add at least one output.");
 
+    const machiningSeconds = parseDuration(machiningTime);
+    if (machiningSeconds === undefined) {
+      return toast.error('Machining time must be "h:mm:ss", "mm:ss" or decimal minutes (e.g. 7:03 or 7.05).');
+    }
+    const scrapTrim = scrapPercent.trim();
+    const scrapValue = scrapTrim === "" ? null : Number(scrapTrim);
+    if (scrapValue != null && (!Number.isFinite(scrapValue) || scrapValue < 0 || scrapValue > 100)) {
+      return toast.error("Scrap % must be a number between 0 and 100.");
+    }
+
     setSaving(true);
     const input = {
       name: name.trim(),
@@ -107,6 +123,8 @@ export function CabinProgramFormModal({
       machine: machine || null,
       input_sheet_item_id: sheet?.id ?? null,
       sheets_per_run: Number(sheetsPerRun) || 1,
+      machining_time_seconds: machiningSeconds,
+      scrap_percent: scrapValue,
       description: description.trim() || null,
       notes: notes.trim() || null,
       finishes: [...finishes],
@@ -190,6 +208,36 @@ export function CabinProgramFormModal({
             <SheetSearch onPick={(s) => setSheet({ id: s.id, name: s.name })} />
           )}
           <p className="text-[11px] text-[var(--muted-foreground)] mt-1.5">The actual sheet is chosen per finish at plan time — this just fixes the thickness &amp; size.</p>
+        </div>
+
+        {/* Machining time + scrap — read off the uploaded nesting-report PDF */}
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="text-xs text-[var(--muted-foreground)]">
+              Machining time / run <span className="opacity-60">· h:mm:ss or min</span>
+            </label>
+            <Input
+              size="sm"
+              value={machiningTime}
+              onChange={(e) => setMachiningTime(e.target.value)}
+              placeholder="e.g. 0:07:03 or 7.05"
+            />
+          </div>
+          <div>
+            <label className="text-xs text-[var(--muted-foreground)]">
+              Scrap <span className="opacity-60">· % of sheet wasted</span>
+            </label>
+            <Input
+              size="sm"
+              type="number"
+              min="0"
+              max="100"
+              step="0.1"
+              value={scrapPercent}
+              onChange={(e) => setScrapPercent(e.target.value)}
+              placeholder="e.g. 18"
+            />
+          </div>
         </div>
 
         {/* Outputs */}

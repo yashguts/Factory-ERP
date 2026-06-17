@@ -101,6 +101,7 @@ export interface CabinProgramDetail {
   thickness_mm: number | null;
   sheets_per_run: number;
   machining_time_seconds: number | null;
+  scrap_percent: number | null;
   audited_at: string | null;
   sketch_url: string | null;
   sketch_filename: string | null;
@@ -127,6 +128,7 @@ export interface CabinProgramFormInput {
   input_sheet_item_id?: string | null;
   sheets_per_run?: number;
   machining_time_seconds?: number | null;
+  scrap_percent?: number | null;
   description?: string | null;
   notes?: string | null;
   finishes: string[];
@@ -212,6 +214,7 @@ export async function getCabinProgramDetail(id: string): Promise<CabinProgramDet
     thickness_mm: sheetThicknessMm(sheet?.name),
     sheets_per_run: Number(p.sheets_per_run ?? 1),
     machining_time_seconds: (p.machining_time_seconds as number | null) ?? null,
+    scrap_percent: (p.scrap_percent as number | null) ?? null,
     audited_at: (p.audited_at as string | null) ?? null,
     sketch_url: (p.sketch_url as string | null) ?? null,
     sketch_filename: (p.sketch_filename as string | null) ?? null,
@@ -374,6 +377,7 @@ export async function createCabinProgram(input: CabinProgramFormInput): Promise<
       input_sheet_item_id: input.input_sheet_item_id || null,
       sheets_per_run: input.sheets_per_run && input.sheets_per_run > 0 ? input.sheets_per_run : 1,
       machining_time_seconds: input.machining_time_seconds ?? null,
+      scrap_percent: input.scrap_percent ?? null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
     })
@@ -410,6 +414,7 @@ export async function updateCabinProgram(id: string, input: CabinProgramFormInpu
       input_sheet_item_id: input.input_sheet_item_id || null,
       sheets_per_run: input.sheets_per_run && input.sheets_per_run > 0 ? input.sheets_per_run : 1,
       machining_time_seconds: input.machining_time_seconds ?? null,
+      scrap_percent: input.scrap_percent ?? null,
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
       updated_at: new Date().toISOString(),
@@ -449,4 +454,112 @@ export async function deleteCabinProgram(id: string): Promise<{ ok: boolean; err
   revalidateTag("cabin-programs");
   revalidatePath("/cabin-programs");
   return { ok: true };
+}
+
+/* ============================ Sketch / PDF ============================ *
+ * Attach one PDF or image (the nesting report / sketch) per cabin program, so
+ * the machining time and scrap recorded on the program can be read off it.
+ * Mirrors the regular-program sketch upload (operations.ts): stored at
+ * `{programId}/{timestamp}-{name}` in the shared `program-sketches` bucket,
+ * previous file removed on replace.
+ * ------------------------------------------------------------------ */
+
+const SKETCH_BUCKET = "program-sketches";
+const SKETCH_MAX_BYTES = 50 * 1024 * 1024; // 50 MB
+const SKETCH_ALLOWED_MIME = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
+
+function extractSketchPath(url: string): string | null {
+  const marker = `/object/public/${SKETCH_BUCKET}/`;
+  const idx = url.indexOf(marker);
+  if (idx < 0) return null;
+  return decodeURIComponent(url.slice(idx + marker.length));
+}
+
+export interface CabinProgramSketchInfo {
+  url: string;
+  filename: string;
+  uploaded_at: string;
+}
+
+export async function uploadCabinProgramSketch(
+  formData: FormData,
+): Promise<CabinProgramSketchInfo> {
+  const programId = formData.get("programId");
+  const file = formData.get("file");
+
+  if (typeof programId !== "string" || !programId) throw new Error("Missing programId");
+  if (!(file instanceof File)) throw new Error("Missing file");
+  if (file.size === 0) throw new Error("File is empty");
+  if (file.size > SKETCH_MAX_BYTES) {
+    throw new Error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`);
+  }
+  if (!SKETCH_ALLOWED_MIME.has(file.type)) {
+    throw new Error(`Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`);
+  }
+
+  const supabase = await createClient();
+
+  const { data: existing } = await supabase
+    .from("cabin_programs")
+    .select("sketch_url")
+    .eq("id", programId)
+    .maybeSingle();
+  const previousUrl = (existing?.sketch_url as string | null) ?? null;
+  if (previousUrl) {
+    const previousPath = extractSketchPath(previousUrl);
+    if (previousPath) await supabase.storage.from(SKETCH_BUCKET).remove([previousPath]);
+  }
+
+  const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+  const path = `${programId}/${Date.now()}-${safeName}`;
+  const { error: uploadError } = await supabase.storage
+    .from(SKETCH_BUCKET)
+    .upload(path, file, { contentType: file.type, upsert: false });
+  if (uploadError) throw uploadError;
+
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(SKETCH_BUCKET).getPublicUrl(path);
+  const uploaded_at = new Date().toISOString();
+
+  const { error: updateError } = await supabase
+    .from("cabin_programs")
+    .update({ sketch_url: publicUrl, sketch_filename: file.name, sketch_uploaded_at: uploaded_at })
+    .eq("id", programId);
+  if (updateError) throw updateError;
+
+  revalidateTag("cabin-programs");
+  revalidatePath(`/cabin-programs/${programId}`);
+  return { url: publicUrl, filename: file.name, uploaded_at };
+}
+
+export async function deleteCabinProgramSketch(programId: string): Promise<void> {
+  if (!programId) throw new Error("Missing programId");
+  const supabase = await createClient();
+
+  const { data: row } = await supabase
+    .from("cabin_programs")
+    .select("sketch_url")
+    .eq("id", programId)
+    .maybeSingle();
+  const url = (row?.sketch_url as string | null) ?? null;
+  if (url) {
+    const path = extractSketchPath(url);
+    if (path) await supabase.storage.from(SKETCH_BUCKET).remove([path]);
+  }
+
+  const { error } = await supabase
+    .from("cabin_programs")
+    .update({ sketch_url: null, sketch_filename: null, sketch_uploaded_at: null })
+    .eq("id", programId);
+  if (error) throw error;
+
+  revalidateTag("cabin-programs");
+  revalidatePath(`/cabin-programs/${programId}`);
 }

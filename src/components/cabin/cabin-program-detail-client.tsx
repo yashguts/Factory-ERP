@@ -3,10 +3,11 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Cog, Check, Pencil, Trash2, Clock } from "lucide-react";
+import { ArrowLeft, Cog, Check, Pencil, Trash2, Clock, Scissors } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
+import { CabinProgramSketchPanel } from "@/components/cabin/cabin-program-sketch-panel";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -64,6 +65,9 @@ export function CabinProgramDetailClient({ program }: { program: CabinProgramDet
             {program.machine && <span>{MACHINE_LABEL[program.machine] ?? program.machine}</span>}
             {program.machining_time_seconds != null && (
               <span className="inline-flex items-center gap-1"><Clock size={13} /> {Math.round(program.machining_time_seconds / 60)} min</span>
+            )}
+            {program.scrap_percent != null && (
+              <span className="inline-flex items-center gap-1"><Scissors size={13} /> {program.scrap_percent}% scrap</span>
             )}
           </span>
         }
@@ -144,6 +148,19 @@ export function CabinProgramDetailClient({ program }: { program: CabinProgramDet
             {program.finishes.length === 0 && <span className="text-sm text-[var(--muted-foreground)]">None set</span>}
           </div>
         </div>
+      </div>
+
+      {/* Nesting-report PDF — the document the time & scrap are read off. */}
+      <div className="mt-4">
+        <div className="text-xs font-medium text-[var(--muted-foreground)] uppercase tracking-wide mb-2">
+          Nesting report — upload the PDF, then enter machining time &amp; scrap (Edit)
+        </div>
+        <CabinProgramSketchPanel
+          programId={program.id}
+          initialUrl={program.sketch_url}
+          initialFilename={program.sketch_filename}
+          initialUploadedAt={program.sketch_uploaded_at}
+        />
       </div>
 
       {editing && (
