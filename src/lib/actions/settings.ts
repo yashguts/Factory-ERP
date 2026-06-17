@@ -2,7 +2,7 @@
 
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
-import { getItemsWithStock } from "@/lib/actions/inventory";
+import { getItemStockSummaries } from "@/lib/actions/inventory";
 import { getMrpData, getJobDriveDemandRules } from "@/lib/actions/mrp";
 
 /* ================================================================== */
@@ -33,7 +33,10 @@ export interface OverstockRow {
 }
 
 export async function getOverstockItems(): Promise<OverstockRow[]> {
-  const [items, mrp] = await Promise.all([getItemsWithStock(), getMrpData()]);
+  const [items, mrp] = await Promise.all([
+    getItemStockSummaries(),
+    getMrpData(),
+  ]);
   const reqByItem = new Map(mrp.map((r) => [r.item_id, r.total_required]));
 
   const out: OverstockRow[] = [];
@@ -51,8 +54,8 @@ export async function getOverstockItems(): Promise<OverstockRow[]> {
       item_id: it.id,
       code: it.code,
       name: it.name,
-      category_name: it.category?.name ?? null,
-      uom: it.uom?.abbreviation ?? null,
+      category_name: it.category_name,
+      uom: it.uom_abbreviation,
       procurement_type: it.effective_procurement_type,
       in_stock,
       required,

@@ -137,9 +137,120 @@ export const _getItemsWithStockUncached = async () => {
   });
 };
 
-export const getItemsWithStock = unstable_cache(
-  _getItemsWithStockUncached,
-  ["items-with-stock"],
+// NOTE: there is intentionally NO cached wrapper around the fat read above.
+// Its row (~30 fields × ~2,700 active non-cabin items) serialises to ~2.2MB,
+// which silently exceeds Next's 2MB unstable_cache entry cap — so a cached
+// wrapper never actually cached and re-ran the whole fetch on every request
+// (the /settings 2MB build warning). The only consumer that needs the FULL
+// shape is the make-plan, which reads `_getItemsWithStockUncached` directly
+// (it's already inside its own unstable_cache and must not nest). Everything
+// else uses a lighter read: the /inventory list uses getInventoryPage, detail
+// pages use getItemRefs, and the Settings overstock report uses the lean
+// getItemStockSummaries below.
+
+/* ------------------------------------------------------------------ *
+ * Lean item + stock summary read.
+ *
+ * Whole active non-cabin catalog with on-hand stock, but only the handful
+ * of fields the overstock report needs (id/code/name/category/uom/effective
+ * procurement/total_stock). ~0.55MB serialised — comfortably under the 2MB
+ * cache cap, so unlike the fat read this one actually caches.
+ * ------------------------------------------------------------------ */
+export interface ItemStockSummary {
+  id: string;
+  code: string;
+  name: string;
+  category_name: string | null;
+  uom_abbreviation: string | null;
+  effective_procurement_type: "make" | "trade" | null;
+  total_stock: number;
+}
+
+const _getItemStockSummariesUncached = async (): Promise<ItemStockSummary[]> => {
+  const supabase = createCacheClient();
+
+  // Exclude the Cabin subtree (cabin items live in /cabin-inventory) — same
+  // rule getItemsWithStock applies. Build the id set first so we can drop it
+  // at the query.
+  const { data: allCats } = await supabase
+    .from("item_categories")
+    .select("id, name, parent_id");
+  const childrenOf = new Map<string, string[]>();
+  for (const c of allCats ?? []) {
+    if (c.parent_id) {
+      const a = childrenOf.get(c.parent_id as string) ?? [];
+      a.push(c.id as string);
+      childrenOf.set(c.parent_id as string, a);
+    }
+  }
+  const cabinRoot = (allCats ?? []).find(
+    (c) => c.name === "Cabin" && c.parent_id === null,
+  );
+  const cabinCatIds = new Set<string>();
+  if (cabinRoot) {
+    const stack = [cabinRoot.id as string];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      cabinCatIds.add(id);
+      for (const ch of childrenOf.get(id) ?? []) stack.push(ch);
+    }
+  }
+  const cabinIds = [...cabinCatIds];
+
+  const rows: any[] = await fetchAllRanged((from, to, withCount) => {
+    let q = supabase
+      .from("items")
+      .select(
+        `id, code, name, procurement_type, category_id,
+         category:item_categories!items_category_id_fkey(name, procurement_type),
+         uom:units_of_measurement(abbreviation),
+         inventory(quantity)`,
+        withCount ? { count: "exact" } : {},
+      )
+      .eq("is_active", true);
+    if (cabinIds.length > 0) {
+      q = q.or(`category_id.is.null,category_id.not.in.(${cabinIds.join(",")})`);
+    }
+    return q.order("code").range(from, to);
+  });
+
+  return rows
+    .filter(
+      (item) => !(item.category_id && cabinCatIds.has(item.category_id as string)),
+    )
+    .map((item) => {
+      // PostgREST returns a belongsTo relation as either {...} or [{...}].
+      const cat = (Array.isArray(item.category)
+        ? item.category[0]
+        : item.category) as {
+        name: string;
+        procurement_type: "make" | "trade" | null;
+      } | null;
+      const uom = (Array.isArray(item.uom) ? item.uom[0] : item.uom) as {
+        abbreviation: string;
+      } | null;
+      const itemPT = (item.procurement_type as "make" | "trade" | null) ?? null;
+      return {
+        id: item.id as string,
+        code: item.code as string,
+        name: item.name as string,
+        category_name: cat?.name ?? null,
+        uom_abbreviation: uom?.abbreviation ?? null,
+        effective_procurement_type: (itemPT ??
+          cat?.procurement_type ??
+          null) as "make" | "trade" | null,
+        total_stock: (item.inventory ?? []).reduce(
+          (sum: number, inv: { quantity: number }) =>
+            sum + Number(inv.quantity),
+          0,
+        ),
+      };
+    });
+};
+
+export const getItemStockSummaries = unstable_cache(
+  _getItemStockSummariesUncached,
+  ["item-stock-summaries"],
   { revalidate: 600, tags: ["items", "inventory-stock"] },
 );
 
@@ -216,8 +327,8 @@ export const getItemRefs = unstable_cache(_getItemRefsUncached, ["item-refs"], {
  * fields) to the browser and filter/sort/paginate in JS. These helpers move
  * all of that into one Postgres call (the search_inventory function), so the
  * browser only ever receives one page (~50 rows) — fast regardless of host.
- * getItemsWithStock above is kept as-is for the production plan, which needs
- * the full list.
+ * The fat _getItemsWithStockUncached above is kept for the production plan,
+ * which needs the full per-item shape (it reads it uncached, see note there).
  * ------------------------------------------------------------------ */
 
 /** Full item shape for the edit/clone form modal + the (legacy) full list. */
