@@ -151,52 +151,42 @@ const _getJobReadinessFlagsUncached =
   async (): Promise<JobReadinessFlags> => {
     const supabase = createCacheClient();
 
-    // Job BOM: a job is "filled" when one of its headers has ≥1 line.
-    // Read headers (id→job) and lines independently, then join in memory.
-    const [headerRows, lineRows, cabinRows, cabinLineRows] = await Promise.all([
-      fetchAllRanged<{ id: string; job_id: string }>((from, to, withCount) =>
-        supabase
-          .from("job_bom_headers")
-          .select("id, job_id", withCount ? { count: "exact" } : {})
-          .range(from, to),
-      ),
-      fetchAllRanged<{ job_bom_id: string }>((from, to, withCount) =>
-        supabase
-          .from("job_bom_lines")
-          .select("job_bom_id", withCount ? { count: "exact" } : {})
-          .range(from, to),
-      ),
-      fetchAllRanged<{ id: string; job_number: string }>((from, to, withCount) =>
-        supabase
-          .from("cabin_jobs")
-          .select("id, job_number", withCount ? { count: "exact" } : {})
-          .range(from, to),
-      ),
-      fetchAllRanged<{ cabin_job_id: string }>((from, to, withCount) =>
-        supabase
-          .from("cabin_job_lines")
-          .select("cabin_job_id", withCount ? { count: "exact" } : {})
-          .range(from, to),
-      ),
+    // Ask Postgres for a per-parent line COUNT rather than pulling every line
+    // row. The parent tables are small (one header per job-BOM section, one
+    // row per cabin job), so each of these is a single un-paginated request —
+    // which also sidesteps the all-rows fetch silently truncating to its first
+    // page when the exact-count is unavailable.
+    const [headerRes, cabinRes] = await Promise.all([
+      supabase
+        .from("job_bom_headers")
+        .select("job_id, job_bom_lines(count)"),
+      supabase
+        .from("cabin_jobs")
+        .select("job_number, cabin_job_lines(count)"),
     ]);
+    if (headerRes.error) throw headerRes.error;
+    if (cabinRes.error) throw cabinRes.error;
 
-    const headerToJob = new Map<string, string>();
-    for (const h of headerRows) headerToJob.set(h.id, h.job_id);
+    // Job BOM: a job is "filled" when any of its headers has ≥1 line.
     const bomJobIds = new Set<string>();
-    for (const l of lineRows) {
-      const jid = headerToJob.get(l.job_bom_id);
-      if (jid) bomJobIds.add(jid);
+    for (const h of (headerRes.data ?? []) as Array<{
+      job_id: string | null;
+      job_bom_lines: { count: number }[] | null;
+    }>) {
+      const n = h.job_bom_lines?.[0]?.count ?? 0;
+      if (n > 0 && h.job_id) bomJobIds.add(h.job_id);
     }
 
-    // Cabin BOM: cabin job ids that have ≥1 line → their normalised numbers.
-    const cabinIdToNumber = new Map<string, string>();
-    for (const c of cabinRows) {
-      cabinIdToNumber.set(c.id, (c.job_number ?? "").trim().toLowerCase());
-    }
+    // Cabin BOM: cabin jobs with ≥1 line → their normalised job numbers
+    // (lower(btrim(...)) to match how jobs link to cabin_jobs by number text).
     const cabinJobNumbers = new Set<string>();
-    for (const l of cabinLineRows) {
-      const num = cabinIdToNumber.get(l.cabin_job_id);
-      if (num) cabinJobNumbers.add(num);
+    for (const c of (cabinRes.data ?? []) as Array<{
+      job_number: string | null;
+      cabin_job_lines: { count: number }[] | null;
+    }>) {
+      const n = c.cabin_job_lines?.[0]?.count ?? 0;
+      const num = (c.job_number ?? "").trim().toLowerCase();
+      if (n > 0 && num) cabinJobNumbers.add(num);
     }
 
     return {
