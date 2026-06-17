@@ -722,6 +722,8 @@ function autoCodePrefix(
       return "MFS";
     case "door_panel":
       return "DP";
+    case "temporary":
+      return "TMP";
     default:
       return "ITM";
   }

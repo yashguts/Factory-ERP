@@ -62,14 +62,16 @@ const TYPE_LABELS: Record<ItemType, string> = {
   finished_good: "Finished Good",
   mechanical_finished_stock: "Mech. Finished Stock",
   door_panel: "Door Panel",
+  temporary: "Temporary",
 };
 
-const TYPE_BADGE_VARIANT: Record<ItemType, "blue" | "purple" | "green" | "amber" | "pink"> = {
+const TYPE_BADGE_VARIANT: Record<ItemType, "blue" | "purple" | "green" | "amber" | "pink" | "neutral"> = {
   raw_material: "blue",
   sub_assembly: "purple",
   finished_good: "green",
   mechanical_finished_stock: "amber",
   door_panel: "pink",
+  temporary: "neutral",
 };
 
 type SortKey = "code" | "name" | "stock" | "category" | "cost";
@@ -98,7 +100,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [debouncedSearch, setDebouncedSearch] = useState(() => readParam(sp, "q", ""));
   const [typeFilter, setTypeFilter] = useState<ItemType | "all">(
-    () => readParam(sp, "type", "all", ["all", "raw_material", "sub_assembly", "finished_good", "mechanical_finished_stock", "door_panel"]) as ItemType | "all",
+    () => readParam(sp, "type", "all", ["all", "raw_material", "sub_assembly", "finished_good", "mechanical_finished_stock", "door_panel", "temporary"]) as ItemType | "all",
   );
   const [categoryFilter, setCategoryFilter] = useState<string>(() => readParam(sp, "cat", "all"));
   const [subCategoryFilter, setSubCategoryFilter] = useState<string>(() => readParam(sp, "sub", "all"));
@@ -413,6 +415,7 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
           <option value="finished_good">Finished Good</option>
           <option value="mechanical_finished_stock">Mech. Finished Stock</option>
           <option value="door_panel">Door Panel</option>
+          <option value="temporary">Temporary</option>
         </Select>
 
         <Select

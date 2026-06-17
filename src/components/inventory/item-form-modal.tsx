@@ -289,10 +289,13 @@ export function ItemFormModal({
       ? ""
       : String(Math.round((1 / Number(purchaseConversion)) * 1e6) / 1e6);
 
-  // Filter parent categories by selected item type
+  // Filter parent categories by selected item type. A brand-new/empty item type
+  // (e.g. "Temporary" before any item uses it) has no category history yet — fall
+  // back to ALL categories so the type is actually usable, instead of leaving the
+  // dropdown empty. Established types still filter to their own categories.
   const filteredParentCategories = useMemo(() => {
     const allowedIds = typeToParentCatIds[form.item_type];
-    if (!allowedIds || allowedIds.size === 0) return []; // no categories for types with no items
+    if (!allowedIds || allowedIds.size === 0) return parentCategories;
     return parentCategories.filter((c) => allowedIds.has(c.id));
   }, [form.item_type, typeToParentCatIds, parentCategories]);
 
@@ -536,6 +539,7 @@ export function ItemFormModal({
               <option value="finished_good">Finished Good</option>
               <option value="mechanical_finished_stock">Mechanical Finished Stock</option>
               <option value="door_panel">Door Panel</option>
+              <option value="temporary">Temporary</option>
             </Select>
           </div>
         </div>

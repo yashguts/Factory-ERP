@@ -1,4 +1,4 @@
-export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock" | "door_panel";
+export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mechanical_finished_stock" | "door_panel" | "temporary";
 /**
  * How an item behaves in stock/planning (orthogonal to make/trade procurement_type):
  * - stocked: has a balance, is planned (raw sheets, bought parts, real sub-assemblies)
