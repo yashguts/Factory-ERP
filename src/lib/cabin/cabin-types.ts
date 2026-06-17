@@ -12,6 +12,7 @@ export const CABIN_TYPES = [
   "Cabin Glass",
   "Front Wall RHS",
   "Front Wall LHS",
+  "Front Cover",
   "Bottom Support (Glass)",
   "Bottom Support (Glass) Cover",
   "Top Support (Glass)",
@@ -81,7 +82,7 @@ export function cabinInventoryType(jobType: string): string {
  * Cabin Job picker is two-step (base item -> finish) instead of one long list.
  * Everything else (Platform, Canopy, Supports, Covers, ...) stays single-select.
  */
-export const FINISH_SPLIT_INVENTORY_TYPES = ["Side Panel", "Front Wall", "Car Linton"] as const;
+export const FINISH_SPLIT_INVENTORY_TYPES = ["Side Panel", "Front Wall", "Car Linton", "Front Cover"] as const;
 
 export function isFinishSplitType(jobType: string): boolean {
   return (FINISH_SPLIT_INVENTORY_TYPES as readonly string[]).includes(

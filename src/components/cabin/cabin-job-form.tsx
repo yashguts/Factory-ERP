@@ -52,6 +52,31 @@ const SUPPORT_TO_COVER: Record<string, string> = {
 const coverNameFor = (supportName: string) =>
   supportName.replace("(Glass)", "(Glass) Cover");
 
+// Picking a GLASS Front Wall item (RHS/LHS) auto-fills its matching Front Cover.
+// The Front Cover item name = the glass item's name with " FRONT COVER" inserted
+// right after the GLASS token (e.g. "AT P1R-00 RHO STD GLASS SS 304" ->
+// "AT P1R-00 RHO STD GLASS FRONT COVER SS 304"). Non-glass front walls have no
+// front cover, so they pair to nothing.
+const FRONT_WALL_TYPES = new Set(["Front Wall RHS", "Front Wall LHS"]);
+const FRONT_COVER_TYPE = "Front Cover";
+const frontCoverNameFor = (glassName: string) =>
+  glassName.replace(/\bGLASS\b/i, "GLASS FRONT COVER");
+
+/** Which "cover" block (if any) a picked row in `type` should auto-fill. */
+function coverTypeForSource(type: string): string | null {
+  if (SUPPORT_TO_COVER[type]) return SUPPORT_TO_COVER[type];
+  if (FRONT_WALL_TYPES.has(type)) return FRONT_COVER_TYPE;
+  return null;
+}
+/** The cover item NAME to look up for this pick, or null when the pick has no
+ *  cover (e.g. a non-GLASS Front Wall item). */
+function coverNameForSource(type: string, itemName: string): string | null {
+  if (SUPPORT_TO_COVER[type]) return coverNameFor(itemName);
+  if (FRONT_WALL_TYPES.has(type))
+    return /\bGLASS\b/i.test(itemName) ? frontCoverNameFor(itemName) : null;
+  return null;
+}
+
 export function CabinJobForm({
   job,
   cloneFrom,
@@ -85,13 +110,20 @@ export function CabinJobForm({
         qty: l.qty || 1,
       });
     }
-    // Re-link saved Cover rows back to their Support rows so qty stays in sync
-    // when editing an existing job.
-    for (const [supportType, coverType] of Object.entries(SUPPORT_TO_COVER)) {
+    // Re-link saved Cover rows back to their source rows so qty stays in sync
+    // when editing an existing job. Covers: Support (Glass) -> its Cover, and
+    // GLASS Front Wall (RHS/LHS) -> Front Cover.
+    const COVER_PAIRS: Array<[string, string, (n: string) => string]> = [
+      ["Bottom Support (Glass)", "Bottom Support (Glass) Cover", coverNameFor],
+      ["Top Support (Glass)", "Top Support (Glass) Cover", coverNameFor],
+      ["Front Wall RHS", FRONT_COVER_TYPE, frontCoverNameFor],
+      ["Front Wall LHS", FRONT_COVER_TYPE, frontCoverNameFor],
+    ];
+    for (const [sourceType, coverType, nameOf] of COVER_PAIRS) {
       for (const cr of map[coverType] ?? []) {
-        if (!cr.item_name) continue;
-        const sr = (map[supportType] ?? []).find(
-          (s) => s.item_name && coverNameFor(s.item_name) === cr.item_name,
+        if (!cr.item_name || cr.linkedTo) continue;
+        const sr = (map[sourceType] ?? []).find(
+          (s) => s.item_name && nameOf(s.item_name) === cr.item_name,
         );
         if (sr) {
           cr.linkedTo = sr._key;
@@ -118,10 +150,13 @@ export function CabinJobForm({
           : r,
       ),
     );
-    const coverType = SUPPORT_TO_COVER[type];
+    const coverType = coverTypeForSource(type);
     if (!coverType) return;
     const qty = (rowsByType[type] ?? []).find((r) => r._key === key)?.qty || 1;
-    getCabinItemByName(coverNameFor(it.name)).then((cover) => {
+
+    const applyCover = (
+      cover: { id: string; code: string; name: string; uom: string } | null,
+    ) =>
       setRowsByType((prev) => {
         const covers = prev[coverType] ?? [];
         const idx = covers.findIndex((r) => r.linkedTo === key);
@@ -144,7 +179,15 @@ export function CabinJobForm({
           idx >= 0 ? covers.map((r, i) => (i === idx ? newCover : r)) : [...covers, newCover];
         return { ...prev, [coverType]: next };
       });
-    });
+
+    // A pick with no matching cover (e.g. a non-GLASS Front Wall item) drops any
+    // previously auto-added cover linked to this row.
+    const coverName = coverNameForSource(type, it.name);
+    if (!coverName) {
+      applyCover(null);
+      return;
+    }
+    getCabinItemByName(coverName).then(applyCover);
   };
 
   const clearItem = (type: string, key: string) => {
@@ -155,20 +198,20 @@ export function CabinJobForm({
           : r,
       ),
     );
-    const coverType = SUPPORT_TO_COVER[type];
+    const coverType = coverTypeForSource(type);
     if (coverType) setRows(coverType, (rs) => rs.filter((r) => r.linkedTo !== key));
   };
 
   const setQty = (type: string, key: string, q: number) => {
     setRows(type, (rs) => rs.map((r) => (r._key === key ? { ...r, qty: q } : r)));
-    const coverType = SUPPORT_TO_COVER[type];
+    const coverType = coverTypeForSource(type);
     if (coverType)
       setRows(coverType, (rs) => rs.map((r) => (r.linkedTo === key ? { ...r, qty: q } : r)));
   };
 
   const removeRow = (type: string, key: string) => {
     setRows(type, (rs) => rs.filter((r) => r._key !== key));
-    const coverType = SUPPORT_TO_COVER[type];
+    const coverType = coverTypeForSource(type);
     if (coverType) setRows(coverType, (rs) => rs.filter((r) => r.linkedTo !== key));
   };
 
