@@ -1,6 +1,7 @@
 "use server";
 
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
+import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { recordTransaction } from "@/lib/actions/inventory";
@@ -821,10 +822,13 @@ export async function deletePurchaseOrder(id: string): Promise<SaveResult> {
     if (error) throw error;
     revalidateTag("purchase-orders");
     revalidatePath("/procurement");
-    return { ok: true };
   } catch (e) {
     return { ok: false, error: msg(e, "Could not delete the purchase order") };
   }
+  // Navigate to the Procurement list from the server, so the now-deleted detail
+  // route never re-renders (which would 404). redirect() throws NEXT_REDIRECT,
+  // so it MUST sit outside the try/catch above.
+  redirect("/procurement");
 }
 
 /* ================================================================== */

@@ -220,13 +220,11 @@ export function PoDetailClient({
 
   const doDelete = () => {
     startTransition(async () => {
+      // On success the server redirects to /procurement; we only reach the lines
+      // below on failure.
       const res = await deletePurchaseOrder(po.id);
       setConfirmDelete(false);
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
-      }
-      router.push("/procurement");
+      if (res && !res.ok) toast.error(res.error);
     });
   };
 
