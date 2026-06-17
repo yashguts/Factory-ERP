@@ -473,11 +473,29 @@ export interface PurchaseOrderLine {
   id: string;
   po_id: string;
   item_id: string;
+  /** Ordered qty in the line's ORDER unit: the Purchase UOM when
+   *  `purchase_uom_id` is set, else the item's stock UOM (the common case). */
   qty: number;
   unit_cost: number | null;
+  /** Received qty in the same unit as `qty` (purchase side) — drives completion. */
   received_qty: number;
   sort_order: number;
   created_at: string;
+  /**
+   * Dual-UOM line (Purchase UOM ≠ stock UOM): snapshot of the item's purchase
+   * UOM at order time. NULL ⇒ same-UOM line, `qty` is in stock units.
+   */
+  purchase_uom_id: string | null;
+  /**
+   * Tentative expected stock-UOM qty for a dual-UOM line (planning / MRP). The
+   * ACTUAL stock qty is counted at receipt. NULL ⇒ treat as `qty`.
+   */
+  tentative_stock_qty: number | null;
+  /**
+   * Actual stock-UOM qty received so far, accumulated from receipts. NULL ⇒
+   * none recorded as dual-UOM; callers coalesce to `received_qty`.
+   */
+  received_stock_qty: number | null;
 }
 
 // Supabase Database type definition

@@ -20,12 +20,20 @@ interface Row {
   item_id: string;
   item_code: string;
   item_name: string;
-  uom: string | null;
-  ordered: number;
-  received: number;
-  outstanding: number;
-  qty: number; // receive now
-  rate: number | null;
+  /** Dual-UOM line: Purchase UOM ≠ stock UOM. */
+  dual: boolean;
+  /** Order unit (Purchase UOM for dual lines, else the stock unit). */
+  orderAbbr: string | null;
+  /** Stock unit (what posts to inventory). */
+  stockAbbr: string | null;
+  /** Nominal stock units per 1 order unit (tentative ÷ ordered) — seeds stockQty. */
+  perUnitStock: number | null;
+  ordered: number; // order unit
+  received: number; // order unit
+  outstanding: number; // order unit
+  qty: number; // receive now, order unit
+  stockQty: number; // actual stock counted (dual); mirrors qty for same-UOM
+  rate: number | null; // per order unit
 }
 
 /**
@@ -55,16 +63,30 @@ export function ReceiveModal({
     lines
       .map((l) => {
         const outstanding = Math.max(0, l.qty - l.received_qty);
+        const dual = !!l.purchase_uom_id;
+        // Nominal stock-per-order-unit from the tentative estimate (for seeding).
+        const perUnitStock =
+          dual && l.tentative_stock_qty != null && l.qty > 0
+            ? l.tentative_stock_qty / l.qty
+            : null;
+        const seededStock =
+          dual && perUnitStock != null
+            ? Math.round(outstanding * perUnitStock * 1000) / 1000
+            : outstanding;
         return {
           po_line_id: l.id,
           item_id: l.item_id,
           item_code: l.item_code,
           item_name: l.item_name,
-          uom: l.uom_abbreviation,
+          dual,
+          orderAbbr: dual ? l.purchase_uom_abbreviation : l.uom_abbreviation,
+          stockAbbr: l.uom_abbreviation,
+          perUnitStock,
           ordered: l.qty,
           received: l.received_qty,
           outstanding,
-          qty: outstanding, // default: receive what's left
+          qty: outstanding, // default: receive what's left (order unit)
+          stockQty: seededStock, // default: tentative-prorated actual stock
           rate: l.unit_cost, // default to the ordered cost (editable, optional)
         };
       })
@@ -72,12 +94,37 @@ export function ReceiveModal({
   );
 
   const update = (id: string, patch: Partial<Row>) =>
-    setRows((rs) => rs.map((r) => (r.po_line_id === id ? { ...r, ...patch } : r)));
-  const fillAll = () => setRows((rs) => rs.map((r) => ({ ...r, qty: r.outstanding })));
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.po_line_id !== id) return r;
+        const next = { ...r, ...patch };
+        // When the order qty changes on a dual line with a known nominal factor,
+        // re-seed the actual stock (still editable — manual stockQty edits win).
+        if (patch.qty !== undefined && patch.stockQty === undefined && r.dual && r.perUnitStock != null) {
+          next.stockQty = Math.round((Number(patch.qty) || 0) * r.perUnitStock * 1000) / 1000;
+        }
+        return next;
+      }),
+    );
+  const fillAll = () =>
+    setRows((rs) =>
+      rs.map((r) => ({
+        ...r,
+        qty: r.outstanding,
+        stockQty:
+          r.dual && r.perUnitStock != null
+            ? Math.round(r.outstanding * r.perUnitStock * 1000) / 1000
+            : r.stockQty,
+      })),
+    );
   const clearAll = () => setRows((rs) => rs.map((r) => ({ ...r, qty: 0 })));
 
+  // Actual stock a row will post: counted figure for dual lines, else the qty.
+  const stockOf = (r: Row) =>
+    r.dual ? (r.stockQty > 0 ? r.stockQty : r.perUnitStock != null ? r.qty * r.perUnitStock : r.qty) : r.qty;
+
   const active = rows.filter((r) => r.qty > 0);
-  const totalQty = active.reduce((a, r) => a + r.qty, 0);
+  const totalStock = active.reduce((a, r) => a + stockOf(r), 0);
   const totalValue = active.reduce((a, r) => a + r.qty * (r.rate ?? 0), 0);
 
   const save = () => {
@@ -95,6 +142,7 @@ export function ReceiveModal({
           poLineId: r.po_line_id,
           itemId: r.item_id,
           qty: r.qty,
+          stockQty: stockOf(r),
           unitRate: r.rate,
         })),
       });
@@ -111,7 +159,7 @@ export function ReceiveModal({
         if (!up.ok) toast.error(`Received, but the invoice didn't upload: ${up.error}`);
       }
       toast.success(
-        `Received ${totalQty.toLocaleString()} units across ${active.length} item${active.length === 1 ? "" : "s"} into Main Store stock.`,
+        `Received ${active.length} item${active.length === 1 ? "" : "s"} · ${totalStock.toLocaleString()} units into Main Store stock.`,
       );
       onSaved();
       onClose();
@@ -158,10 +206,11 @@ export function ReceiveModal({
 
         {/* lines */}
         <div className="border border-[var(--border)] rounded-md overflow-hidden">
-          <div className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 py-2 bg-[var(--muted)]/50 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+          <div className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 bg-[var(--muted)]/50 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
             <span>Item</span>
-            <span className="w-40 text-right">Ordered · received</span>
-            <span className="w-24 text-right">Receive now</span>
+            <span className="w-36 text-right">Ordered · left</span>
+            <span className="w-28 text-right">Receive now</span>
+            <span className="w-28 text-right">→ Stock</span>
             <span className="w-24 text-right">Rate ₹</span>
           </div>
           <div className="max-h-[45vh] overflow-y-auto divide-y divide-[var(--border)]">
@@ -172,19 +221,29 @@ export function ReceiveModal({
             ) : (
               rows.map((r) => {
                 const over = r.qty > r.outstanding;
+                const stockNow = stockOf(r);
                 return (
-                  <div key={r.po_line_id} className="grid grid-cols-[1fr_auto_auto_auto] gap-2 px-3 py-2 items-center">
+                  <div key={r.po_line_id} className="grid grid-cols-[1fr_auto_auto_auto_auto] gap-2 px-3 py-2 items-center">
                     <div className="min-w-0">
                       <div className="text-sm font-medium truncate" title={r.item_name}>{r.item_name}</div>
-                      <div className="text-[11px] text-[var(--muted-foreground)] font-mono">{r.item_code}</div>
+                      <div className="text-[11px] text-[var(--muted-foreground)] font-mono">
+                        {r.item_code}
+                        {r.dual && (
+                          <span className="ml-1.5 font-sans normal-case text-[var(--primary)]">
+                            bought in {r.orderAbbr}
+                          </span>
+                        )}
+                      </div>
                     </div>
-                    <div className="w-40 text-right text-xs tabular-nums">
-                      <span className="text-[var(--warning)] font-medium">{r.outstanding.toLocaleString()} left</span>
+                    <div className="w-36 text-right text-xs tabular-nums">
+                      <span className="text-[var(--warning)] font-medium">
+                        {r.outstanding.toLocaleString()} {r.orderAbbr ?? ""} left
+                      </span>
                       <span className="block text-[10px] text-[var(--muted-foreground)]">
                         {r.ordered.toLocaleString()} ordered · {r.received.toLocaleString()} received
                       </span>
                     </div>
-                    <div className="w-24 flex items-center justify-end gap-1">
+                    <div className="w-28 flex items-center justify-end gap-1">
                       <input
                         type="number"
                         min={0}
@@ -194,7 +253,25 @@ export function ReceiveModal({
                         className={`w-16 h-8 px-2 text-sm text-right rounded-md border bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] ${over ? "border-[var(--warning)]" : "border-[var(--border)]"}`}
                         title={over ? "More than what's outstanding" : undefined}
                       />
-                      <span className="w-6 text-[11px] text-[var(--muted-foreground)] text-center shrink-0">{r.uom || "—"}</span>
+                      <span className="w-8 text-[11px] text-[var(--muted-foreground)] text-center shrink-0 truncate" title={r.orderAbbr ?? ""}>{r.orderAbbr || "—"}</span>
+                    </div>
+                    <div className="w-28 flex items-center justify-end gap-1">
+                      {r.dual ? (
+                        <>
+                          <input
+                            type="number"
+                            min={0}
+                            step="any"
+                            value={r.stockQty || ""}
+                            onChange={(e) => update(r.po_line_id, { stockQty: e.target.value ? Number(e.target.value) : 0 })}
+                            className={`w-16 h-8 px-2 text-sm text-right rounded-md border bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] ${r.qty > 0 && stockNow <= 0 ? "border-[var(--warning)]" : "border-[var(--border)]"}`}
+                            title="Actual stock counted on arrival — this is what posts to inventory"
+                          />
+                          <span className="w-8 text-[11px] text-[var(--muted-foreground)] text-center shrink-0 truncate" title={r.stockAbbr ?? ""}>{r.stockAbbr || "—"}</span>
+                        </>
+                      ) : (
+                        <span className="w-full text-[11px] text-[var(--muted-foreground)] text-right pr-1" title="Same as receive qty (stock unit = purchase unit)">—</span>
+                      )}
                     </div>
                     <div className="w-24 text-right">
                       <input
@@ -205,7 +282,7 @@ export function ReceiveModal({
                         placeholder="—"
                         onChange={(e) => update(r.po_line_id, { rate: e.target.value === "" ? null : Number(e.target.value) })}
                         className="w-20 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-                        title="Actual rate paid (optional)"
+                        title={r.dual ? `Actual rate paid — per ${r.orderAbbr} (optional)` : "Actual rate paid (optional)"}
                       />
                     </div>
                   </div>
@@ -222,13 +299,14 @@ export function ReceiveModal({
         </div>
 
         <p className="text-[11px] text-[var(--muted-foreground)]">
-          This adds the received quantities to Main Store stock and records each rate as the item&rsquo;s
-          purchase price. The rate and invoice are optional — you can attach the invoice and fill rates later.
+          This posts the <b>→ Stock</b> quantities to Main Store stock and records each rate as the item&rsquo;s
+          purchase price. For items bought in a different unit, enter what arrived in the purchase unit and the
+          actual stock count you measured. The rate and invoice are optional — you can fill them later.
         </p>
 
         <div className="flex items-center justify-between gap-2 pt-3 border-t border-[var(--border)]">
           <span className="text-xs text-[var(--muted-foreground)]">
-            {active.length} item{active.length === 1 ? "" : "s"} · {totalQty.toLocaleString()} qty
+            {active.length} item{active.length === 1 ? "" : "s"} · {totalStock.toLocaleString()} to stock
             {totalValue > 0 ? ` · ${inr(totalValue)}` : ""}
           </span>
           <div className="flex items-center gap-2">

@@ -42,6 +42,13 @@ export interface PoLineDetail {
   uom_abbreviation: string | null;
   on_hand: number;
   reorder_point: number | null;
+  /** Dual-UOM line: the Purchase UOM it was ordered in. NULL ⇒ same as stock. */
+  purchase_uom_id: string | null;
+  purchase_uom_abbreviation: string | null;
+  /** Tentative stock-UOM qty (planning). NULL ⇒ same-UOM line (use `qty`). */
+  tentative_stock_qty: number | null;
+  /** Actual stock-UOM qty received so far. NULL ⇒ same-UOM (use `received_qty`). */
+  received_stock_qty: number | null;
 }
 
 type SaveResult = { ok: true } | { ok: false; error: string };
@@ -128,11 +135,30 @@ async function _getPurchaseOrderUncached(
     .from("purchase_order_lines")
     .select(
       `id, item_id, qty, unit_cost, received_qty, sort_order, description,
+       purchase_uom_id, tentative_stock_qty, received_stock_qty,
        item:items(code, name, reorder_point, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("po_id", id)
     .order("sort_order");
   if (lErr) throw lErr;
+
+  // Resolve purchase-UOM abbreviations (no FK on purchase_uom_id → map from units).
+  const puomIds = [
+    ...new Set(
+      (rawLines ?? [])
+        .map((l) => l.purchase_uom_id as string | null)
+        .filter((x): x is string => !!x),
+    ),
+  ];
+  const puomAbbr = new Map<string, string>();
+  if (puomIds.length > 0) {
+    const { data: us } = await supabase
+      .from("units_of_measurement")
+      .select("id, abbreviation")
+      .in("id", puomIds);
+    for (const u of us ?? [])
+      puomAbbr.set(u.id as string, (u.abbreviation as string) ?? "");
+  }
 
   const itemIds = (rawLines ?? []).map((l) => l.item_id);
   const onHand = new Map<string, number>();
@@ -162,6 +188,14 @@ async function _getPurchaseOrderUncached(
       uom_abbreviation: uom?.abbreviation ?? null,
       on_hand: onHand.get(l.item_id) ?? 0,
       reorder_point: item?.reorder_point != null ? Number(item.reorder_point) : null,
+      purchase_uom_id: (l.purchase_uom_id as string | null) ?? null,
+      purchase_uom_abbreviation: l.purchase_uom_id
+        ? (puomAbbr.get(l.purchase_uom_id as string) ?? null)
+        : null,
+      tentative_stock_qty:
+        l.tentative_stock_qty != null ? Number(l.tentative_stock_qty) : null,
+      received_stock_qty:
+        l.received_stock_qty != null ? Number(l.received_stock_qty) : null,
     };
   });
 
@@ -433,9 +467,12 @@ export async function getPoChangeLog(poId: string): Promise<PoChangeLog[]> {
 
 export interface NewPoLineInput {
   item_id: string;
+  /** Ordered qty — in the item's Purchase UOM if it has one, else stock units. */
   qty: number;
   unit_cost?: number | null;
   description?: string | null;
+  /** Dual-UOM only: tentative stock-UOM qty this order is expected to yield. */
+  tentative_stock_qty?: number | null;
 }
 
 /** Create a PO from scratch (manual "Add PO"). Inserts a draft header + lines. */
@@ -467,14 +504,40 @@ export async function createPurchaseOrder(input: {
       .single();
     if (poErr || !po) throw poErr ?? new Error("Could not create the purchase order");
 
-    const rows = lines.map((l, i) => ({
-      po_id: po.id,
-      item_id: l.item_id,
-      qty: Math.max(1, Math.ceil(Number(l.qty))),
-      unit_cost: l.unit_cost != null && (l.unit_cost as unknown) !== "" ? Number(l.unit_cost) : null,
-      description: l.description?.trim() || null,
-      sort_order: i,
-    }));
+    // Snapshot each item's Purchase UOM onto its line (so the PO is self-describing
+    // and dual-UOM lines are recognised at receive/MRP time without re-reading items).
+    const itemIds = [...new Set(lines.map((l) => l.item_id))];
+    const puomByItem = new Map<string, string | null>();
+    if (itemIds.length > 0) {
+      const { data: itemRows } = await supabase
+        .from("items")
+        .select("id, purchase_uom_id")
+        .in("id", itemIds);
+      for (const it of itemRows ?? [])
+        puomByItem.set(it.id as string, (it.purchase_uom_id as string | null) ?? null);
+    }
+
+    const rows = lines.map((l, i) => {
+      const puom = puomByItem.get(l.item_id) ?? null;
+      const isDual = !!puom;
+      const rawQty = Number(l.qty);
+      const tentative =
+        l.tentative_stock_qty != null && Number(l.tentative_stock_qty) > 0
+          ? Number(l.tentative_stock_qty)
+          : null;
+      return {
+        po_id: po.id,
+        item_id: l.item_id,
+        // Dual-UOM lines hold the PURCHASE qty (may be fractional, e.g. KG);
+        // same-UOM lines keep the historical integer-rounded stock qty.
+        qty: isDual ? rawQty : Math.max(1, Math.ceil(rawQty)),
+        unit_cost: l.unit_cost != null && (l.unit_cost as unknown) !== "" ? Number(l.unit_cost) : null,
+        description: l.description?.trim() || null,
+        sort_order: i,
+        purchase_uom_id: puom,
+        tentative_stock_qty: isDual ? tentative : null,
+      };
+    });
     const { error: lErr } = await supabase.from("purchase_order_lines").insert(rows);
     if (lErr) {
       await supabase.from("purchase_orders").delete().eq("id", po.id); // rollback empty header
@@ -573,13 +636,13 @@ export async function setPoAudited(poId: string, audited: boolean): Promise<Save
 export async function updatePoLine(
   id: string,
   poId: string,
-  patch: { qty?: number; unit_cost?: number | null },
+  patch: { qty?: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
 ): Promise<SaveResult> {
   try {
     const supabase = await createClient();
     const { data: before } = await supabase
       .from("purchase_order_lines")
-      .select("qty, unit_cost, item:items(code)")
+      .select("qty, unit_cost, tentative_stock_qty, item:items(code)")
       .eq("id", id)
       .single();
     const { error } = await supabase.from("purchase_order_lines").update(patch).eq("id", id);
@@ -589,13 +652,18 @@ export async function updatePoLine(
       const itemRel = Array.isArray(rel) ? rel[0] : rel;
       const code = itemRel?.code ?? "line";
       const changes: FieldChange[] = [];
-      const b = before as { qty: number; unit_cost: number | null };
+      const b = before as { qty: number; unit_cost: number | null; tentative_stock_qty: number | null };
       if (patch.qty !== undefined && Number(patch.qty) !== Number(b.qty))
         changes.push({ field: `${code} · qty`, old: Number(b.qty), new: Number(patch.qty) });
       if (patch.unit_cost !== undefined) {
         const o = b.unit_cost != null ? Number(b.unit_cost) : null;
         const n = patch.unit_cost != null ? Number(patch.unit_cost) : null;
         if (o !== n) changes.push({ field: `${code} · rate`, old: o, new: n });
+      }
+      if (patch.tentative_stock_qty !== undefined) {
+        const o = b.tentative_stock_qty != null ? Number(b.tentative_stock_qty) : null;
+        const n = patch.tentative_stock_qty != null ? Number(patch.tentative_stock_qty) : null;
+        if (o !== n) changes.push({ field: `${code} · tentative stock`, old: o, new: n });
       }
       if (changes.length > 0) {
         const { data: po } = await supabase
@@ -618,7 +686,7 @@ export async function updatePoLine(
 /** Add a new line item to an existing PO (the detail-page "Add item" bar). */
 export async function addPoLine(
   poId: string,
-  input: { item_id: string; qty: number; unit_cost?: number | null },
+  input: { item_id: string; qty: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
 ): Promise<SaveResult> {
   try {
     if (!poId) return { ok: false, error: "Missing purchase order" };
@@ -644,19 +712,31 @@ export async function addPoLine(
       .limit(1);
     const nextSort = ((existing?.[0]?.sort_order as number | undefined) ?? -1) + 1;
 
-    const qty = Math.max(1, Math.ceil(Number(input.qty)));
+    // Snapshot the item's Purchase UOM so this line is recognised as dual-UOM.
+    const { data: item } = await supabase
+      .from("items").select("code, purchase_uom_id").eq("id", input.item_id).single();
+    const code = (item?.code as string | null) ?? "item";
+    const puom = (item?.purchase_uom_id as string | null) ?? null;
+    const isDual = !!puom;
+
+    // Dual-UOM lines hold the (possibly fractional) PURCHASE qty; same-UOM lines
+    // keep the historical integer-rounded stock qty.
+    const qty = isDual ? Number(input.qty) : Math.max(1, Math.ceil(Number(input.qty)));
+    const tentative =
+      isDual && input.tentative_stock_qty != null && Number(input.tentative_stock_qty) > 0
+        ? Number(input.tentative_stock_qty)
+        : null;
     const { error } = await supabase.from("purchase_order_lines").insert({
       po_id: poId,
       item_id: input.item_id,
       qty,
       unit_cost: input.unit_cost != null && (input.unit_cost as unknown) !== "" ? Number(input.unit_cost) : null,
       sort_order: nextSort,
+      purchase_uom_id: puom,
+      tentative_stock_qty: tentative,
     });
     if (error) throw error;
 
-    const { data: item } = await supabase
-      .from("items").select("code").eq("id", input.item_id).single();
-    const code = (item?.code as string | null) ?? "item";
     await logPoChange(supabase, {
       po_id: poId,
       po_number: po.po_number ?? null,
@@ -742,7 +822,12 @@ export interface PoReceiptLineDetail {
   item_code: string;
   item_name: string;
   uom_abbreviation: string | null;
+  /** Received qty in the ORDER unit (Purchase UOM for dual lines, else stock). */
   qty: number;
+  /** Actual stock-UOM qty that posted to inventory. NULL ⇒ equals `qty`. */
+  stock_qty: number | null;
+  /** Purchase-unit abbreviation when this was a dual-UOM receipt (else NULL). */
+  purchase_uom_abbreviation: string | null;
   unit_rate: number | null;
 }
 export interface PoReceipt {
@@ -779,10 +864,39 @@ async function _getPoReceiptsUncached(poId: string): Promise<PoReceipt[]> {
   const { data: rawLines, error: lErr } = await supabase
     .from("purchase_order_receipt_lines")
     .select(
-      "id, receipt_id, po_line_id, item_id, qty, unit_rate, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
+      "id, receipt_id, po_line_id, item_id, qty, stock_qty, unit_rate, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
     )
     .in("receipt_id", receipts.map((r) => r.id));
   if (lErr) throw lErr;
+
+  // Resolve the purchase-unit label for dual-UOM receipt lines, via their PO line.
+  const poLineIds = [
+    ...new Set(
+      (rawLines ?? []).map((l) => l.po_line_id as string | null).filter((x): x is string => !!x),
+    ),
+  ];
+  const puomByPoLine = new Map<string, string>();
+  if (poLineIds.length > 0) {
+    const { data: pls } = await supabase
+      .from("purchase_order_lines")
+      .select("id, purchase_uom_id")
+      .in("id", poLineIds);
+    const puomIds = [
+      ...new Set(
+        (pls ?? []).map((p) => p.purchase_uom_id as string | null).filter((x): x is string => !!x),
+      ),
+    ];
+    const abbr = new Map<string, string>();
+    if (puomIds.length > 0) {
+      const { data: us } = await supabase
+        .from("units_of_measurement")
+        .select("id, abbreviation")
+        .in("id", puomIds);
+      for (const u of us ?? []) abbr.set(u.id as string, (u.abbreviation as string) ?? "");
+    }
+    for (const p of pls ?? [])
+      if (p.purchase_uom_id) puomByPoLine.set(p.id as string, abbr.get(p.purchase_uom_id as string) ?? "");
+  }
 
   const byReceipt = new Map<string, PoReceiptLineDetail[]>();
   for (const l of rawLines ?? []) {
@@ -798,6 +912,8 @@ async function _getPoReceiptsUncached(poId: string): Promise<PoReceipt[]> {
       item_name: item?.name ?? "—",
       uom_abbreviation: uom?.abbreviation ?? null,
       qty: Number(l.qty) || 0,
+      stock_qty: l.stock_qty != null ? Number(l.stock_qty) : null,
+      purchase_uom_abbreviation: l.po_line_id ? (puomByPoLine.get(l.po_line_id as string) ?? null) : null,
       unit_rate: l.unit_rate != null ? Number(l.unit_rate) : null,
     });
     byReceipt.set(l.receipt_id, arr);
@@ -829,11 +945,30 @@ export async function recordReceipt(input: {
   receiptDate: string;
   invoiceNumber?: string | null;
   note?: string | null;
-  lines: { poLineId: string | null; itemId: string; qty: number; unitRate?: number | null }[];
+  lines: {
+    poLineId: string | null;
+    itemId: string;
+    /** Received qty in the line's ORDER unit (Purchase UOM for dual lines). */
+    qty: number;
+    /** ACTUAL stock-UOM qty counted on arrival — what posts to inventory. For a
+     *  same-UOM line omit it (defaults to `qty`). */
+    stockQty?: number | null;
+    /** Rate paid, per ORDER unit (matches the supplier invoice). */
+    unitRate?: number | null;
+  }[];
 }): Promise<{ ok: true; receiptId: string; lines: number } | { ok: false; error: string }> {
   try {
     const supabase = await createClient();
-    const valid = input.lines.filter((l) => l.itemId && Number(l.qty) > 0);
+    // Resolve, per line, the actual stock qty that posts to inventory. For a
+    // dual-UOM line that's the counted stock figure; for a same-UOM line it's
+    // just `qty` (so existing behaviour is byte-for-byte unchanged).
+    const valid = input.lines
+      .filter((l) => l.itemId && Number(l.qty) > 0)
+      .map((l) => ({
+        ...l,
+        stockQtyResolved:
+          l.stockQty != null && Number(l.stockQty) > 0 ? Number(l.stockQty) : Number(l.qty),
+      }));
     if (valid.length === 0) {
       return { ok: false, error: "Add at least one item with a quantity to receive." };
     }
@@ -851,52 +986,66 @@ export async function recordReceipt(input: {
       .single();
     if (rErr || !receipt) throw rErr ?? new Error("Could not create the receipt");
 
-    // 2. Receipt lines.
+    // 2. Receipt lines — qty in the order unit + the actual stock qty counted.
     const { error: rlErr } = await supabase.from("purchase_order_receipt_lines").insert(
       valid.map((l) => ({
         receipt_id: receipt.id,
         po_line_id: l.poLineId || null,
         item_id: l.itemId,
         qty: l.qty,
+        stock_qty: l.stockQtyResolved,
         unit_rate: l.unitRate != null ? l.unitRate : null,
       })),
     );
     if (rlErr) throw rlErr;
 
-    // 3. Post stock + accumulate received_qty + latest rate -> cost price.
+    // 3. Post stock (in stock units) + accumulate received_qty (order unit) and
+    //    received_stock_qty (stock units) + latest rate -> per-stock-unit cost.
     const poLineIds = [...new Set(valid.map((l) => l.poLineId).filter(Boolean))] as string[];
     const recvByLine = new Map<string, number>();
+    const recvStockByLine = new Map<string, number>();
     if (poLineIds.length > 0) {
       const { data: cur } = await supabase
         .from("purchase_order_lines")
-        .select("id, received_qty")
+        .select("id, received_qty, received_stock_qty")
         .in("id", poLineIds);
-      for (const c of cur ?? []) recvByLine.set(c.id, Number(c.received_qty) || 0);
+      for (const c of cur ?? []) {
+        recvByLine.set(c.id, Number(c.received_qty) || 0);
+        recvStockByLine.set(
+          c.id,
+          c.received_stock_qty != null ? Number(c.received_stock_qty) : Number(c.received_qty) || 0,
+        );
+      }
     }
     for (const l of valid) {
+      // The ONE conversion point: inventory always gets the actual stock qty.
       await recordTransaction({
         item_id: l.itemId,
         warehouse_id: MAIN_STORE,
         transaction_type: "purchase_in",
-        quantity: l.qty,
+        quantity: l.stockQtyResolved,
         notes: `PO receipt${input.invoiceNumber ? ` · inv ${input.invoiceNumber.trim()}` : ""}`,
         reference_type: "po_receipt",
         reference_id: receipt.id,
       });
       if (l.poLineId) {
-        const next = (recvByLine.get(l.poLineId) ?? 0) + l.qty;
+        const next = (recvByLine.get(l.poLineId) ?? 0) + Number(l.qty);
+        const nextStock = (recvStockByLine.get(l.poLineId) ?? 0) + l.stockQtyResolved;
         recvByLine.set(l.poLineId, next);
+        recvStockByLine.set(l.poLineId, nextStock);
         const { error: uErr } = await supabase
           .from("purchase_order_lines")
-          .update({ received_qty: next })
+          .update({ received_qty: next, received_stock_qty: nextStock })
           .eq("id", l.poLineId);
         if (uErr) throw uErr;
       }
-      // Latest paid wins: the entered rate becomes the item's current cost price.
-      if (l.unitRate != null && l.unitRate >= 0) {
+      // Latest paid wins. unitRate is per ORDER unit, so convert to a per-stock-unit
+      // cost price: (rate × order qty) ÷ actual stock qty (= rate for same-UOM lines).
+      if (l.unitRate != null && l.unitRate >= 0 && l.stockQtyResolved > 0) {
+        const costPerStock = (Number(l.unitRate) * Number(l.qty)) / l.stockQtyResolved;
         await supabase
           .from("items")
-          .update({ cost_price: l.unitRate, updated_at: new Date().toISOString() })
+          .update({ cost_price: costPerStock, updated_at: new Date().toISOString() })
           .eq("id", l.itemId);
       }
     }

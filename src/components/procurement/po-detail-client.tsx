@@ -85,6 +85,19 @@ export function PoDetailClient({
   const [newItem, setNewItem] = useState<SearchableItem | null>(null);
   const [newQty, setNewQty] = useState("1");
   const [newCost, setNewCost] = useState("");
+  const [newTentative, setNewTentative] = useState("");
+
+  // Derived purchase-UOM context for the "Add item" bar.
+  const addDual = !!newItem?.purchase_uom_id;
+  const addOrderAbbr = addDual
+    ? (newItem?.purchase_uom_abbreviation ?? "unit")
+    : (newItem?.uom_abbreviation ?? "");
+  const addStockAbbr = newItem?.uom_abbreviation ?? "";
+  const addConv = newItem?.purchase_conversion ?? null;
+  const addSeeded =
+    addDual && addConv && Number(newQty) > 0
+      ? Math.round(Number(newQty) * addConv * 1000) / 1000
+      : null;
 
   const totals = useMemo(() => {
     let qty = 0;
@@ -140,7 +153,10 @@ export function PoDetailClient({
     });
   };
 
-  const persistLine = (id: string, patch: { qty?: number; unit_cost?: number | null }) => {
+  const persistLine = (
+    id: string,
+    patch: { qty?: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
+  ) => {
     startTransition(async () => {
       const res = await updatePoLine(id, po.id, patch);
       if (!res.ok) toast.error(res.error);
@@ -161,16 +177,23 @@ export function PoDetailClient({
   const addItem = () => {
     if (!newItem) { toast.error("Pick an item to add."); return; }
     if (!(Number(newQty) > 0)) { toast.error("Enter a quantity greater than zero."); return; }
+    const tentative = addDual
+      ? newTentative.trim() !== ""
+        ? Number(newTentative)
+        : addSeeded
+      : null;
     startTransition(async () => {
       const res = await addPoLine(po.id, {
         item_id: newItem.id,
         qty: Number(newQty),
         unit_cost: newCost.trim() === "" ? null : Number(newCost),
+        tentative_stock_qty: tentative,
       });
       if (!res.ok) { toast.error(res.error); return; }
       setNewItem(null);
       setNewQty("1");
       setNewCost("");
+      setNewTentative("");
       toast.success("Item added.");
       router.refresh();
     });
@@ -359,23 +382,39 @@ export function PoDetailClient({
                   {r.reorder_point != null ? r.reorder_point.toLocaleString() : "—"}
                 </TableCell>
                 <TableCell className="text-right">
-                  <Input
-                    size="sm"
-                    type="number"
-                    min={1}
-                    value={r.qty}
-                    disabled={received}
-                    className="w-24 text-right ml-auto"
-                    onChange={(e) =>
-                      setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
-                    }
-                    onBlur={() => {
-                      // DB enforces qty > 0 — clamp so a cleared/0 field can't hit a raw error.
-                      const q = r.qty >= 1 ? r.qty : 1;
-                      if (q !== r.qty) setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: q } : x)));
-                      persistLine(r.id, { qty: q });
-                    }}
-                  />
+                  <div className="flex items-center justify-end gap-1">
+                    <Input
+                      size="sm"
+                      type="number"
+                      min={0}
+                      step={r.purchase_uom_id ? "any" : 1}
+                      value={r.qty}
+                      disabled={received}
+                      className="w-20 text-right ml-auto"
+                      onChange={(e) =>
+                        setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
+                      }
+                      onBlur={() => {
+                        // DB enforces qty > 0 — clamp so a cleared/0 field can't hit a raw error.
+                        // Dual-UOM lines may be fractional (e.g. KG), so only floor at >0.
+                        const q = r.purchase_uom_id
+                          ? r.qty > 0 ? r.qty : 1
+                          : r.qty >= 1 ? r.qty : 1;
+                        if (q !== r.qty) setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: q } : x)));
+                        persistLine(r.id, { qty: q });
+                      }}
+                    />
+                    {r.purchase_uom_id && (
+                      <span className="w-9 text-[11px] text-[var(--muted-foreground)] truncate" title={r.purchase_uom_abbreviation ?? ""}>
+                        {r.purchase_uom_abbreviation ?? ""}
+                      </span>
+                    )}
+                  </div>
+                  {r.purchase_uom_id && (
+                    <div className="mt-0.5 text-[10px] text-[var(--muted-foreground)] text-right">
+                      tentative ≈ {(r.tentative_stock_qty ?? r.qty).toLocaleString()} {r.uom_abbreviation ?? ""}
+                    </div>
+                  )}
                 </TableCell>
                 <TableCell className="text-right">
                   <Input
@@ -409,6 +448,11 @@ export function PoDetailClient({
                     </span>
                   ) : (
                     <span className="text-[var(--muted-foreground)]">—</span>
+                  )}
+                  {r.purchase_uom_id && r.received_stock_qty != null && r.received_stock_qty > 0 && (
+                    <div className="text-[10px] text-[var(--muted-foreground)]">
+                      {r.received_stock_qty.toLocaleString()} {r.uom_abbreviation ?? ""} in
+                    </div>
                   )}
                 </TableCell>
                 <TableCell>
@@ -446,11 +490,29 @@ export function PoDetailClient({
               </div>
             </div>
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Qty</span>
-              <Input size="sm" type="number" min={1} value={newQty} onChange={(e) => setNewQty(e.target.value)} className="mt-1 w-20 text-right" />
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
+                Qty{addOrderAbbr ? ` (${addOrderAbbr})` : ""}
+              </span>
+              <Input size="sm" type="number" min={0} step={addDual ? "any" : 1} value={newQty} onChange={(e) => setNewQty(e.target.value)} className="mt-1 w-20 text-right" />
             </label>
+            {addDual && (
+              <label className="block">
+                <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
+                  Tentative {addStockAbbr || "stock"}
+                </span>
+                <Input
+                  size="sm" type="number" min={0} step="any" value={newTentative}
+                  onChange={(e) => setNewTentative(e.target.value)}
+                  placeholder={addSeeded != null ? String(addSeeded) : "stock qty"}
+                  className="mt-1 w-24 text-right"
+                  title="Tentative stock quantity (actual counted at receiving)"
+                />
+              </label>
+            )}
             <label className="block">
-              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Unit cost</span>
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
+                Unit cost{addDual ? ` /${addOrderAbbr}` : ""}
+              </span>
               <Input size="sm" type="number" min={0} step="0.01" value={newCost} onChange={(e) => setNewCost(e.target.value)} placeholder="—" className="mt-1 w-24 text-right" />
             </label>
             <Button size="sm" onClick={addItem} disabled={isPending || !newItem}>
@@ -458,6 +520,12 @@ export function PoDetailClient({
               Add
             </Button>
           </div>
+          {addDual && (
+            <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">
+              Bought in <b className="text-[var(--foreground)]">{addOrderAbbr}</b>, stocked as {addStockAbbr || "—"} —
+              the actual stock quantity is counted when goods are received.
+            </p>
+          )}
         </div>
       )}
 
@@ -538,7 +606,7 @@ function ReceiptCard({
   const fileRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
 
-  const totalQty = receipt.lines.reduce((a, l) => a + l.qty, 0);
+  const totalStock = receipt.lines.reduce((a, l) => a + (l.stock_qty ?? l.qty), 0);
   const totalValue = receipt.lines.reduce((a, l) => a + l.qty * (l.unit_rate ?? 0), 0);
 
   const attach = async (file: File) => {
@@ -565,7 +633,7 @@ function ReceiptCard({
             <span className="text-[var(--muted-foreground)]">Inv {receipt.invoice_number}</span>
           )}
           <span className="text-[var(--muted-foreground)]">
-            · {receipt.lines.length} item{receipt.lines.length === 1 ? "" : "s"} · {totalQty.toLocaleString()} qty
+            · {receipt.lines.length} item{receipt.lines.length === 1 ? "" : "s"} · {totalStock.toLocaleString()} to stock
             {totalValue > 0 ? ` · ${rate(totalValue)}` : ""}
           </span>
           {receipt.note && <span className="italic text-[var(--muted-foreground)]">· {receipt.note}</span>}
@@ -618,8 +686,17 @@ function ReceiptCard({
         {receipt.lines.map((l) => (
           <span key={l.id} className="text-[var(--muted-foreground)]">
             <span className="font-mono text-[var(--foreground)]">{l.item_code}</span>{" "}
-            {l.qty.toLocaleString()} {l.uom_abbreviation ?? ""}
-            {l.unit_rate != null && <span> @ {rate(l.unit_rate)}</span>}
+            {l.purchase_uom_abbreviation ? (
+              <>
+                {l.qty.toLocaleString()} {l.purchase_uom_abbreviation} →{" "}
+                <span className="text-[var(--foreground)]">{(l.stock_qty ?? l.qty).toLocaleString()} {l.uom_abbreviation ?? ""}</span>
+              </>
+            ) : (
+              <>{l.qty.toLocaleString()} {l.uom_abbreviation ?? ""}</>
+            )}
+            {l.unit_rate != null && (
+              <span> @ {rate(l.unit_rate)}{l.purchase_uom_abbreviation ? `/${l.purchase_uom_abbreviation}` : ""}</span>
+            )}
           </span>
         ))}
       </div>

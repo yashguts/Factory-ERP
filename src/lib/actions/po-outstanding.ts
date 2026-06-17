@@ -24,19 +24,51 @@ export async function _getOutstandingByItemUncached(): Promise<Record<string, nu
       .range(from, to),
   );
   const cancelledSet = new Set(cancelled.map((c) => c.id));
-  const lines = await fetchAllRanged<{ po_id: string; item_id: string; qty: number; received_qty: number }>((from, to, wc) =>
+  const lines = await fetchAllRanged<{
+    po_id: string;
+    item_id: string;
+    qty: number;
+    received_qty: number;
+    tentative_stock_qty: number | null;
+    received_stock_qty: number | null;
+  }>((from, to, wc) =>
     supabase
       .from("purchase_order_lines")
-      .select("po_id, item_id, qty, received_qty", wc ? { count: "exact" } : {})
+      .select(
+        "po_id, item_id, qty, received_qty, tentative_stock_qty, received_stock_qty",
+        wc ? { count: "exact" } : {},
+      )
       .range(from, to),
   );
   const out: Record<string, number> = {};
   for (const l of lines) {
     if (cancelledSet.has(l.po_id)) continue;
-    const v = Math.max(0, (Number(l.qty) || 0) - (Number(l.received_qty) || 0));
+    const v = onOrderStock(l);
     if (v > 0) out[l.item_id] = (out[l.item_id] ?? 0) + v;
   }
   return out;
+}
+
+/**
+ * Incoming material for one PO line, in STOCK units. Dual-UOM lines (Purchase
+ * UOM ≠ stock UOM) order in the purchase unit and carry a tentative stock
+ * estimate + the actual stock received so far; same-UOM lines coalesce straight
+ * back to (qty − received_qty). A line whose PURCHASE side is fully received
+ * contributes 0 (its tentative estimate is now superseded by the real count).
+ */
+function onOrderStock(l: {
+  qty: number;
+  received_qty: number;
+  tentative_stock_qty: number | null;
+  received_stock_qty: number | null;
+}): number {
+  const qty = Number(l.qty) || 0;
+  const receivedQty = Number(l.received_qty) || 0;
+  if (qty > 0 && receivedQty >= qty) return 0; // fully received (order side)
+  const tentative = l.tentative_stock_qty != null ? Number(l.tentative_stock_qty) : qty;
+  const receivedStock =
+    l.received_stock_qty != null ? Number(l.received_stock_qty) : receivedQty;
+  return Math.max(0, tentative - receivedStock);
 }
 
 export async function getOutstandingByItem(): Promise<Record<string, number>> {
@@ -63,17 +95,27 @@ export async function _getOutstandingLinesUncached(): Promise<
       .range(from, to),
   );
   const meta = new Map(pos.map((p) => [p.id, p]));
-  const lines = await fetchAllRanged<{ po_id: string; item_id: string; qty: number; received_qty: number }>((from, to, wc) =>
+  const lines = await fetchAllRanged<{
+    po_id: string;
+    item_id: string;
+    qty: number;
+    received_qty: number;
+    tentative_stock_qty: number | null;
+    received_stock_qty: number | null;
+  }>((from, to, wc) =>
     supabase
       .from("purchase_order_lines")
-      .select("po_id, item_id, qty, received_qty", wc ? { count: "exact" } : {})
+      .select(
+        "po_id, item_id, qty, received_qty, tentative_stock_qty, received_stock_qty",
+        wc ? { count: "exact" } : {},
+      )
       .range(from, to),
   );
   const out: { item_id: string; expected_date: string | null; on_order: number }[] = [];
   for (const l of lines) {
     const po = meta.get(l.po_id);
     if (!po || po.status === "cancelled") continue;
-    const oo = Math.max(0, (Number(l.qty) || 0) - (Number(l.received_qty) || 0));
+    const oo = onOrderStock(l);
     if (oo > 0) out.push({ item_id: l.item_id, expected_date: po.expected_date, on_order: oo });
   }
   return out;

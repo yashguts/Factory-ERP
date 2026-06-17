@@ -23,6 +23,8 @@ interface LineRow {
   item: SearchableItem | null;
   qty: string;
   unit_cost: string;
+  /** Dual-UOM only: tentative stock-UOM qty (blank ⇒ seed from the item factor). */
+  tentative: string;
 }
 
 let _k = 0;
@@ -39,12 +41,12 @@ export function PoNewClient() {
   const [orderDate, setOrderDate] = useState("");
   const [expectedDate, setExpectedDate] = useState("");
   const [note, setNote] = useState("");
-  const [rows, setRows] = useState<LineRow[]>([{ key: nextKey(), item: null, qty: "1", unit_cost: "" }]);
+  const [rows, setRows] = useState<LineRow[]>([{ key: nextKey(), item: null, qty: "1", unit_cost: "", tentative: "" }]);
   const [file, setFile] = useState<File | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addRow = () =>
-    setRows((p) => [...p, { key: nextKey(), item: null, qty: "1", unit_cost: "" }]);
+    setRows((p) => [...p, { key: nextKey(), item: null, qty: "1", unit_cost: "", tentative: "" }]);
   const removeRow = (key: string) =>
     setRows((p) => (p.length === 1 ? p : p.filter((r) => r.key !== key)));
   const patchRow = (key: string, patch: Partial<LineRow>) =>
@@ -70,11 +72,24 @@ export function PoNewClient() {
     if (!num) { setError("PO Number is required."); return; }
     const validLines = rows
       .filter((r) => r.item && Number(r.qty) > 0)
-      .map((r) => ({
-        item_id: r.item!.id,
-        qty: Number(r.qty),
-        unit_cost: r.unit_cost.trim() === "" ? null : Number(r.unit_cost),
-      }));
+      .map((r) => {
+        const dual = !!r.item!.purchase_uom_id;
+        const qtyNum = Number(r.qty);
+        const conv = r.item!.purchase_conversion ?? null;
+        // Tentative stock qty: user-typed if present, else seed from the factor.
+        const seeded = dual && conv ? qtyNum * conv : null;
+        const tentative = dual
+          ? r.tentative.trim() !== ""
+            ? Number(r.tentative)
+            : seeded
+          : null;
+        return {
+          item_id: r.item!.id,
+          qty: qtyNum,
+          unit_cost: r.unit_cost.trim() === "" ? null : Number(r.unit_cost),
+          tentative_stock_qty: tentative,
+        };
+      });
     if (validLines.length === 0) { setError("Add at least one item with a quantity."); return; }
 
     startSave(async () => {
@@ -167,35 +182,77 @@ export function PoNewClient() {
           </span>
         </div>
         <div className="space-y-2">
-          {rows.map((r) => (
-            <div key={r.key} className="flex items-start gap-2">
-              <div className="flex-1 min-w-0">
-                <ItemPicker
-                  value={r.item}
-                  onPick={(item) => patchRow(r.key, { item })}
-                />
+          {rows.map((r) => {
+            const dual = !!r.item?.purchase_uom_id;
+            const orderAbbr = dual
+              ? (r.item?.purchase_uom_abbreviation ?? "unit")
+              : (r.item?.uom_abbreviation ?? "");
+            const stockAbbr = r.item?.uom_abbreviation ?? "";
+            const conv = r.item?.purchase_conversion ?? null;
+            const qtyNum = Number(r.qty) || 0;
+            const seededTentative =
+              dual && conv && qtyNum > 0
+                ? Math.round(qtyNum * conv * 1000) / 1000
+                : null;
+            return (
+              <div key={r.key} className="rounded-md border border-[var(--border)] p-2">
+                <div className="flex items-start gap-2">
+                  <div className="flex-1 min-w-0">
+                    <ItemPicker
+                      value={r.item}
+                      onPick={(item) => patchRow(r.key, { item })}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Input
+                      size="sm" type="number" min={0} step="any" value={r.qty}
+                      onChange={(e) => patchRow(r.key, { qty: e.target.value })}
+                      placeholder="Qty" className="w-20 text-right" title="Order quantity"
+                    />
+                    {orderAbbr && (
+                      <span className="w-10 text-[11px] text-[var(--muted-foreground)] truncate" title={orderAbbr}>
+                        {orderAbbr}
+                      </span>
+                    )}
+                  </div>
+                  <Input
+                    size="sm" type="number" min={0} step="0.01" value={r.unit_cost}
+                    onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
+                    placeholder="Rate" className="w-24 text-right"
+                    title={dual ? `Unit cost — per ${orderAbbr} (optional)` : "Unit cost (optional)"}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => removeRow(r.key)}
+                    disabled={rows.length === 1}
+                    aria-label="Remove line"
+                    className="mt-1.5 p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+                {dual && (
+                  <div className="mt-1.5 ml-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted-foreground)]">
+                    <span>
+                      Bought in <b className="text-[var(--foreground)]">{orderAbbr}</b>, stocked as{" "}
+                      {stockAbbr || "—"} — actual stock counted at receiving.
+                    </span>
+                    <span className="inline-flex items-center gap-1">
+                      tentative ≈
+                      <Input
+                        size="sm" type="number" min={0} step="any" value={r.tentative}
+                        onChange={(e) => patchRow(r.key, { tentative: e.target.value })}
+                        placeholder={seededTentative != null ? String(seededTentative) : "stock qty"}
+                        className="w-20 text-right h-7"
+                        title="Tentative stock quantity for planning (editable)"
+                      />
+                      {stockAbbr}
+                    </span>
+                  </div>
+                )}
               </div>
-              <Input
-                size="sm" type="number" min={1} value={r.qty}
-                onChange={(e) => patchRow(r.key, { qty: e.target.value })}
-                placeholder="Qty" className="w-20 text-right" title="Quantity"
-              />
-              <Input
-                size="sm" type="number" min={0} step="0.01" value={r.unit_cost}
-                onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
-                placeholder="Rate" className="w-24 text-right" title="Unit cost (optional)"
-              />
-              <button
-                type="button"
-                onClick={() => removeRow(r.key)}
-                disabled={rows.length === 1}
-                aria-label="Remove line"
-                className="mt-1.5 p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
-              >
-                <Trash2 className="h-3.5 w-3.5" />
-              </button>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <Button size="sm" variant="secondary" onClick={addRow} className="mt-2">
           <Plus className="h-3.5 w-3.5 mr-1.5" /> Add line

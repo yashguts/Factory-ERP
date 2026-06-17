@@ -21,6 +21,15 @@ export interface SearchableItem {
   finish: string | null;
   /** Make/Trade: item override, else the category default. */
   effective_procurement_type: "make" | "trade" | null;
+  /**
+   * Optional PURCHASE UOM — set when the item is bought in a different unit than
+   * it is stocked (Roll / KG / Box → Pcs / Nos). NULL ⇒ purchased in the stock
+   * UOM (the common case). Used by Procurement to order in the purchase unit.
+   */
+  purchase_uom_id: string | null;
+  purchase_uom_abbreviation: string | null;
+  /** Hint factor (stock units per 1 purchase unit) — seeds the tentative qty. */
+  purchase_conversion: number | null;
 }
 
 /**
@@ -64,6 +73,7 @@ export async function searchItems(
     .from("items")
     .select(
       `id, code, name, lookup_key, family, finish, procurement_type,
+      purchase_uom_id, purchase_conversion,
       category:item_categories!items_category_id_fkey(name, procurement_type),
       uom:units_of_measurement!items_uom_id_fkey(abbreviation),
       inventory(quantity)`,
@@ -131,6 +141,26 @@ export async function searchItems(
   const { data, error } = await q;
   if (error) throw error;
 
+  // Resolve purchase-UOM abbreviations. items.purchase_uom_id has no FK (a 2nd FK
+  // to units_of_measurement would make the `uom:` embed ambiguous), so map the
+  // abbreviations from the units table in one extra read rather than embedding.
+  const puomIds = [
+    ...new Set(
+      (data ?? [])
+        .map((r: any) => r.purchase_uom_id as string | null)
+        .filter((x: string | null): x is string => !!x),
+    ),
+  ];
+  const puomAbbr = new Map<string, string>();
+  if (puomIds.length > 0) {
+    const { data: us } = await supabase
+      .from("units_of_measurement")
+      .select("id, abbreviation")
+      .in("id", puomIds);
+    for (const u of us ?? [])
+      puomAbbr.set(u.id as string, (u.abbreviation as string) ?? "");
+  }
+
   // Flatten PostgREST joined arrays into flat objects, and sum inventory.
   return (data ?? []).map((row: any) => {
     const invRows: Array<{ quantity: number }> = Array.isArray(row.inventory)
@@ -160,6 +190,12 @@ export async function searchItems(
       effective_procurement_type:
         ((row.procurement_type ?? catProcurement) as "make" | "trade" | null) ??
         null,
+      purchase_uom_id: (row.purchase_uom_id as string | null) ?? null,
+      purchase_uom_abbreviation: row.purchase_uom_id
+        ? (puomAbbr.get(row.purchase_uom_id as string) ?? null)
+        : null,
+      purchase_conversion:
+        row.purchase_conversion != null ? Number(row.purchase_conversion) : null,
     };
   });
 }
