@@ -14,7 +14,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { ShoppingCart, Sparkles, Loader2, Package, Building2, ListOrdered } from "lucide-react";
+import { ShoppingCart, Sparkles, Loader2, Package, Building2, ListOrdered, Plus } from "lucide-react";
 import {
   generateDraftPosFromShortfall,
   type ProcurementData,
@@ -93,10 +93,16 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
         icon={<ShoppingCart size={18} />}
         meta={`${orders.length} order${orders.length === 1 ? "" : "s"} · ${byItem.length} item${byItem.length === 1 ? "" : "s"} on order`}
         actions={
-          <Button size="sm" onClick={handleGenerate} disabled={isPending} title="Create draft POs from the current Trade shortfall, grouped by supplier">
-            {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
-            Generate from shortfall
-          </Button>
+          <>
+            <Button size="sm" variant="secondary" onClick={() => router.push("/procurement/new")} title="Create a purchase order manually">
+              <Plus className="h-3.5 w-3.5 mr-1.5" />
+              Add PO
+            </Button>
+            <Button size="sm" onClick={handleGenerate} disabled={isPending} title="Create draft POs from the current Trade shortfall, grouped by supplier">
+              {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+              Generate from shortfall
+            </Button>
+          </>
         }
       />
 
@@ -162,7 +168,7 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                 <TableBody>
                   {filteredOrders.map((o) => (
                     <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
-                      <TableCell className="font-mono text-xs">{o.note || "—"}</TableCell>
+                      <TableCell className="font-mono text-xs">{o.po_number || o.note || "—"}</TableCell>
                       <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
                       <TableCell>
                         {o.status === "ordered" && o.received_lines > 0 && o.received_lines < o.line_count ? (

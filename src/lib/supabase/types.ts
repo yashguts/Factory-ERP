@@ -424,13 +424,39 @@ export type PurchaseOrderStatus = "draft" | "ordered" | "received" | "cancelled"
 /** A purchase order — one dated buy from a supplier (procurement Phase 0). */
 export interface PurchaseOrder {
   id: string;
+  /** Human PO number (entered manually; the supplier's/printed PO number). */
+  po_number: string | null;
   supplier_name: string | null;
   status: PurchaseOrderStatus;
   order_date: string | null;
   expected_date: string | null;
   note: string | null;
+  /** Attached PO PDF copy (browser-uploaded to the po-invoices bucket). */
+  po_pdf_url: string | null;
+  po_pdf_filename: string | null;
+  po_pdf_uploaded_at: string | null;
+  /** Approval sign-off — set when someone marks the PO audited/verified. */
+  audited_at: string | null;
+  audited_by: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type PoChangeAction = "create" | "update" | "delete" | "audit" | "unaudit";
+
+/** A row of `po_change_log` (audit trail of PO create/edit/audit). */
+export interface PoChangeLog {
+  id: string;
+  po_id: string | null;
+  po_number: string | null;
+  supplier_name: string | null;
+  action: PoChangeAction;
+  changes: FieldChange[];
+  note: string | null;
+  created_at: string;
+  created_by: string | null;
+  reverted_at: string | null;
+  revert_of: string | null;
 }
 
 /** A line on a PO. Receiving posts inventory (purchase_in) for the unreceived qty. */

@@ -15,7 +15,7 @@ import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2 } from "lucide-react";
+import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2, ShieldCheck, History, X } from "lucide-react";
 import {
   updatePurchaseOrder,
   updatePoLine,
@@ -23,11 +23,19 @@ import {
   deletePurchaseOrder,
   deleteReceipt,
   uploadReceiptInvoice,
+  setPoAudited,
+  recordPoDocument,
+  deletePoDocument,
   type PoLineDetail,
   type PoReceipt,
 } from "@/lib/actions/procurement";
 import { ReceiveModal } from "@/components/procurement/receive-modal";
-import type { PurchaseOrder, PurchaseOrderStatus } from "@/lib/supabase/types";
+import { createClient } from "@/lib/supabase/client";
+import type { PurchaseOrder, PurchaseOrderStatus, PoChangeLog } from "@/lib/supabase/types";
+
+const PDF_BUCKET = "po-invoices";
+const PDF_MAX_BYTES = 50 * 1024 * 1024;
+const PDF_MIME = new Set(["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"]);
 
 const STATUS_BADGE: Record<PurchaseOrderStatus, BadgeVariant> = {
   draft: "neutral",
@@ -49,10 +57,12 @@ export function PoDetailClient({
   po,
   lines,
   receipts,
+  changeLog,
 }: {
   po: PurchaseOrder;
   lines: PoLineDetail[];
   receipts: PoReceipt[];
+  changeLog: PoChangeLog[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -60,6 +70,7 @@ export function PoDetailClient({
 
   const received = po.status === "received";
   const [rows, setRows] = useState<PoLineDetail[]>(lines);
+  const [poNumber, setPoNumber] = useState(po.po_number ?? "");
   const [supplier, setSupplier] = useState(po.supplier_name ?? "");
   const [orderDate, setOrderDate] = useState(po.order_date ?? "");
   const [expectedDate, setExpectedDate] = useState(po.expected_date ?? "");
@@ -88,13 +99,26 @@ export function PoDetailClient({
   const saveHeader = () => {
     startTransition(async () => {
       const res = await updatePurchaseOrder(po.id, {
+        po_number: poNumber.trim() || null,
         supplier_name: supplier.trim() || null,
         order_date: orderDate || null,
         expected_date: expectedDate || null,
         note: note.trim() || null,
       });
       if (!res.ok) toast.error(res.error);
-      else toast.success("Saved");
+      else {
+        toast.success("Saved");
+        router.refresh();
+      }
+    });
+  };
+
+  const toggleAudited = () => {
+    startTransition(async () => {
+      const res = await setPoAudited(po.id, !po.audited_at);
+      if (!res.ok) { toast.error(res.error); return; }
+      toast.success(po.audited_at ? "Audit cleared." : "Marked audited.");
+      router.refresh();
     });
   };
 
@@ -158,8 +182,16 @@ export function PoDetailClient({
         onBack={() => router.push("/procurement")}
         title={
           <span className="flex items-center gap-2">
-            {supplier.trim() || "Unassigned supplier"}
+            {po.po_number && <span className="font-mono">{po.po_number}</span>}
+            <span className={po.po_number ? "text-[var(--muted-foreground)] font-normal" : ""}>
+              {supplier.trim() || "Unassigned supplier"}
+            </span>
             <Badge variant={STATUS_BADGE[po.status]}>{STATUS_LABEL[po.status]}</Badge>
+            {po.audited_at && (
+              <Badge variant="green">
+                <ShieldCheck className="h-3 w-3 mr-1" />Audited
+              </Badge>
+            )}
             {partial && (
               <span className="text-[11px] font-medium text-[var(--warning)]">
                 · {totals.receivedLines}/{rows.length} lines received
@@ -184,6 +216,17 @@ export function PoDetailClient({
                 <option value="cancelled">Cancelled</option>
               </Select>
             )}
+            <Button
+              size="sm"
+              variant={po.audited_at ? "secondary" : "secondary"}
+              onClick={toggleAudited}
+              disabled={isPending}
+              title={po.audited_at ? `Audited ${new Date(po.audited_at).toLocaleString("en-IN")} — click to clear` : "Mark this PO as audited / verified"}
+              className={po.audited_at ? "text-[var(--success)]" : ""}
+            >
+              <ShieldCheck className="h-4 w-4 mr-1" />
+              {po.audited_at ? "Audited" : "Mark audited"}
+            </Button>
             <Button
               size="sm"
               onClick={() => setShowReceive(true)}
@@ -212,6 +255,10 @@ export function PoDetailClient({
       <div className="card-surface p-3 mb-3">
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="block">
+            <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">PO Number</span>
+            <Input size="sm" value={poNumber} onChange={(e) => setPoNumber(e.target.value)} placeholder="e.g. PO-2026-001" disabled={received} className="mt-1 font-mono" />
+          </label>
+          <label className="block">
             <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Supplier</span>
             <Input size="sm" value={supplier} onChange={(e) => setSupplier(e.target.value)} placeholder="Supplier name" disabled={received} className="mt-1" />
           </label>
@@ -237,6 +284,8 @@ export function PoDetailClient({
           </div>
         )}
       </div>
+
+      <PoDocumentPanel po={po} busy={isPending} onChanged={() => router.refresh()} />
 
       <StatStrip className="mb-3">
         <StatTile label="Lines" value={rows.length} />
@@ -382,6 +431,9 @@ export function PoDetailClient({
         </div>
       )}
 
+      {/* Change history (audit trail) */}
+      <PoHistoryPanel entries={changeLog} />
+
       {showReceive && (
         <ReceiveModal
           poId={po.id}
@@ -518,6 +570,166 @@ function ReceiptCard({
             {l.qty.toLocaleString()} {l.uom_abbreviation ?? ""}
             {l.unit_rate != null && <span> @ {rate(l.unit_rate)}</span>}
           </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* PO PDF copy — attach / view / replace / remove (browser-direct).    */
+
+function PoDocumentPanel({
+  po,
+  busy,
+  onChanged,
+}: {
+  po: PurchaseOrder;
+  busy: boolean;
+  onChanged: () => void;
+}) {
+  const toast = useToast();
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
+  const isPdf = !!po.po_pdf_filename && /\.pdf$/i.test(po.po_pdf_filename);
+
+  const attach = async (file: File) => {
+    if (file.size > PDF_MAX_BYTES) {
+      toast.error(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`);
+      return;
+    }
+    if (!PDF_MIME.has(file.type)) {
+      toast.error(`Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
+      const path = `${po.id}/po-document/${Date.now()}-${safeName}`;
+      const supabase = createClient();
+      const { error } = await supabase.storage
+        .from(PDF_BUCKET)
+        .upload(path, file, { contentType: file.type, upsert: false });
+      if (error) throw error;
+      const res = await recordPoDocument({ poId: po.id, path, filename: file.name });
+      if (!res.ok) throw new Error(res.error);
+      toast.success("PO PDF attached.");
+      onChanged();
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Upload failed");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const remove = async () => {
+    setUploading(true);
+    const res = await deletePoDocument(po.id);
+    setUploading(false);
+    if (!res.ok) toast.error(res.error);
+    else {
+      toast.success("PO PDF removed.");
+      onChanged();
+    }
+  };
+
+  return (
+    <div className="card-surface p-3 mb-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+          <FileText className="h-4 w-4 text-[var(--muted-foreground)]" /> PO PDF copy
+        </h3>
+        <div className="flex items-center gap-1.5">
+          {po.po_pdf_url && (
+            <a href={po.po_pdf_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-xs text-[var(--primary)] hover:underline">
+              <FileText className="h-3.5 w-3.5" /> {po.po_pdf_filename ?? "Open"}
+            </a>
+          )}
+          <Button size="sm" variant="secondary" onClick={() => fileRef.current?.click()} disabled={uploading || busy}>
+            {uploading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Paperclip className="h-3.5 w-3.5 mr-1.5" />}
+            {po.po_pdf_url ? "Replace" : "Attach"}
+          </Button>
+          {po.po_pdf_url && (
+            <button type="button" onClick={remove} disabled={uploading || busy} title="Remove PO PDF" className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer">
+              <X className="h-4 w-4" />
+            </button>
+          )}
+        </div>
+      </div>
+      <input
+        ref={fileRef}
+        type="file"
+        accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
+        className="hidden"
+        onChange={(e) => { const f = e.target.files?.[0]; if (f) attach(f); e.target.value = ""; }}
+      />
+      {po.po_pdf_url ? (
+        isPdf ? (
+          <iframe key={po.po_pdf_url} src={po.po_pdf_url} title={po.po_pdf_filename ?? "PO PDF"} className="mt-2 w-full h-[420px] rounded border border-[var(--border)] bg-white" />
+        ) : (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img key={po.po_pdf_url} src={po.po_pdf_url} alt={po.po_pdf_filename ?? "PO document"} className="mt-2 max-h-[420px] rounded border border-[var(--border)]" />
+        )
+      ) : (
+        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
+          No PO copy attached. Attach the supplier&apos;s / printed PO (PDF or image, max 50 MB).
+        </p>
+      )}
+    </div>
+  );
+}
+
+/* ------------------------------------------------------------------ */
+/* Change history (audit trail) for the PO.                            */
+
+const PO_ACTION_LABEL: Record<PoChangeLog["action"], string> = {
+  create: "Created",
+  update: "Edited",
+  delete: "Deleted",
+  audit: "Marked audited",
+  unaudit: "Audit cleared",
+};
+const PO_ACTION_VARIANT: Record<PoChangeLog["action"], BadgeVariant> = {
+  create: "blue",
+  update: "neutral",
+  delete: "red",
+  audit: "green",
+  unaudit: "amber",
+};
+
+function PoHistoryPanel({ entries }: { entries: PoChangeLog[] }) {
+  if (!entries || entries.length === 0) return null;
+  const fmt = (v: unknown) => (v === null || v === undefined || v === "" ? "—" : String(v));
+  return (
+    <div className="mt-4">
+      <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+        <History className="h-4 w-4 text-[var(--muted-foreground)]" /> Change history
+        <span className="text-[var(--muted-foreground)] font-normal">({entries.length})</span>
+      </h3>
+      <div className="card-surface divide-y divide-[var(--border)]">
+        {entries.map((e) => (
+          <div key={e.id} className="px-3 py-2 text-sm">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant={PO_ACTION_VARIANT[e.action] ?? "neutral"}>
+                {PO_ACTION_LABEL[e.action] ?? e.action}
+              </Badge>
+              <span className="text-[var(--muted-foreground)] text-xs">
+                {new Date(e.created_at).toLocaleString("en-IN")}
+              </span>
+              {e.note && <span className="text-xs italic text-[var(--muted-foreground)]">· {e.note}</span>}
+            </div>
+            {e.changes && e.changes.length > 0 && (
+              <ul className="mt-1 ml-1 space-y-0.5">
+                {e.changes.map((c, i) => (
+                  <li key={i} className="text-xs text-[var(--muted-foreground)]">
+                    <span className="text-[var(--foreground)]">{c.label ?? c.field}</span>:{" "}
+                    <span className="line-through">{fmt(c.old)}</span> →{" "}
+                    <span className="text-[var(--foreground)]">{fmt(c.new)}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
         ))}
       </div>
     </div>

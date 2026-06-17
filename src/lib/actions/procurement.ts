@@ -6,7 +6,13 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { getMrpData } from "@/lib/actions/mrp";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
-import type { PurchaseOrder, PurchaseOrderStatus } from "@/lib/supabase/types";
+import type {
+  PurchaseOrder,
+  PurchaseOrderStatus,
+  FieldChange,
+  PoChangeAction,
+  PoChangeLog,
+} from "@/lib/supabase/types";
 
 // Receiving posts opening/replenishment stock into the same warehouse the rest
 // of the app uses for inbound (cabin opening stock, etc.).
@@ -359,25 +365,208 @@ export async function generateDraftPosFromShortfall(
   }
 }
 
+// ── PO change log (audit trail) ──────────────────────────────────────────────
+// Every create/edit/audit on a PO writes a row to `po_change_log` so the PO
+// detail page can show a history, mirroring item_change_log. Log writes are
+// best-effort: a logging failure must never block the user's real edit.
+
+const PO_HEADER_FIELDS = [
+  "po_number", "supplier_name", "status", "order_date", "expected_date", "note",
+] as const;
+
+function poNorm(v: unknown): unknown {
+  return v === "" || v === undefined ? null : v;
+}
+
+function poFieldChanges(
+  before: Record<string, unknown>,
+  patch: Record<string, unknown>,
+): FieldChange[] {
+  const out: FieldChange[] = [];
+  for (const f of PO_HEADER_FIELDS) {
+    if (!(f in patch)) continue;
+    const o = before[f] ?? null;
+    const n = patch[f] ?? null;
+    if (poNorm(o) !== poNorm(n)) out.push({ field: f, old: o ?? null, new: n ?? null });
+  }
+  return out;
+}
+
+async function logPoChange(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  row: {
+    po_id: string | null;
+    po_number: string | null;
+    supplier_name: string | null;
+    action: PoChangeAction;
+    changes: FieldChange[];
+    note?: string | null;
+  },
+): Promise<void> {
+  try {
+    const { error } = await supabase.from("po_change_log").insert({
+      po_id: row.po_id,
+      po_number: row.po_number,
+      supplier_name: row.supplier_name,
+      action: row.action,
+      changes: row.changes,
+      note: row.note ?? null,
+    });
+    if (error) console.error("[po_change_log] insert failed:", error.message);
+  } catch (e) {
+    console.error("[po_change_log] insert threw:", e);
+  }
+}
+
+export async function getPoChangeLog(poId: string): Promise<PoChangeLog[]> {
+  const supabase = await createClient();
+  const { data, error } = await supabase
+    .from("po_change_log")
+    .select("*")
+    .eq("po_id", poId)
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as PoChangeLog[];
+}
+
 // ── Mutations ───────────────────────────────────────────────────────────────
+
+export interface NewPoLineInput {
+  item_id: string;
+  qty: number;
+  unit_cost?: number | null;
+  description?: string | null;
+}
+
+/** Create a PO from scratch (manual "Add PO"). Inserts a draft header + lines. */
+export async function createPurchaseOrder(input: {
+  po_number?: string | null;
+  supplier_name?: string | null;
+  order_date?: string | null;
+  expected_date?: string | null;
+  note?: string | null;
+  lines: NewPoLineInput[];
+}): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
+  try {
+    const supabase = await createClient();
+    const lines = (input.lines ?? []).filter((l) => l.item_id && Number(l.qty) > 0);
+    if (lines.length === 0)
+      return { ok: false, error: "Add at least one line item with a quantity." };
+
+    const { data: po, error: poErr } = await supabase
+      .from("purchase_orders")
+      .insert({
+        po_number: input.po_number?.trim() || null,
+        supplier_name: input.supplier_name?.trim() || null,
+        order_date: input.order_date || null,
+        expected_date: input.expected_date || null,
+        note: input.note?.trim() || null,
+        status: "draft",
+      })
+      .select("id, po_number, supplier_name")
+      .single();
+    if (poErr || !po) throw poErr ?? new Error("Could not create the purchase order");
+
+    const rows = lines.map((l, i) => ({
+      po_id: po.id,
+      item_id: l.item_id,
+      qty: Math.max(1, Math.ceil(Number(l.qty))),
+      unit_cost: l.unit_cost != null && (l.unit_cost as unknown) !== "" ? Number(l.unit_cost) : null,
+      description: l.description?.trim() || null,
+      sort_order: i,
+    }));
+    const { error: lErr } = await supabase.from("purchase_order_lines").insert(rows);
+    if (lErr) {
+      await supabase.from("purchase_orders").delete().eq("id", po.id); // rollback empty header
+      throw lErr;
+    }
+
+    await logPoChange(supabase, {
+      po_id: po.id as string,
+      po_number: (po.po_number as string | null) ?? null,
+      supplier_name: (po.supplier_name as string | null) ?? null,
+      action: "create",
+      changes: [],
+      note: `Created with ${rows.length} line${rows.length === 1 ? "" : "s"}`,
+    });
+
+    revalidateTag("purchase-orders");
+    revalidatePath("/procurement");
+    return { ok: true, id: po.id as string };
+  } catch (e) {
+    return { ok: false, error: msg(e, "Could not create the purchase order") };
+  }
+}
 
 export async function updatePurchaseOrder(
   id: string,
-  patch: Partial<Pick<PurchaseOrder, "supplier_name" | "status" | "order_date" | "expected_date" | "note">>,
+  patch: Partial<Pick<PurchaseOrder, "po_number" | "supplier_name" | "status" | "order_date" | "expected_date" | "note">>,
 ): Promise<SaveResult> {
   try {
     const supabase = await createClient();
+    const { data: before } = await supabase
+      .from("purchase_orders")
+      .select("po_number, supplier_name, status, order_date, expected_date, note")
+      .eq("id", id)
+      .single();
     const { error } = await supabase
       .from("purchase_orders")
       .update({ ...patch, updated_at: new Date().toISOString() })
       .eq("id", id);
     if (error) throw error;
+    if (before) {
+      const changes = poFieldChanges(before as Record<string, unknown>, patch as Record<string, unknown>);
+      if (changes.length > 0) {
+        await logPoChange(supabase, {
+          po_id: id,
+          po_number: (patch.po_number ?? (before as { po_number: string | null }).po_number) ?? null,
+          supplier_name: (patch.supplier_name ?? (before as { supplier_name: string | null }).supplier_name) ?? null,
+          action: "update",
+          changes,
+        });
+      }
+    }
     revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${id}`);
     return { ok: true };
   } catch (e) {
     return { ok: false, error: msg(e, "Could not update the purchase order") };
+  }
+}
+
+/** Toggle the audit/verified sign-off on a PO. */
+export async function setPoAudited(poId: string, audited: boolean): Promise<SaveResult> {
+  try {
+    const supabase = await createClient();
+    const { data: po } = await supabase
+      .from("purchase_orders")
+      .select("po_number, supplier_name")
+      .eq("id", poId)
+      .single();
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({
+        audited_at: audited ? new Date().toISOString() : null,
+        audited_by: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", poId);
+    if (error) throw error;
+    await logPoChange(supabase, {
+      po_id: poId,
+      po_number: po?.po_number ?? null,
+      supplier_name: po?.supplier_name ?? null,
+      action: audited ? "audit" : "unaudit",
+      changes: [],
+      note: audited ? "Marked audited" : "Audit cleared",
+    });
+    revalidateTag("purchase-orders");
+    revalidatePath("/procurement");
+    revalidatePath(`/procurement/${poId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: msg(e, "Could not update audit status") };
   }
 }
 
@@ -388,8 +577,35 @@ export async function updatePoLine(
 ): Promise<SaveResult> {
   try {
     const supabase = await createClient();
+    const { data: before } = await supabase
+      .from("purchase_order_lines")
+      .select("qty, unit_cost, item:items(code)")
+      .eq("id", id)
+      .single();
     const { error } = await supabase.from("purchase_order_lines").update(patch).eq("id", id);
     if (error) throw error;
+    if (before) {
+      const rel = (before as { item?: { code?: string } | { code?: string }[] | null }).item;
+      const itemRel = Array.isArray(rel) ? rel[0] : rel;
+      const code = itemRel?.code ?? "line";
+      const changes: FieldChange[] = [];
+      const b = before as { qty: number; unit_cost: number | null };
+      if (patch.qty !== undefined && Number(patch.qty) !== Number(b.qty))
+        changes.push({ field: `${code} · qty`, old: Number(b.qty), new: Number(patch.qty) });
+      if (patch.unit_cost !== undefined) {
+        const o = b.unit_cost != null ? Number(b.unit_cost) : null;
+        const n = patch.unit_cost != null ? Number(patch.unit_cost) : null;
+        if (o !== n) changes.push({ field: `${code} · rate`, old: o, new: n });
+      }
+      if (changes.length > 0) {
+        const { data: po } = await supabase
+          .from("purchase_orders").select("po_number, supplier_name").eq("id", poId).single();
+        await logPoChange(supabase, {
+          po_id: poId, po_number: po?.po_number ?? null, supplier_name: po?.supplier_name ?? null,
+          action: "update", changes,
+        });
+      }
+    }
     revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${poId}`);
@@ -402,8 +618,25 @@ export async function updatePoLine(
 export async function deletePoLine(id: string, poId: string): Promise<SaveResult> {
   try {
     const supabase = await createClient();
+    const { data: before } = await supabase
+      .from("purchase_order_lines")
+      .select("qty, item:items(code)")
+      .eq("id", id)
+      .single();
     const { error } = await supabase.from("purchase_order_lines").delete().eq("id", id);
     if (error) throw error;
+    if (before) {
+      const rel = (before as { item?: { code?: string } | { code?: string }[] | null }).item;
+      const itemRel = Array.isArray(rel) ? rel[0] : rel;
+      const label = itemRel?.code ?? "line";
+      const { data: po } = await supabase
+        .from("purchase_orders").select("po_number, supplier_name").eq("id", poId).single();
+      await logPoChange(supabase, {
+        po_id: poId, po_number: po?.po_number ?? null, supplier_name: po?.supplier_name ?? null,
+        action: "update",
+        changes: [{ field: "removed line", old: `${label} × ${Number((before as { qty: number }).qty)}`, new: null }],
+      });
+    }
     revalidateTag("purchase-orders");
     revalidatePath("/procurement");
     revalidatePath(`/procurement/${poId}`);
@@ -416,6 +649,13 @@ export async function deletePoLine(id: string, poId: string): Promise<SaveResult
 export async function deletePurchaseOrder(id: string): Promise<SaveResult> {
   try {
     const supabase = await createClient();
+    const { data: before } = await supabase
+      .from("purchase_orders").select("po_number, supplier_name").eq("id", id).single();
+    // Log before delete (po_id FK is ON DELETE SET NULL, so it nulls afterward).
+    await logPoChange(supabase, {
+      po_id: id, po_number: before?.po_number ?? null, supplier_name: before?.supplier_name ?? null,
+      action: "delete", changes: [], note: "PO deleted",
+    });
     const { error } = await supabase.from("purchase_orders").delete().eq("id", id);
     if (error) throw error;
     revalidateTag("purchase-orders");
@@ -679,6 +919,106 @@ export async function uploadReceiptInvoice(
     return { ok: true, url: publicUrl, filename: file.name };
   } catch (e) {
     return { ok: false, error: msg(e, "Could not upload the invoice") };
+  }
+}
+
+/* ================================================================== */
+/*  PO PDF copy — the supplier's/printed PO document on the PO header   */
+/*  The browser uploads the bytes straight to the `po-invoices` bucket  */
+/*  (path `${poId}/po-document/...`), bypassing the serverless body cap */
+/*  for big PDFs; these actions just record / clear the stored path.    */
+/* ================================================================== */
+
+/** Record a PO PDF the browser already uploaded to storage at `path`. */
+export async function recordPoDocument(input: {
+  poId: string;
+  path: string;
+  filename: string;
+}): Promise<{ ok: true; url: string; filename: string } | { ok: false; error: string }> {
+  try {
+    const { poId, path, filename } = input;
+    if (!poId) throw new Error("Missing purchase order");
+    if (!path || !path.startsWith(`${poId}/`)) throw new Error("Invalid storage path for this PO");
+    const supabase = await createClient();
+
+    const { data: existing } = await supabase
+      .from("purchase_orders")
+      .select("po_pdf_url, po_number, supplier_name")
+      .eq("id", poId)
+      .single();
+    const prev = (existing?.po_pdf_url as string | null) ?? null;
+    if (prev) {
+      const p = extractInvoicePath(prev);
+      if (p && p !== path) await supabase.storage.from(INVOICE_BUCKET).remove([p]);
+    }
+
+    const { data: { publicUrl } } = supabase.storage.from(INVOICE_BUCKET).getPublicUrl(path);
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({
+        po_pdf_url: publicUrl,
+        po_pdf_filename: filename,
+        po_pdf_uploaded_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", poId);
+    if (error) throw error;
+
+    await logPoChange(supabase, {
+      po_id: poId,
+      po_number: existing?.po_number ?? null,
+      supplier_name: existing?.supplier_name ?? null,
+      action: "update",
+      changes: [{ field: "PO PDF", old: existing?.po_pdf_url ? "(file)" : null, new: filename }],
+      note: "PO PDF attached",
+    });
+
+    revalidateTag("purchase-orders");
+    revalidatePath(`/procurement/${poId}`);
+    return { ok: true, url: publicUrl, filename };
+  } catch (e) {
+    return { ok: false, error: msg(e, "Could not record the PO document") };
+  }
+}
+
+/** Remove the PO PDF copy from a PO (deletes the storage object + clears columns). */
+export async function deletePoDocument(poId: string): Promise<SaveResult> {
+  try {
+    if (!poId) throw new Error("Missing purchase order");
+    const supabase = await createClient();
+    const { data: row } = await supabase
+      .from("purchase_orders")
+      .select("po_pdf_url, po_pdf_filename, po_number, supplier_name")
+      .eq("id", poId)
+      .single();
+    const url = (row?.po_pdf_url as string | null) ?? null;
+    if (url) {
+      const p = extractInvoicePath(url);
+      if (p) await supabase.storage.from(INVOICE_BUCKET).remove([p]);
+    }
+    const { error } = await supabase
+      .from("purchase_orders")
+      .update({
+        po_pdf_url: null,
+        po_pdf_filename: null,
+        po_pdf_uploaded_at: null,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", poId);
+    if (error) throw error;
+    await logPoChange(supabase, {
+      po_id: poId,
+      po_number: row?.po_number ?? null,
+      supplier_name: row?.supplier_name ?? null,
+      action: "update",
+      changes: [{ field: "PO PDF", old: row?.po_pdf_filename ?? "(file)", new: null }],
+      note: "PO PDF removed",
+    });
+    revalidateTag("purchase-orders");
+    revalidatePath(`/procurement/${poId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: msg(e, "Could not remove the PO document") };
   }
 }
 
