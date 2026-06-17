@@ -372,9 +372,9 @@ export function PoDetailClient({
               <TableHead className="text-right">On hand</TableHead>
               <TableHead className="text-right">Reorder pt</TableHead>
               <TableHead className="w-36">Purchase unit</TableHead>
-              <TableHead className="text-right w-24">Order qty</TableHead>
-              <TableHead className="text-right w-24">Tentative</TableHead>
-              <TableHead className="text-right w-24">Unit cost</TableHead>
+              <TableHead className="text-right w-28">Order qty</TableHead>
+              <TableHead className="text-right w-28">Tentative</TableHead>
+              <TableHead className="text-right w-28">Unit cost</TableHead>
               <TableHead className="text-right">Line total</TableHead>
               <TableHead className="text-right">Received</TableHead>
               <TableHead className="w-8"></TableHead>
@@ -448,7 +448,7 @@ export function PoDetailClient({
                         min={0}
                         step={r.purchase_uom_id ? "any" : 1}
                         value={r.qty}
-                        className="w-16 text-right ml-auto"
+                        className="w-20 text-right ml-auto"
                         onChange={(e) =>
                           setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
                         }
@@ -481,7 +481,7 @@ export function PoDetailClient({
                           size="sm" type="number" min={0} step="any"
                           value={r.tentative_stock_qty ?? ""}
                           placeholder="≈"
-                          className="w-16 text-right ml-auto"
+                          className="w-20 text-right ml-auto"
                           onChange={(e) =>
                             setRows((prev) =>
                               prev.map((x) =>
@@ -524,7 +524,7 @@ export function PoDetailClient({
                         step="0.01"
                         value={r.unit_cost ?? ""}
                         placeholder="—"
-                        className="w-16 text-right ml-auto"
+                        className="w-20 text-right ml-auto"
                         onChange={(e) =>
                           setRows((prev) =>
                             prev.map((x) =>
