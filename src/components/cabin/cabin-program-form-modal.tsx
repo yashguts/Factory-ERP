@@ -46,18 +46,31 @@ const emptyOutput = (): OutputRow => ({ key: newKey(), item_id: null, code: null
 
 export function CabinProgramFormModal({
   initial,
+  mode,
   onClose,
   onSaved,
 }: {
   initial?: CabinProgramDetail | null;
+  /**
+   * "edit" updates the program; "clone" pre-fills every field from `initial` but
+   * saves a brand-new program (fresh code auto-generated). Defaults to "edit"
+   * when `initial` is given, else "create".
+   */
+  mode?: "create" | "edit" | "clone";
   onClose: () => void;
   onSaved: (id: string) => void;
 }) {
   const toast = useToast();
-  const editing = !!initial;
+  const resolvedMode = mode ?? (initial ? "edit" : "create");
+  const editing = resolvedMode === "edit";
+  const cloning = resolvedMode === "clone";
 
-  const [name, setName] = useState(initial?.name ?? "");
-  const [code, setCode] = useState(initial?.code ?? "");
+  const [name, setName] = useState(
+    cloning && initial?.name ? `${initial.name} (copy)` : initial?.name ?? "",
+  );
+  // A clone must not reuse the source code — start blank so it auto-generates
+  // from the (edited) name on save.
+  const [code, setCode] = useState(cloning ? "" : initial?.code ?? "");
   const [category, setCategory] = useState<CabinProgramCategory>(initial?.category ?? "Cabin");
   const [machine, setMachine] = useState(initial?.machine ?? "cnc_laser");
   const [sheet, setSheet] = useState<{ id: string; name: string } | null>(
@@ -139,7 +152,7 @@ export function CabinProgramFormModal({
     const res = editing ? await updateCabinProgram(initial!.id, input) : await createCabinProgram(input);
     setSaving(false);
     if (res.ok) {
-      toast.success(editing ? "Program updated" : "Program created");
+      toast.success(editing ? "Program updated" : cloning ? "Program cloned" : "Program created");
       onSaved(res.id);
     } else {
       toast.error(res.error);
@@ -147,8 +160,13 @@ export function CabinProgramFormModal({
   };
 
   return (
-    <Modal title={editing ? "Edit cabin program" : "New cabin program"} onClose={onClose} size="xl">
+    <Modal title={editing ? "Edit cabin program" : cloning ? "Clone cabin program" : "New cabin program"} onClose={onClose} size="xl">
       <div className="space-y-4 max-h-[70vh] overflow-y-auto pr-1">
+        {cloning && initial && (
+          <div className="rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 px-3 py-2 text-xs text-[var(--muted-foreground)]">
+            Cloning <span className="font-medium text-[var(--foreground)]">{initial.code ?? initial.name}</span> — every field is pre-filled (the PDF is not copied). Edit and save as a new program; a fresh code is generated.
+          </div>
+        )}
         {/* Name + code */}
         <div className="grid grid-cols-3 gap-3">
           <div className="col-span-2">

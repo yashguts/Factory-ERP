@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, Cog, Check, Pencil } from "lucide-react";
+import { Plus, Search, Cog, Check, Pencil, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
@@ -38,7 +38,8 @@ export function CabinProgramsClient({ programs }: { programs: CabinProgramListRo
   useUrlListSync({ q: search, cat, audit }, { q: "", cat: "all", audit: "all" });
 
   const [showForm, setShowForm] = useState(false);
-  const [editing, setEditing] = useState<CabinProgramDetail | null>(null);
+  const [formMode, setFormMode] = useState<"create" | "edit" | "clone">("create");
+  const [formSource, setFormSource] = useState<CabinProgramDetail | null>(null);
   const [auditing, setAuditing] = useState<Set<string>>(new Set());
 
   const counts = useMemo(() => {
@@ -67,7 +68,12 @@ export function CabinProgramsClient({ programs }: { programs: CabinProgramListRo
 
   const openEdit = async (id: string) => {
     const detail = await getCabinProgramDetail(id);
-    if (detail) { setEditing(detail); setShowForm(true); }
+    if (detail) { setFormSource(detail); setFormMode("edit"); setShowForm(true); }
+  };
+
+  const openClone = async (id: string) => {
+    const detail = await getCabinProgramDetail(id);
+    if (detail) { setFormSource(detail); setFormMode("clone"); setShowForm(true); }
   };
 
   const toggleAudit = async (p: CabinProgramListRow) => {
@@ -98,7 +104,7 @@ export function CabinProgramsClient({ programs }: { programs: CabinProgramListRo
         title="Cabin Programs"
         meta={`${counts.audited} audited · ${counts.pending} pending`}
         actions={
-          <Button size="sm" onClick={() => { setEditing(null); setShowForm(true); }}>
+          <Button size="sm" onClick={() => { setFormSource(null); setFormMode("create"); setShowForm(true); }}>
             <Plus size={16} className="mr-1.5" /> New Cabin Program
           </Button>
         }
@@ -166,6 +172,9 @@ export function CabinProgramsClient({ programs }: { programs: CabinProgramListRo
                       <button type="button" onClick={() => openEdit(p.id)} title="Edit" className="p-1 rounded cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]">
                         <Pencil size={15} />
                       </button>
+                      <button type="button" onClick={() => openClone(p.id)} title="Clone this program" className="p-1 rounded cursor-pointer text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]">
+                        <Copy size={15} />
+                      </button>
                     </div>
                   </TableCell>
                 </TableRow>
@@ -177,9 +186,10 @@ export function CabinProgramsClient({ programs }: { programs: CabinProgramListRo
 
       {showForm && (
         <CabinProgramFormModal
-          initial={editing}
-          onClose={() => { setShowForm(false); setEditing(null); }}
-          onSaved={() => { setShowForm(false); setEditing(null); router.refresh(); }}
+          initial={formSource}
+          mode={formMode}
+          onClose={() => { setShowForm(false); setFormSource(null); }}
+          onSaved={() => { setShowForm(false); setFormSource(null); router.refresh(); }}
         />
       )}
     </div>

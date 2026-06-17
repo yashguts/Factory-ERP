@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Cog, Check, Pencil, Trash2, Clock, Scissors } from "lucide-react";
+import { ArrowLeft, Cog, Check, Pencil, Trash2, Clock, Scissors, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -28,6 +28,7 @@ export function CabinProgramDetailClient({ program }: { program: CabinProgramDet
   const router = useRouter();
   const toast = useToast();
   const [editing, setEditing] = useState(false);
+  const [cloning, setCloning] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
 
@@ -77,6 +78,7 @@ export function CabinProgramDetailClient({ program }: { program: CabinProgramDet
               <Check size={15} className="mr-1.5" /> {audited ? "Audited" : "Mark audited"}
             </Button>
             <Button size="sm" variant="secondary" onClick={() => setEditing(true)}><Pencil size={15} className="mr-1.5" /> Edit</Button>
+            <Button size="sm" variant="secondary" onClick={() => setCloning(true)} title="Clone this program"><Copy size={15} className="mr-1.5" /> Clone</Button>
             <Button size="sm" variant="secondary" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /></Button>
           </div>
         }
@@ -168,6 +170,14 @@ export function CabinProgramDetailClient({ program }: { program: CabinProgramDet
           initial={program}
           onClose={() => setEditing(false)}
           onSaved={() => { setEditing(false); router.refresh(); }}
+        />
+      )}
+      {cloning && (
+        <CabinProgramFormModal
+          initial={program}
+          mode="clone"
+          onClose={() => setCloning(false)}
+          onSaved={(id) => { setCloning(false); router.push(`/cabin-programs/${id}`); }}
         />
       )}
       {confirmDelete && (
