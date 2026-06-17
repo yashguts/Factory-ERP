@@ -72,6 +72,15 @@ export interface Item {
   finish: string | null;
   /** Manual Demand Flow Type marking; NULL = automatic (computed). */
   demand_override: DemandOverride | null;
+  /**
+   * Optional PURCHASE unit when an item is bought in a different unit than it
+   * is stocked/used (e.g. bought by Roll/Kg/Box, stocked as Pcs/Nos). NULL ⇒
+   * purchased in the stock UOM (`uom_id`). `purchase_conversion` = how many
+   * STOCK units one purchase unit yields (1 Roll = 250 Pcs ⇒ 250). Used only
+   * at PO/receipt entry + display — everything stored stays in the stock UOM.
+   */
+  purchase_uom_id: string | null;
+  purchase_conversion: number | null;
   created_at: string;
   updated_at: string;
 }

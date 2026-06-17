@@ -353,6 +353,8 @@ export interface ItemWithStock {
   category_procurement_type: "make" | "trade" | null;
   effective_procurement_type: "make" | "trade" | null;
   suppliers: string[];
+  purchase_uom_id: string | null;
+  purchase_conversion: number | null;
   category: {
     id: string;
     name: string;
@@ -681,6 +683,8 @@ export async function getItemForEdit(
     category_procurement_type: catPT,
     effective_procurement_type: (itemPT ?? catPT) as "make" | "trade" | null,
     suppliers: Array.isArray(item.suppliers) ? (item.suppliers as string[]) : [],
+    purchase_uom_id: (item.purchase_uom_id as string | null) ?? null,
+    purchase_conversion: item.purchase_conversion != null ? Number(item.purchase_conversion) : null,
     category: cat,
     uom: (item.uom as { id: string; abbreviation: string } | null) ?? null,
     total_stock: ((item.inventory as { quantity: number }[]) ?? []).reduce(
@@ -765,6 +769,9 @@ export async function createItem(data: {
   stock_behaviour?: StockBehaviour;
   /** Up to 5 supplier names (only meaningful for Trade items). */
   suppliers?: string[];
+  /** Optional purchase unit + conversion (stock units per 1 purchase unit). */
+  purchase_uom_id?: string | null;
+  purchase_conversion?: number | null;
   /** Optional reason recorded in the change log (not stored on items). */
   note?: string;
 }): Promise<ItemSaveResult> {
@@ -798,6 +805,8 @@ export async function createItem(data: {
       procurement_type: data.procurement_type ?? null,
       stock_behaviour: data.stock_behaviour ?? "stocked",
       suppliers: normalizeSuppliers(data.suppliers),
+      purchase_uom_id: data.purchase_uom_id ?? null,
+      purchase_conversion: data.purchase_conversion ?? null,
     })
     .select("id")
     .single();
@@ -1160,6 +1169,10 @@ export async function updateItem(
     stock_behaviour?: StockBehaviour;
     /** Up to 5 supplier names. Pass `[]` to clear all. Omit to leave unchanged. */
     suppliers?: string[];
+    /** Optional purchase unit. Pass `null` to clear. Omit to leave unchanged. */
+    purchase_uom_id?: string | null;
+    /** Stock units per 1 purchase unit. Pass `null` to clear. */
+    purchase_conversion?: number | null;
     /** Optional reason recorded in the change log (not stored on items). */
     note?: string;
   },
