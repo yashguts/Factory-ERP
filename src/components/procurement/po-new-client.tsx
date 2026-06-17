@@ -192,6 +192,13 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
             Est. total: {estTotal > 0 ? `₹${Math.round(estTotal).toLocaleString("en-IN")}` : "—"}
           </span>
         </div>
+        <div className="hidden sm:flex items-center gap-2 px-2 pb-1.5 text-[10px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+          <span className="flex-1">Item</span>
+          <span className="w-40">Purchase unit</span>
+          <span className="w-28 text-right">Qty</span>
+          <span className="w-28 text-right">Unit cost</span>
+          <span className="w-7" />
+        </div>
         <div className="space-y-2">
           {rows.map((r) => {
             const unit = r.purchase_uom_id ? units.find((u) => u.id === r.purchase_uom_id) : null;
@@ -199,8 +206,8 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
             const orderAbbr = dual ? (unit!.abbreviation || "unit") : (r.item?.uom_abbreviation ?? "");
             const stockAbbr = r.item?.uom_abbreviation ?? "";
             return (
-              <div key={r.key} className="rounded-md border border-[var(--border)] p-2">
-                <div className="flex items-start gap-2">
+              <div key={r.key} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2">
+                <div className="flex items-center gap-2">
                   <div className="flex-1 min-w-0">
                     <ItemPicker
                       value={r.item}
@@ -211,7 +218,7 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     size="sm"
                     value={r.purchase_uom_id}
                     onChange={(e) => patchRow(r.key, { purchase_uom_id: e.target.value })}
-                    className="w-32"
+                    className="w-40 shrink-0"
                     title="Purchase unit for this line (varies by vendor)"
                   >
                     <option value="">Stock unit{stockAbbr ? ` (${stockAbbr})` : ""}</option>
@@ -221,22 +228,20 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                       </option>
                     ))}
                   </Select>
-                  <div className="flex items-center gap-1">
+                  <div className="w-28 shrink-0 flex items-center gap-1">
                     <Input
                       size="sm" type="number" min={0} step="any" value={r.qty}
                       onChange={(e) => patchRow(r.key, { qty: e.target.value })}
-                      placeholder="Qty" className="w-20 text-right" title="Order quantity"
+                      placeholder="0" className="flex-1 min-w-0 text-right" title="Order quantity"
                     />
-                    {orderAbbr && (
-                      <span className="w-10 text-[11px] text-[var(--muted-foreground)] truncate" title={orderAbbr}>
-                        {orderAbbr}
-                      </span>
-                    )}
+                    <span className="w-8 shrink-0 text-[11px] text-[var(--muted-foreground)] truncate" title={orderAbbr}>
+                      {orderAbbr}
+                    </span>
                   </div>
                   <Input
                     size="sm" type="number" min={0} step="0.01" value={r.unit_cost}
                     onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
-                    placeholder="Rate" className="w-24 text-right"
+                    placeholder="—" className="w-28 shrink-0 text-right"
                     title={dual ? `Unit cost — per ${orderAbbr} (optional)` : "Unit cost (optional)"}
                   />
                   <button
@@ -244,13 +249,13 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     onClick={() => removeRow(r.key)}
                     disabled={rows.length === 1}
                     aria-label="Remove line"
-                    className="mt-1.5 p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
+                    className="w-7 shrink-0 flex items-center justify-center p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] disabled:opacity-30 cursor-pointer transition-colors"
                   >
                     <Trash2 className="h-3.5 w-3.5" />
                   </button>
                 </div>
                 {dual && (
-                  <div className="mt-1.5 ml-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted-foreground)]">
+                  <div className="mt-2 ml-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted-foreground)]">
                     <span>
                       Bought in <b className="text-[var(--foreground)]">{orderAbbr}</b>, stocked as{" "}
                       {stockAbbr || "—"} — actual stock counted at receiving.
