@@ -19,6 +19,7 @@ import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2, ShieldCheck,
 import {
   updatePurchaseOrder,
   updatePoLine,
+  addPoLine,
   deletePoLine,
   deletePurchaseOrder,
   deleteReceipt,
@@ -30,6 +31,9 @@ import {
   type PoReceipt,
 } from "@/lib/actions/procurement";
 import { ReceiveModal } from "@/components/procurement/receive-modal";
+import { ItemPicker } from "@/components/procurement/item-picker";
+import { type SearchableItem } from "@/lib/actions/items";
+import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { PurchaseOrder, PurchaseOrderStatus, PoChangeLog } from "@/lib/supabase/types";
 
@@ -78,6 +82,9 @@ export function PoDetailClient({
   const [showReceive, setShowReceive] = useState(false);
   const [confirmUndo, setConfirmUndo] = useState<string | null>(null);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [newItem, setNewItem] = useState<SearchableItem | null>(null);
+  const [newQty, setNewQty] = useState("1");
+  const [newCost, setNewCost] = useState("");
 
   const totals = useMemo(() => {
     let qty = 0;
@@ -148,6 +155,24 @@ export function PoDetailClient({
         toast.error(res.error);
         router.refresh();
       }
+    });
+  };
+
+  const addItem = () => {
+    if (!newItem) { toast.error("Pick an item to add."); return; }
+    if (!(Number(newQty) > 0)) { toast.error("Enter a quantity greater than zero."); return; }
+    startTransition(async () => {
+      const res = await addPoLine(po.id, {
+        item_id: newItem.id,
+        qty: Number(newQty),
+        unit_cost: newCost.trim() === "" ? null : Number(newCost),
+      });
+      if (!res.ok) { toast.error(res.error); return; }
+      setNewItem(null);
+      setNewQty("1");
+      setNewCost("");
+      toast.success("Item added.");
+      router.refresh();
     });
   };
 
@@ -409,6 +434,32 @@ export function PoDetailClient({
           </TableBody>
         </Table>
       </div>
+
+      {/* Add item to this PO */}
+      {!received && (
+        <div className="card-surface p-3 mt-3">
+          <div className="flex flex-wrap items-end gap-2">
+            <div className="flex-1 min-w-[220px]">
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Add item</span>
+              <div className="mt-1">
+                <ItemPicker value={newItem} onPick={setNewItem} />
+              </div>
+            </div>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Qty</span>
+              <Input size="sm" type="number" min={1} value={newQty} onChange={(e) => setNewQty(e.target.value)} className="mt-1 w-20 text-right" />
+            </label>
+            <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Unit cost</span>
+              <Input size="sm" type="number" min={0} step="0.01" value={newCost} onChange={(e) => setNewCost(e.target.value)} placeholder="—" className="mt-1 w-24 text-right" />
+            </label>
+            <Button size="sm" onClick={addItem} disabled={isPending || !newItem}>
+              {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Plus className="h-3.5 w-3.5 mr-1.5" />}
+              Add
+            </Button>
+          </div>
+        </div>
+      )}
 
       {/* Receipt history */}
       {receipts.length > 0 && (

@@ -615,6 +615,65 @@ export async function updatePoLine(
   }
 }
 
+/** Add a new line item to an existing PO (the detail-page "Add item" bar). */
+export async function addPoLine(
+  poId: string,
+  input: { item_id: string; qty: number; unit_cost?: number | null },
+): Promise<SaveResult> {
+  try {
+    if (!poId) return { ok: false, error: "Missing purchase order" };
+    if (!input.item_id) return { ok: false, error: "Pick an item to add." };
+    if (!(Number(input.qty) > 0)) return { ok: false, error: "Enter a quantity greater than zero." };
+
+    const supabase = await createClient();
+    const { data: po } = await supabase
+      .from("purchase_orders")
+      .select("status, po_number, supplier_name")
+      .eq("id", poId)
+      .single();
+    if (!po) return { ok: false, error: "Purchase order not found." };
+    if (po.status === "received")
+      return { ok: false, error: "This purchase order is fully received and can't be edited." };
+
+    // Next sort_order = max existing + 1.
+    const { data: existing } = await supabase
+      .from("purchase_order_lines")
+      .select("sort_order")
+      .eq("po_id", poId)
+      .order("sort_order", { ascending: false })
+      .limit(1);
+    const nextSort = ((existing?.[0]?.sort_order as number | undefined) ?? -1) + 1;
+
+    const qty = Math.max(1, Math.ceil(Number(input.qty)));
+    const { error } = await supabase.from("purchase_order_lines").insert({
+      po_id: poId,
+      item_id: input.item_id,
+      qty,
+      unit_cost: input.unit_cost != null && (input.unit_cost as unknown) !== "" ? Number(input.unit_cost) : null,
+      sort_order: nextSort,
+    });
+    if (error) throw error;
+
+    const { data: item } = await supabase
+      .from("items").select("code").eq("id", input.item_id).single();
+    const code = (item?.code as string | null) ?? "item";
+    await logPoChange(supabase, {
+      po_id: poId,
+      po_number: po.po_number ?? null,
+      supplier_name: po.supplier_name ?? null,
+      action: "update",
+      changes: [{ field: "added line", old: null, new: `${code} × ${qty}` }],
+    });
+
+    revalidateTag("purchase-orders");
+    revalidatePath("/procurement");
+    revalidatePath(`/procurement/${poId}`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: msg(e, "Could not add the line") };
+  }
+}
+
 export async function deletePoLine(id: string, poId: string): Promise<SaveResult> {
   try {
     const supabase = await createClient();
