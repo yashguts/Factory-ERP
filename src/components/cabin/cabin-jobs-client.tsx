@@ -20,6 +20,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
+import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
 import type { CabinJobListRow, CabinFinishGroup } from "@/lib/actions/cabin-jobs";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
@@ -383,7 +384,13 @@ function FinishGroupRow({ group }: { group: CabinFinishGroup }) {
               {it.name}
             </TableCell>
             <TableCell className="text-sm text-[var(--muted-foreground)]" colSpan={2}>{it.cabin_type}</TableCell>
-            <TableCell className="text-right font-medium tabular-nums">{it.qty.toLocaleString()}</TableCell>
+            <TableCell className="text-right font-medium tabular-nums">
+              <CabinJobsPopover itemName={it.name} jobs={it.jobs}>
+                <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
+                  {it.qty.toLocaleString()}
+                </span>
+              </CabinJobsPopover>
+            </TableCell>
           </TableRow>
         ))}
     </>

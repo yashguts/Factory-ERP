@@ -343,6 +343,12 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
  * finish is needed. Items with no finish (Canopy, un-fanned panels) are
  * grouped under a "(no finish set)" bucket so nothing is silently dropped.
  * ------------------------------------------------------------------ */
+export interface CabinFinishJobQty {
+  job_id: string;
+  job_number: string;
+  customer_name: string | null;
+  qty: number;
+}
 export interface CabinFinishItem {
   item_id: string;
   code: string;
@@ -350,6 +356,8 @@ export interface CabinFinishItem {
   family: string | null;
   cabin_type: string;
   qty: number;
+  /** The cabin jobs that need this item, with each job's qty (hover breakdown). */
+  jobs: CabinFinishJobQty[];
 }
 export interface CabinFinishGroup {
   /** null = no finish recorded on the item. */
@@ -394,10 +402,34 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
       });
   }
 
-  // finish key -> aggregate (qty summed per distinct item across all jobs).
+  // Cabin job metadata (for the per-item hover breakdown).
+  const jobIds = [...new Set(lines.map((l) => l.cabin_job_id))];
+  const jobMeta = new Map<string, { job_number: string; customer_name: string | null }>();
+  for (let i = 0; i < jobIds.length; i += 300) {
+    const { data } = await supabase
+      .from("cabin_jobs")
+      .select("id, job_number, customer_name")
+      .in("id", jobIds.slice(i, i + 300));
+    for (const j of data ?? [])
+      jobMeta.set(j.id as string, {
+        job_number: (j.job_number as string) ?? "",
+        customer_name: (j.customer_name as string | null) ?? null,
+      });
+  }
+
+  // finish key -> aggregate (qty summed per distinct item, tracking each job's qty).
+  type AggItem = {
+    item_id: string;
+    code: string;
+    name: string;
+    family: string | null;
+    cabin_type: string;
+    qty: number;
+    jobsQty: Map<string, number>;
+  };
   const groups = new Map<
     string,
-    { finish: string | null; jobs: Set<string>; lines: number; perItem: Map<string, CabinFinishItem> }
+    { finish: string | null; jobs: Set<string>; lines: number; perItem: Map<string, AggItem> }
   >();
   for (const l of lines) {
     if (!l.item_id) continue;
@@ -409,8 +441,10 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
     g.lines += 1;
     const qty = Number(l.qty) || 0;
     const ex = g.perItem.get(l.item_id);
-    if (ex) ex.qty += qty;
-    else
+    if (ex) {
+      ex.qty += qty;
+      ex.jobsQty.set(l.cabin_job_id, (ex.jobsQty.get(l.cabin_job_id) ?? 0) + qty);
+    } else {
       g.perItem.set(l.item_id, {
         item_id: l.item_id,
         code: it.code,
@@ -418,13 +452,35 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
         family: it.family,
         cabin_type: l.cabin_type,
         qty,
+        jobsQty: new Map([[l.cabin_job_id, qty]]),
       });
+    }
     groups.set(key, g);
   }
 
+  const toJobs = (jobsQty: Map<string, number>): CabinFinishJobQty[] =>
+    [...jobsQty.entries()]
+      .map(([job_id, qty]) => ({
+        job_id,
+        job_number: jobMeta.get(job_id)?.job_number ?? "—",
+        customer_name: jobMeta.get(job_id)?.customer_name ?? null,
+        qty,
+      }))
+      .sort((a, b) => b.qty - a.qty || a.job_number.localeCompare(b.job_number, undefined, { numeric: true }));
+
   return [...groups.values()]
     .map((g) => {
-      const items = [...g.perItem.values()].sort((a, b) => b.qty - a.qty);
+      const items: CabinFinishItem[] = [...g.perItem.values()]
+        .map((it) => ({
+          item_id: it.item_id,
+          code: it.code,
+          name: it.name,
+          family: it.family,
+          cabin_type: it.cabin_type,
+          qty: it.qty,
+          jobs: toJobs(it.jobsQty),
+        }))
+        .sort((a, b) => b.qty - a.qty);
       return {
         finish: g.finish,
         total_qty: items.reduce((s, x) => s + x.qty, 0),
