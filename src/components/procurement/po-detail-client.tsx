@@ -305,6 +305,10 @@ export function PoDetailClient({
         }
       />
 
+      {/* Two columns: form/data on the left, the PO document pinned on the right */}
+      <div className="flex flex-col xl:flex-row gap-4 items-start">
+        <div className="flex-1 min-w-0 w-full">
+
       {/* Details */}
       <div className="card-surface p-3 mb-3">
         <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
@@ -342,8 +346,6 @@ export function PoDetailClient({
           </div>
         )}
       </div>
-
-      <PoDocumentPanel po={po} busy={isPending} onChanged={() => router.refresh()} />
 
       <KpiGrid className="mb-4">
         <KpiCard icon={<ListOrdered size={18} />} label="Lines" value={rows.length} sub={`${rows.length === 1 ? "item" : "items"} on this PO`} />
@@ -672,6 +674,12 @@ export function PoDetailClient({
 
       {/* Change history (audit trail) */}
       <PoHistoryPanel entries={changeLog} />
+        </div>
+
+        <div className="w-full xl:w-[400px] shrink-0 xl:sticky xl:top-4">
+          <PoDocumentPanel po={po} busy={isPending} onChanged={() => router.refresh()} />
+        </div>
+      </div>
 
       {showReceive && (
         <ReceiveModal
@@ -887,8 +895,8 @@ function PoDocumentPanel({
   };
 
   return (
-    <div className="card-surface p-3 mb-3">
-      <div className="flex items-center justify-between">
+    <div className="card-surface p-3 flex flex-col h-[480px] xl:h-[calc(100vh-7rem)]">
+      <div className="flex items-center justify-between shrink-0">
         <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
           <FileText className="h-4 w-4 text-[var(--muted-foreground)]" /> PO PDF copy
         </h3>
@@ -918,15 +926,19 @@ function PoDocumentPanel({
       />
       {po.po_pdf_url ? (
         isPdf ? (
-          <iframe key={po.po_pdf_url} src={po.po_pdf_url} title={po.po_pdf_filename ?? "PO PDF"} className="mt-2 w-full h-[420px] rounded border border-[var(--border)] bg-white" />
+          <iframe key={po.po_pdf_url} src={po.po_pdf_url} title={po.po_pdf_filename ?? "PO PDF"} className="mt-2 w-full flex-1 min-h-0 rounded border border-[var(--border)] bg-white" />
         ) : (
-          // eslint-disable-next-line @next/next/no-img-element
-          <img key={po.po_pdf_url} src={po.po_pdf_url} alt={po.po_pdf_filename ?? "PO document"} className="mt-2 max-h-[420px] rounded border border-[var(--border)]" />
+          <div className="mt-2 flex-1 min-h-0 overflow-auto rounded border border-[var(--border)] bg-white">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img key={po.po_pdf_url} src={po.po_pdf_url} alt={po.po_pdf_filename ?? "PO document"} className="w-full" />
+          </div>
         )
       ) : (
-        <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-          No PO copy attached. Attach the supplier&apos;s / printed PO (PDF or image, max 50 MB).
-        </p>
+        <div className="mt-2 flex-1 flex items-center justify-center rounded border border-dashed border-[var(--border)]">
+          <p className="text-xs text-[var(--muted-foreground)] text-center px-6">
+            No PO copy attached. Attach the supplier&apos;s / printed PO (PDF or image, max 50 MB).
+          </p>
+        </div>
       )}
     </div>
   );
