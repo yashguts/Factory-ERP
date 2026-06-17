@@ -48,7 +48,7 @@ function isUnderDispatch(r: Row): boolean {
   return (
     r.job_bom_line_id != null &&
     r.remaining != null &&
-    r.qty > 0 &&
+    r.qty >= 0 &&
     r.qty < r.remaining
   );
 }
@@ -141,13 +141,19 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
       },
     ]);
 
-  const activeRows = rows.filter((r) => r.item_id && r.qty > 0);
-  const totalQty = activeRows.reduce((a, r) => a + r.qty, 0);
+  const dispatchRows = rows.filter((r) => r.item_id && r.qty > 0);
+  // qty-0 real BOM lines, ticked "not required" → revise the requirement down to
+  // what's already been provided, without dispatching anything.
+  const reviseOnlyRows = rows.filter(
+    (r) => r.item_id && r.qty === 0 && r.closeLine && isUnderDispatch(r),
+  );
+  const sendRows = [...dispatchRows, ...reviseOnlyRows];
+  const totalQty = dispatchRows.reduce((a, r) => a + r.qty, 0);
 
   const save = () => {
     setError(null);
-    if (activeRows.length === 0) {
-      setError("Add at least one item with a quantity to dispatch.");
+    if (sendRows.length === 0) {
+      setError("Add at least one item to dispatch, or set one to 0 and tick “not required”.");
       return;
     }
     startTransition(async () => {
@@ -156,12 +162,12 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
         dispatch_date: date,
         phase_scope: scope,
         note,
-        lines: activeRows.map((r) => ({
+        lines: sendRows.map((r) => ({
           job_bom_line_id: r.job_bom_line_id,
           item_id: r.item_id,
           category: r.category,
-          qty: r.qty,
-          // Only a ticked, genuinely-under-dispatched line revises the BOM.
+          qty: Math.max(0, r.qty),
+          // A ticked under-dispatch (partial OR qty 0) revises the BOM requirement.
           revised_required:
             r.closeLine && isUnderDispatch(r) ? revisedRequiredFor(r) : null,
         })),
@@ -170,8 +176,13 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
         setError(res.error);
         return;
       }
+      const reviseNote = reviseOnlyRows.length
+        ? ` ${reviseOnlyRows.length} item${reviseOnlyRows.length === 1 ? "" : "s"} marked not required.`
+        : "";
       toast.success(
-        `Dispatch recorded for Job ${jobNumber} — ${SCOPE_LABEL[scope]}, ${activeRows.length} item${activeRows.length === 1 ? "" : "s"}, ${totalQty.toLocaleString()} qty. See it in the Dispatch panel.`,
+        dispatchRows.length > 0
+          ? `Dispatch recorded for Job ${jobNumber} — ${SCOPE_LABEL[scope]}, ${dispatchRows.length} item${dispatchRows.length === 1 ? "" : "s"}, ${totalQty.toLocaleString()} qty.${reviseNote}`
+          : `Job ${jobNumber} updated — ${reviseOnlyRows.length} item${reviseOnlyRows.length === 1 ? "" : "s"} no longer required.`,
       );
       onSaved();
       onClose();
@@ -284,20 +295,21 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
             touches stock. Saying it here removes the main post-save confusion. */}
         <p className="flex items-start gap-1.5 text-[11px] text-[var(--muted-foreground)]">
           <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
-          This records what left the factory and updates the job&rsquo;s dispatch
-          status. It does <span className="font-semibold">not</span> deduct stock
-          from inventory.
+          This records what left the factory, advances the job&rsquo;s dispatch
+          status, and <span className="font-semibold">deducts the dispatched items
+          from stock</span> (undoing the dispatch restores them).
         </p>
 
         <div className="flex items-center justify-between gap-2 pt-3 border-t border-[var(--border)]">
           <span className="text-xs text-[var(--muted-foreground)]">
-            {activeRows.length} item{activeRows.length === 1 ? "" : "s"} · {totalQty.toLocaleString()} total qty
+            {dispatchRows.length} item{dispatchRows.length === 1 ? "" : "s"} · {totalQty.toLocaleString()} total qty
+            {reviseOnlyRows.length > 0 && ` · ${reviseOnlyRows.length} not required`}
           </span>
           <div className="flex items-center gap-2">
             <Button variant="secondary" onClick={onClose} disabled={isPending}>
               Cancel
             </Button>
-            <Button onClick={save} disabled={isPending || activeRows.length === 0}>
+            <Button onClick={save} disabled={isPending || sendRows.length === 0}>
               {isPending ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Truck className="h-3.5 w-3.5 mr-1.5" />}
               Mark dispatched
             </Button>
@@ -417,10 +429,22 @@ function DispatchRow({
             />
             <span className={row.closeLine ? "text-[var(--success)] font-medium" : "text-[var(--muted-foreground)]"}>
               {row.closeLine ? (
+                row.qty === 0 ? (
+                  <>
+                    Not required — requirement set to{" "}
+                    <b>{revisedTo.toLocaleString()}</b>. The {dropped.toLocaleString()} leaves MRP.
+                  </>
+                ) : (
+                  <>
+                    Requirement revised to{" "}
+                    <b>{revisedTo.toLocaleString()}</b> — the other{" "}
+                    {dropped.toLocaleString()} leaves MRP.
+                  </>
+                )
+              ) : row.qty === 0 ? (
                 <>
-                  Requirement revised to{" "}
-                  <b>{revisedTo.toLocaleString()}</b> — the other{" "}
-                  {dropped.toLocaleString()} leaves MRP.
+                  Sending none. Tick if this item is <b>no longer required</b>{" "}
+                  (sets the requirement to {revisedTo.toLocaleString()}).
                 </>
               ) : (
                 <>

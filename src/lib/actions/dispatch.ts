@@ -338,55 +338,60 @@ export async function createDispatch(input: {
   if (!input.dispatch_date)
     return { ok: false, error: "Pick a dispatch date." };
 
-  const lines = (input.lines ?? []).filter(
+  // Lines actually being dispatched (qty > 0). A qty-0 line ships nothing but may
+  // still carry a requirement revision (the "0 — not required at all" case).
+  const dispatchLines = (input.lines ?? []).filter(
     (l) => Number(l.qty) > 0 && (l.item_id || (l.label && l.label.trim())),
   );
-  if (lines.length === 0)
+  // Requirement revisions come from BOTH partial dispatches ("the rest isn't
+  // needed") and qty-0 "not required" lines — read from the FULL input so a 0-qty
+  // revise still applies even though nothing ships.
+  const revisions = (input.lines ?? []).filter(
+    (l) => l.job_bom_line_id && l.revised_required != null && Number.isFinite(l.revised_required as number),
+  );
+  if (dispatchLines.length === 0 && revisions.length === 0)
     return {
       ok: false,
-      error: "Add at least one item with a quantity greater than 0 to dispatch.",
+      error: "Add at least one item to dispatch, or mark one as not required.",
     };
 
   const supabase = await createClient();
-  const { data: head, error: he } = await supabase
-    .from("job_dispatches")
-    .insert({
-      job_id: input.job_id,
-      dispatch_date: input.dispatch_date,
-      phase_scope: input.phase_scope,
-      note: input.note?.trim() || null,
-    })
-    .select("id")
-    .single();
-  if (he) return { ok: false, error: he.message };
 
-  const rows = lines.map((l) => ({
-    dispatch_id: head.id as string,
-    job_bom_line_id: l.job_bom_line_id ?? null,
-    item_id: l.item_id ?? null,
-    category: l.category ?? null,
-    label: l.label?.trim() || null,
-    qty: Number(l.qty),
-  }));
-  const { error: le } = await supabase.from("job_dispatch_lines").insert(rows);
-  if (le) {
-    // Best-effort rollback so we never leave an empty dispatch header behind.
-    await supabase.from("job_dispatches").delete().eq("id", head.id);
-    return { ok: false, error: le.message };
+  // Create a dispatch EVENT only when something is actually going out.
+  let dispatchId: string | null = null;
+  if (dispatchLines.length > 0) {
+    const { data: head, error: he } = await supabase
+      .from("job_dispatches")
+      .insert({
+        job_id: input.job_id,
+        dispatch_date: input.dispatch_date,
+        phase_scope: input.phase_scope,
+        note: input.note?.trim() || null,
+      })
+      .select("id")
+      .single();
+    if (he) return { ok: false, error: he.message };
+
+    const rows = dispatchLines.map((l) => ({
+      dispatch_id: head.id as string,
+      job_bom_line_id: l.job_bom_line_id ?? null,
+      item_id: l.item_id ?? null,
+      category: l.category ?? null,
+      label: l.label?.trim() || null,
+      qty: Number(l.qty),
+    }));
+    const { error: le } = await supabase.from("job_dispatch_lines").insert(rows);
+    if (le) {
+      // Best-effort rollback so we never leave an empty dispatch header behind.
+      await supabase.from("job_dispatches").delete().eq("id", head.id);
+      return { ok: false, error: le.message };
+    }
+    dispatchId = head.id as string;
   }
 
-  // Requirement revisions: when a line was marked "the rest isn't needed", lower
-  // the BOM line's required_quantity to the actually-needed amount so the dropped
-  // balance leaves MRP (and the dispatch panel shows it as fully met). An ordinary
-  // partial dispatch carries no revised_required and is untouched — its balance
-  // stays required. Best-effort: the dispatch is already recorded, so a failed
-  // revision shouldn't fail the whole save.
-  const revisions = lines.filter(
-    (l) =>
-      l.job_bom_line_id &&
-      l.revised_required != null &&
-      Number.isFinite(l.revised_required),
-  );
+  // Apply requirement revisions: a partial "rest not needed", or a qty-0 "not
+  // required" → required lowered to the already-provided amount (0 if nothing was
+  // ever dispatched), so the dropped balance leaves MRP. Best-effort.
   if (revisions.length > 0) {
     await Promise.all(
       revisions.map((l) =>
@@ -398,38 +403,35 @@ export async function createDispatch(input: {
     );
   }
 
-  // Advance the job's Stage to reflect the dispatch (first → First Phase;
-  // second / full → Full Material). Only ever moves forward, never back, so a
-  // later first-phase correction can't downgrade a fully-dispatched job.
-  const rank = (s: string | null | undefined) =>
-    s === "full_material" ? 2 : s === "first_phase" ? 1 : 0;
-  const target = input.phase_scope === "first" ? "first_phase" : "full_material";
-  const { data: jobRow } = await supabase
-    .from("jobs")
-    .select("stage")
-    .eq("id", input.job_id)
-    .maybeSingle();
-  if (rank(target) > rank(jobRow?.stage as string | null)) {
-    await supabase.from("jobs").update({ stage: target }).eq("id", input.job_id);
+  // Stage advance + stock deduction happen ONLY when something was actually
+  // dispatched (a pure requirement revision changes neither).
+  if (dispatchId) {
+    const rank = (s: string | null | undefined) =>
+      s === "full_material" ? 2 : s === "first_phase" ? 1 : 0;
+    const target = input.phase_scope === "first" ? "first_phase" : "full_material";
+    const { data: jobRow } = await supabase
+      .from("jobs")
+      .select("stage")
+      .eq("id", input.job_id)
+      .maybeSingle();
+    if (rank(target) > rank(jobRow?.stage as string | null)) {
+      await supabase.from("jobs").update({ stage: target }).eq("id", input.job_id);
+    }
+    // Deduct dispatched items from stock (forward-only, idempotent, best-effort).
+    try {
+      await postDispatchInventory(supabase, dispatchId);
+    } catch (e) {
+      console.error("dispatch inventory post failed", dispatchId, e);
+    }
   }
 
-  // Deduct the dispatched items from stock (forward-only, idempotent). Best-effort:
-  // the dispatch is already recorded, so a posting hiccup must not fail the save —
-  // it can be re-posted safely later thanks to the reference_id guard.
-  try {
-    await postDispatchInventory(supabase, head.id as string);
-  } catch (e) {
-    console.error("dispatch inventory post failed", head.id, e);
-  }
-
-  // Dispatch is now netted out of MRP demand, so refresh the MRP / production
-  // -plan caches (tagged "bom-lines" / "jobs") in addition to the job pages.
+  // A dispatch (netting) OR a requirement revision both change MRP demand — refresh.
   revalidateTag("bom-lines");
   revalidateTag("jobs");
   revalidatePath(`/jobs/${input.job_id}`);
   revalidatePath("/jobs");
   revalidatePath("/mrp");
-  return { ok: true, id: head.id as string };
+  return { ok: true, id: dispatchId ?? "" };
 }
 
 export async function deleteDispatch(
