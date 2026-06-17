@@ -4,6 +4,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import {
   resolveCategoryPaths,
   expandCategoryDescendants,
+  getAllCategories,
 } from "@/lib/actions/categories";
 
 export interface SearchableItem {
@@ -13,6 +14,8 @@ export interface SearchableItem {
   /** Optional human-friendly key. Often more useful to show than `name`. */
   lookup_key: string | null;
   category_name: string | null;
+  /** Full "Top › Sub" category path for display (so category matches are clear). */
+  category_path: string | null;
   uom_abbreviation: string;
   /** Sum of inventory.quantity across all warehouses for this item. */
   total_stock: number;
@@ -35,7 +38,9 @@ export interface SearchableItem {
  * So passing `["Filler Weight"]` returns items in `Filler Weight > Filler
  * Weight` AND `Filler Weight > Filler Weight Locking Bracket`.
  *
- * Each word in `query` must appear in the item name (AND logic).
+ * Each word in `query` (AND logic) must match the item's name, lookup key, code,
+ * OR its category / sub-category name (typing a category name returns every item
+ * under it, including its sub-categories).
  */
 export async function searchItems(
   query: string,
@@ -48,6 +53,50 @@ export async function searchItems(
   // searches silently fail. This is a public, RLS-light read, so
   // dropping the cookie dependency is safe and more robust.
   const supabase = createCacheClient();
+
+  // Category lookup (cached) — powers search-by-category/sub-category + the
+  // "Top › Sub" path shown in results. Typing a category name matches every item
+  // under it, including all sub-categories.
+  const allCats = await getAllCategories();
+  const catById = new Map(allCats.map((c) => [c.id, c]));
+  const childrenByParent = new Map<string, string[]>();
+  for (const c of allCats) {
+    if (c.parent_id) {
+      const arr = childrenByParent.get(c.parent_id) ?? [];
+      arr.push(c.id);
+      childrenByParent.set(c.parent_id, arr);
+    }
+  }
+  const descendantsOf = (rootId: string): string[] => {
+    const out: string[] = [];
+    const stack = [rootId];
+    while (stack.length) {
+      const id = stack.pop()!;
+      for (const ch of childrenByParent.get(id) ?? []) {
+        out.push(ch);
+        stack.push(ch);
+      }
+    }
+    return out;
+  };
+  const categoryIdsMatching = (token: string): string[] => {
+    const roots = allCats.filter((c) => c.name.toLowerCase().includes(token)).map((c) => c.id);
+    if (roots.length === 0) return [];
+    const set = new Set<string>(roots);
+    for (const r of roots) for (const d of descendantsOf(r)) set.add(d);
+    return Array.from(set);
+  };
+  const catPath = (id: string | null | undefined): string | null => {
+    if (!id) return null;
+    const parts: string[] = [];
+    let cur = catById.get(id);
+    let guard = 0;
+    while (cur && guard++ < 12) {
+      parts.unshift(cur.name);
+      cur = cur.parent_id ? catById.get(cur.parent_id) : undefined;
+    }
+    return parts.length ? parts.join(" › ") : null;
+  };
 
   // Resolve paths → IDs → IDs+descendants
   let categoryIds: string[] | undefined;
@@ -63,7 +112,7 @@ export async function searchItems(
   let q = supabase
     .from("items")
     .select(
-      `id, code, name, lookup_key, family, finish, procurement_type,
+      `id, code, name, lookup_key, family, finish, procurement_type, category_id,
       category:item_categories!items_category_id_fkey(name, procurement_type),
       uom:units_of_measurement!items_uom_id_fkey(abbreviation),
       inventory(quantity)`,
@@ -106,7 +155,8 @@ export async function searchItems(
     }
   }
 
-  // Multi-token AND search. Each token must appear in name OR lookup_key OR code.
+  // Multi-token AND search. Each token must match name / lookup_key / code OR the
+  // item's category / sub-category name.
   if (query.trim()) {
     const tokens = query
       .trim()
@@ -119,10 +169,20 @@ export async function searchItems(
       // or-filter parser and makes the search return zero results.
       const safe = token.replace(/[%,()]/g, "");
       if (!safe) continue;
-      // ilike with OR across the three text columns
-      q = q.or(
-        `name.ilike.%${safe}%,lookup_key.ilike.%${safe}%,code.ilike.%${safe}%`,
-      );
+      const conds = [
+        `name.ilike.%${safe}%`,
+        `lookup_key.ilike.%${safe}%`,
+        `code.ilike.%${safe}%`,
+      ];
+      // Category / sub-category match: items whose category (or any ancestor) name
+      // contains the token. Skipped when a token is so generic it matches a huge
+      // slice of the 400+ category tree, to keep the request URL bounded — the
+      // name/code match still applies for that token.
+      const catIds = categoryIdsMatching(safe);
+      if (catIds.length > 0 && catIds.length <= 250) {
+        conds.push(`category_id.in.(${catIds.join(",")})`);
+      }
+      q = q.or(conds.join(","));
     }
   }
 
@@ -151,6 +211,7 @@ export async function searchItems(
       category_name: Array.isArray(row.category)
         ? (row.category[0]?.name ?? null)
         : (row.category?.name ?? null),
+      category_path: catPath(row.category_id as string | null),
       uom_abbreviation: Array.isArray(row.uom)
         ? (row.uom[0]?.abbreviation ?? "")
         : (row.uom?.abbreviation ?? ""),

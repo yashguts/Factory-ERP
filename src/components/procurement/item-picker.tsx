@@ -120,9 +120,14 @@ export function ItemPicker({
                 onMouseEnter={() => setHi(idx)}
                 onClick={() => choose(item)}
               >
-                <span className={idx === hi ? "opacity-80" : "text-[var(--muted-foreground)]"}>{item.code}</span>
-                {" — "}{item.name}
-                <span className={idx === hi ? "opacity-70" : "text-[var(--muted-foreground)]"}> · stock {item.total_stock.toLocaleString()}{item.uom_abbreviation ? ` ${item.uom_abbreviation}` : ""}</span>
+                <div className="truncate">
+                  <span className={idx === hi ? "opacity-80 font-mono" : "text-[var(--muted-foreground)] font-mono"}>{item.code}</span>
+                  {" — "}{item.name}
+                </div>
+                <div className={`text-[11px] truncate ${idx === hi ? "opacity-75" : "text-[var(--muted-foreground)]"}`}>
+                  {item.category_path ? `${item.category_path} · ` : ""}
+                  stock {item.total_stock.toLocaleString()}{item.uom_abbreviation ? ` ${item.uom_abbreviation}` : ""}
+                </div>
               </div>
             ))
           )}
