@@ -76,20 +76,61 @@ export async function searchAuditedPrograms(
 ): Promise<AuditedProgramHit[]> {
   const q = query.trim();
   if (!q) return [];
+
+  const tokens = q
+    .toLowerCase()
+    .split(/\s+/)
+    .map((t) => t.replace(/[%,()]/g, ""))
+    .filter(Boolean);
+  if (!tokens.length) return [];
+
   const supabase = createCacheClient();
-  let req = supabase
+
+  // Cast a BROAD net in the DB: any token on name or code. (A per-token
+  // chained .or() instead ANDs into a single fat OR whose common tokens —
+  // "at", "600" — flood the result, so the real program gets pushed past the
+  // limit and disappears.) We then require ALL tokens and rank in memory.
+  const orFilter = tokens
+    .map((t) => `name.ilike.%${t}%,code.ilike.%${t}%`)
+    .join(",");
+  const { data, error } = await supabase
     .from("operations")
     .select("id, code, name, machine, machining_time_seconds")
     .eq("is_active", true)
-    .not("audited_at", "is", null);
-  for (const token of q.toLowerCase().split(/\s+/).filter(Boolean)) {
-    const safe = token.replace(/[%,()]/g, "");
-    if (!safe) continue;
-    req = req.or(`name.ilike.%${safe}%,code.ilike.%${safe}%`);
-  }
-  const { data, error } = await req.order("name").limit(limit);
+    .not("audited_at", "is", null)
+    .or(orFilter)
+    .order("name")
+    .limit(500); // candidate cap; ranking below picks the best `limit`
   if (error) throw error;
-  return (data ?? []).map((o: any) => ({
+
+  const ql = q.toLowerCase();
+  const hay = (o: any) => `${o.name ?? ""} ${o.code ?? ""}`.toLowerCase();
+
+  const ranked = (data ?? [])
+    // True AND: every token must appear somewhere in name or code.
+    .filter((o: any) => tokens.every((t) => hay(o).includes(t)))
+    .map((o: any) => {
+      const name = ((o.name as string) ?? "").toLowerCase();
+      const code = ((o.code as string) ?? "").toLowerCase();
+      // Lower score = better: exact name/code, then prefix, then anywhere.
+      let score = 4;
+      if (name === ql || code === ql) score = 0;
+      else if (name.startsWith(ql) || code.startsWith(ql)) score = 1;
+      else if (name.includes(ql)) score = 2;
+      return { o, score };
+    })
+    .sort(
+      (a, b) =>
+        a.score - b.score ||
+        ((a.o.name as string) ?? "").localeCompare(
+          (b.o.name as string) ?? "",
+          undefined,
+          { numeric: true },
+        ),
+    )
+    .slice(0, limit);
+
+  return ranked.map(({ o }) => ({
     id: o.id as string,
     code: (o.code as string) ?? null,
     name: o.name as string,
