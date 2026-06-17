@@ -7,8 +7,9 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
-import { Plus, Trash2, Loader2, Paperclip, X, FileText, ClipboardList, ShoppingCart } from "lucide-react";
+import { Plus, Trash2, Loader2, Paperclip, X, FileText, ClipboardList, ShoppingCart, Sparkles } from "lucide-react";
 import { createPurchaseOrder, recordPoDocument } from "@/lib/actions/procurement";
+import { extractPoHeader } from "@/lib/actions/po-vision";
 import { type SearchableItem } from "@/lib/actions/items";
 import { ItemPicker } from "@/components/procurement/item-picker";
 import { createClient } from "@/lib/supabase/client";
@@ -16,6 +17,8 @@ import type { UnitOfMeasurement } from "@/lib/supabase/types";
 
 const PDF_BUCKET = "po-invoices";
 const MAX_BYTES = 50 * 1024 * 1024;
+// Cap for the auto-read call (the base64 goes through a serverless function).
+const EXTRACT_MAX = 4 * 1024 * 1024;
 const ALLOWED_MIME = new Set([
   "application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp",
 ]);
@@ -56,6 +59,8 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
   const [note, setNote] = useState("");
   const [rows, setRows] = useState<LineRow[]>([emptyRow()]);
   const [file, setFile] = useState<File | null>(null);
+  const [extracting, setExtracting] = useState(false);
+  const [extractMsg, setExtractMsg] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const addRow = () => setRows((p) => [...p, emptyRow()]);
@@ -70,12 +75,62 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
     return a + q * c;
   }, 0);
 
+  const fileToBase64 = (f: File): Promise<string> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = typeof reader.result === "string" ? reader.result : "";
+        const comma = res.indexOf(",");
+        resolve(comma >= 0 ? res.slice(comma + 1) : res);
+      };
+      reader.onerror = () => reject(reader.error);
+      reader.readAsDataURL(f);
+    });
+
+  // On attach, read the PO with Claude vision and auto-fill the Order details —
+  // only EMPTY fields, never clobbering what the user already typed. Best-effort:
+  // any failure (incl. no API key) just leaves the fields for manual entry.
+  const autoReadPo = async (f: File) => {
+    if (f.size > EXTRACT_MAX) {
+      setExtractMsg(`File is large (${(f.size / 1024 / 1024).toFixed(1)} MB) — fill the Order details manually.`);
+      return;
+    }
+    setExtractMsg(null);
+    setExtracting(true);
+    try {
+      const data = await fileToBase64(f);
+      const res = await extractPoHeader({ data, mediaType: f.type, filename: f.name });
+      if (!res.ok) {
+        if (res.reason !== "not_configured") setExtractMsg(res.error);
+        return;
+      }
+      const h = res.header;
+      const filled: string[] = [];
+      if (h.po_number && !poNumber.trim()) { setPoNumber(h.po_number); filled.push("PO number"); }
+      if (h.supplier_name && !supplier.trim()) { setSupplier(h.supplier_name); filled.push("supplier"); }
+      if (h.order_date && !orderDate) { setOrderDate(h.order_date); filled.push("order date"); }
+      if (h.expected_date && !expectedDate) { setExpectedDate(h.expected_date); filled.push("expected date"); }
+      if (h.note && !note.trim()) { setNote(h.note); filled.push("note"); }
+      setExtractMsg(
+        filled.length
+          ? `Filled ${filled.join(", ")} from your PO — please review.`
+          : "Couldn't read new details from this PO — enter the Order details manually.",
+      );
+    } catch {
+      setExtractMsg("Couldn't read the PO — fill the Order details manually.");
+    } finally {
+      setExtracting(false);
+    }
+  };
+
   const pickFile = (f: File | null) => {
     setError(null);
+    setExtractMsg(null);
     if (!f) { setFile(null); return; }
     if (f.size > MAX_BYTES) { setError(`File too large (${(f.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`); return; }
     if (!ALLOWED_MIME.has(f.type)) { setError(`Unsupported file type "${f.type}". Use PDF, PNG, JPG, or WebP.`); return; }
     setFile(f);
+    void autoReadPo(f);
   };
 
   const submit = () => {
@@ -148,6 +203,29 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
       {error && (
         <div className="mb-3 p-3 text-sm bg-[var(--destructive-bg)] text-[var(--destructive)] rounded-md border border-[var(--destructive-border)]">
           {error}
+        </div>
+      )}
+
+      {(extracting || extractMsg) && (
+        <div className="mb-3 flex items-center gap-2 p-3 text-sm rounded-md border border-[var(--border)] bg-[var(--accent)] text-[var(--accent-foreground)]">
+          {extracting ? (
+            <Loader2 className="h-4 w-4 animate-spin shrink-0" />
+          ) : (
+            <Sparkles className="h-4 w-4 shrink-0" />
+          )}
+          <span className="flex-1">
+            {extracting ? "Reading your PO and filling the Order details…" : extractMsg}
+          </span>
+          {!extracting && (
+            <button
+              type="button"
+              onClick={() => setExtractMsg(null)}
+              aria-label="Dismiss"
+              className="text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          )}
         </div>
       )}
 
@@ -292,6 +370,10 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
           <FileText className="h-4 w-4 text-[var(--muted-foreground)]" />
           PO PDF copy <span className="font-normal text-[var(--muted-foreground)]">(optional)</span>
         </h3>
+        <p className="text-[11px] text-[var(--muted-foreground)] -mt-1 mb-2 inline-flex items-center gap-1">
+          <Sparkles className="h-3 w-3" />
+          Attach the supplier&rsquo;s PO and the Order details above fill in automatically.
+        </p>
         {file ? (
           <div className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2 text-sm">
             <span className="inline-flex items-center gap-2 truncate">
