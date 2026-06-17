@@ -123,6 +123,9 @@ export function ProgramFormModal({
       ? formatDuration(source.machining_time_seconds)
       : "",
   );
+  const [scrapPercent, setScrapPercent] = useState(
+    source?.scrap_percent != null ? String(source.scrap_percent) : "",
+  );
   // Family groups material/finish variants of the same base program; material
   // is this variant's finish (MS, SS, SS Rose Gold, …). Both optional.
   const [familyKey, setFamilyKey] = useState(source?.family_key ?? "");
@@ -283,6 +286,12 @@ export function ProgramFormModal({
       );
       return;
     }
+    const scrapTrim = scrapPercent.trim();
+    const scrapValue = scrapTrim === "" ? null : Number(scrapTrim);
+    if (scrapValue != null && (!Number.isFinite(scrapValue) || scrapValue < 0 || scrapValue > 100)) {
+      setError("Scrap % must be a number between 0 and 100.");
+      return;
+    }
     startTransition(async () => {
       const payload = {
         name,
@@ -293,6 +302,7 @@ export function ProgramFormModal({
         description: description.trim() || null,
         notes: notes.trim() || null,
         machining_time_seconds: parsedTime,
+        scrap_percent: scrapValue,
         inputs: rowsToLines(inputs),
         outputs: rowsToLines(outputs),
       };
@@ -369,7 +379,7 @@ export function ProgramFormModal({
           </div>
         </div>
 
-        <div className="grid grid-cols-2 gap-3 items-start">
+        <div className="grid grid-cols-3 gap-3 items-start">
           <div>
             <label className="block text-sm font-medium mb-1">Type</label>
             <Select
@@ -397,6 +407,23 @@ export function ProgramFormModal({
               value={machiningTime}
               onChange={(e) => setMachiningTime(e.target.value)}
               placeholder="e.g., 0:07:03 or 7.05"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">
+              Scrap
+              <span className="text-[var(--muted-foreground)] font-normal text-xs ml-1">
+                (% of sheet)
+              </span>
+            </label>
+            <Input
+              type="number"
+              min={0}
+              max={100}
+              step="0.01"
+              value={scrapPercent}
+              onChange={(e) => setScrapPercent(e.target.value)}
+              placeholder="e.g., 14.93"
             />
           </div>
         </div>

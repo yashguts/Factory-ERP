@@ -70,6 +70,8 @@ export interface OperationDetail {
   audited_at: string | null;
   /** Machining time of one run in seconds (from the set-up schedule). */
   machining_time_seconds: number | null;
+  /** Sheet scrap %, read off the set-up schedule. */
+  scrap_percent: number | null;
   description: string | null;
   sketch_url: string | null;
   sketch_filename: string | null;
@@ -236,6 +238,7 @@ const _getOperationDetailUncached = async (
     material_label: data.material_label ?? null,
     audited_at: data.audited_at ?? null,
     machining_time_seconds: data.machining_time_seconds ?? null,
+    scrap_percent: data.scrap_percent ?? null,
     description: data.description ?? null,
     sketch_url: data.sketch_url ?? null,
     sketch_filename: data.sketch_filename ?? null,
@@ -423,6 +426,7 @@ export async function createOperation(input: {
   description?: string | null;
   notes?: string | null;
   machining_time_seconds?: number | null;
+  scrap_percent?: number | null;
   inputs?: OperationLineInput[];
   outputs?: OperationLineInput[];
 }): Promise<OperationSaveResult> {
@@ -444,6 +448,7 @@ export async function createOperation(input: {
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
       machining_time_seconds: input.machining_time_seconds ?? null,
+      scrap_percent: input.scrap_percent ?? null,
     })
     .select("id")
     .single();
@@ -473,6 +478,7 @@ export async function updateOperation(
     description?: string | null;
     notes?: string | null;
     machining_time_seconds?: number | null;
+    scrap_percent?: number | null;
     inputs?: OperationLineInput[];
     outputs?: OperationLineInput[];
   },
@@ -496,6 +502,7 @@ export async function updateOperation(
       description: input.description?.trim() || null,
       notes: input.notes?.trim() || null,
       machining_time_seconds: input.machining_time_seconds ?? null,
+      scrap_percent: input.scrap_percent ?? null,
       updated_at: new Date().toISOString(),
     })
     .eq("id", id);

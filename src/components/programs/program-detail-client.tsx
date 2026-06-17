@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   Clock,
+  Scissors,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -154,6 +155,12 @@ export function ProgramDetailClient({
               >
                 <Clock className="h-3 w-3 mr-1" />
                 {formatDuration(operation.machining_time_seconds)} / run
+              </Badge>
+            )}
+            {operation.scrap_percent != null && (
+              <Badge variant="neutral" title="Sheet scrap (from the set-up schedule)">
+                <Scissors className="h-3 w-3 mr-1" />
+                {operation.scrap_percent}% scrap
               </Badge>
             )}
           </span>
