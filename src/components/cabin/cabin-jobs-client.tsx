@@ -3,12 +3,14 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
+import { Tabs } from "@/components/ui/tabs";
+import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table,
@@ -18,7 +20,7 @@ import {
   TableHead,
   TableCell,
 } from "@/components/ui/table";
-import type { CabinJobListRow } from "@/lib/actions/cabin-jobs";
+import type { CabinJobListRow, CabinFinishGroup } from "@/lib/actions/cabin-jobs";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
 // "CC 1000X1000", "AT 1000X2200_3MM", "AFFG 2000X2550…", "SWG_1000X700…").
@@ -38,10 +40,18 @@ function splitMaterials(material: string | null): string[] {
 
 type SortKey = "job_number" | "platform" | "side_panel" | "items" | "created";
 type SortDir = "asc" | "desc";
+type View = "jobs" | "finish";
 
-export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
+export function CabinJobsClient({
+  jobs,
+  finishReq,
+}: {
+  jobs: CabinJobListRow[];
+  finishReq: CabinFinishGroup[];
+}) {
   const router = useRouter();
   const sp = useSearchParams();
+  const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [systemFilter, setSystemFilter] = useState<string>(() => readParam(sp, "sys", "all"));
   const [materialFilter, setMaterialFilter] = useState<string>(() => readParam(sp, "mat", "all"));
@@ -53,8 +63,8 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
   );
 
   useUrlListSync(
-    { q: search, sys: systemFilter, mat: materialFilter, sort: sortKey, dir: sortDir },
-    { q: "", sys: "all", mat: "all", sort: "created", dir: "desc" },
+    { view, q: search, sys: systemFilter, mat: materialFilter, sort: sortKey, dir: sortDir },
+    { view: "jobs", q: "", sys: "all", mat: "all", sort: "created", dir: "desc" },
   );
 
   // Filter option lists, derived from the data so they only show what exists.
@@ -141,9 +151,11 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
         icon={<ClipboardCheck size={18} />}
         title="Cabin Jobs"
         meta={
-          filtersActive
-            ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
-            : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+          view === "finish"
+            ? "Cumulative sheet/plate requirement by finish, across all cabin jobs"
+            : filtersActive
+              ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+              : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
           <Button size="sm" onClick={() => router.push("/cabin-jobs/new")}>
@@ -152,125 +164,228 @@ export function CabinJobsClient({ jobs }: { jobs: CabinJobListRow[] }) {
         }
       />
 
-      <Toolbar>
-        <div className="relative w-full max-w-sm">
-          <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
-          <Input
-            size="sm"
-            placeholder="Search job #, platform, material..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            disabled={jobs.length === 0}
-            className="pl-9"
-          />
-        </div>
+      <Tabs
+        variant="underline"
+        className="mb-4"
+        value={view}
+        onChange={(v) => setView(v as View)}
+        tabs={[
+          { value: "jobs", label: "Cabin jobs", count: jobs.length },
+          { value: "finish", label: "Requirement by finish", count: finishReq.length },
+        ]}
+      />
 
-        {systems.length > 0 && (
-          <Select
-            size="sm"
-            value={systemFilter}
-            onChange={(e) => setSystemFilter(e.target.value)}
-            className="w-[150px]"
-            title="Filter by platform door system"
-          >
-            <option value="all">All Platforms</option>
-            {systems.map((s) => (
-              <option key={s} value={s}>{s}</option>
-            ))}
-          </Select>
-        )}
-
-        {materials.length > 0 && (
-          <Select
-            size="sm"
-            value={materialFilter}
-            onChange={(e) => setMaterialFilter(e.target.value)}
-            className="w-[160px]"
-            title="Filter by side panel material"
-          >
-            <option value="all">All Side Panels</option>
-            {materials.map((m) => (
-              <option key={m} value={m}>{m}</option>
-            ))}
-          </Select>
-        )}
-
-        {filtersActive && (
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => {
-              setSearch("");
-              setSystemFilter("all");
-              setMaterialFilter("all");
-            }}
-          >
-            Clear
-          </Button>
-        )}
-        <ToolbarSpacer />
-      </Toolbar>
-
-      {sorted.length === 0 ? (
-        <div className="card-surface">
-          <EmptyState
-            icon={<ClipboardCheck size={28} />}
-            title={jobs.length === 0 ? "No cabin jobs yet" : "No cabin jobs match your filters"}
-            description={
-              jobs.length === 0
-                ? "Create one to start listing cabin items by type."
-                : "Try clearing the search or filters."
-            }
-          />
-        </div>
+      {view === "finish" ? (
+        <FinishRequirement groups={finishReq} />
       ) : (
-        <div className="card-surface overflow-hidden">
-          <Table density="dense">
-            <TableHeader sticky>
-              <TableRow>
-                <SortHeader label="Job #" sortField="job_number" />
-                <TableHead>Customer</TableHead>
-                <SortHeader label="Platform" sortField="platform" />
-                <SortHeader label="Side Panel" sortField="side_panel" />
-                <SortHeader label="Items" sortField="items" className="text-right" />
-                <SortHeader label="Created" sortField="created" />
-                <TableHead className="text-right">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {sorted.map((j) => (
-                <TableRow
-                  key={j.id}
-                  className="cursor-pointer hover:bg-[var(--muted)]"
-                  onClick={() => router.push(`/cabin-jobs/${j.id}`)}
-                >
-                  <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
-                  <TableCell>{j.customer_name || "—"}</TableCell>
-                  <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
-                  <TableCell>{j.side_panel_material || "—"}</TableCell>
-                  <TableCell className="text-right tabular-nums">{j.line_count}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">
-                    {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
-                  </TableCell>
-                  <TableCell className="text-right">
-                    <Button
-                      size="sm"
-                      variant="secondary"
-                      title={`Clone ${j.job_number} into a new job`}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        router.push(`/cabin-jobs/new?from=${j.id}`);
-                      }}
+        <>
+          <Toolbar>
+            <div className="relative w-full max-w-sm">
+              <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
+              <Input
+                size="sm"
+                placeholder="Search job #, platform, material..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                disabled={jobs.length === 0}
+                className="pl-9"
+              />
+            </div>
+
+            {systems.length > 0 && (
+              <Select
+                size="sm"
+                value={systemFilter}
+                onChange={(e) => setSystemFilter(e.target.value)}
+                className="w-[150px]"
+                title="Filter by platform door system"
+              >
+                <option value="all">All Platforms</option>
+                {systems.map((s) => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </Select>
+            )}
+
+            {materials.length > 0 && (
+              <Select
+                size="sm"
+                value={materialFilter}
+                onChange={(e) => setMaterialFilter(e.target.value)}
+                className="w-[160px]"
+                title="Filter by side panel material"
+              >
+                <option value="all">All Side Panels</option>
+                {materials.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </Select>
+            )}
+
+            {filtersActive && (
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => {
+                  setSearch("");
+                  setSystemFilter("all");
+                  setMaterialFilter("all");
+                }}
+              >
+                Clear
+              </Button>
+            )}
+            <ToolbarSpacer />
+          </Toolbar>
+
+          {sorted.length === 0 ? (
+            <div className="card-surface">
+              <EmptyState
+                icon={<ClipboardCheck size={28} />}
+                title={jobs.length === 0 ? "No cabin jobs yet" : "No cabin jobs match your filters"}
+                description={
+                  jobs.length === 0
+                    ? "Create one to start listing cabin items by type."
+                    : "Try clearing the search or filters."
+                }
+              />
+            </div>
+          ) : (
+            <div className="card-surface overflow-hidden">
+              <Table density="dense">
+                <TableHeader sticky>
+                  <TableRow>
+                    <SortHeader label="Job #" sortField="job_number" />
+                    <TableHead>Customer</TableHead>
+                    <SortHeader label="Platform" sortField="platform" />
+                    <SortHeader label="Side Panel" sortField="side_panel" />
+                    <SortHeader label="Items" sortField="items" className="text-right" />
+                    <SortHeader label="Created" sortField="created" />
+                    <TableHead className="text-right">Actions</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {sorted.map((j) => (
+                    <TableRow
+                      key={j.id}
+                      className="cursor-pointer hover:bg-[var(--muted)]"
+                      onClick={() => router.push(`/cabin-jobs/${j.id}`)}
                     >
-                      <Copy size={14} className="mr-1.5" /> Clone
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
+                      <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
+                      <TableCell>{j.customer_name || "—"}</TableCell>
+                      <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
+                      <TableCell>{j.side_panel_material || "—"}</TableCell>
+                      <TableCell className="text-right tabular-nums">{j.line_count}</TableCell>
+                      <TableCell className="text-[var(--muted-foreground)]">
+                        {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
+                      </TableCell>
+                      <TableCell className="text-right">
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          title={`Clone ${j.job_number} into a new job`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/cabin-jobs/new?from=${j.id}`);
+                          }}
+                        >
+                          <Copy size={14} className="mr-1.5" /> Clone
+                        </Button>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </>
       )}
     </div>
+  );
+}
+
+function FinishRequirement({ groups }: { groups: CabinFinishGroup[] }) {
+  const totals = useMemo(() => {
+    let qty = 0;
+    let classified = 0;
+    for (const g of groups) {
+      qty += g.total_qty;
+      if (g.finish !== null) classified += g.total_qty;
+    }
+    return { finishes: groups.filter((g) => g.finish !== null).length, qty, classified };
+  }, [groups]);
+
+  if (groups.length === 0) {
+    return (
+      <div className="card-surface overflow-hidden">
+        <EmptyState
+          icon={<Palette size={28} />}
+          title="No cabin-job demand yet"
+          description="Add items to cabin jobs to see the cumulative requirement by finish."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <StatStrip className="mb-3">
+        <StatTile label="Finishes" value={totals.finishes.toLocaleString()} />
+        <StatTile label="Total panels" value={totals.qty.toLocaleString()} />
+        <StatTile label="Finish recorded" value={`${Math.round((totals.classified / Math.max(1, totals.qty)) * 100)}%`} tone="primary" />
+      </StatStrip>
+
+      <div className="card-surface overflow-hidden">
+        <Table density="dense">
+          <TableHeader sticky>
+            <TableRow>
+              <TableHead>Finish</TableHead>
+              <TableHead className="text-right">Distinct items</TableHead>
+              <TableHead className="text-right">Jobs</TableHead>
+              <TableHead className="text-right">Total qty</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {groups.map((g) => (
+              <FinishGroupRow key={g.finish ?? "__none__"} group={g} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function FinishGroupRow({ group }: { group: CabinFinishGroup }) {
+  const [open, setOpen] = useState(false);
+  const noFinish = group.finish === null;
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer bg-[var(--muted)]/40 hover:bg-[var(--muted)]/70"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <TableCell className="font-medium">
+          <span className="inline-flex items-center gap-1.5">
+            {open ? <ChevronDown size={14} className="text-[var(--muted-foreground)]" /> : <ChevronRight size={14} className="text-[var(--muted-foreground)]" />}
+            {noFinish ? <span className="text-[var(--muted-foreground)]">(no finish set)</span> : group.finish}
+          </span>
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">{group.items.length}</TableCell>
+        <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">{group.job_count}</TableCell>
+        <TableCell className="text-right font-bold tabular-nums">{group.total_qty.toLocaleString()}</TableCell>
+      </TableRow>
+      {open &&
+        group.items.map((it) => (
+          <TableRow key={it.item_id}>
+            <TableCell className="pl-8">
+              <span className="font-mono text-xs text-[var(--muted-foreground)] mr-1.5">{it.code}</span>
+              {it.name}
+            </TableCell>
+            <TableCell className="text-sm text-[var(--muted-foreground)]" colSpan={2}>{it.cabin_type}</TableCell>
+            <TableCell className="text-right font-medium tabular-nums">{it.qty.toLocaleString()}</TableCell>
+          </TableRow>
+        ))}
+    </>
   );
 }

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { CABIN_PARENT } from "@/lib/cabin/cabin-types";
 
 /* ------------------------------------------------------------------ *
@@ -333,6 +334,111 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       created_at: j.created_at as string,
     };
   });
+}
+
+/* ------------------------------------------------------------------ *
+ * Cumulative requirement by sheet/plate finish across ALL cabin jobs.
+ * Cabin panels carry items.finish (MS / SS 430 / Rose Gold / …); summing
+ * cabin-job line qty per finish tells procurement how much sheet of each
+ * finish is needed. Items with no finish (Canopy, un-fanned panels) are
+ * grouped under a "(no finish set)" bucket so nothing is silently dropped.
+ * ------------------------------------------------------------------ */
+export interface CabinFinishItem {
+  item_id: string;
+  code: string;
+  name: string;
+  family: string | null;
+  cabin_type: string;
+  qty: number;
+}
+export interface CabinFinishGroup {
+  /** null = no finish recorded on the item. */
+  finish: string | null;
+  total_qty: number;
+  job_count: number;
+  line_count: number;
+  items: CabinFinishItem[];
+}
+
+export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
+  const supabase = createCacheClient();
+
+  const lines = await fetchAllRanged<{
+    cabin_job_id: string;
+    cabin_type: string;
+    item_id: string | null;
+    qty: number;
+  }>((from, to, withCount) =>
+    supabase
+      .from("cabin_job_lines")
+      .select("cabin_job_id, cabin_type, item_id, qty", withCount ? { count: "exact" } : {})
+      .not("item_id", "is", null)
+      .range(from, to),
+  );
+  if (lines.length === 0) return [];
+
+  const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))];
+  const itemById = new Map<string, { code: string; name: string; family: string | null; finish: string | null }>();
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const { data, error } = await supabase
+      .from("items")
+      .select("id, code, name, family, finish")
+      .in("id", itemIds.slice(i, i + 300));
+    if (error) throw error;
+    for (const it of data ?? [])
+      itemById.set(it.id as string, {
+        code: it.code as string,
+        name: it.name as string,
+        family: (it.family as string | null) ?? null,
+        finish: (it.finish as string | null) ?? null,
+      });
+  }
+
+  // finish key -> aggregate (qty summed per distinct item across all jobs).
+  const groups = new Map<
+    string,
+    { finish: string | null; jobs: Set<string>; lines: number; perItem: Map<string, CabinFinishItem> }
+  >();
+  for (const l of lines) {
+    if (!l.item_id) continue;
+    const it = itemById.get(l.item_id);
+    if (!it) continue;
+    const key = it.finish ?? "__none__";
+    const g = groups.get(key) ?? { finish: it.finish, jobs: new Set<string>(), lines: 0, perItem: new Map() };
+    g.jobs.add(l.cabin_job_id);
+    g.lines += 1;
+    const qty = Number(l.qty) || 0;
+    const ex = g.perItem.get(l.item_id);
+    if (ex) ex.qty += qty;
+    else
+      g.perItem.set(l.item_id, {
+        item_id: l.item_id,
+        code: it.code,
+        name: it.name,
+        family: it.family,
+        cabin_type: l.cabin_type,
+        qty,
+      });
+    groups.set(key, g);
+  }
+
+  return [...groups.values()]
+    .map((g) => {
+      const items = [...g.perItem.values()].sort((a, b) => b.qty - a.qty);
+      return {
+        finish: g.finish,
+        total_qty: items.reduce((s, x) => s + x.qty, 0),
+        job_count: g.jobs.size,
+        line_count: g.lines,
+        items,
+      };
+    })
+    .sort((a, b) => {
+      // Real finishes by total qty desc; the "(no finish set)" bucket pinned last.
+      if (a.finish === null) return 1;
+      if (b.finish === null) return -1;
+      return b.total_qty - a.total_qty;
+    });
 }
 
 export interface CabinJobLine {
