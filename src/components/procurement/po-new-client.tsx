@@ -183,20 +183,17 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
 
       {/* Line items */}
       <div className="card-surface p-3 mb-3">
-        <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
-            <ClipboardList className="h-4 w-4 text-[var(--muted-foreground)]" />
-            Line items
-          </h3>
-          <span className="text-xs text-[var(--muted-foreground)]">
-            Est. total: {estTotal > 0 ? `₹${Math.round(estTotal).toLocaleString("en-IN")}` : "—"}
-          </span>
-        </div>
-        <div className="hidden sm:flex items-center gap-2.5 px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+        <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4 text-[var(--muted-foreground)]" />
+          Line items
+        </h3>
+        <div className="hidden md:flex items-center gap-2.5 px-2.5 pb-1.5 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
           <span className="flex-1">Item</span>
-          <span className="w-44">Purchase unit</span>
-          <span className="w-32 text-right">Qty</span>
-          <span className="w-32 text-right">Unit cost</span>
+          <span className="w-40">Purchase unit</span>
+          <span className="w-28 text-right">Qty</span>
+          <span className="w-28 text-right">Tentative</span>
+          <span className="w-28 text-right">Unit cost</span>
+          <span className="w-24 text-right">Amount</span>
           <span className="w-8" />
         </div>
         <div className="space-y-2">
@@ -205,6 +202,7 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
             const dual = !!unit;
             const orderAbbr = dual ? (unit!.abbreviation || "unit") : (r.item?.uom_abbreviation ?? "");
             const stockAbbr = r.item?.uom_abbreviation ?? "";
+            const amount = (Number(r.qty) || 0) * (Number(r.unit_cost) || 0);
             return (
               <div key={r.key} className="rounded-md border border-[var(--border)] bg-[var(--card)] p-2.5">
                 <div className="flex items-center gap-2.5">
@@ -218,7 +216,7 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     size="md"
                     value={r.purchase_uom_id}
                     onChange={(e) => patchRow(r.key, { purchase_uom_id: e.target.value })}
-                    className="w-44 shrink-0"
+                    className="w-40 shrink-0"
                     title="Purchase unit for this line (varies by vendor)"
                   >
                     <option value="">Stock unit{stockAbbr ? ` (${stockAbbr})` : ""}</option>
@@ -228,22 +226,41 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                       </option>
                     ))}
                   </Select>
-                  <div className="w-32 shrink-0 flex items-center gap-1.5">
+                  <div className="w-28 shrink-0 flex items-center gap-1">
                     <Input
                       size="md" type="number" min={0} step="any" value={r.qty}
                       onChange={(e) => patchRow(r.key, { qty: e.target.value })}
                       placeholder="0" className="flex-1 min-w-0 text-right" title="Order quantity"
                     />
-                    <span className="w-8 shrink-0 text-xs font-medium text-[var(--muted-foreground)] truncate" title={orderAbbr}>
-                      {orderAbbr}
-                    </span>
+                    <span className="w-7 shrink-0 text-xs text-[var(--muted-foreground)] truncate" title={orderAbbr}>{orderAbbr}</span>
                   </div>
-                  <Input
-                    size="md" type="number" min={0} step="0.01" value={r.unit_cost}
-                    onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
-                    placeholder="—" className="w-32 shrink-0 text-right"
-                    title={dual ? `Unit cost — per ${orderAbbr} (optional)` : "Unit cost (optional)"}
-                  />
+                  <div className="w-28 shrink-0 flex items-center gap-1">
+                    {dual ? (
+                      <>
+                        <Input
+                          size="md" type="number" min={0} step="any" value={r.tentative}
+                          onChange={(e) => patchRow(r.key, { tentative: e.target.value })}
+                          placeholder="≈" className="flex-1 min-w-0 text-right"
+                          title="Tentative stock quantity — actual counted at receiving (optional)"
+                        />
+                        <span className="w-7 shrink-0 text-xs text-[var(--muted-foreground)] truncate" title={stockAbbr}>{stockAbbr}</span>
+                      </>
+                    ) : (
+                      <span className="w-full text-right text-xs text-[var(--muted-foreground)] pr-1" title="Pick a purchase unit to estimate stock">—</span>
+                    )}
+                  </div>
+                  <div className="w-28 shrink-0 flex items-center gap-1">
+                    <Input
+                      size="md" type="number" min={0} step="0.01" value={r.unit_cost}
+                      onChange={(e) => patchRow(r.key, { unit_cost: e.target.value })}
+                      placeholder="—" className="flex-1 min-w-0 text-right"
+                      title={dual ? `Unit cost — per ${orderAbbr} (optional)` : "Unit cost (optional)"}
+                    />
+                    <span className="w-7 shrink-0 text-xs text-[var(--muted-foreground)] truncate">{dual && orderAbbr ? `/${orderAbbr}` : ""}</span>
+                  </div>
+                  <div className="w-24 shrink-0 text-right text-sm font-medium tabular-nums">
+                    {amount > 0 ? `₹${Math.round(amount).toLocaleString("en-IN")}` : <span className="text-[var(--muted-foreground)]">—</span>}
+                  </div>
                   <button
                     type="button"
                     onClick={() => removeRow(r.key)}
@@ -254,32 +271,19 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
                     <Trash2 className="h-4 w-4" />
                   </button>
                 </div>
-                {dual && (
-                  <div className="mt-2 ml-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[11px] text-[var(--muted-foreground)]">
-                    <span>
-                      Bought in <b className="text-[var(--foreground)]">{orderAbbr}</b>, stocked as{" "}
-                      {stockAbbr || "—"} — actual stock counted at receiving.
-                    </span>
-                    <span className="inline-flex items-center gap-1">
-                      tentative ≈
-                      <Input
-                        size="sm" type="number" min={0} step="any" value={r.tentative}
-                        onChange={(e) => patchRow(r.key, { tentative: e.target.value })}
-                        placeholder="stock qty"
-                        className="w-24 text-right"
-                        title="Tentative stock quantity for planning (optional)"
-                      />
-                      {stockAbbr}
-                    </span>
-                  </div>
-                )}
               </div>
             );
           })}
         </div>
-        <Button size="sm" variant="secondary" onClick={addRow} className="mt-2">
-          <Plus className="h-3.5 w-3.5 mr-1.5" /> Add line
-        </Button>
+        <div className="flex items-center justify-between mt-3 pt-2.5 border-t border-[var(--border)]">
+          <Button size="sm" variant="secondary" onClick={addRow}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Add line
+          </Button>
+          <div className="flex items-baseline gap-2">
+            <span className="text-xs uppercase tracking-wide text-[var(--muted-foreground)]">Estimated total</span>
+            <span className="text-base font-semibold tabular-nums">{estTotal > 0 ? `₹${Math.round(estTotal).toLocaleString("en-IN")}` : "—"}</span>
+          </div>
+        </div>
       </div>
 
       {/* PO PDF copy */}
