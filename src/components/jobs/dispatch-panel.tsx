@@ -274,7 +274,12 @@ export function DispatchPanel({
                             </span>
                           )}
                           {l.adhoc && (
-                            <span className="ml-2 text-[10px] text-[var(--warning)]">ad-hoc</span>
+                            <span
+                              className="ml-2 inline-block rounded px-1 py-px text-[10px] font-medium bg-[var(--warning-bg)] text-[var(--warning)]"
+                              title="Added at dispatch — not on the job's BOM"
+                            >
+                              extra item
+                            </span>
                           )}
                         </span>
                         <span className="font-medium whitespace-nowrap">
