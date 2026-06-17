@@ -181,12 +181,16 @@ src/
     actions/                Server actions, one file per domain
       categories.ts         getAllCategories, resolveCategoryPaths, etc.
       items.ts              searchItems for the BOM picker (live search)
-      inventory.ts          getItemsWithStock, createItem, updateItem, deleteItem.
-                            getItemRefs = light cached DISTINCT (item_type,
-                            category_id) pairs for ItemFormModal dropdowns —
-                            use it, NOT getItemsWithStock, on detail pages
-                            (getItemsWithStock's payload can exceed the 2MB
-                            unstable_cache cap and silently never cache).
+      inventory.ts          _getItemsWithStockUncached (full per-item shape, used
+                            UNCACHED by the make-plan only — its cached wrapper was
+                            removed 2026-06-17 because the ~2.2MB payload blew the
+                            2MB cache cap), getItemStockSummaries (lean cached
+                            id/code/name/category/uom/proc/stock read for the
+                            Settings overstock report), createItem, updateItem,
+                            deleteItem. getItemRefs = light cached DISTINCT
+                            (item_type, category_id) pairs for ItemFormModal
+                            dropdowns — use it on detail pages. The /inventory
+                            list uses getInventoryPage (server-side paginated RPC).
       jobs.ts               getJobs, getJobDetail, createJob, updateJob, deleteJob,
                             saveBomSection, getJobTemplate, etc.
       mrp.ts                getMrpData, getMrpItemJobs
@@ -805,10 +809,14 @@ already wipes it.
   loop (see `getItemsWithStock`, `mrp.ts`, and the cabin reads). This bit the cabin
   type pages once Side Panel/Front Wall grew past 1000 items.
 - **unstable_cache 2MB entry cap**: results bigger than ~2MB silently never cache —
-  the function re-runs on EVERY request and the page feels broken-slow.
-  `getItemsWithStock` (~2,400 rows × 30 fields) flirts with this; that's why detail
-  pages use `getItemRefs` instead (2026-06-11 perf fix). Don't add big-payload reads
-  to hot pages.
+  the function re-runs on EVERY request and the page feels broken-slow. The full
+  item read (~2,700 rows × 30 fields ≈ 2.2MB) hit this once it grew: its cached
+  wrapper `getItemsWithStock` was removed 2026-06-17 (it re-ran on every /settings
+  load via the overstock report and printed a build warning). The fat shape now
+  exists only as `_getItemsWithStockUncached` for the make-plan (read uncached);
+  the overstock report uses the lean `getItemStockSummaries` (~0.55MB); detail
+  pages use `getItemRefs`. Don't add big-payload reads to hot pages — project to
+  the few fields the consumer needs.
 - **Every route needs a `loading.tsx`**: without one, a soft navigation paints
   NOTHING until the server responds — users read it as a freeze. All current routes
   are covered; keep it that way for new routes.
