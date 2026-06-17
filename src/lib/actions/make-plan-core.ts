@@ -217,6 +217,96 @@ const EMPTY_CORE: Omit<MakePlanCore, "empty"> = {
  * Run the optimiser for one demand snapshot. `mrpData` is the already-computed
  * MRP (make/trade shortfall per item) — caller injects `getMrpData(cutoff)`.
  */
+/**
+ * The owner-locked sheet-minimising SELECTION, extracted verbatim so callers that
+ * assemble their own candidates (Cabin MRP) drive the EXACT same optimiser as
+ * computeMakePlanCore. Pure: given each program's outputs (progOut), its sheet
+ * inputs (inputsOf) and the leaf demand (leafProduce), returns the optimal run set.
+ * Mutates progOut in place (dominance pruning). `codeOf` is the tie-break used in
+ * dominance (operation code in the make plan; any stable id elsewhere).
+ */
+export function selectRuns(
+  progOut: OpOuts,
+  inputsOf: Map<string, Map<string, number>>,
+  leafProduce: Map<string, number>,
+  codeOf: (id: string) => string = (id) => id,
+): { runs: Runs; runsSheets: number; sheetsSimple: number; progOut: OpOuts; progOutOriginal: OpOuts } {
+  const sheetCost = new Map<string, number>();
+  for (const op of progOut.keys()) {
+    const ins = inputsOf.get(op);
+    sheetCost.set(op, ins && ins.size ? [...ins.values()].reduce((s, q) => s + q, 0) : 1);
+  }
+  const cost = (op: string) => sheetCost.get(op) ?? 1;
+
+  const progOutOriginal: OpOuts = new Map([...progOut.entries()].map(([k, v]) => [k, new Map(v)]));
+
+  // Dominance preprocessing
+  {
+    const opsList = [...progOut.keys()];
+    for (const a of opsList) {
+      const oa = progOut.get(a);
+      if (!oa) continue;
+      for (const b of opsList) {
+        if (a === b || !progOut.has(b) || !progOut.has(a)) continue;
+        if (cost(a) < cost(b)) continue;
+        const ob = progOut.get(b)!;
+        let dominated = true;
+        let strictlyWorse = cost(a) > cost(b);
+        for (const [part, qa] of oa) {
+          const qb = ob.get(part) ?? 0;
+          if (qb < qa) { dominated = false; break; }
+          if (qb > qa) strictlyWorse = true;
+        }
+        if (ob.size > oa.size) strictlyWorse = true;
+        if (dominated && (strictlyWorse || codeOf(a) > codeOf(b))) { progOut.delete(a); break; }
+      }
+    }
+  }
+
+  const nProducers = new Map<string, number>();
+  for (const outs of progOut.values())
+    for (const part of outs.keys()) nProducers.set(part, (nProducers.get(part) ?? 0) + 1);
+
+  const totalRunsOf = (r: Runs) => [...r.values()].reduce((s, x) => s + x, 0);
+  const totalOut = (op: string) => {
+    let t = 0;
+    for (const q of progOut.get(op)?.values() ?? []) t += q;
+    return t;
+  };
+  const scarceUseful = (outs: Map<string, number>, rem: Map<string, number>) => {
+    let w = 0;
+    for (const [part, qty] of outs) {
+      const r = rem.get(part) ?? 0;
+      if (r > 0) w += Math.min(r, qty) * (1 + 1 / (nProducers.get(part) ?? 1));
+    }
+    return w;
+  };
+  const STRATEGIES: ScoreFn[] = [
+    (op, _o, _r, u) => u / totalOut(op),
+    (op, _o, _r, u) => u / cost(op),
+    (op, outs, rem) => scarceUseful(outs, rem) / cost(op),
+    (op, outs, rem) => scarceUseful(outs, rem) / totalOut(op),
+    (op, _o, _r, u) => { const t = totalOut(op); return u / (cost(op) * (1 + (t - u) / t)); },
+  ];
+
+  const baseline = greedySelect(progOutOriginal, leafProduce, (op, _o, _r, u) => {
+    let t = 0;
+    for (const q of progOutOriginal.get(op)?.values() ?? []) t += q;
+    return u / t;
+  });
+  const sheetsSimple = reportedSheets(baseline, inputsOf);
+  let runs: Runs = baseline;
+  let runsSheets = sheetsSimple;
+  for (const strategy of STRATEGIES) {
+    let cand = trimRuns(greedySelect(progOut, leafProduce, strategy), progOut, leafProduce, sheetCost);
+    cand = localSearch(cand, progOut, leafProduce, sheetCost, inputsOf);
+    if (!coversDemand(cand, progOut, leafProduce)) continue;
+    const s = reportedSheets(cand, inputsOf);
+    if (s < runsSheets || (s === runsSheets && totalRunsOf(cand) < totalRunsOf(runs))) { runs = cand; runsSheets = s; }
+  }
+  return { runs, runsSheets, sheetsSimple, progOut, progOutOriginal };
+}
+
 export async function computeMakePlanCore(
   excludeCodes: string[],
   mrpData: MrpRow[],
@@ -400,80 +490,13 @@ export async function computeMakePlanCore(
     for (const { data } of results)
       for (const o of data ?? []) { if (!o.item_id) continue; const m = inputsOf.get(o.operation_id as string) ?? new Map<string, number>(); m.set(o.item_id as string, (m.get(o.item_id as string) ?? 0) + Number(o.qty_per_run)); inputsOf.set(o.operation_id as string, m); }
   }
-  const sheetCost = new Map<string, number>();
-  for (const op of progOut.keys()) {
-    const ins = inputsOf.get(op);
-    sheetCost.set(op, ins && ins.size ? [...ins.values()].reduce((s, q) => s + q, 0) : 1);
-  }
-  const cost = (op: string) => sheetCost.get(op) ?? 1;
-
-  const progOutOriginal: OpOuts = new Map([...progOut.entries()].map(([k, v]) => [k, new Map(v)]));
-
-  // Dominance preprocessing
-  {
-    const opsList = [...progOut.keys()];
-    const codeOf = (id: string) => (ops.get(id)?.code as string) ?? id;
-    for (const a of opsList) {
-      const oa = progOut.get(a);
-      if (!oa) continue;
-      for (const b of opsList) {
-        if (a === b || !progOut.has(b) || !progOut.has(a)) continue;
-        if (cost(a) < cost(b)) continue;
-        const ob = progOut.get(b)!;
-        let dominated = true;
-        let strictlyWorse = cost(a) > cost(b);
-        for (const [part, qa] of oa) {
-          const qb = ob.get(part) ?? 0;
-          if (qb < qa) { dominated = false; break; }
-          if (qb > qa) strictlyWorse = true;
-        }
-        if (ob.size > oa.size) strictlyWorse = true;
-        if (dominated && (strictlyWorse || codeOf(a) > codeOf(b))) { progOut.delete(a); break; }
-      }
-    }
-  }
-
-  const nProducers = new Map<string, number>();
-  for (const outs of progOut.values())
-    for (const part of outs.keys()) nProducers.set(part, (nProducers.get(part) ?? 0) + 1);
-
-  const totalRunsOf = (r: Runs) => [...r.values()].reduce((s, x) => s + x, 0);
-  const totalOut = (op: string) => {
-    let t = 0;
-    for (const q of progOut.get(op)?.values() ?? []) t += q;
-    return t;
-  };
-  const scarceUseful = (outs: Map<string, number>, rem: Map<string, number>) => {
-    let w = 0;
-    for (const [part, qty] of outs) {
-      const r = rem.get(part) ?? 0;
-      if (r > 0) w += Math.min(r, qty) * (1 + 1 / (nProducers.get(part) ?? 1));
-    }
-    return w;
-  };
-  const STRATEGIES: ScoreFn[] = [
-    (op, _o, _r, u) => u / totalOut(op),
-    (op, _o, _r, u) => u / cost(op),
-    (op, outs, rem) => scarceUseful(outs, rem) / cost(op),
-    (op, outs, rem) => scarceUseful(outs, rem) / totalOut(op),
-    (op, _o, _r, u) => { const t = totalOut(op); return u / (cost(op) * (1 + (t - u) / t)); },
-  ];
-
-  const baseline = greedySelect(progOutOriginal, leafProduce, (op, _o, _r, u) => {
-    let t = 0;
-    for (const q of progOutOriginal.get(op)?.values() ?? []) t += q;
-    return u / t;
-  });
-  const sheetsSimple = reportedSheets(baseline, inputsOf);
-  let runs: Runs = baseline;
-  let runsSheets = sheetsSimple;
-  for (const strategy of STRATEGIES) {
-    let cand = trimRuns(greedySelect(progOut, leafProduce, strategy), progOut, leafProduce, sheetCost);
-    cand = localSearch(cand, progOut, leafProduce, sheetCost, inputsOf);
-    if (!coversDemand(cand, progOut, leafProduce)) continue;
-    const s = reportedSheets(cand, inputsOf);
-    if (s < runsSheets || (s === runsSheets && totalRunsOf(cand) < totalRunsOf(runs))) { runs = cand; runsSheets = s; }
-  }
+  // Owner-locked selection (extracted to selectRuns so Cabin MRP reuses it verbatim).
+  const { runs, runsSheets, sheetsSimple, progOutOriginal } = selectRuns(
+    progOut,
+    inputsOf,
+    leafProduce,
+    (id) => (ops.get(id)?.code as string) ?? id,
+  );
 
   // full output bundles of the chosen programs
   const selIds = [...runs.keys()];
