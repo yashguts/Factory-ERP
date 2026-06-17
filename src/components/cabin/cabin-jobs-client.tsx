@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -21,7 +21,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
-import type { CabinJobListRow, CabinFinishGroup } from "@/lib/actions/cabin-jobs";
+import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
 // "CC 1000X1000", "AT 1000X2200_3MM", "AFFG 2000X2550…", "SWG_1000X700…").
@@ -41,7 +41,43 @@ function splitMaterials(material: string | null): string[] {
 
 type SortKey = "job_number" | "platform" | "side_panel" | "items" | "created";
 type SortDir = "asc" | "desc";
-type View = "jobs" | "finish";
+type View = "jobs" | "finish" | "category";
+
+/** One item within a cabin part category — the finish view's item, tagged with
+ *  the finish it came from (so the category view can show finish per item). */
+interface CabinCategoryItem extends CabinFinishItem {
+  finish: string | null;
+}
+interface CabinCategoryGroup {
+  category: string;
+  total_qty: number;
+  job_count: number;
+  items: CabinCategoryItem[];
+}
+
+/** Re-group the by-finish requirement by cabin part category (Platform, Side
+ *  Panel, Canopy, …). Each item belongs to exactly one finish group, so flatten
+ *  + regroup gives the same demand sliced the other way. */
+function buildCategoryGroups(finishReq: CabinFinishGroup[]): CabinCategoryGroup[] {
+  const byCat = new Map<string, { items: CabinCategoryItem[]; jobs: Set<string> }>();
+  for (const g of finishReq) {
+    for (const it of g.items) {
+      const cat = it.cabin_type || "(uncategorised)";
+      const entry = byCat.get(cat) ?? { items: [], jobs: new Set<string>() };
+      entry.items.push({ ...it, finish: g.finish });
+      for (const j of it.jobs) entry.jobs.add(j.job_id);
+      byCat.set(cat, entry);
+    }
+  }
+  return [...byCat.entries()]
+    .map(([category, e]) => ({
+      category,
+      total_qty: e.items.reduce((s, x) => s + x.qty, 0),
+      job_count: e.jobs.size,
+      items: e.items.sort((a, b) => b.qty - a.qty),
+    }))
+    .sort((a, b) => b.total_qty - a.total_qty);
+}
 
 export function CabinJobsClient({
   jobs,
@@ -52,7 +88,7 @@ export function CabinJobsClient({
 }) {
   const router = useRouter();
   const sp = useSearchParams();
-  const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish"]) as View);
+  const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [systemFilter, setSystemFilter] = useState<string>(() => readParam(sp, "sys", "all"));
   const [materialFilter, setMaterialFilter] = useState<string>(() => readParam(sp, "mat", "all"));
@@ -83,6 +119,8 @@ export function CabinJobsClient({
     jobs.forEach((j) => splitMaterials(j.side_panel_material).forEach((m) => set.add(m)));
     return Array.from(set).sort();
   }, [jobs]);
+
+  const categoryReq = useMemo(() => buildCategoryGroups(finishReq), [finishReq]);
 
   const filtered = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
@@ -154,9 +192,11 @@ export function CabinJobsClient({
         meta={
           view === "finish"
             ? "Cumulative sheet/plate requirement by finish, across all cabin jobs"
-            : filtersActive
-              ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
-              : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+            : view === "category"
+              ? "Cumulative requirement by cabin part category, across all cabin jobs"
+              : filtersActive
+                ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+                : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
           <Button size="sm" onClick={() => router.push("/cabin-jobs/new")}>
@@ -173,11 +213,14 @@ export function CabinJobsClient({
         tabs={[
           { value: "jobs", label: "Cabin jobs", count: jobs.length },
           { value: "finish", label: "Requirement by finish", count: finishReq.length },
+          { value: "category", label: "Requirement by category", count: categoryReq.length },
         ]}
       />
 
       {view === "finish" ? (
         <FinishRequirement groups={finishReq} />
+      ) : view === "category" ? (
+        <CategoryRequirement groups={categoryReq} />
       ) : (
         <>
           <Toolbar>
@@ -384,6 +427,99 @@ function FinishGroupRow({ group }: { group: CabinFinishGroup }) {
               {it.name}
             </TableCell>
             <TableCell className="text-sm text-[var(--muted-foreground)]" colSpan={2}>{it.cabin_type}</TableCell>
+            <TableCell className="text-right font-medium tabular-nums">
+              <CabinJobsPopover itemName={it.name} jobs={it.jobs}>
+                <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
+                  {it.qty.toLocaleString()}
+                </span>
+              </CabinJobsPopover>
+            </TableCell>
+          </TableRow>
+        ))}
+    </>
+  );
+}
+
+function CategoryRequirement({ groups }: { groups: CabinCategoryGroup[] }) {
+  const totals = useMemo(() => {
+    let qty = 0;
+    let items = 0;
+    for (const g of groups) {
+      qty += g.total_qty;
+      items += g.items.length;
+    }
+    return { categories: groups.length, qty, items };
+  }, [groups]);
+
+  if (groups.length === 0) {
+    return (
+      <div className="card-surface overflow-hidden">
+        <EmptyState
+          icon={<Layers size={28} />}
+          title="No cabin-job demand yet"
+          description="Add items to cabin jobs to see the cumulative requirement by category."
+        />
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      <StatStrip className="mb-3">
+        <StatTile label="Categories" value={totals.categories.toLocaleString()} />
+        <StatTile label="Distinct items" value={totals.items.toLocaleString()} />
+        <StatTile label="Total panels" value={totals.qty.toLocaleString()} tone="primary" />
+      </StatStrip>
+
+      <div className="card-surface overflow-hidden">
+        <Table density="dense">
+          <TableHeader sticky>
+            <TableRow>
+              <TableHead>Category</TableHead>
+              <TableHead className="text-right">Distinct items</TableHead>
+              <TableHead className="text-right">Jobs</TableHead>
+              <TableHead className="text-right">Total qty</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {groups.map((g) => (
+              <CategoryGroupRow key={g.category} group={g} />
+            ))}
+          </TableBody>
+        </Table>
+      </div>
+    </div>
+  );
+}
+
+function CategoryGroupRow({ group }: { group: CabinCategoryGroup }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <TableRow
+        className="cursor-pointer bg-[var(--muted)]/40 hover:bg-[var(--muted)]/70"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <TableCell className="font-medium">
+          <span className="inline-flex items-center gap-1.5">
+            {open ? <ChevronDown size={14} className="text-[var(--muted-foreground)]" /> : <ChevronRight size={14} className="text-[var(--muted-foreground)]" />}
+            {group.category}
+          </span>
+        </TableCell>
+        <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">{group.items.length}</TableCell>
+        <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">{group.job_count}</TableCell>
+        <TableCell className="text-right font-bold tabular-nums">{group.total_qty.toLocaleString()}</TableCell>
+      </TableRow>
+      {open &&
+        group.items.map((it) => (
+          <TableRow key={it.item_id}>
+            <TableCell className="pl-8">
+              <span className="font-mono text-xs text-[var(--muted-foreground)] mr-1.5">{it.code}</span>
+              {it.name}
+            </TableCell>
+            <TableCell className="text-sm text-[var(--muted-foreground)]" colSpan={2}>
+              {it.finish ?? <span className="italic">(no finish set)</span>}
+            </TableCell>
             <TableCell className="text-right font-medium tabular-nums">
               <CabinJobsPopover itemName={it.name} jobs={it.jobs}>
                 <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
