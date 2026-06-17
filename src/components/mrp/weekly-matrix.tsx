@@ -46,6 +46,7 @@ export function WeeklyMatrix({
   unit,
   cumulative,
   pinLast,
+  rowSort = "qty",
   emptyLabel,
 }: {
   weeks: WeekMeta[];
@@ -55,6 +56,9 @@ export function WeeklyMatrix({
   cumulative: boolean;
   /** Category name to pin to the bottom (e.g. "Raw steel / sheets"). */
   pinLast?: string;
+  /** Drill-down row order within a category: by quantity (default) or by the
+   *  `sub` label (e.g. finish). */
+  rowSort?: "qty" | "sub";
   emptyLabel?: string;
 }) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set());
@@ -163,6 +167,7 @@ export function WeeklyMatrix({
                 cumulative={cumulative}
                 isOpen={isOpen}
                 unit={unit}
+                rowSort={rowSort}
                 onToggle={() => toggle(g.name)}
               />
             );
@@ -179,6 +184,7 @@ function MatrixGroup({
   cumulative,
   isOpen,
   unit,
+  rowSort,
   onToggle,
 }: {
   group: { name: string; rows: MatrixRow[]; cells: number[]; count: number };
@@ -186,12 +192,21 @@ function MatrixGroup({
   cumulative: boolean;
   isOpen: boolean;
   unit: string;
+  rowSort: "qty" | "sub";
   onToggle: () => void;
 }) {
-  const sortedRows = useMemo(
-    () => [...group.rows].sort((a, b) => (cumulative ? b.cumulative : b.perWeek).reduce((s, x) => s + x, 0) - (cumulative ? a.cumulative : a.perWeek).reduce((s, x) => s + x, 0)),
-    [group.rows, cumulative],
-  );
+  const sortedRows = useMemo(() => {
+    const total = (r: MatrixRow) => (cumulative ? r.cumulative : r.perWeek).reduce((s, x) => s + x, 0);
+    const copy = [...group.rows];
+    if (rowSort === "sub") {
+      // Sort by the `sub` label (finish), empties last, then by qty desc.
+      const sv = (r: MatrixRow) => (typeof r.sub === "string" && r.sub ? r.sub : "￿");
+      copy.sort((a, b) => sv(a).localeCompare(sv(b)) || total(b) - total(a));
+    } else {
+      copy.sort((a, b) => total(b) - total(a));
+    }
+    return copy;
+  }, [group.rows, cumulative, rowSort]);
 
   return (
     <>

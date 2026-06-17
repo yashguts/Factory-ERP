@@ -21,7 +21,9 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
+import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
 import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
+import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
 // "CC 1000X1000", "AT 1000X2200_3MM", "AFFG 2000X2550…", "SWG_1000X700…").
@@ -41,7 +43,7 @@ function splitMaterials(material: string | null): string[] {
 
 type SortKey = "job_number" | "platform" | "side_panel" | "items" | "created";
 type SortDir = "asc" | "desc";
-type View = "jobs" | "finish" | "category";
+type View = "jobs" | "finish" | "category" | "weekly";
 
 /** One item within a cabin part category — the finish view's item, tagged with
  *  the finish it came from (so the category view can show finish per item). */
@@ -82,13 +84,15 @@ function buildCategoryGroups(finishReq: CabinFinishGroup[]): CabinCategoryGroup[
 export function CabinJobsClient({
   jobs,
   finishReq,
+  weeklyPlan,
 }: {
   jobs: CabinJobListRow[];
   finishReq: CabinFinishGroup[];
+  weeklyPlan: CabinWeeklyPlan;
 }) {
   const router = useRouter();
   const sp = useSearchParams();
-  const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category"]) as View);
+  const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category", "weekly"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [systemFilter, setSystemFilter] = useState<string>(() => readParam(sp, "sys", "all"));
   const [materialFilter, setMaterialFilter] = useState<string>(() => readParam(sp, "mat", "all"));
@@ -98,10 +102,13 @@ export function CabinJobsClient({
   const [sortDir, setSortDir] = useState<SortDir>(
     () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
   );
+  // Weekly-plan view controls.
+  const [cumulative, setCumulative] = useState(() => readParam(sp, "cumul", "1") !== "0");
+  const [weeklyFinish, setWeeklyFinish] = useState(() => readParam(sp, "wfin", "all"));
 
   useUrlListSync(
-    { view, q: search, sys: systemFilter, mat: materialFilter, sort: sortKey, dir: sortDir },
-    { view: "jobs", q: "", sys: "all", mat: "all", sort: "created", dir: "desc" },
+    { view, q: search, sys: systemFilter, mat: materialFilter, sort: sortKey, dir: sortDir, cumul: cumulative ? "1" : "0", wfin: weeklyFinish },
+    { view: "jobs", q: "", sys: "all", mat: "all", sort: "created", dir: "desc", cumul: "1", wfin: "all" },
   );
 
   // Filter option lists, derived from the data so they only show what exists.
@@ -194,9 +201,11 @@ export function CabinJobsClient({
             ? "Cumulative sheet/plate requirement by finish, across all cabin jobs"
             : view === "category"
               ? "Cumulative requirement by cabin part category, across all cabin jobs"
-              : filtersActive
-                ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
-                : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+              : view === "weekly"
+                ? "Parts by category (sorted by finish), required week by week"
+                : filtersActive
+                  ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+                  : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
           <Button size="sm" onClick={() => router.push("/cabin-jobs/new")}>
@@ -214,6 +223,7 @@ export function CabinJobsClient({
           { value: "jobs", label: "Cabin jobs", count: jobs.length },
           { value: "finish", label: "Requirement by finish", count: finishReq.length },
           { value: "category", label: "Requirement by category", count: categoryReq.length },
+          { value: "weekly", label: "Weekly plan", count: weeklyPlan.rows.length },
         ]}
       />
 
@@ -221,6 +231,14 @@ export function CabinJobsClient({
         <FinishRequirement groups={finishReq} />
       ) : view === "category" ? (
         <CategoryRequirement groups={categoryReq} />
+      ) : view === "weekly" ? (
+        <WeeklyRequirement
+          plan={weeklyPlan}
+          cumulative={cumulative}
+          onCumulative={setCumulative}
+          finish={weeklyFinish}
+          onFinish={setWeeklyFinish}
+        />
       ) : (
         <>
           <Toolbar>
@@ -530,5 +548,95 @@ function CategoryGroupRow({ group }: { group: CabinCategoryGroup }) {
           </TableRow>
         ))}
     </>
+  );
+}
+
+function WeeklyRequirement({
+  plan,
+  cumulative,
+  onCumulative,
+  finish,
+  onFinish,
+}: {
+  plan: CabinWeeklyPlan;
+  cumulative: boolean;
+  onCumulative: (v: boolean) => void;
+  finish: string;
+  onFinish: (v: string) => void;
+}) {
+  const finishes = useMemo(
+    () => [...new Set(plan.rows.map((r) => r.finish ?? "(no finish)"))].sort(),
+    [plan.rows],
+  );
+
+  // Map weekly demand into the shared matrix shape: grouped by cabin category
+  // (r.type), with the finish carried as `sub` so the matrix sorts each category's
+  // parts by finish (rowSort="sub").
+  const rows = useMemo<MatrixRow[]>(
+    () =>
+      plan.rows
+        .filter((r) => finish === "all" || (r.finish ?? "(no finish)") === finish)
+        .map((r) => ({
+          id: r.item_id,
+          code: r.code,
+          name: r.name,
+          category: r.type,
+          perWeek: r.perWeek,
+          cumulative: r.cumulative,
+          sub: r.finish ?? "(no finish)",
+        })),
+    [plan.rows, finish],
+  );
+
+  return (
+    <div>
+      <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <Select
+          size="sm"
+          value={finish}
+          onChange={(e) => onFinish(e.target.value)}
+          className="w-[200px]"
+          title="Filter by finish"
+        >
+          <option value="all">All finishes</option>
+          {finishes.map((f) => (
+            <option key={f} value={f}>{f}</option>
+          ))}
+        </Select>
+        <CumulativeToggle cumulative={cumulative} onChange={onCumulative} />
+      </div>
+
+      <WeeklyMatrix
+        weeks={plan.weeks}
+        rows={rows}
+        aggregate="count"
+        unit="items"
+        cumulative={cumulative}
+        rowSort="sub"
+        emptyLabel="No cabin demand falls in the next 8 weeks."
+      />
+
+      {(plan.laterCount > 0 || plan.undatedCount > 0) && (
+        <p className="mt-3 text-xs text-[var(--muted-foreground)]">
+          Not planned here:{" "}
+          {plan.laterCount > 0 && (
+            <>
+              <strong className="text-[var(--foreground)]">{plan.laterCount}</strong> cabin job{plan.laterCount === 1 ? "" : "s"} due after 8 weeks
+            </>
+          )}
+          {plan.laterCount > 0 && plan.undatedCount > 0 && " · "}
+          {plan.undatedCount > 0 && (
+            <>
+              <strong className="text-[var(--foreground)]">{plan.undatedCount}</strong> with no linked-job date
+            </>
+          )}
+          .
+        </p>
+      )}
+
+      <p className="mt-2 text-[11px] text-[var(--muted-foreground)]">
+        Each column is a week (dated from each cabin job&rsquo;s linked elevator job). Cells count distinct parts — click a category to see every part by finish, week by week.
+      </p>
+    </div>
   );
 }
