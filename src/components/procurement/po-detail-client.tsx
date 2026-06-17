@@ -371,8 +371,10 @@ export function PoDetailClient({
               <TableHead>Item</TableHead>
               <TableHead className="text-right">On hand</TableHead>
               <TableHead className="text-right">Reorder pt</TableHead>
-              <TableHead className="text-right w-28">Order qty</TableHead>
-              <TableHead className="text-right w-28">Unit cost</TableHead>
+              <TableHead className="w-36">Purchase unit</TableHead>
+              <TableHead className="text-right w-24">Order qty</TableHead>
+              <TableHead className="text-right w-24">Tentative</TableHead>
+              <TableHead className="text-right w-24">Unit cost</TableHead>
               <TableHead className="text-right">Line total</TableHead>
               <TableHead className="text-right">Received</TableHead>
               <TableHead className="w-8"></TableHead>
@@ -402,89 +404,103 @@ export function PoDetailClient({
                 <TableCell className="text-right text-[var(--muted-foreground)]">
                   {r.reorder_point != null ? r.reorder_point.toLocaleString() : "—"}
                 </TableCell>
-                <TableCell className="text-right">
+                {/* Purchase unit */}
+                <TableCell>
                   {received ? (
-                    <>
-                      <div className="font-medium tabular-nums">
-                        {r.qty.toLocaleString()}
-                        {r.purchase_uom_id && (
-                          <span className="ml-1 text-[11px] font-normal text-[var(--muted-foreground)]">{r.purchase_uom_abbreviation}</span>
-                        )}
-                      </div>
-                      {r.purchase_uom_id && (
-                        <div className="mt-0.5 text-[10px] text-[var(--muted-foreground)]">
-                          ≈ {(r.tentative_stock_qty ?? r.qty).toLocaleString()} {r.uom_abbreviation ?? ""} expected
-                        </div>
-                      )}
-                    </>
+                    <span className="text-sm">
+                      {r.purchase_uom_id
+                        ? (r.purchase_uom_abbreviation ?? "—")
+                        : <span className="text-[var(--muted-foreground)]">Stock{r.uom_abbreviation ? ` (${r.uom_abbreviation})` : ""}</span>}
+                    </span>
                   ) : (
-                    <>
-                      <div className="flex items-center justify-end gap-1">
-                        <Input
-                          size="sm"
-                          type="number"
-                          min={0}
-                          step={r.purchase_uom_id ? "any" : 1}
-                          value={r.qty}
-                          className="w-20 text-right ml-auto"
-                          onChange={(e) =>
-                            setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
-                          }
-                          onBlur={() => {
-                            // DB enforces qty > 0 — clamp so a cleared/0 field can't hit a raw error.
-                            // Dual-UOM lines may be fractional (e.g. KG), so only floor at >0.
-                            const q = r.purchase_uom_id
-                              ? r.qty > 0 ? r.qty : 1
-                              : r.qty >= 1 ? r.qty : 1;
-                            if (q !== r.qty) setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: q } : x)));
-                            persistLine(r.id, { qty: q });
-                          }}
-                        />
-                        {r.purchase_uom_id && (
-                          <span className="w-9 text-[11px] text-[var(--muted-foreground)] truncate" title={r.purchase_uom_abbreviation ?? ""}>
-                            {r.purchase_uom_abbreviation ?? ""}
-                          </span>
-                        )}
-                      </div>
-                      <Select
-                        size="sm"
-                        value={r.purchase_uom_id ?? ""}
-                        onChange={(e) => setLineUom(r.id, e.target.value)}
-                        className="mt-1 w-28 ml-auto"
-                        title="Purchase unit for this line (varies by vendor)"
-                      >
-                        <option value="">Stock{r.uom_abbreviation ? ` (${r.uom_abbreviation})` : ""}</option>
-                        {units.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name}{u.abbreviation ? ` (${u.abbreviation})` : ""}
-                          </option>
-                        ))}
-                      </Select>
-                      {r.purchase_uom_id && (
-                        <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-[var(--muted-foreground)]">
-                          tentative ≈
-                          <Input
-                            size="sm" type="number" min={0} step="any"
-                            value={r.tentative_stock_qty ?? ""}
-                            placeholder="stock"
-                            className="w-16 text-right h-6"
-                            onChange={(e) =>
-                              setRows((prev) =>
-                                prev.map((x) =>
-                                  x.id === r.id
-                                    ? { ...x, tentative_stock_qty: e.target.value === "" ? null : Number(e.target.value) }
-                                    : x,
-                                ),
-                              )
-                            }
-                            onBlur={() => persistLine(r.id, { tentative_stock_qty: r.tentative_stock_qty })}
-                          />
-                          {r.uom_abbreviation ?? ""}
-                        </div>
-                      )}
-                    </>
+                    <Select
+                      size="sm"
+                      value={r.purchase_uom_id ?? ""}
+                      onChange={(e) => setLineUom(r.id, e.target.value)}
+                      className="w-36"
+                      title="Purchase unit for this line (varies by vendor)"
+                    >
+                      <option value="">Stock{r.uom_abbreviation ? ` (${r.uom_abbreviation})` : ""}</option>
+                      {units.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}{u.abbreviation ? ` (${u.abbreviation})` : ""}
+                        </option>
+                      ))}
+                    </Select>
                   )}
                 </TableCell>
+                {/* Order qty */}
+                <TableCell className="text-right">
+                  {received ? (
+                    <span className="font-medium tabular-nums">
+                      {r.qty.toLocaleString()}
+                      {(r.purchase_uom_id || r.uom_abbreviation) && (
+                        <span className="ml-1 text-[11px] font-normal text-[var(--muted-foreground)]">
+                          {r.purchase_uom_id ? r.purchase_uom_abbreviation : r.uom_abbreviation}
+                        </span>
+                      )}
+                    </span>
+                  ) : (
+                    <div className="flex items-center justify-end gap-1">
+                      <Input
+                        size="sm"
+                        type="number"
+                        min={0}
+                        step={r.purchase_uom_id ? "any" : 1}
+                        value={r.qty}
+                        className="w-16 text-right ml-auto"
+                        onChange={(e) =>
+                          setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: Number(e.target.value) } : x)))
+                        }
+                        onBlur={() => {
+                          // DB enforces qty > 0 — clamp so a cleared/0 field can't hit a raw error.
+                          // Dual-UOM lines may be fractional (e.g. KG), so only floor at >0.
+                          const q = r.purchase_uom_id
+                            ? r.qty > 0 ? r.qty : 1
+                            : r.qty >= 1 ? r.qty : 1;
+                          if (q !== r.qty) setRows((prev) => prev.map((x) => (x.id === r.id ? { ...x, qty: q } : x)));
+                          persistLine(r.id, { qty: q });
+                        }}
+                      />
+                      <span className="w-7 text-[11px] text-[var(--muted-foreground)] truncate" title={r.purchase_uom_id ? (r.purchase_uom_abbreviation ?? "") : (r.uom_abbreviation ?? "")}>
+                        {r.purchase_uom_id ? (r.purchase_uom_abbreviation ?? "") : (r.uom_abbreviation ?? "")}
+                      </span>
+                    </div>
+                  )}
+                </TableCell>
+                {/* Tentative stock */}
+                <TableCell className="text-right">
+                  {r.purchase_uom_id ? (
+                    received ? (
+                      <span className="tabular-nums text-[var(--muted-foreground)]">
+                        ≈ {(r.tentative_stock_qty ?? r.qty).toLocaleString()} {r.uom_abbreviation ?? ""}
+                      </span>
+                    ) : (
+                      <div className="flex items-center justify-end gap-1">
+                        <Input
+                          size="sm" type="number" min={0} step="any"
+                          value={r.tentative_stock_qty ?? ""}
+                          placeholder="≈"
+                          className="w-16 text-right ml-auto"
+                          onChange={(e) =>
+                            setRows((prev) =>
+                              prev.map((x) =>
+                                x.id === r.id
+                                  ? { ...x, tentative_stock_qty: e.target.value === "" ? null : Number(e.target.value) }
+                                  : x,
+                              ),
+                            )
+                          }
+                          onBlur={() => persistLine(r.id, { tentative_stock_qty: r.tentative_stock_qty })}
+                        />
+                        <span className="w-7 text-[11px] text-[var(--muted-foreground)] truncate" title={r.uom_abbreviation ?? ""}>{r.uom_abbreviation ?? ""}</span>
+                      </div>
+                    )
+                  ) : (
+                    <span className="text-[var(--muted-foreground)]">—</span>
+                  )}
+                </TableCell>
+                {/* Unit cost */}
                 <TableCell className="text-right">
                   {received ? (
                     <span className="tabular-nums">
@@ -500,23 +516,26 @@ export function PoDetailClient({
                       )}
                     </span>
                   ) : (
-                    <Input
-                      size="sm"
-                      type="number"
-                      min={0}
-                      step="0.01"
-                      value={r.unit_cost ?? ""}
-                      placeholder="—"
-                      className="w-24 text-right ml-auto"
-                      onChange={(e) =>
-                        setRows((prev) =>
-                          prev.map((x) =>
-                            x.id === r.id ? { ...x, unit_cost: e.target.value === "" ? null : Number(e.target.value) } : x,
-                          ),
-                        )
-                      }
-                      onBlur={() => persistLine(r.id, { unit_cost: r.unit_cost })}
-                    />
+                    <div className="flex items-center justify-end gap-1">
+                      <Input
+                        size="sm"
+                        type="number"
+                        min={0}
+                        step="0.01"
+                        value={r.unit_cost ?? ""}
+                        placeholder="—"
+                        className="w-16 text-right ml-auto"
+                        onChange={(e) =>
+                          setRows((prev) =>
+                            prev.map((x) =>
+                              x.id === r.id ? { ...x, unit_cost: e.target.value === "" ? null : Number(e.target.value) } : x,
+                            ),
+                          )
+                        }
+                        onBlur={() => persistLine(r.id, { unit_cost: r.unit_cost })}
+                      />
+                      <span className="w-7 text-[11px] text-[var(--muted-foreground)] truncate">{r.purchase_uom_id ? `/${r.purchase_uom_abbreviation}` : ""}</span>
+                    </div>
                   )}
                 </TableCell>
                 <TableCell className="text-right font-medium">
@@ -553,7 +572,7 @@ export function PoDetailClient({
             ))}
             {rows.length === 0 && (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-[var(--muted-foreground)] py-6">
+                <TableCell colSpan={11} className="text-center text-[var(--muted-foreground)] py-6">
                   No lines on this purchase order.
                 </TableCell>
               </TableRow>
