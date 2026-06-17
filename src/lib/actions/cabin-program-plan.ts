@@ -13,7 +13,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { selectRuns, type OpOuts } from "@/lib/actions/make-plan-core";
-import { sheetThicknessMm } from "@/lib/cabin/cabin-program-meta";
+import { sheetThicknessMm, CABIN_PROGRAM_FINISHES } from "@/lib/cabin/cabin-program-meta";
 import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
 export interface CabinPlanInput {
@@ -191,11 +191,24 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
       .range(from, to),
   );
   const sheets = sheetRows.map((s) => ({ ...s, thickness: sheetThicknessMm(s.name) }));
-  const resolveSheet = (finish: string, thickness: number | null): { id: string; code: string; name: string } | null => {
+  const resolveSheet = (
+    finish: string,
+    thickness: number | null,
+    inputSheet: { id: string; code: string; name: string } | null,
+  ): { id: string; code: string; name: string } | null => {
+    // Prefer the program's OWN selected input sheet. A sheet whose name carries
+    // finish tokens (e.g. "… MS/GI") must match the requested finish; an
+    // untagged plain sheet (e.g. "1250x2500x1.2mm") is a base sheet used as-is.
+    if (inputSheet?.id) {
+      const tagged = CABIN_PROGRAM_FINISHES.some((f) => sheetMatchesFinish(inputSheet.name, f));
+      if (!tagged || sheetMatchesFinish(inputSheet.name, finish)) return inputSheet;
+    }
+    // A genuinely different finish was requested: take a sheet of that finish at
+    // the SAME thickness. Never substitute an arbitrary wrong-thickness sheet —
+    // fall back to the program's own chosen sheet instead.
     const cands = sheets.filter((s) => sheetMatchesFinish(s.name, finish));
-    if (cands.length === 0) return null;
     const exact = cands.find((s) => thickness != null && s.thickness === thickness);
-    return exact ?? cands[0];
+    return exact ?? inputSheet ?? cands[0] ?? null;
   };
 
   /* 4. Build finish-resolved candidates. */
@@ -208,7 +221,15 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
   for (const p of programs) {
     const outs = outsByProg.get(p.id as string) ?? [];
     const fins = finsByProg.get(p.id as string) ?? [];
-    const inputSheet = Array.isArray(p.input_sheet) ? p.input_sheet[0] : p.input_sheet;
+    const rawInput = Array.isArray(p.input_sheet) ? p.input_sheet[0] : p.input_sheet;
+    const inputSheet =
+      p.input_sheet_item_id && rawInput
+        ? {
+            id: p.input_sheet_item_id as string,
+            code: (rawInput.code as string) ?? "",
+            name: (rawInput.name as string) ?? "",
+          }
+        : null;
     const thickness = sheetThicknessMm(inputSheet?.name);
     const sheetsPerRun = Number(p.sheets_per_run ?? 1) || 1;
 
@@ -227,7 +248,7 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
       }
       if (produced.size === 0) continue;
       if (excludeSet.has(excludeKey)) continue; // Don't-run: drop this candidate
-      const sheet = resolveSheet(finish, thickness);
+      const sheet = resolveSheet(finish, thickness, inputSheet);
       if (!sheet) continue;
 
       progOut.set(excludeKey, produced);
