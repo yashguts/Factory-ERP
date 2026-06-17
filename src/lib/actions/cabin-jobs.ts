@@ -431,12 +431,17 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
     string,
     { finish: string | null; jobs: Set<string>; lines: number; perItem: Map<string, AggItem> }
   >();
+  // Owner rule: Platform and Canopy panels are always MS, even when the item
+  // itself has no finish recorded — fold their demand into the MS finish so the
+  // sheet requirement is right (otherwise they'd sit in "(no finish set)").
+  const ALWAYS_MS = new Set(["Platform", "Canopy"]);
   for (const l of lines) {
     if (!l.item_id) continue;
     const it = itemById.get(l.item_id);
     if (!it) continue;
-    const key = it.finish ?? "__none__";
-    const g = groups.get(key) ?? { finish: it.finish, jobs: new Set<string>(), lines: 0, perItem: new Map() };
+    const effFinish = it.finish ?? (ALWAYS_MS.has(l.cabin_type) ? "MS" : null);
+    const key = effFinish ?? "__none__";
+    const g = groups.get(key) ?? { finish: effFinish, jobs: new Set<string>(), lines: 0, perItem: new Map() };
     g.jobs.add(l.cabin_job_id);
     g.lines += 1;
     const qty = Number(l.qty) || 0;
