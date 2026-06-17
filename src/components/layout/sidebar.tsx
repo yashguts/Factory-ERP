@@ -61,6 +61,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/mrp", label: "Make MRP", icon: Calculator },
       { href: "/mrp/trade", label: "Trade MRP", icon: Truck },
+      { href: "/mrp/cabin", label: "Cabin MRP", icon: LayoutGrid },
       { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
     ],
