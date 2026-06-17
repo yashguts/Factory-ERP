@@ -28,7 +28,7 @@ export type DemandOverride = "jobs" | "formula" | "none";
  * - scrap: offcut, ignored in planning
  */
 export type OutputRole = "component" | "cut_part" | "tooling" | "scrap";
-export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap";
+export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap" | "dispatch_out";
 export type JobStatus = "new" | "in_production" | "hold";
 export type JobStage = "new" | "first_phase" | "full_material";
 export type UomCategory = "quantity" | "length" | "weight" | "area" | "volume";

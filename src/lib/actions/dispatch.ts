@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { recordTransaction } from "@/lib/actions/inventory";
 
 /* ------------------------------------------------------------------ *
  * Job dispatch.
@@ -26,6 +27,122 @@ function flatten<T>(rel: unknown): T | null {
   if (!rel) return null;
   if (Array.isArray(rel)) return (rel[0] ?? null) as T | null;
   return rel as T;
+}
+
+/* ------------------------------------------------------------------ *
+ * Inventory deduction on dispatch (owner-enabled 2026-06-17, replacing the
+ * earlier "dispatch ≠ inventory" rule). FORWARD-ONLY: only dispatches created
+ * after this shipped post stock — the 43 historical dispatches are never touched.
+ * Idempotent: posting is keyed by reference_type='dispatch' + reference_id, so a
+ * re-run is a no-op; undo posts a 'dispatch_undo' adjustment that restores stock,
+ * guarded against double-reversal. Negative stock is allowed (a real signal).
+ * ------------------------------------------------------------------ */
+
+type Db = Awaited<ReturnType<typeof createClient>>;
+
+/** Warehouse ids by the three known store names. */
+async function resolveStores(supabase: Db): Promise<{ finished: string | null; main: string | null; raw: string | null }> {
+  const { data } = await supabase.from("warehouses").select("id, name");
+  const byName = new Map((data ?? []).map((w: any) => [w.name as string, w.id as string]));
+  return {
+    finished: byName.get("Finished Goods") ?? null,
+    main: byName.get("Main Store") ?? null,
+    raw: byName.get("Raw Material Store") ?? null,
+  };
+}
+
+/** Post a stock-OUT for each dispatched line, from the warehouse the item is
+ *  actually stocked in (prefer Finished Goods → Main Store → Raw → default
+ *  Finished Goods, letting it go negative). No-op if already posted. */
+async function postDispatchInventory(supabase: Db, dispatchId: string): Promise<void> {
+  const { data: existing } = await supabase
+    .from("inventory_transactions")
+    .select("id")
+    .eq("reference_type", "dispatch")
+    .eq("reference_id", dispatchId)
+    .limit(1);
+  if (existing && existing.length > 0) return; // already posted
+
+  const { data: lines } = await supabase
+    .from("job_dispatch_lines")
+    .select("item_id, qty")
+    .eq("dispatch_id", dispatchId)
+    .not("item_id", "is", null);
+  const items = (lines ?? []).filter((l: any) => l.item_id && Number(l.qty) > 0);
+  if (items.length === 0) return;
+
+  const stores = await resolveStores(supabase);
+  const itemIds = [...new Set(items.map((l: any) => l.item_id as string))];
+  const { data: inv } = await supabase
+    .from("inventory")
+    .select("item_id, warehouse_id, quantity")
+    .in("item_id", itemIds);
+  const byItem = new Map<string, { warehouse_id: string; quantity: number }[]>();
+  for (const r of inv ?? []) {
+    const arr = byItem.get(r.item_id as string) ?? [];
+    arr.push({ warehouse_id: r.warehouse_id as string, quantity: Number(r.quantity) });
+    byItem.set(r.item_id as string, arr);
+  }
+  const pref = (w: string) => (w === stores.finished ? 3 : w === stores.main ? 2 : w === stores.raw ? 1 : 0);
+  const fallback = stores.finished ?? stores.main ?? stores.raw;
+  const pickWarehouse = (itemId: string): string | null => {
+    const rows = byItem.get(itemId) ?? [];
+    const withStock = rows.filter((r) => r.quantity > 0);
+    const pool = withStock.length ? withStock : rows;
+    if (pool.length === 0) return fallback;
+    pool.sort((a, b) => pref(b.warehouse_id) - pref(a.warehouse_id) || b.quantity - a.quantity);
+    return pool[0].warehouse_id;
+  };
+
+  // Aggregate qty per (item, warehouse) so several lines for one item post once.
+  const agg = new Map<string, { item_id: string; warehouse_id: string; qty: number }>();
+  for (const l of items) {
+    const wid = pickWarehouse(l.item_id as string);
+    if (!wid) continue;
+    const key = `${l.item_id}|${wid}`;
+    const ex = agg.get(key) ?? { item_id: l.item_id as string, warehouse_id: wid, qty: 0 };
+    ex.qty += Number(l.qty);
+    agg.set(key, ex);
+  }
+  for (const a of agg.values()) {
+    await recordTransaction({
+      item_id: a.item_id,
+      warehouse_id: a.warehouse_id,
+      transaction_type: "dispatch_out",
+      quantity: a.qty,
+      reference_type: "dispatch",
+      reference_id: dispatchId,
+      notes: "Dispatched",
+    });
+  }
+}
+
+/** Reverse a dispatch's stock deductions (undo). No-op if already reversed. */
+async function reverseDispatchInventory(supabase: Db, dispatchId: string): Promise<void> {
+  const { data: undone } = await supabase
+    .from("inventory_transactions")
+    .select("id")
+    .eq("reference_type", "dispatch_undo")
+    .eq("reference_id", dispatchId)
+    .limit(1);
+  if (undone && undone.length > 0) return; // already reversed
+
+  const { data: posts } = await supabase
+    .from("inventory_transactions")
+    .select("item_id, warehouse_id, quantity")
+    .eq("reference_type", "dispatch")
+    .eq("reference_id", dispatchId);
+  for (const p of posts ?? []) {
+    await recordTransaction({
+      item_id: p.item_id as string,
+      warehouse_id: p.warehouse_id as string,
+      transaction_type: "adjustment",
+      quantity: Math.abs(Number(p.quantity)), // dispatch_out removed this; add it back
+      reference_type: "dispatch_undo",
+      reference_id: dispatchId,
+      notes: "Dispatch undone — stock restored",
+    });
+  }
 }
 
 /** A job BOM line with its running dispatch state (for the dispatch picker). */
@@ -296,6 +413,15 @@ export async function createDispatch(input: {
     await supabase.from("jobs").update({ stage: target }).eq("id", input.job_id);
   }
 
+  // Deduct the dispatched items from stock (forward-only, idempotent). Best-effort:
+  // the dispatch is already recorded, so a posting hiccup must not fail the save —
+  // it can be re-posted safely later thanks to the reference_id guard.
+  try {
+    await postDispatchInventory(supabase, head.id as string);
+  } catch (e) {
+    console.error("dispatch inventory post failed", head.id, e);
+  }
+
   // Dispatch is now netted out of MRP demand, so refresh the MRP / production
   // -plan caches (tagged "bom-lines" / "jobs") in addition to the job pages.
   revalidateTag("bom-lines");
@@ -312,6 +438,14 @@ export async function deleteDispatch(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!dispatchId) return { ok: false, error: "Missing dispatch id." };
   const supabase = await createClient();
+  // Restore the stock this dispatch deducted BEFORE deleting it (the reversal
+  // reads the dispatch's inventory transactions by reference_id; they survive the
+  // delete, but we reverse first so a failure leaves the dispatch intact). Idempotent.
+  try {
+    await reverseDispatchInventory(supabase, dispatchId);
+  } catch (e) {
+    console.error("dispatch inventory reversal failed", dispatchId, e);
+  }
   const { error } = await supabase
     .from("job_dispatches")
     .delete()

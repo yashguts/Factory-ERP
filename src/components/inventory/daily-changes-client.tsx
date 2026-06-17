@@ -50,6 +50,7 @@ const TXN_LABELS: Record<TransactionType, string> = {
   adjustment: "Adjustment",
   transfer: "Transfer",
   scrap: "Scrap",
+  dispatch_out: "Dispatch Out",
 };
 
 const ACTION_BADGE_VARIANT: Record<string, BadgeVariant> = {

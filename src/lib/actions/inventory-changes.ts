@@ -35,7 +35,7 @@ function flattenOne<T>(rel: T | T[] | null | undefined): T | null {
 /** Compute the signed stock delta a transaction applied (mirrors recordTransaction). */
 function appliedDelta(type: TransactionType, quantity: number): number {
   if (type === "adjustment") return quantity;
-  if (type === "production_out" || type === "scrap")
+  if (type === "production_out" || type === "scrap" || type === "dispatch_out")
     return -Math.abs(quantity);
   return Math.abs(quantity);
 }

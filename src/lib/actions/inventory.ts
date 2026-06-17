@@ -1254,7 +1254,7 @@ export async function recordTransaction(data: {
 }) {
   const supabase = await createClient();
 
-  const isOutbound = ["production_out", "scrap"].includes(data.transaction_type);
+  const isOutbound = ["production_out", "scrap", "dispatch_out"].includes(data.transaction_type);
   const isAdjustment = data.transaction_type === "adjustment";
   const delta = isAdjustment ? data.quantity : isOutbound ? -Math.abs(data.quantity) : Math.abs(data.quantity);
 
