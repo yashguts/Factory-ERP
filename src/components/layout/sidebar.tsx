@@ -18,6 +18,7 @@ import {
   Truck,
   PackageSearch,
   Settings,
+  LayoutGrid,
   LucideIcon,
 } from "lucide-react";
 
@@ -44,6 +45,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Production",
     items: [
       { href: "/programs", label: "Programs", icon: Cog },
+      { href: "/cabin-programs", label: "Cabin Programs", icon: LayoutGrid },
       { href: "/program-runs", label: "Program Runs", icon: PlayCircle },
     ],
   },
