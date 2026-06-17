@@ -9,13 +9,13 @@ import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { KpiCard, KpiGrid } from "@/components/ui/kpi-card";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2, ShieldCheck, History, X } from "lucide-react";
+import { PackageCheck, Trash2, Loader2, FileText, Paperclip, Undo2, ShieldCheck, History, X, ListOrdered, Package, Wallet, CircleCheck, ClipboardList, Inbox } from "lucide-react";
 import {
   updatePurchaseOrder,
   updatePoLine,
@@ -307,6 +307,10 @@ export function PoDetailClient({
 
       {/* Details */}
       <div className="card-surface p-3 mb-3">
+        <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+          <ClipboardList className="h-4 w-4 text-[var(--muted-foreground)]" />
+          Order details
+        </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">PO Number</span>
@@ -341,14 +345,25 @@ export function PoDetailClient({
 
       <PoDocumentPanel po={po} busy={isPending} onChanged={() => router.refresh()} />
 
-      <StatStrip className="mb-3">
-        <StatTile label="Lines" value={rows.length} />
-        <StatTile label="Total qty" value={totals.qty.toLocaleString()} />
-        <StatTile label="Est. cost" value={totals.cost > 0 ? inr(totals.cost) : "—"} tone={totals.cost > 0 ? "primary" : "default"} />
-        <StatTile label={received ? "Received" : "To receive"} value={received ? "✓" : totals.unreceived.toLocaleString()} tone={received ? "ok" : "warn"} />
-      </StatStrip>
+      <KpiGrid className="mb-4">
+        <KpiCard icon={<ListOrdered size={18} />} label="Lines" value={rows.length} sub={`${rows.length === 1 ? "item" : "items"} on this PO`} />
+        <KpiCard icon={<Package size={18} />} tone="primary" label="Order qty" value={totals.qty.toLocaleString()} sub="across all lines" />
+        <KpiCard icon={<Wallet size={18} />} tone={totals.cost > 0 ? "primary" : "default"} label="Est. cost" value={totals.cost > 0 ? inr(totals.cost) : "—"} sub={totals.cost > 0 ? "estimated value" : "no rates yet"} />
+        <KpiCard
+          icon={received ? <CircleCheck size={18} /> : <PackageCheck size={18} />}
+          tone={received ? "success" : "warning"}
+          label={received ? "Received" : "To receive"}
+          value={received ? "All in" : totals.unreceived.toLocaleString()}
+          sub={received ? "fully received" : `${totals.receivedLines}/${rows.length} lines in`}
+        />
+      </KpiGrid>
 
       <div className="card-surface overflow-hidden">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-[var(--border)]">
+          <ClipboardList className="h-4 w-4 text-[var(--muted-foreground)]" />
+          <span className="text-sm font-semibold">Line items</span>
+          <span className="text-xs text-[var(--muted-foreground)]">{rows.length}</span>
+        </div>
         <Table density="compact">
           <TableHeader sticky>
             <TableRow>
@@ -589,7 +604,8 @@ export function PoDetailClient({
       {/* Receipt history */}
       {receipts.length > 0 && (
         <div className="mt-4">
-          <h3 className="text-sm font-semibold mb-2">
+          <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+            <Inbox className="h-4 w-4 text-[var(--muted-foreground)]" />
             Receipts <span className="text-[var(--muted-foreground)] font-normal">({receipts.length})</span>
           </h3>
           <div className="space-y-2">
@@ -682,7 +698,11 @@ function ReceiptCard({
   };
 
   return (
-    <div className="card-surface p-3">
+    <div className="card-surface p-3 flex gap-3">
+      <span className="hidden sm:flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[var(--success-bg)] text-[var(--success)]" aria-hidden="true">
+        <Inbox className="h-4 w-4" />
+      </span>
+      <div className="flex-1 min-w-0">
       <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 text-sm">
           <span className="font-semibold">{fmtDate(receipt.receipt_date)}</span>
@@ -756,6 +776,7 @@ function ReceiptCard({
             )}
           </span>
         ))}
+      </div>
       </div>
     </div>
   );

@@ -8,13 +8,13 @@ import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
-import { StatStrip, StatTile } from "@/components/ui/stat-strip";
+import { KpiCard, KpiGrid } from "@/components/ui/kpi-card";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
-import { ShoppingCart, Sparkles, Loader2, Package, Building2, ListOrdered, Plus } from "lucide-react";
+import { ShoppingCart, Sparkles, Loader2, Package, Building2, ListOrdered, Plus, Wallet, CircleCheck } from "lucide-react";
 import {
   generateDraftPosFromShortfall,
   type ProcurementData,
@@ -106,12 +106,36 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
         }
       />
 
-      <StatStrip className="mb-3">
-        <StatTile label="Open POs" value={stats.openPos} />
-        <StatTile label="On order (units)" value={qty(stats.onOrderUnits)} tone={stats.onOrderUnits > 0 ? "primary" : "default"} />
-        <StatTile label="On order (est.)" value={inr(stats.onOrderCost)} tone={stats.onOrderCost > 0 ? "primary" : "default"} />
-        <StatTile label="Received" value={statusCounts.received} tone="ok" />
-      </StatStrip>
+      <KpiGrid className="mb-4">
+        <KpiCard
+          icon={<ShoppingCart size={18} />}
+          tone="primary"
+          label="Open POs"
+          value={stats.openPos}
+          sub={`${statusCounts.draft} draft · ${statusCounts.ordered} ordered`}
+        />
+        <KpiCard
+          icon={<Package size={18} />}
+          tone={stats.onOrderUnits > 0 ? "primary" : "default"}
+          label="On order"
+          value={qty(stats.onOrderUnits)}
+          sub="units incoming"
+        />
+        <KpiCard
+          icon={<Wallet size={18} />}
+          tone={stats.onOrderCost > 0 ? "primary" : "default"}
+          label="On-order value"
+          value={inr(stats.onOrderCost)}
+          sub="estimated"
+        />
+        <KpiCard
+          icon={<CircleCheck size={18} />}
+          tone="success"
+          label="Received"
+          value={statusCounts.received}
+          sub={`of ${orders.length} order${orders.length === 1 ? "" : "s"}`}
+        />
+      </KpiGrid>
 
       <Tabs
         variant="segmented"

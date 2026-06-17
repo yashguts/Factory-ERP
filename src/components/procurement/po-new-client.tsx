@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { PageHeader } from "@/components/ui/page-header";
 import { useToast } from "@/components/ui/toast";
-import { Plus, Trash2, Loader2, Paperclip, X } from "lucide-react";
+import { Plus, Trash2, Loader2, Paperclip, X, FileText, ClipboardList, ShoppingCart } from "lucide-react";
 import { createPurchaseOrder, recordPoDocument } from "@/lib/actions/procurement";
 import { type SearchableItem } from "@/lib/actions/items";
 import { ItemPicker } from "@/components/procurement/item-picker";
@@ -153,6 +153,10 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
 
       {/* Header fields */}
       <div className="card-surface p-3 mb-3">
+        <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+          <ShoppingCart className="h-4 w-4 text-[var(--muted-foreground)]" />
+          Order details
+        </h3>
         <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
           <label className="block">
             <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">PO Number *</span>
@@ -180,7 +184,10 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
       {/* Line items */}
       <div className="card-surface p-3 mb-3">
         <div className="flex items-center justify-between mb-2">
-          <h3 className="text-sm font-semibold">Line items</h3>
+          <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
+            <ClipboardList className="h-4 w-4 text-[var(--muted-foreground)]" />
+            Line items
+          </h3>
           <span className="text-xs text-[var(--muted-foreground)]">
             Est. total: {estTotal > 0 ? `₹${Math.round(estTotal).toLocaleString("en-IN")}` : "—"}
           </span>
@@ -272,7 +279,10 @@ export function PoNewClient({ units }: { units: UnitOfMeasurement[] }) {
 
       {/* PO PDF copy */}
       <div className="card-surface p-3 mb-3">
-        <h3 className="text-sm font-semibold mb-2">PO PDF copy <span className="font-normal text-[var(--muted-foreground)]">(optional)</span></h3>
+        <h3 className="text-sm font-semibold mb-2 inline-flex items-center gap-1.5">
+          <FileText className="h-4 w-4 text-[var(--muted-foreground)]" />
+          PO PDF copy <span className="font-normal text-[var(--muted-foreground)]">(optional)</span>
+        </h3>
         {file ? (
           <div className="flex items-center justify-between rounded-md border border-[var(--border)] px-3 py-2 text-sm">
             <span className="inline-flex items-center gap-2 truncate">
