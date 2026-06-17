@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { revalidatePath, unstable_cache } from "next/cache";
+import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { CABIN_PARENT } from "@/lib/cabin/cabin-types";
 
 /* ------------------------------------------------------------------ *
@@ -457,6 +457,9 @@ export async function createCabinJob(input: {
   }
 
   revalidatePath("/cabin-jobs");
+  // The Job Orders plan board derives a "Cabin BOM" chip from these lines.
+  revalidateTag("cabin-jobs");
+  revalidatePath("/jobs");
   return { ok: true, id: head.id as string };
 }
 
@@ -513,6 +516,8 @@ export async function updateCabinJob(
 
   revalidatePath("/cabin-jobs");
   revalidatePath(`/cabin-jobs/${id}`);
+  revalidateTag("cabin-jobs");
+  revalidatePath("/jobs");
   return { ok: true, id };
 }
 
@@ -524,5 +529,7 @@ export async function deleteCabinJob(
   const { error } = await supabase.from("cabin_jobs").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/cabin-jobs");
+  revalidateTag("cabin-jobs");
+  revalidatePath("/jobs");
   return { ok: true };
 }
