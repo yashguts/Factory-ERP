@@ -122,16 +122,19 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
     setRows((rs) => rs.map((r) => (r._key === key ? { ...r, ...patch } : r)));
   const removeRow = (key: string) =>
     setRows((rs) => rs.filter((r) => r._key !== key));
-  const addAdhoc = () =>
+  // Add an extra item (not on the BOM) dispatched with the job. Search-and-pick
+  // drops a ready-to-go row straight away (qty 1) and the search clears, so the
+  // user can keep picking to add several missed/extra items quickly.
+  const addItem = (it: SearchableItem) =>
     setRows((rs) => [
       ...rs,
       {
         _key: makeKey(),
         job_bom_line_id: null,
-        item_id: null,
-        item_code: null,
-        item_name: null,
-        uom: null,
+        item_id: it.id,
+        item_code: it.code,
+        item_name: it.name,
+        uom: it.uom_abbreviation,
         category: null,
         required: null,
         dispatched: 0,
@@ -241,7 +244,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
             <div className="max-h-[45vh] overflow-y-auto divide-y divide-[var(--border)]">
               {rows.length === 0 ? (
                 <div className="px-3 py-8 text-center text-sm text-[var(--muted-foreground)]">
-                  No {scope === "full" ? "" : SCOPE_LABEL[scope].toLowerCase().replace(" only", "")} items on this job&rsquo;s BOM. Use &ldquo;Add item&rdquo; below.
+                  No {scope === "full" ? "" : SCOPE_LABEL[scope].toLowerCase().replace(" only", "")} items on this job&rsquo;s BOM. Use the search below to add items.
                 </div>
               ) : (
                 rows.map((row) => (
@@ -271,14 +274,11 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
                 ))
               )}
             </div>
-            <div className="px-3 py-2 border-t border-[var(--border)]">
-              <button
-                type="button"
-                onClick={addAdhoc}
-                className="inline-flex items-center gap-1 text-[11px] font-medium text-[var(--primary)] hover:underline cursor-pointer"
-              >
-                <Plus className="h-3 w-3" /> Add item (not on the BOM)
-              </button>
+            <div className="px-3 py-2.5 border-t border-[var(--border)] bg-[var(--muted)]/30">
+              <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--muted-foreground)] mb-1.5">
+                <Plus className="h-3 w-3" /> Add extra items dispatched with the job (not on the BOM)
+              </label>
+              <ItemSearch onPick={addItem} placeholder="Search an item to add — keep picking to add several…" />
             </div>
           </div>
         )}
@@ -463,7 +463,7 @@ function DispatchRow({
 }
 
 /** Compact inventory search for swapping / adding a dispatch item. */
-function ItemSearch({ onPick }: { onPick: (it: SearchableItem) => void }) {
+function ItemSearch({ onPick, placeholder = "Search an item to dispatch…" }: { onPick: (it: SearchableItem) => void; placeholder?: string }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<SearchableItem[]>([]);
   const [loading, setLoading] = useState(false);
@@ -516,7 +516,7 @@ function ItemSearch({ onPick }: { onPick: (it: SearchableItem) => void }) {
           setOpen(true);
         }}
         onFocus={() => setOpen(true)}
-        placeholder="Search an item to dispatch…"
+        placeholder={placeholder}
         className="w-full h-8 pl-8 pr-7 text-sm rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
       />
       {loading && <Loader2 className="absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 animate-spin text-[var(--muted-foreground)]" />}
