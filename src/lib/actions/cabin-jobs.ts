@@ -431,16 +431,16 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
     string,
     { finish: string | null; jobs: Set<string>; lines: number; perItem: Map<string, AggItem> }
   >();
-  // Owner rule: Platform and Canopy panels are always MS/GI. Existing items have
-  // been set in the DB (migration cabin_platform_canopy_finish_msgi); this is the
-  // fallback so any newly-added Platform/Canopy item with no finish yet still folds
-  // into MS/GI instead of "(no finish set)".
-  const ALWAYS_MSGI = new Set(["Platform", "Canopy"]);
+  // Owner rule: Canopy is always MS; Platform is always MS/GI. Existing items have
+  // been set in the DB (migrations cabin_platform_canopy_finish_msgi +
+  // cabin_canopy_finish_ms); this is the fallback so a newly-added Platform/Canopy
+  // item with no finish yet still folds into the right material, not "(no finish set)".
+  const TYPE_DEFAULT_FINISH: Record<string, string> = { Canopy: "MS", Platform: "MS/GI" };
   for (const l of lines) {
     if (!l.item_id) continue;
     const it = itemById.get(l.item_id);
     if (!it) continue;
-    const effFinish = it.finish ?? (ALWAYS_MSGI.has(l.cabin_type) ? "MS/GI" : null);
+    const effFinish = it.finish ?? TYPE_DEFAULT_FINISH[l.cabin_type] ?? null;
     const key = effFinish ?? "__none__";
     const g = groups.get(key) ?? { finish: effFinish, jobs: new Set<string>(), lines: 0, perItem: new Map() };
     g.jobs.add(l.cabin_job_id);
