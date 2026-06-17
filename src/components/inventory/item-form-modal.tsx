@@ -275,20 +275,6 @@ export function ItemFormModal({
   const setSupplierAt = (idx: number, value: string) =>
     setSuppliers((prev) => prev.map((s, i) => (i === idx ? value : s)));
 
-  // Optional purchase unit — when an item is bought in a different unit than
-  // it's stocked/used in (Roll/Kg/Box → Pcs/Nos). `purchaseConversion` holds
-  // STOCK units per 1 purchase unit (1 Roll = 250 Pcs ⇒ "250").
-  const [purchaseUomId, setPurchaseUomId] = useState<string>(seed?.purchase_uom_id ?? "");
-  const [purchaseConversion, setPurchaseConversion] = useState<string>(
-    seed?.purchase_conversion != null ? String(seed.purchase_conversion) : "",
-  );
-  const stockAbbr = units.find((u) => u.id === form.uom_id)?.abbreviation ?? "";
-  const purchaseAbbr = units.find((u) => u.id === purchaseUomId)?.abbreviation ?? "";
-  const reciprocalDisplay =
-    purchaseConversion.trim() === "" || !(Number(purchaseConversion) > 0)
-      ? ""
-      : String(Math.round((1 / Number(purchaseConversion)) * 1e6) / 1e6);
-
   // Filter parent categories by selected item type. A brand-new/empty item type
   // (e.g. "Temporary" before any item uses it) has no category history yet — fall
   // back to ALL categories so the type is actually usable, instead of leaving the
@@ -374,11 +360,6 @@ export function ItemFormModal({
             : procOverride) as "make" | "trade" | null,
           stock_behaviour: stockBehaviour,
           suppliers: cleanedSuppliers,
-          purchase_uom_id: purchaseUomId || null,
-          purchase_conversion:
-            purchaseUomId && purchaseConversion.trim() !== "" && Number(purchaseConversion) > 0
-              ? Number(purchaseConversion)
-              : null,
           note: note.trim() || undefined,
         };
         const result =
@@ -617,70 +598,6 @@ export function ItemFormModal({
             </Select>
           </div>
         </div>
-
-        {/* Optional purchase unit — bought in a different unit than stocked. */}
-        {form.uom_id && (
-          <div className="rounded-md border border-[var(--border)] p-3">
-            <div className="text-sm font-medium">
-              Different purchase unit?{" "}
-              <span className="font-normal text-[var(--muted-foreground)]">
-                optional — set this if you BUY it in another unit (Roll / Kg / Box / Bundle) but STOCK it as {stockAbbr || "—"}
-              </span>
-            </div>
-            <div className="mt-2 grid grid-cols-1 md:grid-cols-3 gap-3 items-end">
-              <div>
-                <label className="block text-xs text-[var(--muted-foreground)] mb-1">Purchase UOM</label>
-                <Select size="sm" value={purchaseUomId} onChange={(e) => setPurchaseUomId(e.target.value)}>
-                  <option value="">Same as stock ({stockAbbr || "—"})</option>
-                  {units.filter((u) => u.id !== form.uom_id).map((u) => (
-                    <option key={u.id} value={u.id}>{u.name} ({u.abbreviation})</option>
-                  ))}
-                </Select>
-              </div>
-              {purchaseUomId && (
-                <>
-                  <div>
-                    <label className="block text-xs text-[var(--muted-foreground)] mb-1">1 {purchaseAbbr} =</label>
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        size="sm" type="number" min={0} step="any"
-                        value={purchaseConversion}
-                        onChange={(e) => setPurchaseConversion(e.target.value)}
-                        className="text-right"
-                        placeholder="e.g. 250"
-                      />
-                      <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">{stockAbbr}</span>
-                    </div>
-                  </div>
-                  <div>
-                    <label className="block text-xs text-[var(--muted-foreground)] mb-1">or 1 {stockAbbr} =</label>
-                    <div className="flex items-center gap-1.5">
-                      <Input
-                        size="sm" type="number" min={0} step="any"
-                        value={reciprocalDisplay}
-                        onChange={(e) =>
-                          setPurchaseConversion(
-                            e.target.value.trim() === "" || !(Number(e.target.value) > 0)
-                              ? ""
-                              : String(Math.round((1 / Number(e.target.value)) * 1e6) / 1e6),
-                          )
-                        }
-                        className="text-right"
-                        placeholder="e.g. 49"
-                      />
-                      <span className="text-xs text-[var(--muted-foreground)] whitespace-nowrap">{purchaseAbbr}</span>
-                    </div>
-                  </div>
-                </>
-              )}
-            </div>
-            {purchaseUomId && Number(purchaseConversion) > 0 && (
-              <p className="mt-2 text-xs text-[var(--muted-foreground)]">
-                Ordering 1 {purchaseAbbr} adds {Number(purchaseConversion).toLocaleString()} {stockAbbr} to stock.
-              </p>
-            )}
-          </div>
-        )}
 
         <div className="grid grid-cols-2 gap-3">
           <div>

@@ -29,13 +29,14 @@ export async function _getOutstandingByItemUncached(): Promise<Record<string, nu
     item_id: string;
     qty: number;
     received_qty: number;
+    purchase_uom_id: string | null;
     tentative_stock_qty: number | null;
     received_stock_qty: number | null;
   }>((from, to, wc) =>
     supabase
       .from("purchase_order_lines")
       .select(
-        "po_id, item_id, qty, received_qty, tentative_stock_qty, received_stock_qty",
+        "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
         wc ? { count: "exact" } : {},
       )
       .range(from, to),
@@ -59,15 +60,21 @@ export async function _getOutstandingByItemUncached(): Promise<Record<string, nu
 function onOrderStock(l: {
   qty: number;
   received_qty: number;
+  purchase_uom_id: string | null;
   tentative_stock_qty: number | null;
   received_stock_qty: number | null;
 }): number {
   const qty = Number(l.qty) || 0;
   const receivedQty = Number(l.received_qty) || 0;
   if (qty > 0 && receivedQty >= qty) return 0; // fully received (order side)
-  const tentative = l.tentative_stock_qty != null ? Number(l.tentative_stock_qty) : qty;
+  const dual = !!l.purchase_uom_id;
+  // For a dual line, qty is in the purchase unit — NOT a stock figure. Use the
+  // tentative estimate; if none was given, contribute 0 (don't guess a unit).
+  // Same-UOM lines coalesce straight back to (qty − received_qty).
+  const tentative =
+    l.tentative_stock_qty != null ? Number(l.tentative_stock_qty) : dual ? 0 : qty;
   const receivedStock =
-    l.received_stock_qty != null ? Number(l.received_stock_qty) : receivedQty;
+    l.received_stock_qty != null ? Number(l.received_stock_qty) : dual ? 0 : receivedQty;
   return Math.max(0, tentative - receivedStock);
 }
 
@@ -100,13 +107,14 @@ export async function _getOutstandingLinesUncached(): Promise<
     item_id: string;
     qty: number;
     received_qty: number;
+    purchase_uom_id: string | null;
     tentative_stock_qty: number | null;
     received_stock_qty: number | null;
   }>((from, to, wc) =>
     supabase
       .from("purchase_order_lines")
       .select(
-        "po_id, item_id, qty, received_qty, tentative_stock_qty, received_stock_qty",
+        "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
         wc ? { count: "exact" } : {},
       )
       .range(from, to),

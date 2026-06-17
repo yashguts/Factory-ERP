@@ -467,10 +467,12 @@ export async function getPoChangeLog(poId: string): Promise<PoChangeLog[]> {
 
 export interface NewPoLineInput {
   item_id: string;
-  /** Ordered qty — in the item's Purchase UOM if it has one, else stock units. */
+  /** Ordered qty — in the chosen Purchase UOM if one is set, else stock units. */
   qty: number;
   unit_cost?: number | null;
   description?: string | null;
+  /** Purchase UOM chosen for THIS line (free per-vendor choice). NULL ⇒ stock UOM. */
+  purchase_uom_id?: string | null;
   /** Dual-UOM only: tentative stock-UOM qty this order is expected to yield. */
   tentative_stock_qty?: number | null;
 }
@@ -504,21 +506,10 @@ export async function createPurchaseOrder(input: {
       .single();
     if (poErr || !po) throw poErr ?? new Error("Could not create the purchase order");
 
-    // Snapshot each item's Purchase UOM onto its line (so the PO is self-describing
-    // and dual-UOM lines are recognised at receive/MRP time without re-reading items).
-    const itemIds = [...new Set(lines.map((l) => l.item_id))];
-    const puomByItem = new Map<string, string | null>();
-    if (itemIds.length > 0) {
-      const { data: itemRows } = await supabase
-        .from("items")
-        .select("id, purchase_uom_id")
-        .in("id", itemIds);
-      for (const it of itemRows ?? [])
-        puomByItem.set(it.id as string, (it.purchase_uom_id as string | null) ?? null);
-    }
-
+    // Purchase UOM is chosen PER LINE (it varies vendor-to-vendor, e.g. KG vs Ton),
+    // not derived from the item. A line with a purchase_uom_id is dual-UOM.
     const rows = lines.map((l, i) => {
-      const puom = puomByItem.get(l.item_id) ?? null;
+      const puom = l.purchase_uom_id || null;
       const isDual = !!puom;
       const rawQty = Number(l.qty);
       const tentative =
@@ -636,13 +627,18 @@ export async function setPoAudited(poId: string, audited: boolean): Promise<Save
 export async function updatePoLine(
   id: string,
   poId: string,
-  patch: { qty?: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
+  patch: {
+    qty?: number;
+    unit_cost?: number | null;
+    tentative_stock_qty?: number | null;
+    purchase_uom_id?: string | null;
+  },
 ): Promise<SaveResult> {
   try {
     const supabase = await createClient();
     const { data: before } = await supabase
       .from("purchase_order_lines")
-      .select("qty, unit_cost, tentative_stock_qty, item:items(code)")
+      .select("qty, unit_cost, tentative_stock_qty, purchase_uom_id, item:items(code)")
       .eq("id", id)
       .single();
     const { error } = await supabase.from("purchase_order_lines").update(patch).eq("id", id);
@@ -652,7 +648,12 @@ export async function updatePoLine(
       const itemRel = Array.isArray(rel) ? rel[0] : rel;
       const code = itemRel?.code ?? "line";
       const changes: FieldChange[] = [];
-      const b = before as { qty: number; unit_cost: number | null; tentative_stock_qty: number | null };
+      const b = before as {
+        qty: number;
+        unit_cost: number | null;
+        tentative_stock_qty: number | null;
+        purchase_uom_id: string | null;
+      };
       if (patch.qty !== undefined && Number(patch.qty) !== Number(b.qty))
         changes.push({ field: `${code} · qty`, old: Number(b.qty), new: Number(patch.qty) });
       if (patch.unit_cost !== undefined) {
@@ -664,6 +665,21 @@ export async function updatePoLine(
         const o = b.tentative_stock_qty != null ? Number(b.tentative_stock_qty) : null;
         const n = patch.tentative_stock_qty != null ? Number(patch.tentative_stock_qty) : null;
         if (o !== n) changes.push({ field: `${code} · tentative stock`, old: o, new: n });
+      }
+      if (patch.purchase_uom_id !== undefined && (patch.purchase_uom_id || null) !== (b.purchase_uom_id || null)) {
+        // Resolve the two unit abbreviations so the audit trail is readable.
+        const ids = [b.purchase_uom_id, patch.purchase_uom_id].filter(Boolean) as string[];
+        const abbr = new Map<string, string>();
+        if (ids.length > 0) {
+          const { data: us } = await supabase
+            .from("units_of_measurement").select("id, abbreviation").in("id", ids);
+          for (const u of us ?? []) abbr.set(u.id as string, (u.abbreviation as string) ?? "");
+        }
+        changes.push({
+          field: `${code} · purchase unit`,
+          old: b.purchase_uom_id ? (abbr.get(b.purchase_uom_id) ?? "—") : "stock",
+          new: patch.purchase_uom_id ? (abbr.get(patch.purchase_uom_id) ?? "—") : "stock",
+        });
       }
       if (changes.length > 0) {
         const { data: po } = await supabase
@@ -686,7 +702,13 @@ export async function updatePoLine(
 /** Add a new line item to an existing PO (the detail-page "Add item" bar). */
 export async function addPoLine(
   poId: string,
-  input: { item_id: string; qty: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
+  input: {
+    item_id: string;
+    qty: number;
+    unit_cost?: number | null;
+    purchase_uom_id?: string | null;
+    tentative_stock_qty?: number | null;
+  },
 ): Promise<SaveResult> {
   try {
     if (!poId) return { ok: false, error: "Missing purchase order" };
@@ -712,11 +734,11 @@ export async function addPoLine(
       .limit(1);
     const nextSort = ((existing?.[0]?.sort_order as number | undefined) ?? -1) + 1;
 
-    // Snapshot the item's Purchase UOM so this line is recognised as dual-UOM.
     const { data: item } = await supabase
-      .from("items").select("code, purchase_uom_id").eq("id", input.item_id).single();
+      .from("items").select("code").eq("id", input.item_id).single();
     const code = (item?.code as string | null) ?? "item";
-    const puom = (item?.purchase_uom_id as string | null) ?? null;
+    // Purchase UOM is the per-line choice passed in (not an item property).
+    const puom = input.purchase_uom_id || null;
     const isDual = !!puom;
 
     // Dual-UOM lines hold the (possibly fractional) PURCHASE qty; same-UOM lines

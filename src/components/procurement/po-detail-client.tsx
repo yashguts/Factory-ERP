@@ -35,7 +35,7 @@ import { ItemPicker } from "@/components/procurement/item-picker";
 import { type SearchableItem } from "@/lib/actions/items";
 import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
-import type { PurchaseOrder, PurchaseOrderStatus, PoChangeLog } from "@/lib/supabase/types";
+import type { PurchaseOrder, PurchaseOrderStatus, PoChangeLog, UnitOfMeasurement } from "@/lib/supabase/types";
 
 const PDF_BUCKET = "po-invoices";
 const PDF_MAX_BYTES = 50 * 1024 * 1024;
@@ -62,11 +62,13 @@ export function PoDetailClient({
   lines,
   receipts,
   changeLog,
+  units,
 }: {
   po: PurchaseOrder;
   lines: PoLineDetail[];
   receipts: PoReceipt[];
   changeLog: PoChangeLog[];
+  units: UnitOfMeasurement[];
 }) {
   const router = useRouter();
   const toast = useToast();
@@ -85,19 +87,25 @@ export function PoDetailClient({
   const [newItem, setNewItem] = useState<SearchableItem | null>(null);
   const [newQty, setNewQty] = useState("1");
   const [newCost, setNewCost] = useState("");
+  const [newPurchaseUom, setNewPurchaseUom] = useState("");
   const [newTentative, setNewTentative] = useState("");
 
-  // Derived purchase-UOM context for the "Add item" bar.
-  const addDual = !!newItem?.purchase_uom_id;
-  const addOrderAbbr = addDual
-    ? (newItem?.purchase_uom_abbreviation ?? "unit")
-    : (newItem?.uom_abbreviation ?? "");
+  // Derived purchase-UOM context for the "Add item" bar (chosen per line).
+  const addUnit = newPurchaseUom ? units.find((u) => u.id === newPurchaseUom) : null;
+  const addDual = !!addUnit;
+  const addOrderAbbr = addDual ? (addUnit!.abbreviation || "unit") : (newItem?.uom_abbreviation ?? "");
   const addStockAbbr = newItem?.uom_abbreviation ?? "";
-  const addConv = newItem?.purchase_conversion ?? null;
-  const addSeeded =
-    addDual && addConv && Number(newQty) > 0
-      ? Math.round(Number(newQty) * addConv * 1000) / 1000
-      : null;
+
+  // Set/clear a line's purchase unit (and keep the abbreviation in sync for display).
+  const setLineUom = (id: string, unitId: string) => {
+    const ab = unitId ? (units.find((u) => u.id === unitId)?.abbreviation ?? null) : null;
+    setRows((prev) =>
+      prev.map((x) =>
+        x.id === id ? { ...x, purchase_uom_id: unitId || null, purchase_uom_abbreviation: ab } : x,
+      ),
+    );
+    persistLine(id, { purchase_uom_id: unitId || null });
+  };
 
   const totals = useMemo(() => {
     let qty = 0;
@@ -155,7 +163,7 @@ export function PoDetailClient({
 
   const persistLine = (
     id: string,
-    patch: { qty?: number; unit_cost?: number | null; tentative_stock_qty?: number | null },
+    patch: { qty?: number; unit_cost?: number | null; tentative_stock_qty?: number | null; purchase_uom_id?: string | null },
   ) => {
     startTransition(async () => {
       const res = await updatePoLine(id, po.id, patch);
@@ -177,22 +185,20 @@ export function PoDetailClient({
   const addItem = () => {
     if (!newItem) { toast.error("Pick an item to add."); return; }
     if (!(Number(newQty) > 0)) { toast.error("Enter a quantity greater than zero."); return; }
-    const tentative = addDual
-      ? newTentative.trim() !== ""
-        ? Number(newTentative)
-        : addSeeded
-      : null;
+    const tentative = addDual && newTentative.trim() !== "" ? Number(newTentative) : null;
     startTransition(async () => {
       const res = await addPoLine(po.id, {
         item_id: newItem.id,
         qty: Number(newQty),
         unit_cost: newCost.trim() === "" ? null : Number(newCost),
+        purchase_uom_id: newPurchaseUom || null,
         tentative_stock_qty: tentative,
       });
       if (!res.ok) { toast.error(res.error); return; }
       setNewItem(null);
       setNewQty("1");
       setNewCost("");
+      setNewPurchaseUom("");
       setNewTentative("");
       toast.success("Item added.");
       router.refresh();
@@ -410,9 +416,43 @@ export function PoDetailClient({
                       </span>
                     )}
                   </div>
+                  {!received && (
+                    <Select
+                      size="sm"
+                      value={r.purchase_uom_id ?? ""}
+                      onChange={(e) => setLineUom(r.id, e.target.value)}
+                      className="mt-1 w-28 ml-auto"
+                      title="Purchase unit for this line (varies by vendor)"
+                    >
+                      <option value="">Stock{r.uom_abbreviation ? ` (${r.uom_abbreviation})` : ""}</option>
+                      {units.map((u) => (
+                        <option key={u.id} value={u.id}>
+                          {u.name}{u.abbreviation ? ` (${u.abbreviation})` : ""}
+                        </option>
+                      ))}
+                    </Select>
+                  )}
                   {r.purchase_uom_id && (
-                    <div className="mt-0.5 text-[10px] text-[var(--muted-foreground)] text-right">
-                      tentative ≈ {(r.tentative_stock_qty ?? r.qty).toLocaleString()} {r.uom_abbreviation ?? ""}
+                    <div className="mt-1 flex items-center justify-end gap-1 text-[10px] text-[var(--muted-foreground)]">
+                      tentative ≈
+                      <Input
+                        size="sm" type="number" min={0} step="any"
+                        value={r.tentative_stock_qty ?? ""}
+                        disabled={received}
+                        placeholder="stock"
+                        className="w-16 text-right h-6"
+                        onChange={(e) =>
+                          setRows((prev) =>
+                            prev.map((x) =>
+                              x.id === r.id
+                                ? { ...x, tentative_stock_qty: e.target.value === "" ? null : Number(e.target.value) }
+                                : x,
+                            ),
+                          )
+                        }
+                        onBlur={() => persistLine(r.id, { tentative_stock_qty: r.tentative_stock_qty })}
+                      />
+                      {r.uom_abbreviation ?? ""}
                     </div>
                   )}
                 </TableCell>
@@ -490,6 +530,23 @@ export function PoDetailClient({
               </div>
             </div>
             <label className="block">
+              <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">Purchase unit</span>
+              <Select
+                size="sm"
+                value={newPurchaseUom}
+                onChange={(e) => setNewPurchaseUom(e.target.value)}
+                className="mt-1 w-32"
+                title="Purchase unit for this line (varies by vendor)"
+              >
+                <option value="">Stock{addStockAbbr ? ` (${addStockAbbr})` : ""}</option>
+                {units.map((u) => (
+                  <option key={u.id} value={u.id}>
+                    {u.name}{u.abbreviation ? ` (${u.abbreviation})` : ""}
+                  </option>
+                ))}
+              </Select>
+            </label>
+            <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-[var(--muted-foreground)]">
                 Qty{addOrderAbbr ? ` (${addOrderAbbr})` : ""}
               </span>
@@ -503,7 +560,7 @@ export function PoDetailClient({
                 <Input
                   size="sm" type="number" min={0} step="any" value={newTentative}
                   onChange={(e) => setNewTentative(e.target.value)}
-                  placeholder={addSeeded != null ? String(addSeeded) : "stock qty"}
+                  placeholder="stock qty"
                   className="mt-1 w-24 text-right"
                   title="Tentative stock quantity (actual counted at receiving)"
                 />
