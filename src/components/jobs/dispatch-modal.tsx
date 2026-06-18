@@ -5,7 +5,7 @@ import { Modal } from "@/components/ui/modal";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
-import { Search, Loader2, X, Plus, Truck, Info } from "lucide-react";
+import { Search, Loader2, X, Plus, Truck, Info, Upload, FileText, AlertTriangle } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import {
@@ -14,6 +14,12 @@ import {
   type JobDispatchSummary,
   type PhaseScope,
 } from "@/lib/actions/dispatch";
+import {
+  readPartList,
+  type PartListDraft,
+  type PartListFile,
+  type PartListUnmatched,
+} from "@/lib/actions/part-list";
 
 interface Props {
   jobId: string;
@@ -72,6 +78,11 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  // Part-list upload: AI-read packing list → pre-filled rows + a list of lines
+  // it couldn't match to inventory (shown for the user to add by hand).
+  const [reading, setReading] = useState(false);
+  const [unmatched, setUnmatched] = useState<PartListUnmatched[]>([]);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   const buildRows = useCallback(
     (s: JobDispatchSummary, sc: PhaseScope): Row[] =>
@@ -115,7 +126,91 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
 
   const changeScope = (sc: PhaseScope) => {
     setScope(sc);
+    setUnmatched([]);
     if (summary) setRows(buildRows(summary, sc));
+  };
+
+  /* ---- Fill from an uploaded Part List (packing list) ---- */
+  const fileToPart = (file: File): Promise<PartListFile> =>
+    new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const res = String(reader.result);
+        const comma = res.indexOf(",");
+        resolve({ media_type: file.type, data: comma >= 0 ? res.slice(comma + 1) : res });
+      };
+      reader.onerror = () => reject(new Error("Could not read the file."));
+      reader.readAsDataURL(file);
+    });
+
+  // Lay the read-in draft over the rows: switch to full scope (a part list can
+  // span both phases), zero every BOM line, then set the matched ones to the
+  // part-list quantity — so the dispatch reflects EXACTLY what was packed.
+  const applyDraft = (draft: PartListDraft) => {
+    if (!summary) return;
+    setScope("full");
+    const base = buildRows(summary, "full").map((r) => ({ ...r, qty: 0 }));
+    const byBomLine = new Map(base.map((r) => [r.job_bom_line_id, r] as const));
+    for (const f of draft.bomFills) {
+      const row = byBomLine.get(f.job_bom_line_id);
+      if (row) row.qty = f.qty;
+    }
+    const extraRows: Row[] = draft.extras.map((e) => ({
+      _key: makeKey(),
+      job_bom_line_id: null,
+      item_id: e.item_id,
+      item_code: e.code,
+      item_name: e.name,
+      uom: e.uom,
+      category: null,
+      required: null,
+      dispatched: 0,
+      remaining: null,
+      qty: e.qty > 0 ? e.qty : 1,
+      closeLine: false,
+    }));
+    setRows([...base, ...extraRows]);
+    setUnmatched(draft.unmatched);
+    const { stats } = draft;
+    toast.success(
+      `Read ${stats.total} line${stats.total === 1 ? "" : "s"} — ${stats.bom} on the BOM, ${stats.extra} extra` +
+        (stats.unmatched ? `, ${stats.unmatched} to add by hand.` : "."),
+    );
+  };
+
+  const onPickFiles = async (fileList: FileList | null) => {
+    setError(null);
+    if (!fileList?.length || !summary) return;
+    const all = Array.from(fileList);
+    const ok = all.filter(
+      (f) => f.type === "application/pdf" || ["image/jpeg", "image/png", "image/gif", "image/webp"].includes(f.type),
+    );
+    if (!ok.length) {
+      toast.error("Upload a PDF or images (JPG/PNG). iPhone HEIC photos must be converted to JPG first.");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    const totalMb = ok.reduce((a, f) => a + f.size, 0) / 1e6;
+    if (totalMb > 18) {
+      toast.error("Files are too large — keep the part list under ~18 MB total (fewer / smaller photos).");
+      if (fileRef.current) fileRef.current.value = "";
+      return;
+    }
+    setReading(true);
+    try {
+      const parts = await Promise.all(ok.map(fileToPart));
+      const res = await readPartList({ jobId, files: parts });
+      if (!res.ok) {
+        setError(res.error);
+        return;
+      }
+      applyDraft(res.draft);
+    } catch {
+      setError("Couldn't read the part list — please try again.");
+    } finally {
+      setReading(false);
+      if (fileRef.current) fileRef.current.value = "";
+    }
   };
 
   const updateRow = (key: string, patch: Partial<Row>) =>
@@ -222,6 +317,39 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           </div>
         )}
 
+        {/* Fill from an uploaded Part List (packing list) */}
+        <div className="rounded-md border border-dashed border-[var(--primary)]/50 bg-[var(--primary)]/5 px-3 py-2.5">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-start gap-2 min-w-0">
+              <FileText className="h-4 w-4 mt-0.5 text-[var(--primary)] shrink-0" />
+              <div className="min-w-0">
+                <div className="text-sm font-medium">Fill from a Part List</div>
+                <div className="text-[11px] text-[var(--muted-foreground)]">
+                  Upload the packing list (PDF or photos) — the items &amp; quantities are read in and pre-filled below for you to check.
+                </div>
+              </div>
+            </div>
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => fileRef.current?.click()}
+              disabled={reading || loading}
+              className="shrink-0"
+            >
+              {reading ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Upload className="h-3.5 w-3.5 mr-1.5" />}
+              {reading ? "Reading…" : "Upload"}
+            </Button>
+            <input
+              ref={fileRef}
+              type="file"
+              accept="application/pdf,image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => onPickFiles(e.target.files)}
+            />
+          </div>
+        </div>
+
         {/* Date + scope */}
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -323,6 +451,24 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
                 </div>
               )}
             </div>
+
+            {/* Part-list lines that couldn't be matched to an inventory item. */}
+            {unmatched.length > 0 && (
+              <div className="rounded-md border border-[var(--warning-border)] bg-[var(--warning-bg)] p-3 text-xs">
+                <div className="font-medium text-[var(--warning)] mb-1 flex items-center gap-1.5">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0" />
+                  {unmatched.length} part-list line{unmatched.length === 1 ? "" : "s"} couldn&rsquo;t be matched to an inventory item — add {unmatched.length === 1 ? "it" : "them"} by hand above if needed:
+                </div>
+                <ul className="list-disc pl-5 space-y-0.5 text-[var(--muted-foreground)]">
+                  {unmatched.map((u, i) => (
+                    <li key={i}>
+                      {u.raw_text}
+                      {u.quantity != null ? ` — ${u.quantity}` : ""}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </>
         )}
 
