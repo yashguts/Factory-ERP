@@ -399,7 +399,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
     // Fuzzy candidates for EVERY line in one round-trip (pg_trgm trigram search) —
     // robust to wording differences ("Filler Weight 850/150 MS" -> the catalog
     // name). The AI then picks the exact variant from each line's candidates.
-    type Cand = { id: string; code: string | null; name: string | null; category: string | null; uom: string | null };
+    type Cand = { id: string; code: string | null; name: string | null; category: string | null; uom: string | null; score: number };
     const candLists: Cand[][] = needResolve.map(() => []);
     try {
       const { data: rows } = await supabase.rpc("match_items_fuzzy_batch", {
@@ -415,9 +415,12 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
             name: (r.name as string | null) ?? null,
             category: (r.category_name as string | null) ?? null,
             uom: (r.uom as string | null) ?? null,
+            score: Number(r.score) || 0,
           });
         }
       }
+      // Best candidate first (the outer query's order isn't guaranteed).
+      candLists.forEach((l) => l.sort((a, b) => b.score - a.score));
     } catch (e) {
       console.error("[part-list] fuzzy match failed", e);
     }
@@ -464,7 +467,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
           model: MATCH_MODEL,
           max_tokens: 2048,
           system:
-            "You match free-text part-list lines to catalog items. For each line pick the SINGLE catalog item id from its own candidates that is the same physical part, or null if none clearly match. Be strict — a wrong match wrongly ships stock. Only use ids from that line's candidates.",
+            "You match free-text part-list lines to catalog items. For each line, choose the candidate most likely to be the SAME physical part — allow for different word order, abbreviations, and extra or missing spec words. Return null ONLY if none of the candidates are plausibly the same item. Set confidence honestly: high = clearly the same, medium = likely, low = a guess the user should verify. Only use ids from that line's own candidates.",
           tool_choice: { type: "tool", name: "report_matches" },
           tools: [matchTool],
           messages: [
@@ -495,9 +498,19 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
     needResolve.forEach((t, i) => {
       const cands = candLists[i];
       const pick = picks.get(i);
-      const chosen = pick?.item_id ? cands.find((c) => c.id === pick.item_id) : undefined;
+      let chosen = pick?.item_id ? cands.find((c) => c.id === pick.item_id) : undefined;
+      let conf: "high" | "medium" | "low" = pick?.confidence ?? "low";
+      // Fallback: the AI didn't weigh in on this line (e.g. the match step was
+      // skipped for time, or it omitted the line) but the search found a strong
+      // top candidate — surface it (low confidence) instead of dropping a real
+      // item to "add manually". An EXPLICIT AI rejection (pick with null id) is
+      // respected and left unmatched.
+      if (!chosen && !pick && cands.length && cands[0].score >= 0.55) {
+        chosen = cands[0];
+        conf = "low";
+      }
       if (chosen) {
-        resolved.push({ item_id: chosen.id, code: chosen.code, name: chosen.name, uom: chosen.uom, qty: lineQty(t.quantity), raw_text: t.raw_text, confidence: pick?.confidence ?? "low" });
+        resolved.push({ item_id: chosen.id, code: chosen.code, name: chosen.name, uom: chosen.uom, qty: lineQty(t.quantity), raw_text: t.raw_text, confidence: conf });
       } else {
         unmatchedRaw.push({ raw_text: t.raw_text, quantity: t.quantity });
       }

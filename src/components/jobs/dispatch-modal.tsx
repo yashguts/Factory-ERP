@@ -43,6 +43,8 @@ interface Row {
   // When sending less than what's left, the user ticks this to say "the rest
   // isn't needed" — revising the BOM requirement down instead of a partial.
   closeLine: boolean;
+  // For items matched from an uploaded part list — flags rows to double-check.
+  confidence?: "high" | "medium" | "low";
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -168,6 +170,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
       remaining: null,
       qty: e.qty > 0 ? e.qty : 1,
       closeLine: false,
+      confidence: e.confidence,
     }));
     setRows([...base, ...extraRows]);
     setUnmatched(draft.unmatched);
@@ -671,6 +674,11 @@ function ExtraItemRow({
         <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-2 flex-wrap">
           <span className="font-mono">{row.item_code}</span>
           <span className="italic text-[var(--primary)]">extra item</span>
+          {row.confidence && row.confidence !== "high" && (
+            <span className="inline-flex items-center gap-0.5 italic text-[var(--warning)]">
+              <AlertTriangle className="h-3 w-3" /> verify match
+            </span>
+          )}
         </div>
       </div>
       <div className="flex items-center justify-end gap-1.5">
