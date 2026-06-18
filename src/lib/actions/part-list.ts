@@ -27,9 +27,10 @@ const MODEL = "claude-opus-4-8";
 // vision read is the slow one; the match call is small. Total worst-case stays
 // under the platform timeout, and a skipped/failed match call degrades to
 // "unmatched" rather than failing the whole upload.
-const VISION_TIMEOUT_MS = 16_000;
+const VISION_TIMEOUT_MS = 22_000; // PDFs/photos read as page-images (slow)
+const TEXT_TIMEOUT_MS = 15_000; // text-layer PDFs are extracted locally first (fast)
 const MATCH_TIMEOUT_MS = 7_000;
-const MATCH_SKIP_AFTER_MS = 17_000; // if the vision step ran long, skip the match call
+const MATCH_SKIP_AFTER_MS = 16_000; // if the read ran long, skip the 2nd (match) call
 
 const IMG_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -80,16 +81,46 @@ interface Blk {
   input?: Record<string, unknown>;
 }
 
-function contentBlocksFor(files: PartListFile[]): unknown[] {
+/** Pull the embedded text layer out of a PDF (instant, no AI). Empty string for
+ *  a scanned/image-only PDF (then we fall back to reading it as page-images). */
+async function extractPdfText(b64: string): Promise<string> {
+  try {
+    const mod = (await import("pdf-parse")) as {
+      PDFParse: new (o: { data: Buffer }) => { getText: () => Promise<{ text?: string }> };
+    };
+    const parser = new mod.PDFParse({ data: Buffer.from(b64, "base64") });
+    const res = await parser.getText();
+    return (res?.text ?? "").trim();
+  } catch {
+    return "";
+  }
+}
+
+/** Build the model's user content. Text-layer PDFs become a cheap text block
+ *  (fast, no page rendering); scanned PDFs and photos become image blocks read by
+ *  vision. usedVision tells the caller which timeout budget to apply. */
+async function buildContent(files: PartListFile[]): Promise<{ blocks: unknown[]; usedVision: boolean }> {
   const blocks: unknown[] = [];
+  let usedVision = false;
+  let pdfIdx = 0;
   for (const f of files) {
     if (f.media_type === "application/pdf") {
-      blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.data } });
+      const text = await extractPdfText(f.data);
+      // Enough real text => use it; a near-empty layer (page markers only) means
+      // a scanned/image PDF, so fall back to reading it as page-images.
+      if (text.length > 80) {
+        pdfIdx++;
+        blocks.push({ type: "text", text: `--- Part list (file ${pdfIdx}) ---\n${text.slice(0, 40_000)}` });
+      } else {
+        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.data } });
+        usedVision = true;
+      }
     } else if (IMG_TYPES.has(f.media_type)) {
       blocks.push({ type: "image", source: { type: "base64", media_type: f.media_type, data: f.data } });
+      usedVision = true;
     }
   }
-  return blocks;
+  return { blocks, usedVision };
 }
 
 async function callAnthropic(
@@ -235,6 +266,9 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
     },
   };
 
+  const { blocks, usedVision } = await buildContent(files);
+  if (!blocks.length) return { ok: false, error: "Couldn't read the uploaded file(s) — try a PDF or clear photos." };
+
   const r1 = await callAnthropic(
     apiKey,
     {
@@ -246,11 +280,11 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
       messages: [
         {
           role: "user",
-          content: [...contentBlocksFor(files), { type: "text", text: "Read this part list completely and call report_part_list." }],
+          content: [...blocks, { type: "text", text: "Read this part list completely and call report_part_list." }],
         },
       ],
     },
-    VISION_TIMEOUT_MS,
+    usedVision ? VISION_TIMEOUT_MS : TEXT_TIMEOUT_MS,
   );
   if (!r1.ok) return r1;
   const t1 = (r1.data.content ?? []).find((b) => b.type === "tool_use");
@@ -266,52 +300,49 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
   if (!rawLines.length)
     return { ok: false, error: "Couldn't read any item lines — try a clearer scan or photo of the part list." };
 
-  /* ---- Partition: BOM-matched vs needs inventory resolution ---- */
-  const bomFills: PartListBomFill[] = [];
-  const usedBomLine = new Set<string>();
-  const toResolve: { raw_text: string; quantity: number | null; query: string }[] = [];
+  /* ---- Resolve every line to a concrete item (BOM match wins, else inventory) ---- */
+  // First BOM line per item — an item can recur across sections; the whole
+  // dispatched qty lands on the first line and the user audits.
+  const bomLineByItem = new Map<string, BomRow>();
+  for (const b of bom) if (!bomLineByItem.has(b.item_id)) bomLineByItem.set(b.item_id, b);
+
+  interface Resolved {
+    item_id: string;
+    code: string | null;
+    name: string | null;
+    uom: string | null;
+    qty: number;
+    raw_text: string;
+    confidence: "high" | "medium" | "low";
+  }
+  // A line on the packing list is at least one unit; an unreadable qty → 1.
+  const lineQty = (q: number | null) => (q != null && Number.isFinite(q) && q > 0 ? q : 1);
+
+  const resolved: Resolved[] = [];
+  const unmatchedRaw: PartListUnmatched[] = [];
+  const needResolve: { raw_text: string; quantity: number | null; query: string }[] = [];
 
   for (const l of rawLines) {
-    const qty = l.quantity != null && Number.isFinite(l.quantity) && l.quantity > 0 ? l.quantity : 0;
     const m = l.bom_match;
     if (m != null && Number.isInteger(m) && m >= 1 && m <= bom.length) {
-      const chosen = bom[m - 1];
-      const target = !usedBomLine.has(chosen.job_bom_line_id)
-        ? chosen
-        : bom.find((b) => b.item_id === chosen.item_id && !usedBomLine.has(b.job_bom_line_id));
-      if (target) {
-        usedBomLine.add(target.job_bom_line_id);
-        bomFills.push({
-          job_bom_line_id: target.job_bom_line_id,
-          item_id: target.item_id,
-          code: target.code,
-          name: target.name,
-          uom: target.uom,
-          category: target.category,
-          qty,
-          raw_text: l.raw_text,
-        });
-        continue;
-      }
+      const b = bom[m - 1];
+      resolved.push({ item_id: b.item_id, code: b.code, name: b.name, uom: b.uom, qty: lineQty(l.quantity), raw_text: l.raw_text, confidence: "high" });
+    } else {
+      needResolve.push({
+        raw_text: l.raw_text,
+        quantity: l.quantity != null && Number.isFinite(l.quantity) ? l.quantity : null,
+        query: (l.search_query && l.search_query.trim()) || l.raw_text,
+      });
     }
-    toResolve.push({
-      raw_text: l.raw_text,
-      quantity: l.quantity != null && Number.isFinite(l.quantity) ? l.quantity : null,
-      query: (l.search_query && l.search_query.trim()) || l.raw_text,
-    });
   }
 
-  /* ---- Resolve non-BOM lines against inventory ---- */
-  const extras: PartListExtra[] = [];
-  const unmatched: PartListUnmatched[] = [];
-
-  if (toResolve.length) {
+  if (needResolve.length) {
     const candLists = await Promise.all(
-      toResolve.map((t) => searchItems(t.query, undefined, 6).catch(() => [])),
+      needResolve.map((t) => searchItems(t.query, undefined, 6).catch(() => [])),
     );
 
     const picks = new Map<number, { item_id: string | null; confidence: "high" | "medium" | "low" }>();
-    const resolvable = toResolve
+    const resolvable = needResolve
       .map((t, i) => ({
         line_index: i,
         text: t.raw_text,
@@ -319,8 +350,8 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
       }))
       .filter((b) => b.candidates.length);
 
-    // Only spend the second call if there's something to resolve AND we still
-    // have time budget; otherwise leave those lines as unmatched.
+    // Only spend the match call if there's something to resolve AND we still have
+    // time budget; otherwise those lines fall through to "unmatched".
     if (resolvable.length && Date.now() - startedAt < MATCH_SKIP_AFTER_MS) {
       const matchTool = {
         name: "report_matches",
@@ -380,25 +411,63 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
       }
     }
 
-    toResolve.forEach((t, i) => {
+    needResolve.forEach((t, i) => {
       const cands = candLists[i];
       const pick = picks.get(i);
       const chosen = pick?.item_id ? cands.find((c) => c.id === pick.item_id) : undefined;
       if (chosen) {
-        extras.push({
-          item_id: chosen.id,
-          code: chosen.code,
-          name: chosen.name,
-          uom: chosen.uom_abbreviation,
-          qty: t.quantity != null && t.quantity > 0 ? t.quantity : 1,
-          raw_text: t.raw_text,
-          confidence: pick?.confidence ?? "low",
-        });
+        resolved.push({ item_id: chosen.id, code: chosen.code, name: chosen.name, uom: chosen.uom_abbreviation, qty: lineQty(t.quantity), raw_text: t.raw_text, confidence: pick?.confidence ?? "low" });
       } else {
-        unmatched.push({ raw_text: t.raw_text, quantity: t.quantity });
+        unmatchedRaw.push({ raw_text: t.raw_text, quantity: t.quantity });
       }
     });
   }
+
+  /* ---- Aggregate by item: the SAME part across several lines sums into one ---- */
+  const confRank = { high: 3, medium: 2, low: 1 } as const;
+  interface Agg {
+    item_id: string;
+    code: string | null;
+    name: string | null;
+    uom: string | null;
+    qty: number;
+    raws: string[];
+    confidence: "high" | "medium" | "low";
+  }
+  const byItem = new Map<string, Agg>();
+  for (const r of resolved) {
+    const ex = byItem.get(r.item_id);
+    if (ex) {
+      ex.qty += r.qty;
+      ex.raws.push(r.raw_text);
+      if (confRank[r.confidence] < confRank[ex.confidence]) ex.confidence = r.confidence;
+    } else {
+      byItem.set(r.item_id, { item_id: r.item_id, code: r.code, name: r.name, uom: r.uom, qty: r.qty, raws: [r.raw_text], confidence: r.confidence });
+    }
+  }
+
+  const bomFills: PartListBomFill[] = [];
+  const extras: PartListExtra[] = [];
+  for (const a of byItem.values()) {
+    const more = a.raws.length - 1;
+    const raw_text = more > 0 ? `${a.raws[0]} (+${more} more line${more === 1 ? "" : "s"})` : a.raws[0];
+    const bl = bomLineByItem.get(a.item_id);
+    if (bl) {
+      bomFills.push({ job_bom_line_id: bl.job_bom_line_id, item_id: a.item_id, code: bl.code, name: bl.name, uom: bl.uom, category: bl.category, qty: a.qty, raw_text });
+    } else {
+      extras.push({ item_id: a.item_id, code: a.code, name: a.name, uom: a.uom, qty: a.qty, raw_text, confidence: a.confidence });
+    }
+  }
+
+  // Aggregate unmatched lines by their text too, so repeats collapse with summed qty.
+  const unmatchedMap = new Map<string, PartListUnmatched>();
+  for (const u of unmatchedRaw) {
+    const key = u.raw_text.toLowerCase();
+    const ex = unmatchedMap.get(key);
+    if (ex) ex.quantity = ex.quantity == null && u.quantity == null ? null : (ex.quantity ?? 0) + (u.quantity ?? 0);
+    else unmatchedMap.set(key, { raw_text: u.raw_text, quantity: u.quantity });
+  }
+  const unmatched = [...unmatchedMap.values()];
 
   return {
     ok: true,
