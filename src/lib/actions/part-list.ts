@@ -84,16 +84,16 @@ interface Blk {
   input?: Record<string, unknown>;
 }
 
-/** Pull the embedded text layer out of a PDF (instant, no AI). Empty string for
- *  a scanned/image-only PDF (then we fall back to reading it as page-images). */
+/** Pull the embedded text layer out of a PDF (instant, no AI), via unpdf — a
+ *  serverless-friendly pdfjs build (pdf-parse silently failed in the Netlify
+ *  function). Empty string for a scanned/image-only PDF (then we fall back to
+ *  reading it as page-images). */
 async function extractPdfText(b64: string): Promise<string> {
   try {
-    const mod = (await import("pdf-parse")) as {
-      PDFParse: new (o: { data: Buffer }) => { getText: () => Promise<{ text?: string }> };
-    };
-    const parser = new mod.PDFParse({ data: Buffer.from(b64, "base64") });
-    const res = await parser.getText();
-    return (res?.text ?? "").trim();
+    const { extractText, getDocumentProxy } = await import("unpdf");
+    const pdf = await getDocumentProxy(new Uint8Array(Buffer.from(b64, "base64")));
+    const { text } = await extractText(pdf, { mergePages: true });
+    return (text ?? "").trim();
   } catch (e) {
     console.error("[part-list] pdf text extraction failed", e);
     return "";
