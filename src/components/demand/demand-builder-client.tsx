@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { Network, Search, Loader2, Plus, Trash2, X, ArrowRight } from "lucide-react";
+import { Network, Search, Loader2, Plus, Trash2, X, ArrowRight, Sparkles, Check } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
@@ -20,7 +20,9 @@ import {
   getDemandRulesForChild,
   createDemandRule,
   deleteDemandRule,
+  compileDemandRule,
   type DemandRuleRow,
+  type CompiledRuleDraft,
 } from "@/lib/actions/demand-rules";
 import type { DemandSource } from "@/lib/supabase/types";
 
@@ -48,6 +50,12 @@ export function DemandBuilderClient({
   const [loading, setLoading] = useState(false);
   const [editing, setEditing] = useState<InventoryRow | null>(null);
   const seqRef = useRef(0);
+  const toast = useToast();
+
+  // AI plain-English rule compiler.
+  const [aiText, setAiText] = useState("");
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiDraft, setAiDraft] = useState<CompiledRuleDraft | null>(null);
 
   const fetchRows = useCallback(async (f: Filter, q: string) => {
     const seq = ++seqRef.current;
@@ -83,6 +91,32 @@ export function DemandBuilderClient({
 
   const onRulesChanged = () => fetchRows(filter, search); // demand may flip after editing
 
+  const interpret = async () => {
+    if (!aiText.trim() || aiBusy) return;
+    setAiBusy(true);
+    setAiDraft(null);
+    const res = await compileDemandRule(aiText);
+    setAiBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    setAiDraft(res.draft);
+  };
+  const saveDraft = async () => {
+    if (!aiDraft) return;
+    setAiBusy(true);
+    const res = await createDemandRule({
+      childItemId: aiDraft.child.id,
+      parentItemId: aiDraft.parent.id,
+      qty: aiDraft.qty,
+      note: aiText.trim() || null,
+    });
+    setAiBusy(false);
+    if (!res.ok) return toast.error(res.error);
+    toast.success(`Rule saved — ${aiDraft.qty} ${aiDraft.child.name} per ${aiDraft.parent.name}.`);
+    setAiDraft(null);
+    setAiText("");
+    onRulesChanged();
+  };
+
   return (
     <div>
       <PageHeader
@@ -90,6 +124,54 @@ export function DemandBuilderClient({
         title="Demand Rules"
         meta="Define how an item gets demanded when it isn't picked directly on a job's BOM"
       />
+
+      {/* AI plain-English rule compiler */}
+      <div className="card-surface p-3 mb-3">
+        <div className="flex items-center gap-1.5 text-sm font-medium mb-1.5">
+          <Sparkles size={15} className="text-[var(--primary)]" /> Describe a demand rule in plain English
+        </div>
+        <div className="flex items-center gap-2">
+          <Input
+            size="sm"
+            value={aiText}
+            onChange={(e) => setAiText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") interpret(); }}
+            placeholder="e.g. 2 guide shoes per safety frame"
+            className="flex-1"
+            disabled={aiBusy}
+          />
+          <Button size="sm" onClick={interpret} disabled={aiBusy || !aiText.trim()}>
+            {aiBusy && !aiDraft ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5 mr-1.5" />}
+            Interpret
+          </Button>
+        </div>
+        {aiDraft && (
+          <div className="mt-2.5 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 p-3">
+            <div className="text-xs text-[var(--muted-foreground)] mb-1">
+              Interpreted{" "}
+              <Badge variant={aiDraft.confidence === "high" ? "green" : aiDraft.confidence === "medium" ? "amber" : "red"}>
+                {aiDraft.confidence} confidence
+              </Badge>
+            </div>
+            <div className="text-sm">
+              <span className="font-semibold tabular-nums">{aiDraft.qty.toLocaleString()}</span> ×{" "}
+              <span className="font-medium">{aiDraft.child.name}</span>{" "}
+              <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.child.code}</span>{" "}
+              <span className="text-[var(--muted-foreground)]">per</span>{" "}
+              <span className="font-medium">{aiDraft.parent.name}</span>{" "}
+              <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.parent.code}</span>
+            </div>
+            {aiDraft.note && <div className="text-[11px] text-[var(--warning)] mt-1">⚠ {aiDraft.note}</div>}
+            <div className="mt-2 flex items-center gap-2">
+              <Button size="sm" onClick={saveDraft} disabled={aiBusy}>
+                {aiBusy ? <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" /> : <Check className="h-3.5 w-3.5 mr-1.5" />}
+                Save rule
+              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setAiDraft(null)} disabled={aiBusy}>Discard</Button>
+            </div>
+          </div>
+        )}
+      </div>
 
       <StatStrip className="mb-3">
         <StatTile label="Items with no demand" value={noDemandTotal.toLocaleString()} tone={noDemandTotal > 0 ? "warn" : "ok"} />
