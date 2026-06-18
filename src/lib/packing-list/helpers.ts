@@ -5,11 +5,12 @@ import type { CategoryNode } from "@/lib/actions/categories";
 export const OTHER_SECTION_KEY = "other";
 
 /**
- * Build a map of category_id → register section_key. Each section claims the
- * categories under its `categoryPaths` (path + all descendants); the FIRST
- * section (in PACKING_SECTIONS order) to reach a category wins, so duplicated
- * register sections that share a category don't double-claim. Used at seed time
- * to drop each BOM line into the right section.
+ * Build a map of category_id → section_key. Each section's `categoryPaths`
+ * claim that category + all its descendants. When more than one section could
+ * claim a category (a parent section and a more specific child section both
+ * match), the MOST SPECIFIC (deepest category root) wins; ties keep the first
+ * in PACKING_SECTIONS order. Used at seed time to drop each BOM line into the
+ * single best section.
  *
  * Plain (non-server) module so it can be shared by the server action and the
  * standalone bulk-seed script's mirror logic.
@@ -50,12 +51,18 @@ export function buildCategorySectionMap(cats: CategoryNode[]): Map<string, strin
   };
 
   const map = new Map<string, string>();
+  const bestDepth = new Map<string, number>(); // category_id → claiming root depth
   for (const sec of PACKING_SECTIONS) {
     for (const path of sec.categoryPaths) {
       const rootId = resolvePath(path);
       if (!rootId) continue;
+      const depth = path.split(">").filter((s) => s.trim()).length;
       for (const id of descendants(rootId)) {
-        if (!map.has(id)) map.set(id, sec.key);
+        const prev = bestDepth.get(id);
+        if (prev === undefined || depth > prev) {
+          map.set(id, sec.key);
+          bestDepth.set(id, depth);
+        }
       }
     }
   }

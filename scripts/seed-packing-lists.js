@@ -12,6 +12,7 @@ const path = require("path");
 const { createClient } = require("@supabase/supabase-js");
 
 const DRY = process.argv.includes("--dry");
+const RESEED = process.argv.includes("--reseed");
 const CONCURRENCY = 8;
 const OTHER = "other";
 
@@ -73,12 +74,18 @@ async function main() {
     }
     return out;
   };
+  // Most-specific (deepest category root) wins; ties keep first in order.
   const catToSection = new Map();
+  const bestDepth = new Map();
   for (const sec of sections) {
     for (const p of sec.categoryPaths) {
       const rootId = resolvePath(p);
       if (!rootId) continue;
-      for (const id of descendants(rootId)) if (!catToSection.has(id)) catToSection.set(id, sec.key);
+      const depth = p.split(">").filter((s) => s.trim()).length;
+      for (const id of descendants(rootId)) {
+        const prev = bestDepth.get(id);
+        if (prev === undefined || depth > prev) { catToSection.set(id, sec.key); bestDepth.set(id, depth); }
+      }
     }
   }
 
@@ -89,13 +96,17 @@ async function main() {
   const headerByJob = new Map(headers.map((h) => [h.job_id, h.id]));
 
   // ---- jobs that already have a packing list ----
-  const { data: existing } = await supabase.from("packing_lists").select("job_id");
-  const haveList = new Set((existing ?? []).map((p) => p.job_id));
+  const { data: existing } = await supabase.from("packing_lists").select("id, job_id");
+  const listByJob = new Map((existing ?? []).map((p) => [p.job_id, p.id]));
+  const haveList = new Set(listByJob.keys());
 
-  const todo = headers.filter((h) => !haveList.has(h.job_id));
+  // --reseed: re-seed EVERY job with a BOM (wipes that list's lines first).
+  // Used when the section skeleton changes (section_keys differ), since old
+  // lines would otherwise point at dead keys. Safe pre-launch (no hand edits).
+  const todo = RESEED ? headers : headers.filter((h) => !haveList.has(h.job_id));
   console.log(`Jobs with a BOM: ${headers.length}`);
   console.log(`Already have a packing list: ${haveList.size}`);
-  console.log(`To seed: ${todo.length}`);
+  console.log(`${RESEED ? "Re-seeding" : "To seed"}: ${todo.length}`);
 
   if (DRY) {
     // Estimate lines + section coverage on a sample.
@@ -119,12 +130,18 @@ async function main() {
   let createdLists = 0, insertedLines = 0, otherLines = 0, errors = 0;
   await runPool(todo, async (h) => {
     try {
-      const { data: created, error: cErr } = await supabase
-        .from("packing_lists").insert({ job_id: h.job_id, seeded_from_bom: false })
-        .select("id").single();
-      if (cErr || !created) { errors++; return; }
-      const listId = created.id;
-      createdLists++;
+      let listId = listByJob.get(h.job_id);
+      if (listId) {
+        // Re-seed: wipe existing lines for this list.
+        await supabase.from("packing_list_lines").delete().eq("packing_list_id", listId);
+      } else {
+        const { data: created, error: cErr } = await supabase
+          .from("packing_lists").insert({ job_id: h.job_id, seeded_from_bom: false })
+          .select("id").single();
+        if (cErr || !created) { errors++; return; }
+        listId = created.id;
+        createdLists++;
+      }
 
       const { data: bl } = await supabase
         .from("job_bom_lines")

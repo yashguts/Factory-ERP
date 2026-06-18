@@ -236,16 +236,26 @@ const FS_LABEL_EXTRAS = {
 };
 
 // Door-panel sections are keyed by their column-A LABEL (base-names are just
-// "Landing Pannel" / "Car Pannel"). Matched by label prefix, longest first.
+// "Landing Pannel" / "Car Pannel"). The register splits door panels into ~30
+// near-identical sections by size/config — they all live in just two inventory
+// trees, so we map every door section to one of the two PARENT categories and
+// de-duplicate. Door TYPE (CO/AT/MT/Four Fold) is visible in the item name.
 const DOOR_LABEL_RULES = [
-  ["MT Door Pannel Landing", ["Landing Door Pannel > Manual Telescopic"]],
-  ["MT Door Pannel Car", ["Car Door Pannel > Manual Telescopic"]],
-  ["Auto Four Fold Door Pannel Landing", ["Landing Door Pannel > Auto Four Fold"]],
-  ["Auto Four Fold Door Pannel Car", ["Car Door Pannel > Auto Four Fold", "Landing Door Pannel > Auto Four Fold", "Car Door Pannel > Collapsible Door", "Imperforated Door", "By Parting Door"]],
+  ["MT Door Pannel Landing", ["Landing Door Pannel"]],
+  ["MT Door Pannel Car", ["Car Door Pannel"]],
+  ["Auto Four Fold Door Pannel Landing", ["Landing Door Pannel"]],
+  ["Auto Four Fold Door Pannel Car", ["Car Door Pannel", "Landing Door Pannel", "Imperforated Door", "By Parting Door"]],
   ["Auto Door Pannel Car (Short Height)", ["Car Door Pannel"]],
   ["Auto Door Pannel (Short Height)", ["Landing Door Pannel"]],
   ["Auto Door Landing Pannel", ["Landing Door Pannel"]],
   ["Auto Door Car Pannel", ["Car Door Pannel"]],
+];
+
+// Categories the factory register doesn't list but that DO appear on jobs
+// (owner asked to add these). Appended after the register categories.
+const EXTRA_CATEGORIES = [
+  "Glass > Cabin Glass",
+  "Chequered Plate",
 ];
 
 function cleanBaseName(b) {
@@ -333,7 +343,7 @@ async function main() {
     }
   }
 
-  // ---- bind category paths ----
+  // ---- bind category paths per Excel section ----
   for (const sec of sections) {
     const paths = [];
     const push = (p) => { if (p && !paths.includes(p)) paths.push(p); };
@@ -359,7 +369,6 @@ async function main() {
       if (FS_LABEL_EXTRAS[sec.label]) FS_LABEL_EXTRAS[sec.label].forEach(push);
     }
 
-    // validate
     sec.categoryPaths = paths.filter((p) => {
       if (validPaths.has(p)) return true;
       unmapped.add(`INVALID PATH: ${p} (in ${sec.label})`);
@@ -368,35 +377,88 @@ async function main() {
     sec.baseNames = [...sec.baseNames];
   }
 
+  // ---- collapse to ONE clean section per distinct category ----
+  // The register lists the same category under many near-identical headers
+  // (header CO/SO/LHS/RHS variants, ~30 door-panel size variants) and lumps
+  // unrelated items under one heading ("Bull Dog Clip"). Both read as bugs.
+  // So we de-duplicate: each distinct inventory category the register touches
+  // becomes exactly one section, in first-appearance order, named by the
+  // category itself (clean, no cryptic register labels like "`").
+  const leafName = (p) => p.split(">").map((s) => s.trim()).filter(Boolean).pop();
+  const slug = (p) =>
+    "pl-" + p.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 60);
+
+  const ordered = []; // { key, sheet, label, categoryPaths:[path], baseNames:[] }
+  const byPath = new Map();
+  const seenSlug = new Set();
+  const addCategory = (p, sheet) => {
+    if (byPath.has(p)) return byPath.get(p);
+    let key = slug(p);
+    let n = 2;
+    while (seenSlug.has(key)) key = slug(p) + "-" + n++;
+    seenSlug.add(key);
+    const entry = { key, sheet, label: leafName(p), categoryPaths: [p], baseNames: new Set() };
+    byPath.set(p, entry);
+    ordered.push(entry);
+    return entry;
+  };
+  for (const sec of sections) {
+    const sheet = sec.sheet === "Door Pannel" ? "Door Pannel" : "Finished Stock";
+    for (const p of sec.categoryPaths) {
+      const entry = addCategory(p, sheet);
+      for (const bn of sec.baseNames) entry.baseNames.add(bn);
+    }
+  }
+  for (const p of EXTRA_CATEGORIES) {
+    if (!validPaths.has(p)) { unmapped.add(`EXTRA INVALID: ${p}`); continue; }
+    addCategory(p, "Cabin & Plate");
+  }
+
+  // De-duplicate labels (e.g. a leaf name shared by two trees) by appending parent.
+  const labelCount = new Map();
+  for (const e of ordered) labelCount.set(e.label, (labelCount.get(e.label) ?? 0) + 1);
+  for (const e of ordered) {
+    if (labelCount.get(e.label) > 1) {
+      const segs = e.categoryPaths[0].split(">").map((s) => s.trim());
+      if (segs.length > 1) e.label = `${segs[segs.length - 2]} > ${e.label}`;
+    }
+    e.baseNames = [...e.baseNames];
+  }
+
   // ---- report ----
-  console.log(`Sections: ${sections.length}`);
-  const noCat = sections.filter((s) => s.categoryPaths.length === 0);
-  console.log(`Sections with NO category binding: ${noCat.length}`);
-  noCat.forEach((s) => console.log("   • " + s.key + " " + s.label + "  base=" + JSON.stringify(s.baseNames)));
+  console.log(`Excel sections read: ${sections.length}`);
+  console.log(`Distinct category sections emitted: ${ordered.length}`);
   console.log(`\nUnmapped base-names / issues: ${unmapped.size}`);
   [...unmapped].sort().forEach((u) => console.log("   - " + u));
 
   // ---- emit TS ----
-  const emit = sections.map((s) => {
+  const emit = ordered.map((s) => {
     return `  {\n    key: ${JSON.stringify(s.key)},\n    sheet: ${JSON.stringify(s.sheet)},\n    label: ${JSON.stringify(s.label)},\n    baseNames: ${JSON.stringify(s.baseNames)},\n    categoryPaths: ${JSON.stringify(s.categoryPaths)},\n  },`;
   }).join("\n");
 
   const ts = `/**
- * Packing-list section skeleton — the factory's canonical finished-stock
- * register order (from a_copy.xlsx: "Finished Stock" then "Door Pannel").
+ * Packing-list section skeleton.
+ *
+ * One clean section per distinct inventory CATEGORY that the factory's
+ * finished-stock register (a_copy.xlsx: "Finished Stock" then "Door Pannel")
+ * touches, in first-appearance order, de-duplicated. The raw register repeats
+ * the same category under many near-identical headers (header CO/SO/LHS/RHS,
+ * ~30 door-panel size variants) and lumps unrelated items under one heading —
+ * both read as errors — so we collapse to the underlying categories.
  *
  * GENERATED by scripts/gen-packing-sections.js — do not hand-edit the array
- * below; edit the generator's overrides and re-run. Each section:
- *   - key:           stable id (sheet prefix + ordinal) — referenced by
+ * below; edit the generator's overrides/EXTRA_CATEGORIES and re-run (it also
+ * emits scripts/_packing_sections.json for the bulk-seed script). Each section:
+ *   - key:           stable slug of the category path — referenced by
  *                    packing_list_lines.section_key, so it must stay stable.
- *   - sheet:         which register page the section came from.
- *   - label:         column-A header shown to the packer (factory wording,
- *                    typos preserved).
- *   - baseNames:     column-B item base-names in that section (search hint).
- *   - categoryPaths: ERP category PATH strings for scoping the item search,
+ *   - sheet:         register page it came from ("Finished Stock" / "Door
+ *                    Pannel"), or "Cabin & Plate" for owner-added categories.
+ *   - label:         the inventory category name shown to the packer.
+ *   - baseNames:     the register's column-B item names for this area (search
+ *                    hint only).
+ *   - categoryPaths: the single ERP category PATH for scoping the item search,
  *                    same convention as bom-sections.ts (resolved + expanded
- *                    to descendants by lib/actions/categories.ts). Empty = the
- *                    picker searches all categories.
+ *                    to descendants by lib/actions/categories.ts).
  */
 
 export interface PackingSection {
@@ -429,12 +491,12 @@ export function packingSection(key: string): PackingSection | undefined {
   // exact same section order + category bindings as the app.
   fs.writeFileSync(
     path.join(__dirname, "_packing_sections.json"),
-    JSON.stringify(sections.map((s) => ({
+    JSON.stringify(ordered.map((s) => ({
       key: s.key, sheet: s.sheet, label: s.label,
       baseNames: s.baseNames, categoryPaths: s.categoryPaths,
     })), null, 0),
   );
-  console.log(`\nWrote src/lib/packing-list/packing-list-sections.ts (${sections.length} sections)`);
+  console.log(`\nWrote src/lib/packing-list/packing-list-sections.ts (${ordered.length} sections)`);
   console.log(`Wrote scripts/_packing_sections.json`);
 }
 
