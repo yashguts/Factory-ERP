@@ -9,6 +9,7 @@ import {
   deleteGadDrawing,
 } from "@/lib/actions/gad-drawings";
 import { createClient } from "@/lib/supabase/client";
+import { useOperator } from "@/lib/jobs/use-operator";
 
 const BUCKET = "gad-drawings";
 const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches the bucket limit)
@@ -68,6 +69,7 @@ export function GadDrawingPanel({
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const { ensureOperator } = useOperator();
 
   const isPdf = !!filename && /\.pdf$/i.test(filename);
 
@@ -78,6 +80,9 @@ export function GadDrawingPanel({
     if (!file) return;
     // Reset for next picks of the same filename
     e.target.value = "";
+
+    // Record WHO is uploading (prompts once per device if not yet set).
+    const operator = ensureOperator();
 
     startTransition(async () => {
       setError(null);
@@ -130,6 +135,7 @@ export function GadDrawingPanel({
           jobId: id,
           path,
           filename: file.name,
+          operator,
         });
 
         setUrl(result.url);

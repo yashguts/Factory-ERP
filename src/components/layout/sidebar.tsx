@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
+import { useOperator } from "@/lib/jobs/use-operator";
 import {
   Package,
   ClipboardList,
@@ -22,6 +23,7 @@ import {
   Activity,
   Sparkles,
   Network,
+  UserRound,
   LucideIcon,
 } from "lucide-react";
 
@@ -82,8 +84,14 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 
 const allItems = navGroups.flatMap((g) => g.items);
 
-export function Sidebar() {
+/**
+ * `badges` maps a nav href to a count rendered as a red pill on that item
+ * (e.g. /jobs -> number of jobs whose GAD changed after the BOM was defined).
+ * Fed from the server layout so the count is fresh on every navigation.
+ */
+export function Sidebar({ badges = {} }: { badges?: Record<string, number> }) {
   const pathname = usePathname();
+  const { operator, ensureOperator, setOperator } = useOperator();
 
   const activeHref = allItems
     .map((i) => i.href)
@@ -129,6 +137,7 @@ export function Sidebar() {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = item.href === activeHref;
+                const badge = badges[item.href] ?? 0;
                 return (
                   <Link
                     key={item.href}
@@ -141,7 +150,15 @@ export function Sidebar() {
                     )}
                   >
                     <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
-                    {item.label}
+                    <span className="flex-1">{item.label}</span>
+                    {badge > 0 && (
+                      <span
+                        title={`${badge} GAD change${badge === 1 ? "" : "s"} need review`}
+                        className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white"
+                      >
+                        {badge > 99 ? "99+" : badge}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
@@ -149,6 +166,29 @@ export function Sidebar() {
           </div>
         ))}
       </nav>
+
+      {/* Operator identity — the name attached to GAD uploads / job creates /
+          audits (no login in this app). Click to set or change. */}
+      <div className="border-t border-[var(--sidebar-border)] px-3 py-2">
+        <button
+          type="button"
+          onClick={() => {
+            if (operator) {
+              const next = window.prompt("Change your name (used on the audit trail):", operator);
+              if (next !== null) setOperator(next);
+            } else {
+              ensureOperator();
+            }
+          }}
+          title="The name recorded when you upload a GAD, create a job, or mark a job audited"
+          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+        >
+          <UserRound size={16} strokeWidth={1.75} />
+          <span className="flex-1 truncate text-left">
+            {operator ? operator : <span className="italic opacity-80">Set your name…</span>}
+          </span>
+        </button>
+      </div>
     </aside>
   );
 }

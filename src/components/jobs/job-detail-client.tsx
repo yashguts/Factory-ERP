@@ -593,6 +593,12 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           label="Req. Dispatch"
           value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}
         />
+        <MetaItem
+          label="Created"
+          value={`${new Date(job.created_at).toLocaleDateString("en-IN")}${
+            job.created_by && job.created_by !== "unknown" ? ` · ${job.created_by}` : ""
+          }`}
+        />
         {job.door_type && <MetaItem label="Door Type" value={job.door_type} />}
         {job.door_finish && <MetaItem label="Door Finish" value={job.door_finish} />}
         {job.brand && <MetaItem label="Brand" value={job.brand} />}

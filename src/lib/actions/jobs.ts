@@ -297,6 +297,8 @@ export async function createJob(data: {
   requirement_stage?: JobStage | null;
   requirement_dispatch_date?: string | null;
   structure_included?: "NA" | "Factory-made" | "Site-fabricated";
+  /** Operator who created the job (identity, not auth). */
+  created_by?: string | null;
 }) {
   const supabase = await createClient();
   const { data: job, error } = await supabase

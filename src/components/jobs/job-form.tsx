@@ -27,6 +27,7 @@ import {
   getJobTemplate,
 } from "@/lib/actions/jobs";
 import type { BomLineInput } from "@/lib/actions/jobs";
+import { readOperator } from "@/lib/jobs/use-operator";
 import { checkCategoryPaths } from "@/lib/actions/categories";
 import type { Job, JobStage, StructureIncluded } from "@/lib/supabase/types";
 
@@ -604,7 +605,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       setJobSaved(true);
       return savedJobId;
     }
-    const created = await createJob(buildJobData());
+    const created = await createJob({ ...buildJobData(), created_by: readOperator() });
     setSavedJobId(created.id);
     setJobSaved(true);
     return created.id;
@@ -629,7 +630,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         if (savedJobId) {
           await updateJob(savedJobId, buildJobData());
         } else {
-          const created = await createJob(buildJobData());
+          const created = await createJob({ ...buildJobData(), created_by: readOperator() });
           setSavedJobId(created.id);
         }
         setJobSaved(true);
