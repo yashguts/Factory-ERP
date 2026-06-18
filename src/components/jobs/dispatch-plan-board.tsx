@@ -9,6 +9,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { cn } from "@/lib/utils";
 import type { Job } from "@/lib/supabase/types";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
+import { gadAlert } from "@/lib/jobs/gad-alert";
 
 /* ------------------------------------------------------------------ *
  * Dispatch Plan — a read-only, week-by-week picture of the Active Job
@@ -95,6 +96,8 @@ interface PlanJob {
   hasDrawing: boolean;
   hasBom: boolean;
   hasCabin: boolean;
+  /** GAD changed after the BOM was defined and not yet re-audited. */
+  gadDrift: boolean;
 }
 
 interface Display {
@@ -183,6 +186,7 @@ export function DispatchPlanBoard({
         hasDrawing: !!job.gad_drawing_url,
         hasBom: bomSet.has(job.id),
         hasCabin: cabinSet.has(job.job_number.trim().toLowerCase()),
+        gadDrift: gadAlert(job),
       };
 
       const date = job.requirement_dispatch_date
@@ -330,6 +334,9 @@ export function DispatchPlanBoard({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <ReadyChip letter="C" on /> Cabin BOM
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <GadChip /> GAD changed
           </span>
         </span>
       </div>
@@ -488,6 +495,7 @@ export function DispatchPlanBoard({
                       {job.customer_name || "—"}
                     </span>
                     <span className="flex shrink-0 items-center gap-1">
+                      {job.gadDrift && <GadChip />}
                       <ReadyChip
                         letter="D"
                         on={job.hasDrawing}
@@ -553,6 +561,24 @@ function ReadyChip({
       )}
     >
       {letter}
+    </span>
+  );
+}
+
+/**
+ * Exception flag: the GAD was changed AFTER the BOM was defined and hasn't been
+ * re-audited. Red so it jumps out of the green/grey readiness row — whoever is
+ * about to dispatch this job needs to stop and re-check the drawing first.
+ */
+function GadChip() {
+  return (
+    <span
+      title="GAD changed after the BOM was defined — review the drawing against the BOM, then Mark Audited"
+      aria-label="GAD changed after BOM was defined"
+      className="inline-flex h-[18px] shrink-0 items-center gap-0.5 rounded bg-red-600 px-1 text-[10px] font-bold leading-none text-white"
+    >
+      <AlertTriangle size={10} />
+      GAD
     </span>
   );
 }

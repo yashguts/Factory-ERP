@@ -11,10 +11,10 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, Package } from "lucide-react";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, Package, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
-import { updateJob, deleteJob } from "@/lib/actions/jobs";
+import { updateJob, deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
@@ -22,7 +22,9 @@ import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
 import type { JobDispatchSummary } from "@/lib/actions/dispatch";
 import { dispatchStat, toneChip } from "@/lib/dispatch-status";
-import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
+import type { Job, JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
+import { gadAlert, acknowledgedRev } from "@/lib/jobs/gad-alert";
+import { useOperator } from "@/lib/jobs/use-operator";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -81,15 +83,19 @@ interface Props {
   dispatch: JobDispatchSummary;
   /** On-hand stock per item id, scoped to this job's BOM. */
   stockByItem: Record<string, number>;
+  /** GAD upload history, newest revision first. */
+  gadVersions: JobGadVersion[];
 }
 
 type SortKey = "code" | "name" | "category" | "required" | "dispatched";
 type SortDir = "asc" | "desc";
 type ViewTab = "sections" | "items";
 
-export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch, stockByItem }: Props) {
+export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch, stockByItem, gadVersions }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [auditing, startAudit] = useTransition();
+  const { ensureOperator } = useOperator();
   const [showDispatch, setShowDispatch] = useState(false);
   const [bomSearch, setBomSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("code");
@@ -126,6 +132,20 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   const handleStatusChange = (newStatus: JobStatus) => {
     startTransition(async () => {
       await updateJob(job.id, { status: newStatus });
+      router.refresh();
+    });
+  };
+
+  // "Mark Audited (with changes)" — acknowledge the current GAD revision so the
+  // drift alert clears across every surface. Records who audited (operator).
+  const handleMarkAudited = () => {
+    const operator = ensureOperator();
+    startAudit(async () => {
+      const res = await setJobBomAudited(job.id, true, operator);
+      if (!res.ok) {
+        alert(`Could not mark audited: ${res.error}`);
+        return;
+      }
       router.refresh();
     });
   };
@@ -434,6 +454,71 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           </>
         }
       />
+
+      {/* GAD-changed-after-BOM alert — the drawing moved past what the BOM was
+          reconciled against. Review the new drawing, then Mark Audited. */}
+      {gadAlert(job) && (
+        <div className="mb-4 rounded-lg border border-red-300 bg-red-50 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-red-600" />
+            <div className="flex-1 text-sm text-red-800">
+              <div className="font-semibold">GAD changed after the BOM was defined</div>
+              <div className="mt-0.5 text-red-700">
+                The drawing is now <strong>rev {job.gad_revision_no}</strong>, but the BOM was last
+                reconciled at <strong>rev {acknowledgedRev(job) ?? 0}</strong>. Review the new drawing
+                against the BOM (and any cut programs / procurement / dispatch), then mark it audited.
+              </div>
+            </div>
+            <Button size="sm" onClick={handleMarkAudited} disabled={auditing} className="shrink-0">
+              {auditing ? (
+                <Loader2 className="h-4 w-4 mr-1 animate-spin" />
+              ) : (
+                <CheckCircle2 className="h-4 w-4 mr-1" />
+              )}
+              Mark Audited
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* GAD version history — every uploaded drawing is kept. Auto-open when the
+          alert is active so the reviewer can compare the current vs. baseline. */}
+      {gadVersions.length > 0 && (
+        <details open={gadAlert(job)} className="mb-4 card-surface overflow-hidden p-0">
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-sm font-medium">
+            <FileClock size={15} className="text-[var(--muted-foreground)]" />
+            GAD version history
+            <span className="text-xs text-[var(--muted-foreground)]">({gadVersions.length})</span>
+          </summary>
+          <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+            {gadVersions.map((v) => {
+              const ack = acknowledgedRev(job);
+              return (
+                <div key={v.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                  <span className="shrink-0 font-mono font-semibold">rev {v.revision_no}</span>
+                  {v.is_current && <Badge variant="green">Current</Badge>}
+                  {ack === v.revision_no && <Badge variant="blue">BOM based on this</Badge>}
+                  <span className="min-w-0 flex-1 truncate text-[var(--muted-foreground)]" title={v.filename}>
+                    {v.filename}
+                  </span>
+                  <span className="shrink-0 text-xs text-[var(--muted-foreground)]">
+                    {new Date(v.uploaded_at).toLocaleDateString("en-IN")}
+                    {v.uploaded_by && v.uploaded_by !== "unknown" ? ` · ${v.uploaded_by}` : ""}
+                  </span>
+                  <a
+                    href={v.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 text-[var(--primary)] hover:underline"
+                  >
+                    <ExternalLink size={13} /> View
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       {/* Split layout: when on, the detail body scrolls on the left and
           the GAD drawing on the right (each independently). */}

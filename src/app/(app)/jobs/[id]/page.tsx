@@ -11,7 +11,7 @@ export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
 
   // Parallel fetch — job detail, BOM sections, and dispatch summary together.
-  const [{ job, bomLines, bomHeaderId }, bomSections, dispatch] =
+  const [{ job, bomLines, bomHeaderId, gadVersions }, bomSections, dispatch] =
     await Promise.all([
       getJobDetail(id),
       getJobBomSections(id),
@@ -31,6 +31,7 @@ export default async function JobDetailPage({ params }: Props) {
       bomSectionLines={bomSections}
       dispatch={dispatch}
       stockByItem={stockByItem}
+      gadVersions={gadVersions}
     />
   );
 }

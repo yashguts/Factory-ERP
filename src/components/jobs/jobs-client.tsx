@@ -27,6 +27,7 @@ import { updateJob, type JobReadinessFlags } from "@/lib/actions/jobs";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
+import { gadAlert } from "@/lib/jobs/gad-alert";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -141,6 +142,9 @@ export function JobsClient({
     }
     return { activeCount: a, dispatchedCount: d };
   }, [jobs, dispatchStatus]);
+
+  // Jobs whose GAD was changed after the BOM was defined (and not re-audited).
+  const gadDriftCount = useMemo(() => jobs.filter(gadAlert).length, [jobs]);
 
   const doorTypes = useMemo(() => {
     const set = new Set<string>();
@@ -328,6 +332,7 @@ export function JobsClient({
                     return st === "full" ? "Dispatched" : st === "partial" ? "Partial" : "";
                   },
                 },
+                { header: "GAD Alert", field: (j) => (gadAlert(j) ? "CHANGED" : "") },
               ]}
             />
           </>
@@ -346,6 +351,23 @@ export function JobsClient({
           </span>
           <span className="ml-auto text-sm font-medium underline underline-offset-2">
             Resolve
+          </span>
+        </Link>
+      )}
+
+      {/* GAD-changed-after-BOM banner — links to the global GAD Change Alerts page */}
+      {gadDriftCount > 0 && (
+        <Link
+          href="/jobs/gad-alerts"
+          className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg border border-red-300 bg-red-50 text-red-700 hover:opacity-90 transition-colors"
+        >
+          <AlertTriangle size={18} className="shrink-0" />
+          <span className="text-sm">
+            <strong>{gadDriftCount}</strong>{" "}
+            {gadDriftCount === 1 ? "job has" : "jobs have"} a GAD changed after the BOM was defined — review before cutting/procuring.
+          </span>
+          <span className="ml-auto text-sm font-medium underline underline-offset-2">
+            Review
           </span>
         </Link>
       )}
@@ -500,7 +522,20 @@ export function JobsClient({
                   className="cursor-pointer hover:bg-[var(--muted)]"
                   onClick={() => router.push(`/jobs/${job.id}`)}
                 >
-                  <TableCell className="font-mono text-sm font-medium">{job.job_number}</TableCell>
+                  <TableCell className="font-mono text-sm font-medium">
+                    <span className="inline-flex items-center gap-1.5">
+                      {job.job_number}
+                      {gadAlert(job) && (
+                        <span
+                          title="GAD changed after the BOM was defined — open the job to review and Mark Audited"
+                          className="inline-flex items-center gap-0.5 rounded bg-red-600 px-1 py-0.5 text-[10px] font-bold leading-none text-white"
+                        >
+                          <AlertTriangle size={10} />
+                          GAD
+                        </span>
+                      )}
+                    </span>
+                  </TableCell>
                   <TableCell>
                     <div className="font-medium">{job.customer_name || "-"}</div>
                     {job.brand && (
