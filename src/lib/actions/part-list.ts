@@ -22,15 +22,18 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { searchItems } from "@/lib/actions/items";
 
-const MODEL = "claude-opus-4-8";
-// Bound each call under the serverless function cap (see spec-vision.ts). The
-// vision read is the slow one; the match call is small. Total worst-case stays
-// under the platform timeout, and a skipped/failed match call degrades to
-// "unmatched" rather than failing the whole upload.
-const VISION_TIMEOUT_MS = 22_000; // PDFs/photos read as page-images (slow)
-const TEXT_TIMEOUT_MS = 15_000; // text-layer PDFs are extracted locally first (fast)
-const MATCH_TIMEOUT_MS = 7_000;
-const MATCH_SKIP_AFTER_MS = 16_000; // if the read ran long, skip the 2nd (match) call
+// Extraction/matching from (mostly clean) text is latency-sensitive and runs
+// inside the serverless function timeout — use the FAST model so long lists
+// finish before the budget runs out (Opus was timing out on big lists).
+const EXTRACT_MODEL = "claude-haiku-4-5-20251001";
+const MATCH_MODEL = "claude-haiku-4-5-20251001";
+// Whole-action wall-clock budget, comfortably under the platform function cap
+// (~26s on this plan). Each AI call is sized from the REMAINING budget so a slow
+// PDF parse or a long first call can never push us past the platform timeout
+// (which would kill the function with a generic error instead of our message).
+const BUDGET_MS = 24_000;
+const MATCH_MAX_MS = 7_000;
+const MATCH_MIN_MS = 4_000; // skip the match call if less than this remains
 
 const IMG_TYPES = new Set(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -91,7 +94,8 @@ async function extractPdfText(b64: string): Promise<string> {
     const parser = new mod.PDFParse({ data: Buffer.from(b64, "base64") });
     const res = await parser.getText();
     return (res?.text ?? "").trim();
-  } catch {
+  } catch (e) {
+    console.error("[part-list] pdf text extraction failed", e);
     return "";
   }
 }
@@ -99,9 +103,12 @@ async function extractPdfText(b64: string): Promise<string> {
 /** Build the model's user content. Text-layer PDFs become a cheap text block
  *  (fast, no page rendering); scanned PDFs and photos become image blocks read by
  *  vision. usedVision tells the caller which timeout budget to apply. */
-async function buildContent(files: PartListFile[]): Promise<{ blocks: unknown[]; usedVision: boolean }> {
+async function buildContent(
+  files: PartListFile[],
+): Promise<{ blocks: unknown[]; usedVision: boolean; textLen: number }> {
   const blocks: unknown[] = [];
   let usedVision = false;
+  let textLen = 0;
   let pdfIdx = 0;
   for (const f of files) {
     if (f.media_type === "application/pdf") {
@@ -110,6 +117,7 @@ async function buildContent(files: PartListFile[]): Promise<{ blocks: unknown[];
       // a scanned/image PDF, so fall back to reading it as page-images.
       if (text.length > 80) {
         pdfIdx++;
+        textLen += text.length;
         blocks.push({ type: "text", text: `--- Part list (file ${pdfIdx}) ---\n${text.slice(0, 40_000)}` });
       } else {
         blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.data } });
@@ -120,14 +128,14 @@ async function buildContent(files: PartListFile[]): Promise<{ blocks: unknown[];
       usedVision = true;
     }
   }
-  return { blocks, usedVision };
+  return { blocks, usedVision, textLen };
 }
 
 async function callAnthropic(
   apiKey: string,
   body: Record<string, unknown>,
   timeoutMs: number,
-): Promise<{ ok: true; data: { content?: Blk[] } } | { ok: false; error: string }> {
+): Promise<{ ok: true; data: { content?: Blk[] } } | { ok: false; error: string; aborted: boolean }> {
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
@@ -138,17 +146,16 @@ async function callAnthropic(
       signal: ctrl.signal,
     });
     if (!resp.ok) {
-      if (resp.status === 429) return { ok: false, error: "AI is busy — try again in a moment." };
-      if (resp.status === 401) return { ok: false, error: "AI key was rejected." };
-      return { ok: false, error: `AI request failed (${resp.status}).` };
+      if (resp.status === 429) return { ok: false, aborted: false, error: "AI is busy — try again in a moment." };
+      if (resp.status === 401) return { ok: false, aborted: false, error: "AI key was rejected." };
+      return { ok: false, aborted: false, error: `AI request failed (${resp.status}).` };
     }
     return { ok: true, data: (await resp.json()) as { content?: Blk[] } };
   } catch {
     return {
       ok: false,
-      error: ctrl.signal.aborted
-        ? "Reading the part list took too long — try fewer pages or clearer photos."
-        : "Couldn't reach the AI service — try again.",
+      aborted: ctrl.signal.aborted,
+      error: ctrl.signal.aborted ? "Reading the part list took too long." : "Couldn't reach the AI service — try again.",
     };
   } finally {
     clearTimeout(timer);
@@ -266,13 +273,15 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
     },
   };
 
-  const { blocks, usedVision } = await buildContent(files);
+  const { blocks, usedVision, textLen } = await buildContent(files);
   if (!blocks.length) return { ok: false, error: "Couldn't read the uploaded file(s) — try a PDF or clear photos." };
+
+  const remaining = () => BUDGET_MS - (Date.now() - startedAt);
 
   const r1 = await callAnthropic(
     apiKey,
     {
-      model: MODEL,
+      model: EXTRACT_MODEL,
       max_tokens: 4096,
       system,
       tool_choice: { type: "tool", name: "report_part_list" },
@@ -284,9 +293,22 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
         },
       ],
     },
-    usedVision ? VISION_TIMEOUT_MS : TEXT_TIMEOUT_MS,
+    Math.max(4_000, remaining() - 500),
   );
-  if (!r1.ok) return r1;
+  if (!r1.ok) {
+    console.error("[part-list] read failed", { usedVision, textLen, ms: Date.now() - startedAt, error: r1.error });
+    if (r1.aborted) {
+      const mode = usedVision ? "image" : "text";
+      const hint = usedVision
+        ? "It looks scanned or photographed — upload fewer pages at a time, or a clearer file."
+        : "It's a long list — try splitting it into two uploads.";
+      return {
+        ok: false,
+        error: `The part list took too long to read (${mode} mode${usedVision ? "" : `, ${textLen.toLocaleString()} chars`}). ${hint}`,
+      };
+    }
+    return { ok: false, error: r1.error };
+  }
   const t1 = (r1.data.content ?? []).find((b) => b.type === "tool_use");
   const rawLines: RawLine[] = (((t1?.input?.lines as unknown[]) ?? []) as Record<string, unknown>[])
     .filter((l) => l && typeof l.raw_text === "string" && (l.raw_text as string).trim())
@@ -352,7 +374,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
 
     // Only spend the match call if there's something to resolve AND we still have
     // time budget; otherwise those lines fall through to "unmatched".
-    if (resolvable.length && Date.now() - startedAt < MATCH_SKIP_AFTER_MS) {
+    if (resolvable.length && remaining() > MATCH_MIN_MS) {
       const matchTool = {
         name: "report_matches",
         description: "Report the single best catalog match per line.",
@@ -380,7 +402,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
       const r2 = await callAnthropic(
         apiKey,
         {
-          model: MODEL,
+          model: MATCH_MODEL,
           max_tokens: 2048,
           system:
             "You match free-text part-list lines to catalog items. For each line pick the SINGLE catalog item id from its own candidates that is the same physical part, or null if none clearly match. Be strict — a wrong match wrongly ships stock. Only use ids from that line's candidates.",
@@ -398,7 +420,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
             },
           ],
         },
-        MATCH_TIMEOUT_MS,
+        Math.min(MATCH_MAX_MS, Math.max(2_000, remaining() - 500)),
       );
       if (r2.ok) {
         const t2 = (r2.data.content ?? []).find((b) => b.type === "tool_use");
