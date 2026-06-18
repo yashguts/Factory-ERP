@@ -13,6 +13,11 @@ import { searchItems } from "@/lib/actions/items";
 import { getInventoryHealth } from "@/lib/actions/inventory-health";
 import { getMrpData } from "@/lib/actions/mrp";
 import { searchOperations } from "@/lib/actions/operations";
+import { createCacheClient } from "@/lib/supabase/cache-client";
+
+const flat = <T>(rel: unknown): T | null =>
+  Array.isArray(rel) ? ((rel[0] ?? null) as T | null) : ((rel as T) ?? null);
+const safeLike = (s: string) => s.replace(/[%,()]/g, "");
 
 const MODEL = "claude-opus-4-8";
 const MAX_STEPS = 5;
@@ -71,6 +76,22 @@ const TOOLS = [
       required: ["query"],
     },
   },
+  {
+    name: "get_job",
+    description:
+      "Get a job order by its number or customer name. Returns the elevator spec, status/stage, dispatch count, and its FULL bill of materials — every BOM line (section/category, item code, item name, required quantity).",
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string", description: "job number or customer name" } },
+      required: ["query"],
+    },
+  },
+  {
+    name: "list_jobs",
+    description: "List the most recent job orders with customer, status, stage and required dispatch date.",
+    input_schema: { type: "object", additionalProperties: false, properties: {} },
+  },
 ];
 
 async function runTool(name: string, input: Record<string, unknown>): Promise<unknown> {
@@ -117,6 +138,67 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
     case "find_programs": {
       const names = await searchOperations(String(input?.query ?? ""));
       return { programs: names.slice(0, 20) };
+    }
+    case "get_job": {
+      const supabase = createCacheClient();
+      const q = safeLike(String(input?.query ?? "").trim());
+      if (!q) return { found: false };
+      const { data: jobs } = await supabase
+        .from("jobs")
+        .select("id, job_number, customer_name, spec_string, status, stage, floors, drive_type, capacity, requirement_dispatch_date")
+        .or(`job_number.ilike.%${q}%,customer_name.ilike.%${q}%`)
+        .limit(3);
+      if (!jobs?.length) return { found: false };
+      const out = [];
+      for (const j of jobs as Record<string, unknown>[]) {
+        const { data: hdr } = await supabase
+          .from("job_bom_headers")
+          .select("id")
+          .eq("job_id", j.id as string)
+          .limit(1)
+          .maybeSingle();
+        let bom: { category: unknown; code: string | null; name: string | null; required: unknown }[] = [];
+        if (hdr) {
+          const { data: lines } = await supabase
+            .from("job_bom_lines")
+            .select("category, required_quantity, item:items!job_bom_lines_item_id_fkey(code,name)")
+            .eq("job_bom_id", (hdr as Record<string, unknown>).id as string)
+            .order("sort_order")
+            .limit(300);
+          bom = (lines ?? []).map((l: Record<string, unknown>) => {
+            const it = flat<{ code: string; name: string }>(l.item);
+            return { category: l.category, code: it?.code ?? null, name: it?.name ?? null, required: l.required_quantity };
+          });
+        }
+        const { count } = await supabase
+          .from("job_dispatches")
+          .select("id", { count: "exact", head: true })
+          .eq("job_id", j.id as string);
+        out.push({
+          job_number: j.job_number,
+          customer: j.customer_name,
+          spec: j.spec_string,
+          status: j.status,
+          stage: j.stage,
+          floors: j.floors,
+          drive_type: j.drive_type,
+          capacity: j.capacity,
+          required_dispatch_date: j.requirement_dispatch_date,
+          dispatches: count ?? 0,
+          bom_line_count: bom.length,
+          bom_lines: bom,
+        });
+      }
+      return { jobs: out };
+    }
+    case "list_jobs": {
+      const supabase = createCacheClient();
+      const { data } = await supabase
+        .from("jobs")
+        .select("job_number, customer_name, status, stage, requirement_dispatch_date")
+        .order("created_at", { ascending: false })
+        .limit(30);
+      return { jobs: data ?? [] };
     }
     default:
       return { error: `unknown tool ${name}` };
