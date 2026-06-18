@@ -21,8 +21,13 @@ import {
   createDemandRule,
   deleteDemandRule,
   compileDemandRule,
+  createDemandFormula,
+  getDemandFormulas,
+  deleteDemandFormula,
   type DemandRuleRow,
   type CompiledRuleDraft,
+  type DemandFormulaRow,
+  type FormulaConditions,
 } from "@/lib/actions/demand-rules";
 import type { DemandSource } from "@/lib/supabase/types";
 
@@ -34,6 +39,16 @@ const DEMAND_BADGE: Record<DemandSource, { variant: BadgeVariant; label: string 
 };
 
 type Filter = "none" | "all";
+
+function summarizeConditions(c: FormulaConditions): string {
+  const parts: string[] = [];
+  if (c.drive_type?.length) parts.push(c.drive_type.join("/"));
+  if (c.door_type?.length) parts.push(c.door_type.join("/"));
+  if (c.capacity?.length) parts.push(c.capacity.join("/"));
+  if (c.min_floors != null) parts.push(`≥${c.min_floors} floors`);
+  if (c.max_floors != null) parts.push(`≤${c.max_floors} floors`);
+  return parts.length ? `${parts.join(", ")} jobs` : "all jobs";
+}
 
 export function DemandBuilderClient({
   initialRows,
@@ -56,6 +71,20 @@ export function DemandBuilderClient({
   const [aiText, setAiText] = useState("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiDraft, setAiDraft] = useState<CompiledRuleDraft | null>(null);
+
+  // Job-type / per-floor formulas (Phase 2).
+  const [formulas, setFormulas] = useState<DemandFormulaRow[]>([]);
+  const loadFormulas = useCallback(async () => setFormulas(await getDemandFormulas()), []);
+  useEffect(() => {
+    loadFormulas();
+  }, [loadFormulas]);
+  const removeFormula = async (id: string) => {
+    const res = await deleteDemandFormula(id);
+    if (!res.ok) return toast.error(res.error);
+    toast.success("Formula removed.");
+    loadFormulas();
+    onRulesChanged();
+  };
 
   const fetchRows = useCallback(async (f: Filter, q: string) => {
     const seq = ++seqRef.current;
@@ -103,18 +132,28 @@ export function DemandBuilderClient({
   const saveDraft = async () => {
     if (!aiDraft) return;
     setAiBusy(true);
-    const res = await createDemandRule({
-      childItemId: aiDraft.child.id,
-      parentItemId: aiDraft.parent.id,
-      qty: aiDraft.qty,
-      note: aiText.trim() || null,
-    });
+    const res =
+      aiDraft.kind === "job"
+        ? await createDemandFormula({
+            targetItemId: aiDraft.target.id,
+            driver: aiDraft.driver,
+            factor: aiDraft.factor,
+            conditions: aiDraft.conditions,
+            sourceText: aiText.trim() || null,
+          })
+        : await createDemandRule({
+            childItemId: aiDraft.child.id,
+            parentItemId: aiDraft.parent.id,
+            qty: aiDraft.qty,
+            note: aiText.trim() || null,
+          });
     setAiBusy(false);
     if (!res.ok) return toast.error(res.error);
-    toast.success(`Rule saved — ${aiDraft.qty} ${aiDraft.child.name} per ${aiDraft.parent.name}.`);
+    toast.success("Rule saved.");
     setAiDraft(null);
     setAiText("");
     onRulesChanged();
+    loadFormulas();
   };
 
   return (
@@ -136,7 +175,7 @@ export function DemandBuilderClient({
             value={aiText}
             onChange={(e) => setAiText(e.target.value)}
             onKeyDown={(e) => { if (e.key === "Enter") interpret(); }}
-            placeholder="e.g. 2 guide shoes per safety frame"
+            placeholder="e.g. 2 guide shoes per safety frame · 1 controller stand per MRL job · 1 buffer per 4 floors"
             className="flex-1"
             disabled={aiBusy}
           />
@@ -148,19 +187,28 @@ export function DemandBuilderClient({
         {aiDraft && (
           <div className="mt-2.5 rounded-md border border-[var(--primary)]/30 bg-[var(--primary)]/5 p-3">
             <div className="text-xs text-[var(--muted-foreground)] mb-1">
-              Interpreted{" "}
+              Interpreted as a {aiDraft.kind === "job" ? "job rule" : "component rule"}{" "}
               <Badge variant={aiDraft.confidence === "high" ? "green" : aiDraft.confidence === "medium" ? "amber" : "red"}>
                 {aiDraft.confidence} confidence
               </Badge>
             </div>
-            <div className="text-sm">
-              <span className="font-semibold tabular-nums">{aiDraft.qty.toLocaleString()}</span> ×{" "}
-              <span className="font-medium">{aiDraft.child.name}</span>{" "}
-              <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.child.code}</span>{" "}
-              <span className="text-[var(--muted-foreground)]">per</span>{" "}
-              <span className="font-medium">{aiDraft.parent.name}</span>{" "}
-              <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.parent.code}</span>
-            </div>
+            {aiDraft.kind === "job" ? (
+              <div className="text-sm">
+                <span className="font-semibold tabular-nums">{aiDraft.factor.toLocaleString()}</span>{" "}
+                <span className="font-medium">{aiDraft.target.name}</span>{" "}
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.target.code}</span>{" "}
+                <span className="text-[var(--muted-foreground)]">{aiDraft.driver === "per_floor" ? "per floor" : "per job"} · {summarizeConditions(aiDraft.conditions)}</span>
+              </div>
+            ) : (
+              <div className="text-sm">
+                <span className="font-semibold tabular-nums">{aiDraft.qty.toLocaleString()}</span> ×{" "}
+                <span className="font-medium">{aiDraft.child.name}</span>{" "}
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.child.code}</span>{" "}
+                <span className="text-[var(--muted-foreground)]">per</span>{" "}
+                <span className="font-medium">{aiDraft.parent.name}</span>{" "}
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{aiDraft.parent.code}</span>
+              </div>
+            )}
             {aiDraft.note && <div className="text-[11px] text-[var(--warning)] mt-1">⚠ {aiDraft.note}</div>}
             <div className="mt-2 flex items-center gap-2">
               <Button size="sm" onClick={saveDraft} disabled={aiBusy}>
@@ -172,6 +220,33 @@ export function DemandBuilderClient({
           </div>
         )}
       </div>
+
+      {/* Active job-type / per-floor formulas */}
+      {formulas.length > 0 && (
+        <div className="card-surface overflow-hidden mb-3">
+          <div className="px-4 py-2.5 text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] border-b border-[var(--border)]">
+            Job-type formulas · {formulas.length}
+          </div>
+          <div className="divide-y divide-[var(--border)]">
+            {formulas.map((f) => (
+              <div key={f.id} className="flex items-center gap-2 px-4 py-2 text-sm">
+                <Network size={13} className="text-[var(--primary)] shrink-0" />
+                <span className="font-mono text-[11px] text-[var(--muted-foreground)]">{f.target_code}</span>
+                <span className="font-medium">{f.target_name}</span>
+                <span className="text-[var(--muted-foreground)]">— {f.summary}</span>
+                <button
+                  type="button"
+                  onClick={() => removeFormula(f.id)}
+                  title="Remove formula"
+                  className="ml-auto p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       <StatStrip className="mb-3">
         <StatTile label="Items with no demand" value={noDemandTotal.toLocaleString()} tone={noDemandTotal > 0 ? "warn" : "ok"} />

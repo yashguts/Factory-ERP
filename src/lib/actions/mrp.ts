@@ -121,12 +121,14 @@ export async function _getMrpDataUncached(
   const stageByJob = new Map<string, string>();
   // drive_type per in-production (in-scope) job, for the job-attribute demand rules.
   const driveByJob = new Map<string, string | null>();
+  // Full job attributes for editable demand formulas (per-job / per-floor + conditions).
+  const jobInfo = new Map<string, JobAttrs>();
   {
-    const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; drive_type: string | null }>(
+    const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; drive_type: string | null; door_type: string | null; capacity: string | null; floors: number | null }>(
       (from, to, withCount) => {
         let q = supabase
           .from("jobs")
-          .select("id, requirement_stage, drive_type", withCount ? { count: "exact" } : {});
+          .select("id, requirement_stage, drive_type, door_type, capacity, floors", withCount ? { count: "exact" } : {});
         if (adHoc) {
           q = q.in("id", jobIds!);
         } else {
@@ -141,6 +143,12 @@ export async function _getMrpDataUncached(
     for (const j of jobs) {
       stageByJob.set(j.id, j.requirement_stage ?? "new");
       driveByJob.set(j.id, j.drive_type ?? null);
+      jobInfo.set(j.id, {
+        drive_type: j.drive_type ?? null,
+        door_type: j.door_type ?? null,
+        capacity: j.capacity ?? null,
+        floors: j.floors ?? null,
+      });
     }
   }
   if (stageByJob.size === 0) return [];
@@ -274,6 +282,9 @@ export async function _getMrpDataUncached(
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
     // even when the BOM sum is empty, so the emptiness check comes AFTER this.
     await addJobDriveDemand(supabase, reqMap, driveByJob);
+    // Editable job-type / per-floor demand formulas (demand_formulas). No-op when
+    // the table is empty, so existing MRP is unchanged until a formula is defined.
+    await addDemandFormulaDemand(supabase, reqMap, jobInfo);
   }
 
   if (reqMap.size === 0) return [];
@@ -525,6 +536,81 @@ async function addJobDriveDemand(
       for (const j of jobIds) ex.jobIds.add(j);
     } else {
       reqMap.set(itemId, { total, bomIds: new Set(), jobIds });
+    }
+  }
+}
+
+interface JobAttrs {
+  drive_type: string | null;
+  door_type: string | null;
+  capacity: string | null;
+  floors: number | null;
+}
+
+/**
+ * Folds editable job-type / per-floor demand formulas (demand_formulas) into
+ * reqMap — the Phase-2 generalisation of JOB_DRIVE_DEMAND, but DB-backed + AI/UI
+ * authored. For each active formula: match the in-scope jobs by its conditions
+ * (drive_type / door_type / capacity arrays, OR-within + AND-across; min/max
+ * floors), then add factor × (matching jobs)  [per_job]  or  factor × Σ floors
+ * [per_floor], rounded up, attributed to those jobs. No-op when the table is
+ * empty, so MRP is unchanged until a formula exists.
+ */
+async function addDemandFormulaDemand(
+  supabase: ReturnType<typeof createCacheClient>,
+  reqMap: Map<string, ReqEntry>,
+  jobInfo: Map<string, JobAttrs>,
+): Promise<void> {
+  if (jobInfo.size === 0) return;
+  const { data: formulas, error } = await supabase
+    .from("demand_formulas")
+    .select("target_item_id, driver, factor, conditions")
+    .eq("is_active", true);
+  if (error) throw error;
+  if (!formulas || formulas.length === 0) return;
+
+  const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
+  const condMatch = (info: JobAttrs, cond: Record<string, unknown>): boolean => {
+    const arrOk = (key: "drive_type" | "door_type" | "capacity") => {
+      const allowed = cond[key];
+      if (!Array.isArray(allowed) || allowed.length === 0) return true;
+      const v = norm(info[key]);
+      if (!v) return false;
+      return allowed.some((a) => {
+        const an = norm(String(a));
+        return an !== "" && (v === an || v.includes(an) || an.includes(v));
+      });
+    };
+    if (!arrOk("drive_type") || !arrOk("door_type") || !arrOk("capacity")) return false;
+    const f = info.floors;
+    if (cond.min_floors != null && (f == null || f < Number(cond.min_floors))) return false;
+    if (cond.max_floors != null && (f == null || f > Number(cond.max_floors))) return false;
+    return true;
+  };
+
+  for (const fm of formulas as Record<string, unknown>[]) {
+    const targetId = fm.target_item_id as string;
+    const factor = Number(fm.factor) || 0;
+    if (factor <= 0) continue;
+    const cond = (fm.conditions as Record<string, unknown>) ?? {};
+    const jobIds = new Set<string>();
+    let floorsSum = 0;
+    for (const [jobId, info] of jobInfo) {
+      if (!condMatch(info, cond)) continue;
+      jobIds.add(jobId);
+      floorsSum += info.floors ?? 0;
+    }
+    if (jobIds.size === 0) continue;
+    const raw = fm.driver === "per_floor" ? factor * floorsSum : factor * jobIds.size;
+    const total = Math.ceil(raw - 1e-9);
+    if (total <= 0) continue;
+    const ex = reqMap.get(targetId);
+    if (ex) {
+      ex.total += total;
+      ex.jobIds = ex.jobIds ?? new Set();
+      for (const j of jobIds) ex.jobIds.add(j);
+    } else {
+      reqMap.set(targetId, { total, bomIds: new Set(), jobIds });
     }
   }
 }
