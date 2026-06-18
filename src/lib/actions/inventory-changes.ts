@@ -230,6 +230,39 @@ async function assembleRows(
     );
   }
 
+  // Resolve the source PO (number + id) for "po_receipt" movements so the feed
+  // can show + filter by PO number. txn.reference_id is the receipt id →
+  // purchase_order_receipts.po_id → purchase_orders.po_number.
+  const receiptIds = [
+    ...new Set(
+      txns
+        .filter((t) => t.reference_type === "po_receipt")
+        .map((t) => t.reference_id as string | null)
+        .filter((x): x is string => !!x),
+    ),
+  ];
+  const poByReceipt = new Map<string, { po_id: string; po_number: string | null }>();
+  if (receiptIds.length > 0) {
+    const { data: receipts } = await supabase
+      .from("purchase_order_receipts")
+      .select("id, po_id")
+      .in("id", receiptIds);
+    const poIds = [...new Set((receipts ?? []).map((r) => r.po_id as string).filter(Boolean))];
+    const poNum = new Map<string, string | null>();
+    if (poIds.length > 0) {
+      const { data: pos } = await supabase
+        .from("purchase_orders")
+        .select("id, po_number")
+        .in("id", poIds);
+      for (const p of pos ?? []) poNum.set(p.id as string, (p.po_number as string | null) ?? null);
+    }
+    for (const r of receipts ?? [])
+      poByReceipt.set(r.id as string, {
+        po_id: r.po_id as string,
+        po_number: poNum.get(r.po_id as string) ?? null,
+      });
+  }
+
   const itemRows: ItemChangeRow[] = logRows.map((row) => ({
     kind: "item",
     id: row.id,
@@ -253,7 +286,12 @@ async function assembleRows(
     const warehouse = flattenOne(t.warehouse as { name: string } | null);
     const type = t.transaction_type as TransactionType;
     const id = t.id as string;
-    const isReversal = t.reference_type === "txn_reversal";
+    const refType = (t.reference_type as string | null) ?? null;
+    const isReversal = refType === "txn_reversal";
+    const po =
+      refType === "po_receipt" && t.reference_id
+        ? poByReceipt.get(t.reference_id as string)
+        : undefined;
     return {
       kind: "stock",
       id,
@@ -267,6 +305,9 @@ async function assembleRows(
       warehouse_name: warehouse?.name ?? null,
       note: (t.notes as string | null) ?? null,
       can_undo: !isReversal && !reversedIds.has(id),
+      reference_type: refType,
+      po_id: po?.po_id ?? null,
+      po_number: po?.po_number ?? null,
     };
   });
 

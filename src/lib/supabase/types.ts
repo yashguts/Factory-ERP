@@ -303,6 +303,11 @@ export interface StockChangeRow {
   note: string | null;
   /** True when a reversing adjustment can be posted. */
   can_undo: boolean;
+  /** What produced this movement, e.g. "po_receipt" — lets the feed filter PO entries. */
+  reference_type: string | null;
+  /** For PO-receipt movements: the source purchase order (for showing + filtering by PO no). */
+  po_id: string | null;
+  po_number: string | null;
 }
 
 export type InventoryChangeRow = ItemChangeRow | StockChangeRow;

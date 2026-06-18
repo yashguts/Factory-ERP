@@ -94,6 +94,10 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   const [histFrom, setHistFrom] = useState("");
   const [histTo, setHistTo] = useState("");
 
+  // Feed filters — apply to whichever list is shown (day feed or item history).
+  const [typeFilter, setTypeFilter] = useState<"all" | "item" | "stock" | "po">("all");
+  const [textFilter, setTextFilter] = useState("");
+
   const fetchHistory = (
     item: { id: string; code: string; name: string },
     from: string,
@@ -219,10 +223,27 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
     );
   };
 
-  // The rows currently on screen: an item's full history (when one is picked)
-  // or the single-day feed. Each row is either an item edit or a stock move, so
-  // the export accessors branch on row.kind.
-  const exportRows = historyItem ? historyRows : initialRows;
+  const matchesFilter = (row: InventoryChangeRow): boolean => {
+    if (typeFilter === "item" && row.kind !== "item") return false;
+    if (typeFilter === "stock" && row.kind !== "stock") return false;
+    if (typeFilter === "po" && !(row.kind === "stock" && row.reference_type === "po_receipt"))
+      return false;
+    const q = textFilter.trim().toLowerCase();
+    if (q) {
+      const parts: (string | null)[] = [row.item_code, row.item_name];
+      if (row.kind === "stock") parts.push(row.po_number);
+      if (!parts.filter(Boolean).join(" ").toLowerCase().includes(q)) return false;
+    }
+    return true;
+  };
+
+  // The rows currently on screen: an item's full history (when one is picked) or
+  // the single-day feed, AFTER the active type/text filter. The export reflects
+  // exactly what's shown.
+  const sourceRows = historyItem ? historyRows : initialRows;
+  const visibleRows = sourceRows.filter(matchesFilter);
+  const filtering = typeFilter !== "all" || textFilter.trim() !== "";
+  const exportRows = visibleRows;
   const exportFilename = historyItem
     ? `inventory-changes-${historyItem.code}`
     : `inventory-changes-${date}`;
@@ -330,7 +351,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
       />
 
       {/* Item-history search */}
-      <div className="mb-4">
+      <div className="mb-3">
         <ItemHistorySearch
           selected={historyItem}
           onPick={loadHistory}
@@ -338,28 +359,71 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         />
       </div>
 
-      {/* Body: item history OR single-day feed */}
-      {historyItem ? (
-        historyLoading ? (
-          <EmptyState
-            icon={<Loader2 size={28} className="animate-spin" />}
-            title="Loading history..."
+      {/* Filters — slice by type (item / stock / PO receipts) and free text */}
+      <div className="mb-3 card-surface p-2.5 flex flex-wrap items-center gap-2">
+        <div className="inline-flex rounded-md border border-[var(--border)] overflow-hidden">
+          {([
+            ["all", "All"],
+            ["item", "Item edits"],
+            ["stock", "Stock"],
+            ["po", "PO receipts"],
+          ] as const).map(([val, label]) => (
+            <button
+              key={val}
+              type="button"
+              onClick={() => setTypeFilter(val)}
+              className={`px-2.5 py-1 text-xs cursor-pointer transition-colors ${
+                typeFilter === val
+                  ? "bg-[var(--primary)] text-[var(--primary-foreground)]"
+                  : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+              }`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <div className="relative flex-1 min-w-[200px] max-w-sm">
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-[var(--muted-foreground)] pointer-events-none" />
+          <Input
+            size="sm"
+            value={textFilter}
+            onChange={(e) => setTextFilter(e.target.value)}
+            placeholder="Filter by item code / name or PO number…"
+            className="pl-8 pr-7"
           />
-        ) : historyRows.length === 0 ? (
-          <EmptyState
-            icon={<History size={28} />}
-            title="No recorded changes for this item yet."
-          />
-        ) : (
-          <div className="space-y-2">{historyRows.map(renderRow)}</div>
-        )
-      ) : initialRows.length === 0 ? (
+          {textFilter && (
+            <button
+              type="button"
+              onClick={() => setTextFilter("")}
+              aria-label="Clear filter"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+            >
+              <X size={13} />
+            </button>
+          )}
+        </div>
+        <span className="text-xs text-[var(--muted-foreground)] ml-auto">{visibleRows.length} shown</span>
+      </div>
+
+      {/* Body: item history OR single-day feed (filtered) */}
+      {historyItem && historyLoading ? (
+        <EmptyState
+          icon={<Loader2 size={28} className="animate-spin" />}
+          title="Loading history..."
+        />
+      ) : visibleRows.length === 0 ? (
         <EmptyState
           icon={<History size={28} />}
-          title="No inventory changes were recorded on this date."
+          title={
+            filtering
+              ? "No changes match this filter."
+              : historyItem
+                ? "No recorded changes for this item yet."
+                : "No inventory changes were recorded on this date."
+          }
         />
       ) : (
-        <div className="space-y-2">{initialRows.map(renderRow)}</div>
+        <div className="space-y-2">{visibleRows.map(renderRow)}</div>
       )}
     </div>
   );
@@ -738,6 +802,15 @@ function StockChangeCard({
             <span className="font-medium truncate">
               {row.item_name ?? "(unknown item)"}
             </span>
+            {row.po_id && (
+              <Link
+                href={`/procurement/${row.po_id}`}
+                className="inline-flex items-center gap-1 rounded bg-[var(--accent)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--primary)] hover:underline"
+                title="Open this purchase order"
+              >
+                PO {row.po_number ?? "—"}
+              </Link>
+            )}
           </div>
 
           <div className="mt-2 text-sm flex items-center gap-2 flex-wrap">
