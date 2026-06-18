@@ -503,6 +503,34 @@ export interface PurchaseOrderLine {
   received_stock_qty: number | null;
 }
 
+// ── Packing lists ──────────────────────────────────────────────────────────
+// A comprehensive per-job shipment checklist following the factory's
+// finished-stock register section order. Document only (no inventory effect).
+export interface PackingList {
+  id: string;
+  job_id: string;
+  note: string | null;
+  seeded_from_bom: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackingListLine {
+  id: string;
+  packing_list_id: string;
+  /** packing-list-sections.ts key (e.g. "fs-007", "dp-001"). */
+  section_key: string;
+  /** Item being packed; null = free-text row not yet matched to inventory. */
+  item_id: string | null;
+  /** Captured/free-text name when item_id is null. */
+  label: string | null;
+  qty: number;
+  note: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Supabase Database type definition
 export interface Database {
   public: {

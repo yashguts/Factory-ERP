@@ -11,7 +11,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck } from "lucide-react";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, Package } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob } from "@/lib/actions/jobs";
@@ -374,6 +374,15 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             >
               <Truck className="h-4 w-4 mr-1" />
               Dispatch
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => router.push(`/jobs/${job.id}/packing-list`)}
+              title="Open the comprehensive packing list for this job"
+            >
+              <Package className="h-4 w-4 mr-1" />
+              Packing List
             </Button>
             <Button
               variant="secondary"
