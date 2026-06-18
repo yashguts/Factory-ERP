@@ -17,6 +17,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
+import { ExportButton } from "@/components/ui/export-button";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
 import Link from "next/link";
@@ -305,6 +306,30 @@ export function JobsClient({
               <Upload size={16} className="mr-2" />
               Import Excel
             </Button>
+            <ExportButton
+              rows={sorted}
+              filename={`jobs-${view}`}
+              sheetName="Jobs"
+              columns={[
+                { header: "Job #", field: "job_number" },
+                { header: "Customer", field: (j) => j.customer_name ?? "" },
+                { header: "Brand", field: (j) => j.brand ?? "" },
+                { header: "Location", field: (j) => j.location ?? "" },
+                { header: "Spec", field: (j) => j.spec_string ?? "" },
+                { header: "Structure", field: (j) => j.structure_included ?? "NA" },
+                { header: "Sent", field: (j) => STAGE_LABELS[j.stage ?? "new"] },
+                { header: "Required", field: (j) => STAGE_LABELS[j.requirement_stage ?? "new"] },
+                { header: "Req. Dispatch", field: (j) => j.requirement_dispatch_date ?? "" },
+                { header: "Status", field: (j) => STATUS_LABELS[j.status] },
+                {
+                  header: "Dispatch",
+                  field: (j) => {
+                    const st = dispatchStatus[j.id] ?? "none";
+                    return st === "full" ? "Dispatched" : st === "partial" ? "Partial" : "";
+                  },
+                },
+              ]}
+            />
           </>
         }
       />

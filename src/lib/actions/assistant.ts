@@ -13,6 +13,9 @@ import { searchItems } from "@/lib/actions/items";
 import { getInventoryHealth } from "@/lib/actions/inventory-health";
 import { getMrpData } from "@/lib/actions/mrp";
 import { searchOperations } from "@/lib/actions/operations";
+import { getCabinRequirements } from "@/lib/actions/cabin-program-plan";
+import { getProcurementData } from "@/lib/actions/procurement";
+import { getJobDispatchSummary } from "@/lib/actions/dispatch";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 
 const flat = <T>(rel: unknown): T | null =>
@@ -91,6 +94,29 @@ const TOOLS = [
     name: "list_jobs",
     description: "List the most recent job orders with customer, status, stage and required dispatch date.",
     input_schema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "cabin_requirements",
+    description:
+      "Cabin parts demanded by cabin jobs vs stock: per item the cabin type, finish, required qty, stock and shortfall (how many are short). Returns the most-short cabin items.",
+    input_schema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "procurement_on_order",
+    description:
+      "Purchasing / on-order status: per item the qty still on order (ordered minus received), already received, total ordered and supplier(s), plus the number of open purchase orders. Returns the items with the most on order.",
+    input_schema: { type: "object", additionalProperties: false, properties: {} },
+  },
+  {
+    name: "job_dispatch_status",
+    description:
+      "Dispatch status for a job: per BOM line how much is required, dispatched and remaining, plus the number of dispatch events. Look up the job by its number or customer name.",
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { query: { type: "string", description: "job number or customer name" } },
+      required: ["query"],
+    },
   },
 ];
 
@@ -200,6 +226,73 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
         .limit(30);
       return { jobs: data ?? [] };
     }
+    case "cabin_requirements": {
+      const rows = await getCabinRequirements();
+      const anyShort = rows.some((r) => r.shortfall > 0);
+      const picked = (anyShort ? rows.filter((r) => r.shortfall > 0) : rows)
+        .sort((a, b) => b.shortfall - a.shortfall)
+        .slice(0, 30)
+        .map((r) => ({
+          code: r.code,
+          name: r.name,
+          type: r.type,
+          finish: r.finish,
+          required: r.required,
+          stock: r.stock,
+          shortfall: r.shortfall,
+          job_count: r.job_count,
+        }));
+      return { count: picked.length, any_shortfall: anyShort, items: picked };
+    }
+    case "procurement_on_order": {
+      const data = await getProcurementData();
+      const items = [...data.byItem]
+        .sort((a, b) => b.on_order - a.on_order)
+        .slice(0, 30)
+        .map((r) => ({
+          code: r.code,
+          name: r.name,
+          on_order: r.on_order,
+          received: r.received,
+          ordered: r.ordered,
+          suppliers: r.suppliers,
+        }));
+      const openPos = data.orders.filter((o) => o.status === "draft" || o.status === "ordered").length;
+      return { open_purchase_orders: openPos, items };
+    }
+    case "job_dispatch_status": {
+      const supabase = createCacheClient();
+      const q = safeLike(String(input?.query ?? "").trim());
+      if (!q) return { found: false };
+      const { data: jobs } = await supabase
+        .from("jobs")
+        .select("id, job_number, customer_name")
+        .or(`job_number.ilike.%${q}%,customer_name.ilike.%${q}%`)
+        .limit(3);
+      if (!jobs?.length) return { found: false };
+      const best = jobs[0] as { id: string; job_number: string; customer_name: string };
+      const summary = await getJobDispatchSummary(best.id);
+      const lines = summary.lines.slice(0, 40).map((l) => ({
+        item_name: l.item_name,
+        required: l.required,
+        dispatched: l.dispatched,
+        remaining: l.remaining,
+      }));
+      const out: Record<string, unknown> = {
+        found: true,
+        job_number: best.job_number,
+        customer: best.customer_name,
+        dispatch_events: summary.dispatches.length,
+        line_count: summary.lines.length,
+        lines,
+      };
+      if (jobs.length > 1) {
+        out.other_matches = (jobs as { job_number: string; customer_name: string }[])
+          .slice(1)
+          .map((j) => ({ job_number: j.job_number, customer: j.customer_name }));
+      }
+      return out;
+    }
     default:
       return { error: `unknown tool ${name}` };
   }
@@ -207,7 +300,7 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
 
 const SYSTEM = `You are the assistant for "Factory ERP", an elevator-manufacturing ERP (inventory, BOMs, job orders, MRP, CNC/assembly programs, procurement) used by a factory team in India.
 
-Answer questions about their LIVE data by calling the provided read-only tools, then giving a short, factual answer. Always use a tool rather than guessing numbers. Quantities are in each item's own unit. If a tool returns nothing relevant, say so plainly. You can READ data but cannot make changes yet — if asked to change something, explain what you found and that edits aren't enabled here.
+Answer questions about their LIVE data by calling the provided read-only tools, then giving a short, factual answer. You can see inventory and stock health, material shortfalls (MRP), CNC/assembly programs, jobs and their bills of materials, cabin-part demand and shortfall, procurement & on-order quantities, and a job's dispatch status (required / dispatched / remaining per line). Always use a tool rather than guessing numbers. Quantities are in each item's own unit. If a tool returns nothing relevant, say so plainly. You can READ data but cannot make changes yet — if asked to change something, explain what you found and that edits aren't enabled here.
 
 Keep answers concise and practical: a sentence or two, plus a compact bullet list or small table when listing items. Don't dump raw JSON.`;
 

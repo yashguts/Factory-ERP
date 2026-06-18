@@ -9,6 +9,7 @@ import { Badge as UIBadge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ExportButton } from "@/components/ui/export-button";
 import {
   Undo2,
   Pencil,
@@ -218,6 +219,14 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
     );
   };
 
+  // The rows currently on screen: an item's full history (when one is picked)
+  // or the single-day feed. Each row is either an item edit or a stock move, so
+  // the export accessors branch on row.kind.
+  const exportRows = historyItem ? historyRows : initialRows;
+  const exportFilename = historyItem
+    ? `inventory-changes-${historyItem.code}`
+    : `inventory-changes-${date}`;
+
   return (
     <div>
       {/* Header */}
@@ -235,6 +244,47 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
         }${isPending ? " — refreshing..." : ""}`}
         actions={
           <>
+            <ExportButton
+              rows={exportRows}
+              filename={exportFilename}
+              sheetName="Changes"
+              columns={[
+                {
+                  header: "Date/Time",
+                  field: (r) => formatStamp(r.created_at, true),
+                },
+                {
+                  header: "Kind",
+                  field: (r) => (r.kind === "item" ? "Item edit" : "Stock move"),
+                },
+                {
+                  header: "Action",
+                  field: (r) =>
+                    r.kind === "item" ? r.action : TXN_LABELS[r.transaction_type],
+                },
+                { header: "Code", field: (r) => r.item_code ?? "" },
+                { header: "Item", field: (r) => r.item_name ?? "" },
+                {
+                  header: "Details",
+                  field: (r) =>
+                    r.kind === "item"
+                      ? r.changes
+                          .map(
+                            (c) =>
+                              `${c.label ?? c.field}: ${
+                                r.action === "create"
+                                  ? c.new_display ?? ""
+                                  : `${c.old_display ?? ""} → ${c.new_display ?? ""}`
+                              }`,
+                          )
+                          .join("; ")
+                      : `${r.quantity >= 0 ? "+" : ""}${r.quantity}${
+                          r.warehouse_name ? ` @ ${r.warehouse_name}` : ""
+                        }`,
+                },
+                { header: "Note", field: (r) => r.note ?? "" },
+              ]}
+            />
             <CalendarDays size={16} className="text-[var(--muted-foreground)]" />
             {historyItem ? (
               <>

@@ -12,6 +12,8 @@ import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ExportButton } from "@/components/ui/export-button";
+import type { ExportColumn } from "@/lib/export/xlsx";
 import {
   Table,
   TableHeader,
@@ -179,6 +181,90 @@ export function CabinJobsClient({
 
   const filtersActive = search.trim() !== "" || systemFilter !== "all" || materialFilter !== "all";
 
+  // View-aware export: each tab exports exactly the rows it's showing. The jobs
+  // tab exports the filtered+sorted job list; the finish/category tabs export
+  // their drilled-down items (one row per item, tagged with its group). The
+  // weekly tab is a per-week matrix (not flat) so it falls back to the job list.
+  const exportConfig = useMemo<{
+    rows: Record<string, string | number | null>[];
+    columns: ExportColumn<Record<string, string | number | null>>[];
+    filename: string;
+    sheet: string;
+  }>(() => {
+    if (view === "finish") {
+      const rows = finishReq.flatMap((g) =>
+        g.items.map((it) => ({
+          finish: g.finish ?? "(no finish set)",
+          code: it.code,
+          name: it.name,
+          cabin_type: it.cabin_type ?? "",
+          qty: it.qty,
+        })),
+      );
+      return {
+        rows,
+        columns: [
+          { header: "Finish", field: "finish" },
+          { header: "Code", field: "code" },
+          { header: "Item", field: "name" },
+          { header: "Category", field: "cabin_type" },
+          { header: "Qty", field: "qty" },
+        ],
+        filename: "cabin-requirement-by-finish",
+        sheet: "By finish",
+      };
+    }
+    if (view === "category") {
+      const rows = categoryReq.flatMap((g) =>
+        g.items.map((it) => ({
+          category: g.category,
+          code: it.code,
+          name: it.name,
+          finish: it.finish ?? "(no finish set)",
+          qty: it.qty,
+        })),
+      );
+      return {
+        rows,
+        columns: [
+          { header: "Category", field: "category" },
+          { header: "Code", field: "code" },
+          { header: "Item", field: "name" },
+          { header: "Finish", field: "finish" },
+          { header: "Qty", field: "qty" },
+        ],
+        filename: "cabin-requirement-by-category",
+        sheet: "By category",
+      };
+    }
+    // jobs (default) + weekly fall back to the job list.
+    const rows = sorted.map((j) => ({
+      job_number: j.job_number,
+      customer_name: j.customer_name ?? "",
+      platform: j.platform ?? "",
+      side_panel_material: j.side_panel_material ?? "",
+      line_count: j.line_count,
+      created_at: new Date(j.created_at).toLocaleDateString([], {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+      }),
+    }));
+    return {
+      rows,
+      columns: [
+        { header: "Job #", field: "job_number" },
+        { header: "Customer", field: "customer_name" },
+        { header: "Platform", field: "platform" },
+        { header: "Side Panel", field: "side_panel_material" },
+        { header: "Items", field: "line_count" },
+        { header: "Created", field: "created_at" },
+      ],
+      filename: "cabin-jobs",
+      sheet: "Cabin jobs",
+    };
+  }, [view, sorted, finishReq, categoryReq]);
+
   const SortHeader = ({ label, sortField, className }: { label: string; sortField: SortKey; className?: string }) => (
     <TableHead
       className={`cursor-pointer select-none hover:bg-[var(--muted)] transition-colors ${className ?? ""}`}
@@ -208,9 +294,17 @@ export function CabinJobsClient({
                   : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
-          <Button size="sm" onClick={() => router.push("/cabin-jobs/new")}>
-            <Plus size={16} className="mr-1.5" /> New Cabin Job
-          </Button>
+          <>
+            <ExportButton
+              rows={exportConfig.rows}
+              columns={exportConfig.columns}
+              filename={exportConfig.filename}
+              sheetName={exportConfig.sheet}
+            />
+            <Button size="sm" onClick={() => router.push("/cabin-jobs/new")}>
+              <Plus size={16} className="mr-1.5" /> New Cabin Job
+            </Button>
+          </>
         }
       />
 

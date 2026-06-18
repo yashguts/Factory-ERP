@@ -16,6 +16,8 @@ const SUGGESTIONS = [
   "How healthy is our inventory?",
   "What's the stock of guide rail 9X65X70?",
   "Which programs cut P2C-350?",
+  "What cabin parts are short?",
+  "Dispatch status for job <number>",
 ];
 
 export function AssistantClient() {
