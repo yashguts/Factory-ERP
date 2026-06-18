@@ -7,7 +7,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
-import { Toolbar } from "@/components/ui/toolbar";
+import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
+import { ExportButton } from "@/components/ui/export-button";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { EmptyState } from "@/components/ui/empty-state";
 import {
@@ -242,6 +243,25 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets }: P
           <option value="all">All items</option>
           <option value="excess">Sufficient only</option>
         </Select>
+        <ToolbarSpacer />
+        <ExportButton
+          rows={filtered}
+          filename={`mrp-${section ?? "all"}-requirements`}
+          sheetName="MRP"
+          columns={[
+            { header: "Category", field: "group" },
+            { header: "Code", field: "item_code" },
+            { header: "Item", field: "item_name" },
+            { header: "Sub-category", field: "category_name" },
+            { header: "UOM", field: "uom" },
+            { header: "Required", field: "total_required" },
+            { header: "In Stock", field: "total_stock" },
+            { header: "Shortfall", field: "shortfall" },
+            { header: "On order", field: "on_order" },
+            { header: "To buy", field: "to_buy" },
+            { header: "Jobs", field: "job_count" },
+          ]}
+        />
       </Toolbar>
 
       {filtered.length === 0 ? (
