@@ -1,9 +1,11 @@
 "use client";
 
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOperator } from "@/lib/jobs/use-operator";
+import { getGadDriftCount } from "@/lib/actions/gad-alert-count";
 import {
   Package,
   ClipboardList,
@@ -84,14 +86,26 @@ const navGroups: { label: string; items: NavItem[] }[] = [
 
 const allItems = navGroups.flatMap((g) => g.items);
 
-/**
- * `badges` maps a nav href to a count rendered as a red pill on that item
- * (e.g. /jobs -> number of jobs whose GAD changed after the BOM was defined).
- * Fed from the server layout so the count is fresh on every navigation.
- */
-export function Sidebar({ badges = {} }: { badges?: Record<string, number> }) {
+export function Sidebar() {
   const pathname = usePathname();
   const { operator, ensureOperator, setOperator } = useOperator();
+
+  // GAD-drift count for the "Job Orders" red badge. Fetched CLIENT-SIDE here —
+  // not in the server layout — so it never blocks a save's revalidation render
+  // (which previously made every save hang). Refreshes on navigation; the
+  // underlying action is cached (120s) so repeat calls are cheap.
+  const [gadDrift, setGadDrift] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    getGadDriftCount()
+      .then((n) => {
+        if (alive) setGadDrift(n);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [pathname]);
 
   const activeHref = allItems
     .map((i) => i.href)
@@ -137,7 +151,7 @@ export function Sidebar({ badges = {} }: { badges?: Record<string, number> }) {
               {group.items.map((item) => {
                 const Icon = item.icon;
                 const isActive = item.href === activeHref;
-                const badge = badges[item.href] ?? 0;
+                const badge = item.href === "/jobs" ? gadDrift : 0;
                 return (
                   <Link
                     key={item.href}

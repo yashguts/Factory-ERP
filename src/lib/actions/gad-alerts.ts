@@ -59,7 +59,6 @@ export const getJobsWithGadDrift = unstable_cache(
   { revalidate: 120, tags: ["jobs", "gad-alerts"] },
 );
 
-/** Count only — for the sidebar badge. */
-export async function getGadDriftCount(): Promise<number> {
-  return (await getJobsWithGadDrift()).length;
-}
+// The count-only helper for the sidebar badge lives in ./gad-alert-count
+// (its own "use server" file with only-async exports) so the CLIENT Sidebar can
+// import it without dragging this file's unstable_cache const into the client.
