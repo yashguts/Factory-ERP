@@ -19,8 +19,11 @@ export interface PackingRowState {
 interface PackingRowProps {
   sectionKey: string;
   sectionLabel: string;
-  /** Search hint (column-B base name from the register). */
+  /** Placeholder hint — an example specification for this particular. */
   hint?: string;
+  /** Free-text line (fastener / kit / consumable): plain Specification text, no
+   *  inventory search. The typed text is stored in `row.name`. */
+  freeText?: boolean;
   row: PackingRowState;
   onUpdate: (patch: Partial<PackingRowState>) => void;
   onRemove: () => void;
@@ -33,7 +36,51 @@ interface PackingRowProps {
  * the page can show hundreds of these. The search dropdown only fetches when
  * the input is focused/open (no work for collapsed/idle rows).
  */
-export function PackingRow({
+export function PackingRow(props: PackingRowProps) {
+  if (props.freeText) return <FreeTextRow {...props} />;
+  return <ItemSearchRow {...props} />;
+}
+
+const QtyCell = ({ row, onUpdate, onQtyEnter }: Pick<PackingRowProps, "row" | "onUpdate" | "onQtyEnter">) => (
+  <input
+    type="number"
+    min={0}
+    step="any"
+    inputMode="decimal"
+    value={row.qty || ""}
+    onChange={(e) => onUpdate({ qty: e.target.value ? Number(e.target.value) : 0 })}
+    onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); onQtyEnter?.(); } }}
+    placeholder="Qty"
+    className="w-16 h-7 px-1.5 text-[13px] text-right rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] tabular-nums"
+  />
+);
+
+/** Free-text Specification line — for fasteners / kits / consumables. */
+function FreeTextRow({ hint, row, onUpdate, onRemove, onQtyEnter }: PackingRowProps) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <input
+        type="text"
+        value={row.name ?? ""}
+        onChange={(e) => onUpdate({ name: e.target.value })}
+        placeholder={hint ? `e.g. ${hint}` : "Specification…"}
+        className="flex-1 min-w-0 h-7 px-2 text-[13px] rounded border border-[var(--border)] bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]"
+      />
+      <QtyCell row={row} onUpdate={onUpdate} onQtyEnter={onQtyEnter} />
+      <span className="w-7 shrink-0" />
+      <button
+        type="button"
+        onClick={onRemove}
+        title="Remove line"
+        className="p-1 rounded text-[var(--muted-foreground)] hover:text-red-600 hover:bg-red-50 cursor-pointer shrink-0"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+function ItemSearchRow({
   sectionKey,
   sectionLabel,
   hint,
