@@ -16,6 +16,8 @@ import { searchOperations } from "@/lib/actions/operations";
 import { getCabinRequirements } from "@/lib/actions/cabin-program-plan";
 import { getProcurementData } from "@/lib/actions/procurement";
 import { getJobDispatchSummary } from "@/lib/actions/dispatch";
+import { compileDemandRule, type CompiledRuleDraft } from "@/lib/actions/demand-rules";
+import { searchAuditedPrograms } from "@/lib/actions/operation-runs";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 
 const flat = <T>(rel: unknown): T | null =>
@@ -29,8 +31,21 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
 }
+/** A change the assistant has DRAFTED for the user to confirm. The AI never
+ *  writes — it fills one of these; the client calls the real action on confirm. */
+export type ActionProposal =
+  | { kind: "demand_rule"; draft: CompiledRuleDraft }
+  | {
+      kind: "program_run";
+      operation_id: string;
+      program_name: string;
+      program_code: string | null;
+      machine: string;
+      run_date: string;
+      runs_count: number;
+    };
 export type AskResult =
-  | { ok: true; answer: string; toolsUsed: string[] }
+  | { ok: true; answer: string; toolsUsed: string[]; proposal?: ActionProposal }
   | { ok: false; error: string };
 
 interface AnthropicBlock {
@@ -116,6 +131,32 @@ const TOOLS = [
       additionalProperties: false,
       properties: { query: { type: "string", description: "job number or customer name" } },
       required: ["query"],
+    },
+  },
+  {
+    name: "propose_demand_rule",
+    description:
+      "Draft a demand rule from the user's plain-English wording (e.g. '2 guide shoes per safety frame', '1 controller stand per MRL job', '1 buffer per 4 floors'). Does NOT save — returns a draft the user confirms in the UI. Use when the user asks to add / define / create a demand rule or formula.",
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: { rule_text: { type: "string", description: "the user's description of the rule, verbatim" } },
+      required: ["rule_text"],
+    },
+  },
+  {
+    name: "propose_program_run",
+    description:
+      "Draft a daily program-run log: which AUDITED program ran, on what date, how many times. Does NOT save — the user confirms in the UI; on confirm it consumes the program's input sheets and produces its outputs in stock. Use when the user says a program ran or wants to log production.",
+    input_schema: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        program_query: { type: "string", description: "program name or code" },
+        run_date: { type: "string", description: "YYYY-MM-DD; omit for today" },
+        runs_count: { type: "number", description: "how many times it ran (whole number > 0)" },
+      },
+      required: ["program_query", "runs_count"],
     },
   },
 ];
@@ -300,7 +341,12 @@ async function runTool(name: string, input: Record<string, unknown>): Promise<un
 
 const SYSTEM = `You are the assistant for "Factory ERP", an elevator-manufacturing ERP (inventory, BOMs, job orders, MRP, CNC/assembly programs, procurement) used by a factory team in India.
 
-Answer questions about their LIVE data by calling the provided read-only tools, then giving a short, factual answer. You can see inventory and stock health, material shortfalls (MRP), CNC/assembly programs, jobs and their bills of materials, cabin-part demand and shortfall, procurement & on-order quantities, and a job's dispatch status (required / dispatched / remaining per line). Always use a tool rather than guessing numbers. Quantities are in each item's own unit. If a tool returns nothing relevant, say so plainly. You can READ data but cannot make changes yet — if asked to change something, explain what you found and that edits aren't enabled here.
+Answer questions about their LIVE data by calling the read-only tools, then giving a short, factual answer. You can see inventory and stock health, material shortfalls (MRP), CNC/assembly programs, jobs and their bills of materials, cabin-part demand and shortfall, procurement & on-order quantities, and a job's dispatch status (required / dispatched / remaining per line). Always use a tool rather than guessing numbers. Quantities are in each item's own unit. If a tool returns nothing relevant, say so plainly.
+
+You can also DRAFT two changes. You NEVER save anything yourself — you fill a draft and the user reviews and confirms it with a button in the UI:
+- propose_demand_rule: when the user wants to add / define a demand rule or formula (e.g. "2 guide shoes per safety frame", "1 controller stand per MRL job", "1 buffer per 4 floors"). Pass their wording as rule_text.
+- propose_program_run: when the user says a program ran / wants to log production. Once the user confirms, it consumes the program's input sheets and produces its outputs in stock. Only audited programs can be logged.
+After drafting, briefly tell the user what you drafted and that they can confirm it below. Never claim something is saved — confirmation happens in the UI, not here.
 
 Keep answers concise and practical: a sentence or two, plus a compact bullet list or small table when listing items. Don't dump raw JSON.`;
 
@@ -314,6 +360,9 @@ export async function askAssistant(messages: ChatMessage[]): Promise<AskResult> 
     content: m.content,
   }));
   const toolsUsed: string[] = [];
+  let proposal: ActionProposal | undefined;
+  const today = new Date().toISOString().slice(0, 10);
+  const system = `${SYSTEM}\n\nToday's date is ${today}.`;
 
   for (let step = 0; step < MAX_STEPS; step++) {
     let resp: Response;
@@ -321,7 +370,7 @@ export async function askAssistant(messages: ChatMessage[]): Promise<AskResult> 
       resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-        body: JSON.stringify({ model: MODEL, max_tokens: 1500, system: SYSTEM, tools: TOOLS, messages: convo }),
+        body: JSON.stringify({ model: MODEL, max_tokens: 1500, system, tools: TOOLS, messages: convo }),
       });
     } catch {
       return { ok: false, error: "Couldn't reach the AI service — try again." };
@@ -342,7 +391,50 @@ export async function askAssistant(messages: ChatMessage[]): Promise<AskResult> 
           toolsUsed.push(b.name);
           let result: unknown;
           try {
-            result = await runTool(b.name, b.input ?? {});
+            if (b.name === "propose_demand_rule") {
+              const compiled = await compileDemandRule(String(b.input?.rule_text ?? ""));
+              if (compiled.ok) {
+                proposal = { kind: "demand_rule", draft: compiled.draft };
+                result = {
+                  status: "drafted",
+                  restatement: compiled.draft.restatement,
+                  confidence: compiled.draft.confidence,
+                  message: "Draft ready — tell the user what you drafted; they confirm it below. Do not call a propose tool again.",
+                };
+              } else {
+                result = { error: compiled.error };
+              }
+            } else if (b.name === "propose_program_run") {
+              const hits = await searchAuditedPrograms(String(b.input?.program_query ?? ""), 5);
+              const count = Number(b.input?.runs_count);
+              if (!hits.length) {
+                result = { error: "No audited program matches that name/code — only audited programs can be logged." };
+              } else if (!Number.isFinite(count) || count <= 0) {
+                result = { error: "Need how many times it ran (a whole number greater than 0)." };
+              } else {
+                const p = hits[0];
+                const runDate = String(b.input?.run_date ?? today);
+                proposal = {
+                  kind: "program_run",
+                  operation_id: p.id,
+                  program_name: p.name,
+                  program_code: p.code,
+                  machine: p.machine,
+                  run_date: runDate,
+                  runs_count: count,
+                };
+                result = {
+                  status: "drafted",
+                  program: p.name,
+                  date: runDate,
+                  count,
+                  message: "Draft ready — tell the user; they confirm it below.",
+                  other_matches: hits.slice(1).map((h) => h.name),
+                };
+              }
+            } else {
+              result = await runTool(b.name, b.input ?? {});
+            }
           } catch (e) {
             result = { error: e instanceof Error ? e.message : "tool failed" };
           }
@@ -362,7 +454,7 @@ export async function askAssistant(messages: ChatMessage[]): Promise<AskResult> 
       .map((b) => b.text)
       .join("\n")
       .trim();
-    return { ok: true, answer: text || "(no answer)", toolsUsed: [...new Set(toolsUsed)] };
+    return { ok: true, answer: text || "(no answer)", toolsUsed: [...new Set(toolsUsed)], proposal };
   }
   return { ok: false, error: "That needed too many steps — please narrow the question." };
 }
