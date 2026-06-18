@@ -20,6 +20,7 @@ import {
   Settings,
   LayoutGrid,
   Activity,
+  Sparkles,
   LucideIcon,
 } from "lucide-react";
 
@@ -71,6 +72,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   {
     label: "Admin",
     items: [
+      { href: "/assistant", label: "Assistant", icon: Sparkles },
       { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
