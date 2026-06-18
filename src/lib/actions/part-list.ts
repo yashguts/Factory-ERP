@@ -20,7 +20,6 @@
  * ------------------------------------------------------------------ */
 
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { searchItems } from "@/lib/actions/items";
 
 // Extraction/matching from (mostly clean) text is latency-sensitive and runs
 // inside the serverless function timeout — use the FAST model so long lists
@@ -397,16 +396,38 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
   }
 
   if (needResolve.length) {
-    const candLists = await Promise.all(
-      needResolve.map((t) => searchItems(t.query, undefined, 6).catch(() => [])),
-    );
+    // Fuzzy candidates for EVERY line in one round-trip (pg_trgm trigram search) —
+    // robust to wording differences ("Filler Weight 850/150 MS" -> the catalog
+    // name). The AI then picks the exact variant from each line's candidates.
+    type Cand = { id: string; code: string | null; name: string | null; category: string | null; uom: string | null };
+    const candLists: Cand[][] = needResolve.map(() => []);
+    try {
+      const { data: rows } = await supabase.rpc("match_items_fuzzy_batch", {
+        queries: needResolve.map((t) => t.query),
+        lim: 12,
+      });
+      for (const r of (rows ?? []) as Record<string, unknown>[]) {
+        const idx = Number(r.q_index) - 1; // RPC q_index is 1-based
+        if (idx >= 0 && idx < candLists.length) {
+          candLists[idx].push({
+            id: r.id as string,
+            code: (r.code as string | null) ?? null,
+            name: (r.name as string | null) ?? null,
+            category: (r.category_name as string | null) ?? null,
+            uom: (r.uom as string | null) ?? null,
+          });
+        }
+      }
+    } catch (e) {
+      console.error("[part-list] fuzzy match failed", e);
+    }
 
     const picks = new Map<number, { item_id: string | null; confidence: "high" | "medium" | "low" }>();
     const resolvable = needResolve
       .map((t, i) => ({
         line_index: i,
         text: t.raw_text,
-        candidates: candLists[i].map((c) => ({ id: c.id, code: c.code, name: c.name, category: c.category_name })),
+        candidates: candLists[i].map((c) => ({ id: c.id, code: c.code, name: c.name, category: c.category })),
       }))
       .filter((b) => b.candidates.length);
 
@@ -476,7 +497,7 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
       const pick = picks.get(i);
       const chosen = pick?.item_id ? cands.find((c) => c.id === pick.item_id) : undefined;
       if (chosen) {
-        resolved.push({ item_id: chosen.id, code: chosen.code, name: chosen.name, uom: chosen.uom_abbreviation, qty: lineQty(t.quantity), raw_text: t.raw_text, confidence: pick?.confidence ?? "low" });
+        resolved.push({ item_id: chosen.id, code: chosen.code, name: chosen.name, uom: chosen.uom, qty: lineQty(t.quantity), raw_text: t.raw_text, confidence: pick?.confidence ?? "low" });
       } else {
         unmatchedRaw.push({ raw_text: t.raw_text, quantity: t.quantity });
       }
