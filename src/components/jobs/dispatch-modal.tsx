@@ -45,6 +45,9 @@ interface Row {
   closeLine: boolean;
   // For items matched from an uploaded part list — flags rows to double-check.
   confidence?: "high" | "medium" | "low";
+  // Extra (ad-hoc) items only: total needed for the job. When set, the unsent
+  // balance (needed − qty) is tracked as due (the item is added to the BOM).
+  needed?: number | null;
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -288,6 +291,9 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           // A ticked under-dispatch (partial OR qty 0) revises the BOM requirement.
           revised_required:
             r.closeLine && isUnderDispatch(r) ? revisedRequiredFor(r) : null,
+          // Ad-hoc item with a "needed" total → track the unsent balance as due.
+          required:
+            r.job_bom_line_id == null && r.needed != null && r.needed > 0 ? r.needed : null,
         })),
       });
       if (!res.ok) {
@@ -448,6 +454,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
                       key={row._key}
                       row={row}
                       onQty={(q) => updateRow(row._key, { qty: q })}
+                      onNeeded={(n) => updateRow(row._key, { needed: n })}
                       onRemove={() => removeRow(row._key)}
                     />
                   ))}
@@ -661,45 +668,72 @@ function DispatchRow({
 function ExtraItemRow({
   row,
   onQty,
+  onNeeded,
   onRemove,
 }: {
   row: Row;
   onQty: (q: number) => void;
+  onNeeded: (n: number | null) => void;
   onRemove: () => void;
 }) {
+  const needed = row.needed ?? 0;
+  const due = needed > row.qty ? needed - row.qty : 0;
   return (
-    <div className="grid grid-cols-[1fr_auto] gap-2 px-3 py-2 items-center">
-      <div className="min-w-0">
-        <div className="text-sm font-medium truncate">{row.item_name}</div>
-        <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-2 flex-wrap">
-          <span className="font-mono">{row.item_code}</span>
-          <span className="italic text-[var(--primary)]">extra item</span>
-          {row.confidence && row.confidence !== "high" && (
-            <span className="inline-flex items-center gap-0.5 italic text-[var(--warning)]">
-              <AlertTriangle className="h-3 w-3" /> verify match
-            </span>
-          )}
+    <div>
+      <div className="grid grid-cols-[1fr_auto] gap-2 px-3 py-2 items-center">
+        <div className="min-w-0">
+          <div className="text-sm font-medium truncate">{row.item_name}</div>
+          <div className="text-[11px] text-[var(--muted-foreground)] flex items-center gap-2 flex-wrap">
+            <span className="font-mono">{row.item_code}</span>
+            <span className="italic text-[var(--primary)]">extra item</span>
+            {row.confidence && row.confidence !== "high" && (
+              <span className="inline-flex items-center gap-0.5 italic text-[var(--warning)]">
+                <AlertTriangle className="h-3 w-3" /> verify match
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="flex items-end justify-end gap-1.5">
+          <label className="flex flex-col items-center">
+            <span className="text-[9px] uppercase tracking-wide text-[var(--muted-foreground)]">Needed</span>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={row.needed ?? ""}
+              placeholder="—"
+              onChange={(e) => onNeeded(e.target.value ? Number(e.target.value) : null)}
+              title="Total needed for this job. Leave blank for a one-off; fill it to track the unsent balance as still due."
+              className="w-14 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            />
+          </label>
+          <label className="flex flex-col items-center">
+            <span className="text-[9px] uppercase tracking-wide text-[var(--muted-foreground)]">Sending</span>
+            <input
+              type="number"
+              min={0}
+              step="any"
+              value={row.qty || ""}
+              onChange={(e) => onQty(e.target.value ? Number(e.target.value) : 0)}
+              className="w-16 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
+            />
+          </label>
+          <span className="w-7 pb-1.5 text-[11px] text-[var(--muted-foreground)] text-center shrink-0">{row.uom || "—"}</span>
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Remove"
+            className="p-1 mb-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
-      <div className="flex items-center justify-end gap-1.5">
-        <input
-          type="number"
-          min={0}
-          step="any"
-          value={row.qty || ""}
-          onChange={(e) => onQty(e.target.value ? Number(e.target.value) : 0)}
-          className="w-16 h-8 px-2 text-sm text-right rounded-md border border-[var(--border)] bg-[var(--background)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)]"
-        />
-        <span className="w-7 text-[11px] text-[var(--muted-foreground)] text-center shrink-0">{row.uom || "—"}</span>
-        <button
-          type="button"
-          onClick={onRemove}
-          title="Remove"
-          className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
-        >
-          <X className="h-3.5 w-3.5" />
-        </button>
-      </div>
+      {due > 0 && (
+        <div className="-mt-1 px-3 pb-1.5 text-[11px] text-[var(--warning)]">
+          {due.toLocaleString()} will stay <b>due</b> on this job (tracked for a later dispatch).
+        </div>
+      )}
     </div>
   );
 }

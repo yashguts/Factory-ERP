@@ -325,6 +325,13 @@ export interface DispatchLineInput {
    * balance stays required. Only meaningful for real BOM lines (job_bom_line_id).
    */
   revised_required?: number | null;
+  /**
+   * For an AD-HOC item (no job_bom_line_id): the TOTAL needed for this job. When
+   * given, the item is added to the job's BOM with this requirement and this
+   * dispatch links to it — so the un-sent balance (needed − qty) is tracked as
+   * "due" on later dispatches and in MRP. Omitted = a one-off, not tracked.
+   */
+  required?: number | null;
 }
 
 export async function createDispatch(input: {
@@ -371,6 +378,55 @@ export async function createDispatch(input: {
       .select("id")
       .single();
     if (he) return { ok: false, error: he.message };
+
+    // Ad-hoc items given a "needed" total become TRACKED: add them to the job's
+    // BOM (required = needed) and link this dispatch to them, so the un-sent
+    // balance shows as due later. Done before building the dispatch rows so they
+    // carry the new job_bom_line_id. Best-effort — a hiccup here must not lose the
+    // dispatch (the line just stays a plain ad-hoc one).
+    const trackable = dispatchLines.filter(
+      (l) => !l.job_bom_line_id && l.item_id && l.required != null && Number(l.required) > 0,
+    );
+    if (trackable.length > 0) {
+      try {
+        let { data: hdr } = await supabase
+          .from("job_bom_headers")
+          .select("id")
+          .eq("job_id", input.job_id)
+          .limit(1)
+          .maybeSingle();
+        if (!hdr) {
+          const { data: created } = await supabase
+            .from("job_bom_headers")
+            .insert({ job_id: input.job_id })
+            .select("id")
+            .single();
+          hdr = created ?? null;
+        }
+        if (hdr) {
+          for (const l of trackable) {
+            const cat = l.category?.trim() || "Additional Items";
+            const { data: bl } = await supabase
+              .from("job_bom_lines")
+              .insert({
+                job_bom_id: (hdr as { id: string }).id,
+                category: cat,
+                item_id: l.item_id,
+                required_quantity: Math.max(Number(l.required), Number(l.qty)),
+                sort_order: 9999,
+              })
+              .select("id")
+              .single();
+            if (bl) {
+              l.job_bom_line_id = (bl as { id: string }).id;
+              l.category = cat;
+            }
+          }
+        }
+      } catch (e) {
+        console.error("dispatch: tracking ad-hoc items failed", e);
+      }
+    }
 
     const rows = dispatchLines.map((l) => ({
       dispatch_id: head.id as string,
