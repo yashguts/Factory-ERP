@@ -25,7 +25,10 @@ export interface PoListRow extends PurchaseOrder {
   line_count: number;
   total_qty: number;
   total_cost: number;
+  /** Lines fully received (received_qty ≥ qty). */
   received_lines: number;
+  /** Any quantity received at all — catches a single line received in part. */
+  any_received: boolean;
 }
 
 export interface PoLineDetail {
@@ -95,20 +98,21 @@ async function _getPurchaseOrdersUncached(): Promise<PoListRow[]> {
 
   const agg = new Map<
     string,
-    { line_count: number; total_qty: number; total_cost: number; received_lines: number }
+    { line_count: number; total_qty: number; total_cost: number; received_lines: number; any_received: boolean }
   >();
   for (const l of lines) {
-    const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 };
+    const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0, any_received: false };
     a.line_count += 1;
     a.total_qty += Number(l.qty) || 0;
     a.total_cost += (Number(l.qty) || 0) * (Number(l.unit_cost) || 0);
     if (Number(l.received_qty) >= Number(l.qty) && Number(l.qty) > 0) a.received_lines += 1;
+    if (Number(l.received_qty) > 0) a.any_received = true;
     agg.set(l.po_id, a);
   }
 
   return orders.map((o) => ({
     ...o,
-    ...(agg.get(o.id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 }),
+    ...(agg.get(o.id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0, any_received: false }),
   }));
 }
 
@@ -268,17 +272,18 @@ async function _getProcurementDataUncached(): Promise<ProcurementData> {
   const poById = new Map(pos.map((p) => [p.id, p]));
 
   // Orders (one row per PO, with aggregates) — same shape as getPurchaseOrders.
-  const agg = new Map<string, { line_count: number; total_qty: number; total_cost: number; received_lines: number }>();
+  const agg = new Map<string, { line_count: number; total_qty: number; total_cost: number; received_lines: number; any_received: boolean }>();
   for (const l of lines) {
-    const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 };
+    const a = agg.get(l.po_id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0, any_received: false };
     const qty = Number(l.qty) || 0, cost = Number(l.unit_cost) || 0, rec = Number(l.received_qty) || 0;
     a.line_count += 1; a.total_qty += qty; a.total_cost += qty * cost;
     if (rec >= qty && qty > 0) a.received_lines += 1;
+    if (rec > 0) a.any_received = true;
     agg.set(l.po_id, a);
   }
   const orders: PoListRow[] = pos.map((o) => ({
     ...o,
-    ...(agg.get(o.id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0 }),
+    ...(agg.get(o.id) ?? { line_count: 0, total_qty: 0, total_cost: 0, received_lines: 0, any_received: false }),
   }));
 
   // By item (cancelled POs excluded).

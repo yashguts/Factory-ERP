@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { KpiCard, KpiGrid } from "@/components/ui/kpi-card";
@@ -20,27 +19,20 @@ import {
   generateDraftPosFromShortfall,
   type ProcurementData,
 } from "@/lib/actions/procurement";
-import type { PurchaseOrderStatus } from "@/lib/supabase/types";
-
-const STATUS_BADGE: Record<PurchaseOrderStatus, BadgeVariant> = {
-  draft: "neutral",
-  ordered: "blue",
-  received: "green",
-  cancelled: "red",
-};
-const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
-  draft: "Draft",
-  ordered: "Ordered",
-  received: "Received",
-  cancelled: "Cancelled",
-};
+import {
+  orderStatus,
+  orderStatusKey,
+  receiptStatus,
+  receiptStatusKey,
+} from "@/lib/procurement-status";
 
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const qty = (n: number) => (Number.isInteger(n) ? n.toLocaleString() : (Math.round(n * 100) / 100).toLocaleString());
 const fmtDate = (d: string | null) => (d ? new Date(d).toLocaleDateString("en-IN") : "—");
 
 type View = "orders" | "byitem" | "bysupplier";
-type StatusTab = "all" | PurchaseOrderStatus;
+type OrderTab = "all" | "draft" | "ordered" | "closed" | "cancelled";
+type ReceiptTab = "all" | "pending" | "partial" | "received";
 
 export function ProcurementClient({ data }: { data: ProcurementData }) {
   const { orders, byItem, bySupplier } = data;
@@ -48,11 +40,27 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
   const [view, setView] = useState<View>("orders");
-  const [statusTab, setStatusTab] = useState<StatusTab>("all");
+  const [orderTab, setOrderTab] = useState<OrderTab>("all");
+  const [receiptTab, setReceiptTab] = useState<ReceiptTab>("all");
 
   const statusCounts = useMemo(() => {
     const c = { all: orders.length, draft: 0, ordered: 0, received: 0, cancelled: 0 };
     for (const o of orders) c[o.status] += 1;
+    return c;
+  }, [orders]);
+
+  // The two orthogonal status axes, for the filter tabs.
+  const orderCounts = useMemo(() => {
+    const c = { draft: 0, ordered: 0, closed: 0, cancelled: 0 };
+    for (const o of orders) c[orderStatusKey(o.status)] += 1;
+    return c;
+  }, [orders]);
+  const receiptCounts = useMemo(() => {
+    const c = { pending: 0, partial: 0, received: 0 };
+    for (const o of orders) {
+      const k = receiptStatusKey({ status: o.status, anyReceived: o.any_received });
+      if (k !== "none") c[k] += 1;
+    }
     return c;
   }, [orders]);
 
@@ -66,8 +74,17 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
   }, [orders, byItem]);
 
   const filteredOrders = useMemo(
-    () => (statusTab === "all" ? orders : orders.filter((o) => o.status === statusTab)),
-    [orders, statusTab],
+    () =>
+      orders.filter((o) => {
+        if (orderTab !== "all" && orderStatusKey(o.status) !== orderTab) return false;
+        if (
+          receiptTab !== "all" &&
+          receiptStatusKey({ status: o.status, anyReceived: o.any_received }) !== receiptTab
+        )
+          return false;
+        return true;
+      }),
+    [orders, orderTab, receiptTab],
   );
 
   const handleGenerate = () => {
@@ -103,7 +120,17 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                 columns={[
                   { header: "PO #", field: (o) => o.po_number || o.note || "" },
                   { header: "Supplier", field: (o) => o.supplier_name || "Unassigned" },
-                  { header: "Status", field: (o) => STATUS_LABEL[o.status] },
+                  { header: "Order", field: (o) => orderStatus(o.status).label },
+                  {
+                    header: "Receipt",
+                    field: (o) =>
+                      receiptStatus({
+                        status: o.status,
+                        lineCount: o.line_count,
+                        receivedLines: o.received_lines,
+                        anyReceived: o.any_received,
+                      })?.label ?? "—",
+                  },
                   { header: "Items", field: "line_count" },
                   { header: "Qty", field: "total_qty" },
                   { header: "Est. cost", field: "total_cost" },
@@ -212,18 +239,36 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
           </div>
         ) : (
           <>
-            <div className="mb-3">
-              <Tabs
-                variant="underline"
-                value={statusTab}
-                onChange={(v) => setStatusTab(v as StatusTab)}
-                tabs={[
-                  { value: "all", label: "All", count: statusCounts.all },
-                  { value: "draft", label: "Draft", count: statusCounts.draft },
-                  { value: "ordered", label: "Ordered", count: statusCounts.ordered },
-                  { value: "received", label: "Received", count: statusCounts.received },
-                ]}
-              />
+            <div className="mb-3 space-y-1.5">
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] w-16 shrink-0">Order</span>
+                <Tabs
+                  variant="underline"
+                  value={orderTab}
+                  onChange={(v) => setOrderTab(v as OrderTab)}
+                  tabs={[
+                    { value: "all", label: "All", count: orders.length },
+                    { value: "draft", label: "Draft", count: orderCounts.draft },
+                    { value: "ordered", label: "Ordered", count: orderCounts.ordered },
+                    { value: "closed", label: "Closed", count: orderCounts.closed },
+                    { value: "cancelled", label: "Cancelled", count: orderCounts.cancelled },
+                  ]}
+                />
+              </div>
+              <div className="flex items-center gap-2.5 flex-wrap">
+                <span className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)] w-16 shrink-0">Receipt</span>
+                <Tabs
+                  variant="underline"
+                  value={receiptTab}
+                  onChange={(v) => setReceiptTab(v as ReceiptTab)}
+                  tabs={[
+                    { value: "all", label: "All", count: orders.length },
+                    { value: "pending", label: "Pending", count: receiptCounts.pending },
+                    { value: "partial", label: "Partial", count: receiptCounts.partial },
+                    { value: "received", label: "Received", count: receiptCounts.received },
+                  ]}
+                />
+              </div>
             </div>
             <div className="card-surface overflow-hidden">
               <Table density="dense">
@@ -231,7 +276,8 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                   <TableRow>
                     <TableHead>PO #</TableHead>
                     <TableHead>Supplier</TableHead>
-                    <TableHead>Status</TableHead>
+                    <TableHead>Order</TableHead>
+                    <TableHead>Receipt</TableHead>
                     <TableHead className="text-right">Items</TableHead>
                     <TableHead className="text-right">Qty</TableHead>
                     <TableHead className="text-right">Est. cost</TableHead>
@@ -240,28 +286,34 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filteredOrders.map((o) => (
-                    <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
-                      <TableCell className="font-mono text-xs">{o.po_number || o.note || "—"}</TableCell>
-                      <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
-                      <TableCell>
-                        {o.status === "ordered" && o.received_lines > 0 && o.received_lines < o.line_count ? (
-                          <Badge variant="amber">Partial</Badge>
-                        ) : (
-                          <Badge variant={STATUS_BADGE[o.status]}>{STATUS_LABEL[o.status]}</Badge>
-                        )}
-                      </TableCell>
-                      <TableCell className="text-right">
-                        {o.received_lines > 0 && o.received_lines < o.line_count
-                          ? <span className="text-[var(--muted-foreground)]">{o.received_lines}/{o.line_count}</span>
-                          : o.line_count}
-                      </TableCell>
-                      <TableCell className="text-right">{o.total_qty.toLocaleString()}</TableCell>
-                      <TableCell className="text-right">{o.total_cost > 0 ? inr(o.total_cost) : "—"}</TableCell>
-                      <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.order_date)}</TableCell>
-                      <TableCell className={o.expected_date ? "" : "text-[var(--muted-foreground)]"}>{fmtDate(o.expected_date)}</TableCell>
-                    </TableRow>
-                  ))}
+                  {filteredOrders.map((o) => {
+                    const ord = orderStatus(o.status);
+                    const rec = receiptStatus({
+                      status: o.status,
+                      lineCount: o.line_count,
+                      receivedLines: o.received_lines,
+                      anyReceived: o.any_received,
+                    });
+                    return (
+                      <TableRow key={o.id} className="cursor-pointer" onClick={() => router.push(`/procurement/${o.id}`)}>
+                        <TableCell className="font-mono text-xs">{o.po_number || o.note || "—"}</TableCell>
+                        <TableCell className="font-medium">{o.supplier_name || "Unassigned"}</TableCell>
+                        <TableCell><Badge variant={ord.variant}>{ord.label}</Badge></TableCell>
+                        <TableCell>
+                          {rec ? (
+                            <Badge variant={rec.variant}>{rec.label}</Badge>
+                          ) : (
+                            <span className="text-[var(--muted-foreground)]">—</span>
+                          )}
+                        </TableCell>
+                        <TableCell className="text-right">{o.line_count}</TableCell>
+                        <TableCell className="text-right">{o.total_qty.toLocaleString()}</TableCell>
+                        <TableCell className="text-right">{o.total_cost > 0 ? inr(o.total_cost) : "—"}</TableCell>
+                        <TableCell className="text-[var(--muted-foreground)]">{fmtDate(o.order_date)}</TableCell>
+                        <TableCell className={o.expected_date ? "" : "text-[var(--muted-foreground)]"}>{fmtDate(o.expected_date)}</TableCell>
+                      </TableRow>
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>

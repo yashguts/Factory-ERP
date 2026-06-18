@@ -36,23 +36,12 @@ import { type SearchableItem } from "@/lib/actions/items";
 import { Plus } from "lucide-react";
 import { createClient } from "@/lib/supabase/client";
 import type { PurchaseOrder, PurchaseOrderStatus, PoChangeLog, UnitOfMeasurement } from "@/lib/supabase/types";
+import { orderStatus, receiptStatus } from "@/lib/procurement-status";
 
 const PDF_BUCKET = "po-invoices";
 const PDF_MAX_BYTES = 50 * 1024 * 1024;
 const PDF_MIME = new Set(["application/pdf", "image/png", "image/jpeg", "image/jpg", "image/webp"]);
 
-const STATUS_BADGE: Record<PurchaseOrderStatus, BadgeVariant> = {
-  draft: "neutral",
-  ordered: "blue",
-  received: "green",
-  cancelled: "red",
-};
-const STATUS_LABEL: Record<PurchaseOrderStatus, string> = {
-  draft: "Draft",
-  ordered: "Ordered",
-  received: "Received",
-  cancelled: "Cancelled",
-};
 const inr = (n: number) => `₹${Math.round(n).toLocaleString("en-IN")}`;
 const rate = (n: number) => `₹${(Math.round(n * 100) / 100).toLocaleString("en-IN")}`;
 const fmtDate = (s: string) => new Date(s).toLocaleDateString("en-IN", { day: "numeric", month: "short", year: "numeric" });
@@ -122,7 +111,14 @@ export function PoDetailClient({
   }, [rows]);
 
   const anyReceived = rows.some((r) => r.received_qty > 0);
-  const partial = po.status !== "received" && po.status !== "cancelled" && anyReceived;
+  // The two orthogonal statuses for the header (order lifecycle + receipt progress).
+  const ord = orderStatus(po.status);
+  const rec = receiptStatus({
+    status: po.status,
+    lineCount: rows.length,
+    receivedLines: totals.receivedLines,
+    anyReceived,
+  });
 
   const saveHeader = () => {
     startTransition(async () => {
@@ -238,16 +234,12 @@ export function PoDetailClient({
             <span className={po.po_number ? "text-[var(--muted-foreground)] font-normal" : ""}>
               {supplier.trim() || "Unassigned supplier"}
             </span>
-            <Badge variant={STATUS_BADGE[po.status]}>{STATUS_LABEL[po.status]}</Badge>
+            <Badge variant={ord.variant}>{ord.label}</Badge>
+            {rec && <Badge variant={rec.variant}>{rec.label}</Badge>}
             {po.audited_at && (
               <Badge variant="green">
                 <ShieldCheck className="h-3 w-3 mr-1" />Audited
               </Badge>
-            )}
-            {partial && (
-              <span className="text-[11px] font-medium text-[var(--warning)]">
-                · {totals.receivedLines}/{rows.length} lines received
-              </span>
             )}
           </span>
         }
