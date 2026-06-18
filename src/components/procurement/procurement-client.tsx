@@ -10,6 +10,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { KpiCard, KpiGrid } from "@/components/ui/kpi-card";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ExportButton } from "@/components/ui/export-button";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
@@ -94,6 +95,55 @@ export function ProcurementClient({ data }: { data: ProcurementData }) {
         meta={`${orders.length} order${orders.length === 1 ? "" : "s"} · ${byItem.length} item${byItem.length === 1 ? "" : "s"} on order`}
         actions={
           <>
+            {view === "orders" && (
+              <ExportButton
+                rows={filteredOrders}
+                filename="purchase-orders"
+                sheetName="POs"
+                columns={[
+                  { header: "PO #", field: (o) => o.po_number || o.note || "" },
+                  { header: "Supplier", field: (o) => o.supplier_name || "Unassigned" },
+                  { header: "Status", field: (o) => STATUS_LABEL[o.status] },
+                  { header: "Items", field: "line_count" },
+                  { header: "Qty", field: "total_qty" },
+                  { header: "Est. cost", field: "total_cost" },
+                  { header: "Order date", field: "order_date" },
+                  { header: "Expected", field: "expected_date" },
+                ]}
+              />
+            )}
+            {view === "byitem" && (
+              <ExportButton
+                rows={byItem}
+                filename="procurement-on-order-by-item"
+                sheetName="On order"
+                columns={[
+                  { header: "Code", field: "code" },
+                  { header: "Item", field: "name" },
+                  { header: "UOM", field: "uom" },
+                  { header: "On order", field: "on_order" },
+                  { header: "Received", field: "received" },
+                  { header: "Ordered", field: "ordered" },
+                  { header: "POs", field: "po_count" },
+                  { header: "Suppliers", field: (r) => r.suppliers.join(", ") },
+                ]}
+              />
+            )}
+            {view === "bysupplier" && (
+              <ExportButton
+                rows={bySupplier}
+                filename="procurement-by-supplier"
+                sheetName="By supplier"
+                columns={[
+                  { header: "Supplier", field: "supplier" },
+                  { header: "POs", field: "po_count" },
+                  { header: "Lines", field: "line_count" },
+                  { header: "On order", field: "on_order" },
+                  { header: "Ordered qty", field: "ordered" },
+                  { header: "Est. cost", field: "est_cost" },
+                ]}
+              />
+            )}
             <Button size="sm" variant="secondary" onClick={() => router.push("/procurement/new")} title="Create a purchase order manually">
               <Plus className="h-3.5 w-3.5 mr-1.5" />
               Add PO

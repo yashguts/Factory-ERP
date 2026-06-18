@@ -36,6 +36,7 @@ import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
 import { EmptyState } from "@/components/ui/empty-state";
+import { ExportButton } from "@/components/ui/export-button";
 import { cn } from "@/lib/utils";
 import { ProgramFormModal } from "@/components/programs/program-form-modal";
 import {
@@ -592,9 +593,27 @@ export function ProgramsClient({
           </>
         }
         actions={
-          <Button size="sm" onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>
-            <Plus className="h-4 w-4 mr-1.5" />Add Program
-          </Button>
+          <>
+            <ExportButton
+              rows={filtered}
+              filename="programs"
+              sheetName="Programs"
+              columns={[
+                { header: "Code", field: "code" },
+                { header: "Program", field: "name" },
+                { header: "Machine", field: "machine" },
+                { header: "Family", field: "family_key" },
+                { header: "Material", field: "material_label" },
+                { header: "Label", field: "program_label" },
+                { header: "Inputs", field: "input_count" },
+                { header: "Outputs", field: "output_count" },
+                { header: "Audited", field: (o) => (o.audited_at ? "Yes" : "No") },
+              ]}
+            />
+            <Button size="sm" onClick={() => { setCloneSource(null); setEditSource(null); setShowCreate(true); }}>
+              <Plus className="h-4 w-4 mr-1.5" />Add Program
+            </Button>
+          </>
         }
       />
 
