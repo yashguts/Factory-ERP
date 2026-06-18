@@ -55,6 +55,9 @@ export interface WeeklyProgramRow {
   code: string;
   name: string;
   machine: string;
+  /** Material/finish of the program (operations.material_label), e.g. "MS", "SS",
+   *  "SS Golden". Drives the weekly plan's finish filter. */
+  materialLabel: string | null;
   /** Top-level category of the program's primary produced part (board grouping). */
   category: string;
   runsPerWeek: number[];
@@ -553,6 +556,7 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
       code: (opi?.code as string) ?? op,
       name: (opi?.name as string) ?? "",
       machine: (opi?.machine as string) ?? "",
+      materialLabel: (opi?.material_label as string | null) ?? null,
       category: primaryPart ? topCatName(primaryPart) : "(none)",
       runsPerWeek: arr,
       cumulativeRuns: cum(arr),

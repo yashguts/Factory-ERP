@@ -344,7 +344,7 @@ export async function computeMakePlanCore(
       supabase
         .from("operations")
         .select(
-          "id, name, code, machine, audited_at, machining_time_seconds, sheet_weight_kg, scrap_percent, scrap_weight_kg",
+          "id, name, code, machine, audited_at, machining_time_seconds, sheet_weight_kg, scrap_percent, scrap_weight_kg, material_label",
           withCount ? { count: "exact" } : {},
         )
         .eq("is_active", true)

@@ -20,6 +20,51 @@ type Tab = "programs" | "make" | "capacity";
 const machineLabel = (m: string) => m.replace(/^cnc_/, "").replace(/_/g, " ");
 const ALL = "all";
 
+/** Canonical finish from a program's material_label (MS, SS, SS Golden, …).
+ *  Collapses the messy real-world variants ("MS 2100"→MS, "SS ROSE GOLD"→SS Rose
+ *  Gold, "Lilen"→Linen, "Honeycom"/"Honey Com"→Honeycomb) so the filter groups
+ *  equivalents together. */
+function normalizeFinish(label: string | null | undefined): string | null {
+  if (!label) return null;
+  let s = label.trim().replace(/\s+/g, " ").replace(/\s+\d{3,4}$/, ""); // drop trailing dims
+  if (!s) return null;
+  const up = s.toUpperCase();
+  if (up === "MS" || up === "SS" || up === "GI") return up;
+  s = s.replace(/\w\S*/g, (w) => {
+    const u = w.toUpperCase();
+    return u === "SS" || u === "TI" || u === "GI" ? u : u.charAt(0) + w.slice(1).toLowerCase();
+  });
+  return s.replace(/\bLilen\b/i, "Linen").replace(/\bHoney ?Com\b/i, "Honeycomb").replace(/\bHoneycom\b/i, "Honeycomb");
+}
+
+/** Best-effort finish from an item name (made items carry it in the name, not a
+ *  column): SS grade (304/430/…), designer finish, else MS / GI / SS. */
+const DESIGNER_FINISHES: [RegExp, string][] = [
+  [/rose\s*gold\s*mirror/i, "SS Rose Gold Mirror"],
+  [/rose\s*gold\s*li[ln]en/i, "SS Rose Gold Linen"],
+  [/rose\s*gold/i, "SS Rose Gold"],
+  [/silver\s*mirror/i, "SS Silver Mirror"],
+  [/black\s*mirror/i, "SS Black Mirror"],
+  [/black\s*hairline/i, "SS Black Hairline"],
+  [/ti\s*black/i, "SS TI Black"],
+  [/champagne/i, "SS Champagne"],
+  [/moonrock/i, "SS Moonrock"],
+  [/honey\s*com[b]?/i, "SS Honeycomb"],
+  [/golden|\bgold\b/i, "SS Golden"],
+  [/copper/i, "SS Copper"],
+  [/bronze/i, "SS Bronze"],
+];
+function deriveFinishFromName(name: string | null | undefined): string | null {
+  if (!name) return null;
+  const grade = /\bSS\s*-?\s*(304|316|430|441|202)\b/i.exec(name);
+  if (grade) return `SS ${grade[1]}`;
+  for (const [re, label] of DESIGNER_FINISHES) if (re.test(name)) return label;
+  if (/\bMS\b/.test(name)) return "MS";
+  if (/\bGI\b/.test(name)) return "GI";
+  if (/\bSS\b/i.test(name)) return "SS";
+  return null;
+}
+
 export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState<Tab>(
@@ -28,9 +73,10 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   const [thickFilter, setThickFilter] = useState<string>(() => readParam(sp, "thick", "all"));
   const [cumulative, setCumulative] = useState(() => readParam(sp, "cumul", "1") !== "0");
   const [cat, setCat] = useState(() => readParam(sp, "cat", "all"));
+  const [finish, setFinish] = useState(() => readParam(sp, "fin", "all"));
   useUrlListSync(
-    { tab, thick: thickFilter, cumul: cumulative ? "1" : "0", cat },
-    { tab: "programs", thick: "all", cumul: "1", cat: "all" },
+    { tab, thick: thickFilter, cumul: cumulative ? "1" : "0", cat, fin: finish },
+    { tab: "programs", thick: "all", cumul: "1", cat: "all", fin: "all" },
   );
 
   const weeks = plan.weeks;
@@ -40,13 +86,26 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
     [plan.programs],
   );
 
+  // Finish options for the active lane: programs use material_label; make items
+  // derive it from the name. Sorted, with the plain grades first.
+  const finishOptions = useMemo(() => {
+    const set = new Set<string>();
+    if (tab === "programs") for (const p of plan.programs) { const f = normalizeFinish(p.materialLabel); if (f) set.add(f); }
+    else if (tab === "make") for (const m of plan.make) { const f = deriveFinishFromName(m.name); if (f) set.add(f); }
+    return [...set].sort((a, b) => a.localeCompare(b));
+  }, [plan.programs, plan.make, tab]);
+  // Reset a finish focus that doesn't exist in the lane we switched to.
+  const effectiveFinish = finish !== ALL && finishOptions.includes(finish) ? finish : ALL;
+
   // ── Programs lane ──────────────────────────────────────────────────────────
   const programsFiltered = useMemo(
     () =>
-      thickFilter === "all"
-        ? plan.programs
-        : plan.programs.filter((r) => r.inputs.some((inp) => String(inp.thicknessMm) === thickFilter)),
-    [plan.programs, thickFilter],
+      plan.programs.filter((r) => {
+        if (thickFilter !== "all" && !r.inputs.some((inp) => String(inp.thicknessMm) === thickFilter)) return false;
+        if (effectiveFinish !== ALL && normalizeFinish(r.materialLabel) !== effectiveFinish) return false;
+        return true;
+      }),
+    [plan.programs, thickFilter, effectiveFinish],
   );
   const programRows = useMemo<MatrixRow[]>(
     () =>
@@ -82,16 +141,18 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
   // ── Make-items lane ────────────────────────────────────────────────────────
   const makeRows = useMemo<MatrixRow[]>(
     () =>
-      plan.make.map((r) => ({
-        id: r.item_id,
-        code: r.code,
-        name: r.name,
-        category: r.topCategory || "Uncategorised",
-        perWeek: r.perWeek,
-        cumulative: r.cumulative,
-        sub: r.uom ?? undefined,
-      })),
-    [plan.make],
+      plan.make
+        .filter((r) => effectiveFinish === ALL || deriveFinishFromName(r.name) === effectiveFinish)
+        .map((r) => ({
+          id: r.item_id,
+          code: r.code,
+          name: r.name,
+          category: r.topCategory || "Uncategorised",
+          perWeek: r.perWeek,
+          cumulative: r.cumulative,
+          sub: r.uom ?? undefined,
+        })),
+    [plan.make, effectiveFinish],
   );
 
   const activeRows = tab === "programs" ? programRows : makeRows;
@@ -170,6 +231,14 @@ export function WeeklyMrpClient({ plan }: { plan: WeeklyMrpPlan }) {
                   <option key={c} value={c}>{c}</option>
                 ))}
               </Select>
+              {finishOptions.length > 0 && (
+                <Select size="sm" value={effectiveFinish} onChange={(e) => setFinish(e.target.value)} className="w-[180px]">
+                  <option value={ALL}>All finishes</option>
+                  {finishOptions.map((f) => (
+                    <option key={f} value={f}>{f}</option>
+                  ))}
+                </Select>
+              )}
               {tab === "programs" && thicknesses.length > 1 && (
                 <div className="flex flex-wrap items-center gap-1.5">
                   {["all", ...thicknesses.map(String)].map((t) => (
