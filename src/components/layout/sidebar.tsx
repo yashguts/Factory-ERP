@@ -21,6 +21,7 @@ import {
   LayoutGrid,
   Activity,
   Sparkles,
+  Network,
   LucideIcon,
 } from "lucide-react";
 
@@ -66,6 +67,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/mrp/trade", label: "Trade MRP", icon: Truck },
       { href: "/mrp/cabin", label: "Cabin MRP", icon: LayoutGrid },
       { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
+      { href: "/demand", label: "Demand Rules", icon: Network },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
     ],
   },
