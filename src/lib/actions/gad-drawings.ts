@@ -9,6 +9,8 @@ export interface GadDrawingInfo {
   url: string;
   filename: string;
   uploaded_at: string;
+  /** New revision number assigned to this upload (1,2,3 ...). */
+  revision_no: number;
 }
 
 /**
@@ -18,9 +20,13 @@ export interface GadDrawingInfo {
  * bucket (see gad-drawing-panel.tsx) — NOT through this server action — so
  * large drawings aren't capped by the serverless host's few-MB request-body
  * limit. This action only takes the resulting object `path` and:
- *   - deletes the job's previous drawing (so the bucket doesn't accumulate
- *     orphans on every replace), and
- *   - records the public URL / filename / timestamp on the jobs row.
+ *   - appends a new IMMUTABLE version row (history is kept — old files are NOT
+ *     deleted, so every revision stays viewable), bumping the job's revision, and
+ *   - mirrors the public URL / filename / timestamp / revision onto the jobs row.
+ *
+ * Re-uploading a GAD after the BOM was defined bumps `gad_revision_no` above the
+ * acknowledged revision, so the drift alert (src/lib/jobs/gad-alert.ts) raises
+ * automatically — no other wiring needed.
  *
  * The object lives at `{jobId}/{timestamp}-{originalName}`; we require the
  * path to sit under the job's own folder so a bad caller can't point a job
@@ -30,8 +36,10 @@ export async function recordGadDrawing(input: {
   jobId: string;
   path: string;
   filename: string;
+  /** Operator identity (no auth wired). 'unknown' if not provided. */
+  operator?: string | null;
 }): Promise<GadDrawingInfo> {
-  const { jobId, path, filename } = input;
+  const { jobId, path, filename, operator } = input;
 
   if (!jobId) throw new Error("Missing jobId");
   if (!path) throw new Error("Missing storage path");
@@ -41,67 +49,55 @@ export async function recordGadDrawing(input: {
 
   const supabase = await createClient();
 
-  // 1. Best-effort cleanup of the previous drawing for this job.
-  const { data: existingRow } = await supabase
-    .from("jobs")
-    .select("gad_drawing_url")
-    .eq("id", jobId)
-    .single();
-  const previousUrl = (existingRow?.gad_drawing_url as string | null) ?? null;
-  if (previousUrl) {
-    const previousPath = extractStoragePath(previousUrl);
-    // Don't remove the object we just uploaded if the paths coincide.
-    if (previousPath && previousPath !== path) {
-      // ignore errors — best effort
-      await supabase.storage.from(BUCKET).remove([previousPath]);
-    }
-  }
-
-  // 2. Build the public URL and record it on the jobs row.
+  // Build the public URL for the freshly-uploaded object.
   const {
     data: { publicUrl },
   } = supabase.storage.from(BUCKET).getPublicUrl(path);
-  const uploaded_at = new Date().toISOString();
 
-  const { error: updateError } = await supabase
-    .from("jobs")
-    .update({
-      gad_drawing_url: publicUrl,
-      gad_drawing_filename: filename,
-      gad_drawing_uploaded_at: uploaded_at,
-    })
-    .eq("id", jobId);
-  if (updateError) throw updateError;
+  // Atomically: allocate the next revision, flip the prior current off, insert
+  // the new current version row, and mirror it onto the jobs row.
+  const { data: rev, error } = await supabase.rpc("add_job_gad_version", {
+    p_job_id: jobId,
+    p_path: path,
+    p_url: publicUrl,
+    p_filename: filename,
+    p_uploaded_by: operator ?? "unknown",
+  });
+  if (error) throw error;
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/edit`);
   revalidateTag("jobs");
+  revalidateTag("gad-alerts");
 
-  return { url: publicUrl, filename, uploaded_at };
+  return {
+    url: publicUrl,
+    filename,
+    uploaded_at: new Date().toISOString(),
+    revision_no: (rev as number | null) ?? 0,
+  };
 }
 
 /**
- * Remove the GAD drawing for a job: deletes the storage object and
- * clears the columns on jobs.
+ * Remove the CURRENT GAD drawing pointer for a job: the version history (and the
+ * stored files) is KEPT — only the live pointer is cleared. The drift alert
+ * short-circuits while no current drawing is set; re-uploading bumps the
+ * revision and re-raises it.
  */
 export async function deleteGadDrawing(jobId: string): Promise<void> {
   if (!jobId) throw new Error("Missing jobId");
 
   const supabase = await createClient();
 
-  const { data: row } = await supabase
-    .from("jobs")
-    .select("gad_drawing_url")
-    .eq("id", jobId)
-    .single();
-  const url = (row?.gad_drawing_url as string | null) ?? null;
-  if (url) {
-    const path = extractStoragePath(url);
-    if (path) {
-      await supabase.storage.from(BUCKET).remove([path]);
-    }
-  }
+  // Mark every version not-current (history rows and their files are retained).
+  await supabase
+    .from("job_gad_versions")
+    .update({ is_current: false })
+    .eq("job_id", jobId)
+    .eq("is_current", true);
 
+  // Clear the live pointer on the job. `gad_revision_no` stays monotonic so a
+  // later re-upload allocates the next number and the alert re-raises correctly.
   const { error } = await supabase
     .from("jobs")
     .update({
@@ -115,17 +111,5 @@ export async function deleteGadDrawing(jobId: string): Promise<void> {
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/edit`);
   revalidateTag("jobs");
-}
-
-/**
- * Given a public storage URL like
- *   https://xyz.supabase.co/storage/v1/object/public/gad-drawings/<job>/<file>
- * return `<job>/<file>`. Returns null if the URL doesn't look like one
- * of ours.
- */
-function extractStoragePath(url: string): string | null {
-  const marker = `/object/public/${BUCKET}/`;
-  const idx = url.indexOf(marker);
-  if (idx < 0) return null;
-  return decodeURIComponent(url.slice(idx + marker.length));
+  revalidateTag("gad-alerts");
 }

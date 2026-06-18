@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
-import type { JobStatus, JobStage } from "@/lib/supabase/types";
+import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 export interface BomLineInput {
@@ -204,8 +204,8 @@ export const getJobReadinessFlags = unstable_cache(
 export async function getJobDetail(jobId: string) {
   const supabase = await createClient();
 
-  // Parallel: fetch job metadata + BOM header at the same time
-  const [jobResult, headerResult] = await Promise.all([
+  // Parallel: fetch job metadata + BOM header + GAD version history at once
+  const [jobResult, headerResult, versionsResult] = await Promise.all([
     supabase.from("jobs").select("*").eq("id", jobId).single(),
     supabase
       .from("job_bom_headers")
@@ -213,11 +213,17 @@ export async function getJobDetail(jobId: string) {
       .eq("job_id", jobId)
       .limit(1)
       .single(),
+    supabase
+      .from("job_gad_versions")
+      .select("*")
+      .eq("job_id", jobId)
+      .order("revision_no", { ascending: false }),
   ]);
 
   if (jobResult.error) throw jobResult.error;
   const job = jobResult.data;
   const bomHeader = headerResult.data;
+  const gadVersions = (versionsResult.data ?? []) as JobGadVersion[];
 
   let bomLines: any[] = [];
   if (bomHeader) {
@@ -237,7 +243,33 @@ export async function getJobDetail(jobId: string) {
     bomLines = data ?? [];
   }
 
-  return { job, bomLines, bomHeaderId: bomHeader?.id ?? null };
+  return { job, bomLines, bomHeaderId: bomHeader?.id ?? null, gadVersions };
+}
+
+/**
+ * "Mark Audited (with changes)" for a job's BOM — the jobs analogue of
+ * setOperationAudited (operations.ts). Acknowledges the CURRENT GAD revision so
+ * the drift alert (src/lib/jobs/gad-alert.ts) clears across every surface. If
+ * the GAD is changed again later, the alert re-raises automatically.
+ */
+export async function setJobBomAudited(
+  jobId: string,
+  audited: boolean,
+  operator?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!jobId) return { ok: false, error: "Missing jobId" };
+  const supabase = await createClient();
+  const { error } = await supabase.rpc("set_job_bom_audited", {
+    p_job_id: jobId,
+    p_audited: audited,
+    p_by: operator ?? "unknown",
+  });
+  if (error) return { ok: false, error: error.message };
+  revalidateTag("jobs");
+  revalidateTag("gad-alerts");
+  revalidatePath("/jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: true };
 }
 
 export async function createJob(data: {
@@ -342,10 +374,15 @@ export async function createJobWithBom(
         .insert(rows.slice(i, i + BATCH));
       if (lineErr) throw lineErr;
     }
+
+    // BOM is now defined — stamp the one-time baseline (the GAD revision the BOM
+    // was built against). Idempotent: only fires while bom_defined_at IS NULL.
+    await supabase.rpc("stamp_job_bom_defined", { p_job_id: job.id });
   }
 
   revalidateTag("jobs");
   revalidateTag("bom-lines");
+  revalidateTag("gad-alerts");
   return job;
 }
 
@@ -430,10 +467,14 @@ export async function updateJobWithBom(
         .insert(rows.slice(i, i + BATCH));
       if (lineErr) throw lineErr;
     }
+
+    // First-time BOM-defined baseline (no-op if already stamped).
+    await supabase.rpc("stamp_job_bom_defined", { p_job_id: jobId });
   }
 
   revalidateTag("jobs");
   revalidateTag("bom-lines");
+  revalidateTag("gad-alerts");
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/edit`);
 }
@@ -673,10 +714,14 @@ export async function saveBomSection(
         .insert(rows.slice(i, i + BATCH));
       if (lineErr) throw lineErr;
     }
+
+    // First non-empty section save defines the BOM — stamp the GAD baseline once.
+    await supabase.rpc("stamp_job_bom_defined", { p_job_id: jobId });
   }
 
   revalidateTag("bom-lines");
   revalidateTag("jobs");
+  revalidateTag("gad-alerts");
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/edit`);
 }

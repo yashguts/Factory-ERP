@@ -184,10 +184,38 @@ export interface Job {
   gad_drawing_url: string | null;
   gad_drawing_filename: string | null;
   gad_drawing_uploaded_at: string | null;
+  /** Live GAD revision (max revision_no in job_gad_versions). 0 = no GAD uploaded. */
+  gad_revision_no: number;
+  /** When the Job BOM was first defined (>=1 line). Anchors the drift alert. */
+  bom_defined_at: string | null;
+  /** GAD revision present when the BOM was first defined. */
+  bom_gad_baseline_rev: number | null;
+  /** When the job was last "Marked Audited (with changes)". */
+  bom_audited_at: string | null;
+  bom_audited_by: string | null;
+  /** GAD revision acknowledged at the last audit. */
+  bom_audited_gad_rev: number | null;
+  /** Operator who created the job (identity, not auth). 'unknown' if not captured. */
+  created_by: string | null;
+  /** Operator who uploaded the current GAD. 'unknown' if not captured. */
+  gad_uploaded_by: string | null;
   /** Whether the elevator structure is part of this job. */
   structure_included: StructureIncluded;
   created_at: string;
   updated_at: string;
+}
+
+/** One immutable row per uploaded GAD drawing version (see migration 039). */
+export interface JobGadVersion {
+  id: string;
+  job_id: string;
+  revision_no: number;
+  storage_path: string;
+  url: string;
+  filename: string;
+  is_current: boolean;
+  uploaded_by: string | null;
+  uploaded_at: string;
 }
 
 export type StructureIncluded = "NA" | "Factory-made" | "Site-fabricated";
