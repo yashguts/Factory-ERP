@@ -103,32 +103,67 @@ async function extractPdfText(b64: string): Promise<string> {
 /** Build the model's user content. Text-layer PDFs become a cheap text block
  *  (fast, no page rendering); scanned PDFs and photos become image blocks read by
  *  vision. usedVision tells the caller which timeout budget to apply. */
-async function buildContent(
+/** Read each file: text-layer PDFs contribute extracted text; scanned PDFs and
+ *  photos become vision blocks (read by the model as page-images). */
+async function extractInputs(
   files: PartListFile[],
-): Promise<{ blocks: unknown[]; usedVision: boolean; textLen: number }> {
-  const blocks: unknown[] = [];
-  let usedVision = false;
+): Promise<{ fullText: string; textLen: number; visionBlocks: unknown[]; usedVision: boolean }> {
+  let fullText = "";
   let textLen = 0;
-  let pdfIdx = 0;
+  const visionBlocks: unknown[] = [];
+  let usedVision = false;
   for (const f of files) {
     if (f.media_type === "application/pdf") {
       const text = await extractPdfText(f.data);
       // Enough real text => use it; a near-empty layer (page markers only) means
       // a scanned/image PDF, so fall back to reading it as page-images.
       if (text.length > 80) {
-        pdfIdx++;
+        fullText += (fullText ? "\n" : "") + text;
         textLen += text.length;
-        blocks.push({ type: "text", text: `--- Part list (file ${pdfIdx}) ---\n${text.slice(0, 40_000)}` });
       } else {
-        blocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.data } });
+        visionBlocks.push({ type: "document", source: { type: "base64", media_type: "application/pdf", data: f.data } });
         usedVision = true;
       }
     } else if (IMG_TYPES.has(f.media_type)) {
-      blocks.push({ type: "image", source: { type: "base64", media_type: f.media_type, data: f.data } });
+      visionBlocks.push({ type: "image", source: { type: "base64", media_type: f.media_type, data: f.data } });
       usedVision = true;
     }
   }
-  return { blocks, usedVision, textLen };
+  return { fullText, textLen, visionBlocks, usedVision };
+}
+
+/** Split a long text blob into chunks (at whitespace, no overlap) so each model
+ *  call has a SMALL structured output to generate — a single call over a long
+ *  list times out. Sized to keep the chunk count to ~10 max. No overlap, so a
+ *  repeated item is never double-counted across chunks. */
+function chunkText(text: string): string[] {
+  const maxChars = Math.max(1400, Math.ceil(text.length / 12));
+  if (text.length <= maxChars) return [text.trim()].filter(Boolean);
+  const chunks: string[] = [];
+  let i = 0;
+  while (i < text.length) {
+    let end = Math.min(i + maxChars, text.length);
+    if (end < text.length) {
+      const sp = text.lastIndexOf(" ", end);
+      if (sp > i + Math.floor(maxChars / 2)) end = sp;
+    }
+    const piece = text.slice(i, end).trim();
+    if (piece) chunks.push(piece);
+    i = end;
+  }
+  return chunks;
+}
+
+/** Parse the report_part_list tool result into raw lines. */
+function parseLines(toolInput: Record<string, unknown> | undefined): RawLine[] {
+  return (((toolInput?.lines as unknown[]) ?? []) as Record<string, unknown>[])
+    .filter((l) => l && typeof l.raw_text === "string" && (l.raw_text as string).trim())
+    .map((l) => ({
+      raw_text: (l.raw_text as string).trim(),
+      quantity: l.quantity == null ? null : Number(l.quantity),
+      bom_match: l.bom_match == null ? null : Number(l.bom_match),
+      search_query: (l.search_query as string | null) ?? null,
+    }));
 }
 
 async function callAnthropic(
@@ -165,7 +200,6 @@ async function callAnthropic(
 interface RawLine {
   raw_text: string;
   quantity: number | null;
-  unit: string | null;
   bom_match: number | null;
   search_query: string | null;
 }
@@ -237,7 +271,6 @@ export async function readPartList(input: {
 Call report_part_list exactly once with EVERY physical item line. For each line:
 - raw_text: the item exactly as written on the list.
 - quantity: the number of units as a number (null if none is written).
-- unit: the unit if written (nos, set, pcs, mtr, kg...), else null.
 - bom_match: if the line clearly refers to one of the job's BOM items listed below, its 1-based number; otherwise null.
 - search_query: for lines where bom_match is null, a short normalised item name or code to find it in the catalog (drop quantities, "nos", and list noise). null when bom_match is set.
 
@@ -261,11 +294,10 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
             properties: {
               raw_text: { type: "string" },
               quantity: { type: ["number", "null"] },
-              unit: { type: ["string", "null"] },
               bom_match: { type: ["integer", "null"] },
               search_query: { type: ["string", "null"] },
             },
-            required: ["raw_text", "quantity", "unit", "bom_match", "search_query"],
+            required: ["raw_text", "quantity", "bom_match", "search_query"],
           },
         },
       },
@@ -273,54 +305,60 @@ Ignore page headers, column titles, totals, addresses, signatures and blank rows
     },
   };
 
-  const { blocks, usedVision, textLen } = await buildContent(files);
-  if (!blocks.length) return { ok: false, error: "Couldn't read the uploaded file(s) — try a PDF or clear photos." };
+  const { fullText, textLen, visionBlocks, usedVision } = await extractInputs(files);
+  if (!fullText && !visionBlocks.length)
+    return { ok: false, error: "Couldn't read the uploaded file(s) — try a PDF or clear photos." };
 
   const remaining = () => BUDGET_MS - (Date.now() - startedAt);
+  const extractBody = (content: unknown[]) => ({
+    model: EXTRACT_MODEL,
+    max_tokens: 4096,
+    system,
+    tool_choice: { type: "tool", name: "report_part_list" },
+    tools: [visionTool],
+    messages: [
+      { role: "user", content: [...content, { type: "text", text: "Read this part list completely and call report_part_list." }] },
+    ],
+  });
+  const linesFrom = (data: { content?: Blk[] }) =>
+    parseLines((data.content ?? []).find((b) => b.type === "tool_use")?.input);
 
-  const r1 = await callAnthropic(
-    apiKey,
-    {
-      model: EXTRACT_MODEL,
-      max_tokens: 4096,
-      system,
-      tool_choice: { type: "tool", name: "report_part_list" },
-      tools: [visionTool],
-      messages: [
-        {
-          role: "user",
-          content: [...blocks, { type: "text", text: "Read this part list completely and call report_part_list." }],
-        },
-      ],
-    },
-    Math.max(4_000, remaining() - 500),
-  );
-  if (!r1.ok) {
-    console.error("[part-list] read failed", { usedVision, textLen, ms: Date.now() - startedAt, error: r1.error });
-    if (r1.aborted) {
+  let rawLines: RawLine[] = [];
+  let aborted = false;
+  if (!usedVision) {
+    // Text path: split the extracted text and extract chunks IN PARALLEL, so each
+    // call generates a small structured output. Wall-clock ≈ slowest chunk, not the
+    // sum — a long list that timed out in one call now finishes in the budget.
+    const chunks = chunkText(fullText);
+    const perTimeout = Math.max(8_000, remaining() - 800);
+    const results = await Promise.all(chunks.map((c) => callAnthropic(apiKey, extractBody([{ type: "text", text: c }]), perTimeout)));
+    for (const r of results) {
+      if (r.ok) rawLines.push(...linesFrom(r.data));
+      else if (r.aborted) aborted = true;
+    }
+  } else {
+    // Vision path: a single call with the image/scanned blocks (+ any text we got).
+    const content: unknown[] = [...visionBlocks];
+    if (fullText) content.push({ type: "text", text: `--- Extracted text ---\n${fullText.slice(0, 30_000)}` });
+    const r = await callAnthropic(apiKey, extractBody(content), Math.max(6_000, remaining() - 500));
+    if (r.ok) rawLines = linesFrom(r.data);
+    else aborted = r.aborted;
+  }
+
+  if (!rawLines.length) {
+    console.error("[part-list] no lines", { usedVision, textLen, ms: Date.now() - startedAt, aborted });
+    if (aborted) {
       const mode = usedVision ? "image" : "text";
       const hint = usedVision
         ? "It looks scanned or photographed — upload fewer pages at a time, or a clearer file."
-        : "It's a long list — try splitting it into two uploads.";
+        : "Try splitting it into two uploads.";
       return {
         ok: false,
         error: `The part list took too long to read (${mode} mode${usedVision ? "" : `, ${textLen.toLocaleString()} chars`}). ${hint}`,
       };
     }
-    return { ok: false, error: r1.error };
-  }
-  const t1 = (r1.data.content ?? []).find((b) => b.type === "tool_use");
-  const rawLines: RawLine[] = (((t1?.input?.lines as unknown[]) ?? []) as Record<string, unknown>[])
-    .filter((l) => l && typeof l.raw_text === "string" && (l.raw_text as string).trim())
-    .map((l) => ({
-      raw_text: (l.raw_text as string).trim(),
-      quantity: l.quantity == null ? null : Number(l.quantity),
-      unit: (l.unit as string | null) ?? null,
-      bom_match: l.bom_match == null ? null : Number(l.bom_match),
-      search_query: (l.search_query as string | null) ?? null,
-    }));
-  if (!rawLines.length)
     return { ok: false, error: "Couldn't read any item lines — try a clearer scan or photo of the part list." };
+  }
 
   /* ---- Resolve every line to a concrete item (BOM match wins, else inventory) ---- */
   // First BOM line per item — an item can recur across sections; the whole
