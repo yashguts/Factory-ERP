@@ -24,6 +24,7 @@ import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, Hi
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
+import { ProgramsPopover } from "@/components/inventory/programs-popover";
 import {
   getInventoryPage,
   getItemForEdit,
@@ -509,6 +510,9 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                 <TableHead title="How the item gets its requirement: Jobs = picked on job BOMs · Formula = consumed by a program or parts list · No link = in no plan yet">
                   Demand
                 </TableHead>
+                <TableHead className="text-center" title="Active programs (operations) that produce or consume this item — hover the count for the program numbers">
+                  Programs
+                </TableHead>
                 <SortHeader label="Category" sortField="category" />
                 <SortHeader label="Stock" sortField="stock" />
                 <SortHeader label="Cost (₹)" sortField="cost" />
@@ -629,6 +633,17 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                             })}
                           </div>
                         </>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-center" onClick={(e) => e.stopPropagation()}>
+                      {item.programs.length > 0 ? (
+                        <ProgramsPopover programs={item.programs}>
+                          <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)] tabular-nums text-sm">
+                            {item.programs.length}
+                          </span>
+                        </ProgramsPopover>
+                      ) : (
+                        <span className="text-xs text-[var(--muted-foreground)]">—</span>
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{item.category_name ?? "-"}</TableCell>

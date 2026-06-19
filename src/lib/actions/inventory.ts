@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
-import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource, DemandOverride } from "@/lib/supabase/types";
+import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource, DemandOverride, OperationMachine } from "@/lib/supabase/types";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
 import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
@@ -365,6 +365,17 @@ export interface ItemWithStock {
   total_stock: number;
 }
 
+/** A Program (operation) that references an item, for the inventory list's
+ *  Programs column. `role` = how the program touches the item. */
+export interface InventoryProgramRef {
+  id: string;
+  code: string | null;
+  name: string;
+  machine: OperationMachine;
+  /** "produces" = item is a program OUTPUT; "consumes" = a program INPUT. */
+  role: "produces" | "consumes";
+}
+
 /** Lightweight row for the inventory table (one page worth). */
 export interface InventoryRow {
   id: string;
@@ -383,6 +394,9 @@ export interface InventoryRow {
   demand_source: DemandSource;
   /** True when demand_source comes from a manual marking, not the computation. */
   demand_overridden: boolean;
+  /** Active Programs (operations) that produce or consume this item. Filled in
+   *  by attachItemPrograms() per page; [] when none. */
+  programs: InventoryProgramRef[];
 }
 
 /* Category ids (incl. descendants) that the job form's BOM sections pick from.
@@ -420,6 +434,76 @@ export interface InventoryQuery {
   dir?: string; // asc | desc
   page?: number;
   pageSize?: number;
+}
+
+/**
+ * Enrich a page of inventory rows with the active Programs (operations) that
+ * reference each item — as an OUTPUT (the program produces it) or an INPUT (the
+ * program consumes it). Bulk: one pair of queries scoped to the page's item ids
+ * (≤ pageSize), so no N+1. Mirrors getOperationsForItem in operations.ts but
+ * for many items at once. Mutates `rows` in place. Cabin programs are excluded
+ * by design (cabin items live in their own /cabin-inventory section).
+ */
+async function attachItemPrograms(rows: InventoryRow[]): Promise<void> {
+  if (rows.length === 0) return;
+  const ids = rows.map((r) => r.id);
+  const supabase = createCacheClient();
+  const sel = "item_id, operation:operations(id, code, name, machine, is_active)";
+  const [outRes, inRes] = await Promise.all([
+    supabase.from("operation_outputs").select(sel).in("item_id", ids),
+    supabase.from("operation_inputs").select(sel).in("item_id", ids),
+  ]);
+  if (outRes.error) throw outRes.error;
+  if (inRes.error) throw inRes.error;
+
+  // item_id -> (operation_id -> ref). Dedupe by program; "produces" wins when a
+  // program both produces and consumes the same item.
+  const byItem = new Map<string, Map<string, InventoryProgramRef>>();
+  const ingest = (
+    data: Record<string, unknown>[] | null,
+    role: "produces" | "consumes",
+  ) => {
+    for (const r of data ?? []) {
+      const rawOp = (r as { operation: unknown }).operation;
+      const op = (Array.isArray(rawOp) ? rawOp[0] : rawOp) as
+        | {
+            id: string;
+            code: string | null;
+            name: string;
+            machine: OperationMachine;
+            is_active: boolean;
+          }
+        | null
+        | undefined;
+      if (!op || op.is_active === false) continue;
+      const itemId = r.item_id as string;
+      let m = byItem.get(itemId);
+      if (!m) {
+        m = new Map();
+        byItem.set(itemId, m);
+      }
+      const existing = m.get(op.id);
+      if (existing && existing.role === "produces") continue; // keep produces
+      m.set(op.id, {
+        id: op.id,
+        code: op.code ?? null,
+        name: op.name,
+        machine: op.machine,
+        role,
+      });
+    }
+  };
+  ingest(outRes.data as Record<string, unknown>[] | null, "produces");
+  ingest(inRes.data as Record<string, unknown>[] | null, "consumes");
+
+  for (const row of rows) {
+    const m = byItem.get(row.id);
+    row.programs = m
+      ? Array.from(m.values()).sort((a, b) =>
+          (a.code ?? a.name).localeCompare(b.code ?? b.name),
+        )
+      : [];
+  }
 }
 
 /**
@@ -463,27 +547,27 @@ export async function getInventoryPage(
 
   const rows = (data ?? []) as Record<string, unknown>[];
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
-  return {
-    total,
-    rows: rows.map((r) => ({
-      id: r.id as string,
-      code: r.code as string,
-      name: r.name as string,
-      description: (r.description as string | null) ?? null,
-      item_type: r.item_type as ItemType,
-      category_id: (r.category_id as string | null) ?? null,
-      category_name: (r.category_name as string | null) ?? null,
-      uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
-      total_stock: Number(r.total_stock ?? 0),
-      reorder_point: Number(r.reorder_point ?? 0),
-      cost_price: Number(r.cost_price ?? 0),
-      stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
-      effective_procurement_type:
-        (r.effective_procurement_type as "make" | "trade" | null) ?? null,
-      demand_source: (r.demand_source as DemandSource) ?? "none",
-      demand_overridden: Boolean(r.demand_overridden),
-    })),
-  };
+  const mapped: InventoryRow[] = rows.map((r) => ({
+    id: r.id as string,
+    code: r.code as string,
+    name: r.name as string,
+    description: (r.description as string | null) ?? null,
+    item_type: r.item_type as ItemType,
+    category_id: (r.category_id as string | null) ?? null,
+    category_name: (r.category_name as string | null) ?? null,
+    uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
+    total_stock: Number(r.total_stock ?? 0),
+    reorder_point: Number(r.reorder_point ?? 0),
+    cost_price: Number(r.cost_price ?? 0),
+    stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
+    effective_procurement_type:
+      (r.effective_procurement_type as "make" | "trade" | null) ?? null,
+    demand_source: (r.demand_source as DemandSource) ?? "none",
+    demand_overridden: Boolean(r.demand_overridden),
+    programs: [],
+  }));
+  await attachItemPrograms(mapped);
+  return { total, rows: mapped };
 }
 
 /**
@@ -574,12 +658,14 @@ export async function getInventoryTabCounts(): Promise<InventoryTabCounts> {
 
 /** Cached default first page (no filters) for an instant initial paint of
  *  /inventory. Invalidated by the "items"/"inventory-stock" tags on any item or
- *  stock mutation; live user-driven queries go through getInventoryPage. */
+ *  stock mutation, and "operations" so the Programs column refreshes when a
+ *  program's outputs/inputs change; live user-driven queries go through
+ *  getInventoryPage. */
 export async function getInventoryFirstPage(): Promise<InventoryPageResult> {
   return unstable_cache(
     () => getInventoryPage({ page: 1, pageSize: 50 }),
     ["inventory-first-page"],
-    { revalidate: 300, tags: ["items", "inventory-stock"] },
+    { revalidate: 300, tags: ["items", "inventory-stock", "operations"] },
   )();
 }
 
