@@ -5,13 +5,17 @@ import { useRouter } from "next/navigation";
 import { ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { OPERATION_MACHINE_LABELS } from "@/lib/supabase/types";
+import { useAnchoredPosition } from "@/components/ui/use-anchored-position";
 import type { InventoryProgramRef } from "@/lib/actions/inventory";
+
+const PANEL_WIDTH = 320;
 
 /**
  * Hover popover listing the Programs (operations) mapped to an inventory item.
- * The programs are already loaded with the page row (attachItemPrograms), so —
- * like CabinJobsPopover — this needs no fetch; the list is passed straight in.
- * Each row links to the Programs page pre-filtered to that program's code.
+ * The programs ship with the page row (attachItemPrograms) so no fetch is
+ * needed. Rendered in a viewport-fixed layer (useAnchoredPosition) so it is not
+ * clipped by the inventory table's overflow wrappers. Each row links to the
+ * Programs page pre-filtered to that program's code.
  */
 export function ProgramsPopover({
   programs,
@@ -22,7 +26,14 @@ export function ProgramsPopover({
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(false);
+  const triggerRef = useRef<HTMLSpanElement>(null);
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(null);
+  const pos = useAnchoredPosition(
+    triggerRef,
+    open,
+    PANEL_WIDTH,
+    Math.min(48 + programs.length * 44, 320),
+  );
 
   const enter = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
@@ -41,6 +52,7 @@ export function ProgramsPopover({
 
   return (
     <span
+      ref={triggerRef}
       className="relative inline-block"
       onMouseEnter={enter}
       onMouseLeave={leave}
@@ -50,7 +62,8 @@ export function ProgramsPopover({
       {children}
       {open && programs.length > 0 && (
         <div
-          className="absolute right-0 top-full mt-1 z-50 w-[320px] rounded-md border border-[var(--border)] bg-[var(--background)] shadow-[var(--shadow-lg)] text-left"
+          className="fixed z-[200] rounded-md border border-[var(--border)] bg-[var(--background)] shadow-[var(--shadow-lg)] text-left"
+          style={{ top: pos.top, left: pos.left, width: PANEL_WIDTH }}
           onMouseEnter={enter}
           onMouseLeave={leave}
         >

@@ -25,6 +25,7 @@ import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
 import { ProgramsPopover } from "@/components/inventory/programs-popover";
+import { StockLedgerPopover } from "@/components/inventory/stock-ledger-popover";
 import {
   getInventoryPage,
   getItemForEdit,
@@ -647,10 +648,14 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
                       )}
                     </TableCell>
                     <TableCell className="text-sm">{item.category_name ?? "-"}</TableCell>
-                    <TableCell className="text-right font-medium">
-                      <span className={isLow ? "text-[var(--destructive)]" : ""}>
-                        {Number(item.total_stock).toLocaleString()}
-                      </span>{" "}
+                    <TableCell className="text-right font-medium" onClick={(e) => e.stopPropagation()}>
+                      <StockLedgerPopover itemId={item.id}>
+                        <span
+                          className={`cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)] ${isLow ? "text-[var(--destructive)]" : ""}`}
+                        >
+                          {Number(item.total_stock).toLocaleString()}
+                        </span>
+                      </StockLedgerPopover>{" "}
                       <span className="text-xs text-[var(--muted-foreground)]">
                         {item.uom_abbreviation}
                       </span>

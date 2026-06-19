@@ -12,6 +12,7 @@ import {
   type InventoryChangeRow,
   type TransactionType,
 } from "@/lib/supabase/types";
+import { appliedDelta } from "@/lib/inventory/transactions";
 
 /**
  * The business runs in India (IST, UTC+05:30). The date picker hands us a
@@ -30,14 +31,6 @@ function istDayRange(date: string): { startIso: string; endIso: string } {
 function flattenOne<T>(rel: T | T[] | null | undefined): T | null {
   if (Array.isArray(rel)) return rel[0] ?? null;
   return rel ?? null;
-}
-
-/** Compute the signed stock delta a transaction applied (mirrors recordTransaction). */
-function appliedDelta(type: TransactionType, quantity: number): number {
-  if (type === "adjustment") return quantity;
-  if (type === "production_out" || type === "scrap" || type === "dispatch_out")
-    return -Math.abs(quantity);
-  return Math.abs(quantity);
 }
 
 function humanizeEnum(value: unknown): string {

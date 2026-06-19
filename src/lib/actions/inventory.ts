@@ -8,6 +8,7 @@ import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
 import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { appliedDelta } from "@/lib/inventory/transactions";
 
 export async function getItems() {
   const supabase = await createClient();
@@ -1390,6 +1391,133 @@ export async function recordTransaction(data: {
   }
 
   revalidateTag("inventory-stock");
+}
+
+export interface ItemLedgerRow {
+  id: string;
+  created_at: string;
+  transaction_type: TransactionType;
+  /** Signed delta this movement applied (negative for outbound). */
+  signed_qty: number;
+  /** Cumulative on-hand after this movement (oldest→newest accumulation). */
+  running_balance: number;
+  warehouse_name: string | null;
+  note: string | null;
+  reference_type: string | null;
+  po_number: string | null;
+}
+
+export interface ItemLedger {
+  item_code: string;
+  item_name: string;
+  uom: string | null;
+  /** Movements newest-first for display. Balance was accumulated oldest-first. */
+  rows: ItemLedgerRow[];
+  closing: number;
+}
+
+/**
+ * Full stock ledger for ONE item: every inventory_transactions row with a
+ * correctly SIGNED quantity (re-derived via appliedDelta — the table stores raw
+ * positive qty) and a running balance accumulated oldest→newest. Spans all
+ * warehouses (the inventory list's stock total sums them; the warehouse is shown
+ * per row). Uncached so it's always fresh — it's lazy-loaded only when a user
+ * opens the ledger popover.
+ */
+export async function getItemLedger(itemId: string): Promise<ItemLedger> {
+  const empty: ItemLedger = {
+    item_code: "",
+    item_name: "",
+    uom: null,
+    rows: [],
+    closing: 0,
+  };
+  if (!itemId) return empty;
+  const supabase = await createClient();
+
+  const [itemRes, txnRes] = await Promise.all([
+    supabase
+      .from("items")
+      .select(`code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`)
+      .eq("id", itemId)
+      .single(),
+    supabase
+      .from("inventory_transactions")
+      .select(
+        `id, created_at, transaction_type, quantity, notes, reference_type, reference_id,
+         warehouse:warehouses(name)`,
+      )
+      .eq("item_id", itemId)
+      .order("created_at", { ascending: true })
+      .order("id", { ascending: true }),
+  ]);
+  if (txnRes.error) throw txnRes.error;
+  const txns = (txnRes.data ?? []) as Array<Record<string, unknown>>;
+
+  // Resolve PO numbers for po_receipt movements (reference_id → receipt → PO).
+  const receiptIds = [
+    ...new Set(
+      txns
+        .filter((t) => t.reference_type === "po_receipt")
+        .map((t) => t.reference_id as string | null)
+        .filter((x): x is string => !!x),
+    ),
+  ];
+  const poByReceipt = new Map<string, string | null>();
+  if (receiptIds.length > 0) {
+    const { data: receipts } = await supabase
+      .from("purchase_order_receipts")
+      .select("id, po_id")
+      .in("id", receiptIds);
+    const poIds = [
+      ...new Set((receipts ?? []).map((r) => r.po_id as string).filter(Boolean)),
+    ];
+    const poNum = new Map<string, string | null>();
+    if (poIds.length > 0) {
+      const { data: pos } = await supabase
+        .from("purchase_orders")
+        .select("id, po_number")
+        .in("id", poIds);
+      for (const p of pos ?? [])
+        poNum.set(p.id as string, (p.po_number as string | null) ?? null);
+    }
+    for (const r of receipts ?? [])
+      poByReceipt.set(r.id as string, poNum.get(r.po_id as string) ?? null);
+  }
+
+  const flatten = <T,>(rel: unknown): T | null =>
+    Array.isArray(rel) ? ((rel[0] as T) ?? null) : ((rel as T) ?? null);
+
+  let balance = 0;
+  const ascending: ItemLedgerRow[] = txns.map((t) => {
+    const type = t.transaction_type as TransactionType;
+    const signed = appliedDelta(type, Number(t.quantity));
+    balance += signed;
+    const refType = (t.reference_type as string | null) ?? null;
+    return {
+      id: t.id as string,
+      created_at: t.created_at as string,
+      transaction_type: type,
+      signed_qty: signed,
+      running_balance: balance,
+      warehouse_name: flatten<{ name: string }>(t.warehouse)?.name ?? null,
+      note: (t.notes as string | null) ?? null,
+      reference_type: refType,
+      po_number:
+        refType === "po_receipt" && t.reference_id
+          ? poByReceipt.get(t.reference_id as string) ?? null
+          : null,
+    };
+  });
+
+  const item = itemRes.data as { code?: string; name?: string; uom?: unknown } | null;
+  return {
+    item_code: item?.code ?? "",
+    item_name: item?.name ?? "",
+    uom: flatten<{ abbreviation: string }>(item?.uom)?.abbreviation ?? null,
+    rows: ascending.slice().reverse(), // newest-first for display
+    closing: balance,
+  };
 }
 
 export const getCategories = unstable_cache(

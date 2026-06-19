@@ -31,11 +31,11 @@ import {
   getItemChangeHistory,
 } from "@/lib/actions/inventory-changes";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
+import { TXN_LABELS } from "@/lib/inventory/transactions";
 import type {
   InventoryChangeRow,
   ItemChangeRow,
   StockChangeRow,
-  TransactionType,
 } from "@/lib/supabase/types";
 
 interface Props {
@@ -43,16 +43,6 @@ interface Props {
   date: string;
   maxDate: string;
 }
-
-const TXN_LABELS: Record<TransactionType, string> = {
-  purchase_in: "Purchase In",
-  production_in: "Production In",
-  production_out: "Production Out",
-  adjustment: "Adjustment",
-  transfer: "Transfer",
-  scrap: "Scrap",
-  dispatch_out: "Dispatch Out",
-};
 
 const ACTION_BADGE_VARIANT: Record<string, BadgeVariant> = {
   create: "green",
