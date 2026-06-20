@@ -13,7 +13,9 @@ const FINISH_CODES: Record<string, string> = {
   honeycomb: "HC",
   wooden: "WD",
   wodden: "WD",
-  "rose gold lilen": "RGL",
+  "rose gold linen": "RGL",
+  "rose gold lilen": "RGL", // legacy misspelling kept so older sheets still import
+
   "black hairline": "BHL",
 };
 

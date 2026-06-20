@@ -102,7 +102,7 @@ export const CABIN_PANEL_DESIGNER_FINISHES = [
   "Black Hairline", "Black Mirror", "Blue Flower", "Bronze", "Champagne", "Chequered",
   "Designer IPF01", "Golden", "Golden Hairline", "Golden Jewellery", "Golden Mirror",
   "Grade 430 Mirror", "Honey Comb", "Mirror", "Moon Rock", "Rose Gold", "Rose Gold Etching",
-  "Rose Gold Lilen", "Rose Gold Mirror", "Silver Horizontal", "Silver Linen", "Silver Vertical",
+  "Rose Gold Linen", "Rose Gold Mirror", "Silver Horizontal", "Silver Linen", "Silver Vertical",
   "White Mirror Silver", "Wooden",
 ] as const;
 export const CABIN_PANEL_FINISHES: string[] = [
