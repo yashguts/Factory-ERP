@@ -61,14 +61,17 @@ function flat<T>(rel: T | T[] | null | undefined): T | null {
 }
 
 async function fetchActiveItems(supabase: Awaited<ReturnType<typeof createClient>>): Promise<ItemLite[]> {
-  const PAGE = 1000; let off = 0; const out: ItemLite[] = [];
-  for (;;) {
-    const { data, error } = await supabase.from("items").select("id, code, name, category_id").eq("is_active", true).range(off, off + PAGE - 1);
-    if (error) throw error;
-    out.push(...((data ?? []) as ItemLite[]));
-    if (!data || data.length < PAGE) break;
-    off += PAGE;
-  }
+  const PAGE = 1000;
+  const { count } = await supabase.from("items").select("id", { count: "exact", head: true }).eq("is_active", true);
+  const pages = Math.max(1, Math.ceil((count ?? 0) / PAGE));
+  // fire all page queries concurrently (was sequential — ~9 round trips serialised)
+  const chunks = await Promise.all(
+    Array.from({ length: pages }, (_, i) =>
+      supabase.from("items").select("id, code, name, category_id").eq("is_active", true).range(i * PAGE, i * PAGE + PAGE - 1),
+    ),
+  );
+  const out: ItemLite[] = [];
+  for (const c of chunks) { if (c.error) throw c.error; out.push(...((c.data ?? []) as ItemLite[])); }
   return out;
 }
 
