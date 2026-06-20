@@ -37,6 +37,9 @@ function tokenize(s) {
     t = t.replace(/[^a-z0-9.x+-]/g, "");
     if (!t || STOP.has(t)) continue;
     if (t.length < 2 && !SHAPE.has(t)) continue;
+    // normalise the size unit: "350mm" -> "350" so a "350mm" spec matches a "350" SKU
+    // (only when >=2 chars remain, to keep single-digit thicknesses like "8mm" intact)
+    if (/[0-9]/.test(t)) { const sz = t.replace(/mm$/, ""); if (sz.length >= 2) t = sz; }
     all.add(t);
     if (/[0-9]/.test(t)) sizes.add(t);
   }
