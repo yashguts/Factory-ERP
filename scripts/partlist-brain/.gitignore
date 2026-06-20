@@ -2,3 +2,6 @@
 data/corpus.json
 # Scratch intermediates (workflow inputs / temp lists)
 data/_*.json
+
+# backfill scratch (downloaded PDFs + manifest)
+_pending/
