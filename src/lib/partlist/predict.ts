@@ -1,17 +1,20 @@
 /**
- * Runtime part-list predictor (ported from scripts/partlist-brain/predict.js).
+ * Runtime part-list predictor — RULES ONLY (no "similar job" neighbour copy).
  *
- * Given a job spec (+ optional drawing-derived travel), find the most similar
- * historical job and copy its part-list structure, refining quantities by mined
- * formulas / travel models. This is the "brain" half of the blend — the BOM is
- * merged in by the blend engine (lib/actions/partlist-generate.ts).
+ * Presence: the door/drive template skeleton (which particulars apply) + a
+ *   door-independent core. Spec: capacity-band sizing rules (guide rail / fish
+ *   plate) + drawing-derived door width (sills/headers/linton) + each particular's
+ *   standard spec (specHint). Quantity: mined formula (stops / travel).
  *
- * Single-nearest-neighbour by design: backtesting showed top-K consensus gives
- * no gain (jobs cluster tightly by door/drive/capacity). See ACCURACY-REPORT.md.
+ * Everything here is deterministic and inspectable; the BOM is blended on top by
+ * lib/actions/partlist-generate.ts. As engineers mark lists "Ready", those become
+ * the corpus to re-mine better rules (mine-from-ready.js) — the flywheel.
  */
-import corpusRaw from "./corpus-compact.json";
+import templatesRaw from "./templates.json";
+import sizingRaw from "./sizing-bands.json";
 import quantityModelsRaw from "./quantity-models.json";
 import travelModelsRaw from "./travel-models.json";
+import { PACKING_SECTIONS } from "@/lib/packing-list/packing-list-sections";
 
 export interface PredictSpec {
   stops: number | null;
@@ -23,107 +26,153 @@ export interface PredictSpec {
   goods?: boolean;
   v3f?: boolean;
   travelMm?: number | null;
+  doorWidthMm?: number | null;
 }
 
-interface CorpusLine { canon: string; sectionKey: string | null; spec: string; qty: number | null; captureType: string | null }
-interface CorpusJob { sheet: string; spec: PredictSpec; lines: CorpusLine[] }
-interface QtyModel { model: string; value?: number; a?: number; b?: number; source?: string; captureType?: string }
-interface TravelModel { kind: string; perMm: number; b: number }
-
-const CORPUS = corpusRaw as unknown as CorpusJob[];
-const QMODELS = quantityModelsRaw as unknown as Record<string, QtyModel>;
-const TMODELS = travelModelsRaw as unknown as Record<string, TravelModel>;
-
 export interface PredictedLine {
-  canon: string;
-  sectionKey: string | null;
-  captureType: string | null;
+  canon: string | null;
+  sectionKey: string;
+  captureType: "item" | "free";
   particular: string;
   specs: string[];
   qty: number;
-  qtySource: "travel" | "formula" | "knn";
-  neighbour: string;
-  sim: number;
+  qtySource: "drawing" | "formula" | "default";
+  source: string;
+  confidence: "high" | "medium" | "low";
 }
+
+interface QtyModel { model: string; value?: number; a?: number; b?: number; source?: string; sectionKeys?: string[] }
+interface TravelModel { kind: string; perMm: number; b: number }
+interface Skeleton { door: string; drive: string | null; goods?: boolean; home?: boolean; sectionKeys: string[] }
+
+const TEMPLATES = templatesRaw as unknown as Record<string, Skeleton>;
+// band-conditioned sizing mined from the corpus: canon -> band -> most-common spec
+const SIZING = sizingRaw as unknown as Record<string, Record<string, string>>;
+const QMODELS = quantityModelsRaw as unknown as Record<string, QtyModel>;
+const TMODELS = travelModelsRaw as unknown as Record<string, TravelModel>;
+
+const SECTION = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));
+
+// sectionKey -> canon (inverted from the quantity models)
+const SECTION_CANON = new Map<string, string>();
+for (const [canon, m] of Object.entries(QMODELS)) for (const sk of m.sectionKeys ?? []) if (!SECTION_CANON.has(sk)) SECTION_CANON.set(sk, canon);
+
+// door-independent CORE = section_keys present in most skeletons
+const CORE_KEYS = (() => {
+  const count = new Map<string, number>();
+  const tmpl = Object.values(TEMPLATES);
+  for (const t of tmpl) for (const k of t.sectionKeys) count.set(k, (count.get(k) ?? 0) + 1);
+  const need = Math.ceil(tmpl.length * 0.7);
+  return new Set([...count.entries()].filter(([, n]) => n >= need).map(([k]) => k));
+})();
 
 const KG_PER_PASS = 68;
-function toKg(s: PredictSpec): number | null {
-  if (s.capKg) return s.capKg;
-  if (s.capPass) return s.capPass * KG_PER_PASS;
-  return null;
-}
-
-const DOOR_FAMILY: Record<string, string> = {
-  ACO: "auto", AT: "auto", AFF: "auto", CO: "auto", AUTO: "auto",
-  MT: "manual", TELESCOPIC: "manual", MANUAL: "manual",
-  COLLAPSIBLE: "collapsible", COLLAPSIBEL: "collapsible",
-  SWING: "swing", SWS: "swing", IMPERFORATED: "swing",
-  DUMB: "dumb", DUMBWAITER: "dumb",
+const toKg = (s: PredictSpec) => (s.capKg ? s.capKg : s.capPass ? s.capPass * KG_PER_PASS : null);
+const doorFam = (d?: string | null) => {
+  const u = (d || "").toUpperCase();
+  if (/COLLAPS/.test(u)) return "collapsible";
+  if (/SWING|SWS/.test(u)) return "swing";
+  if (/DUMB/.test(u)) return "dumb";
+  if (/\bMT\b|MANUAL|TELESCOPIC/.test(u) && !/AUTO/.test(u)) return "manual";
+  if (/ACO|AT|AFF|CO|AUTO/.test(u)) return "auto";
+  return u ? "other" : "?";
 };
-const fam = (d?: string | null) => (d ? DOOR_FAMILY[d] || d : "?");
 
-export function similarity(a: PredictSpec, b: PredictSpec): number {
-  const ds = a.stops != null && b.stops != null ? Math.abs(a.stops - b.stops) : 4;
-  const sStops = Math.exp(-((ds / 2) ** 2));
-  const ka = toKg(a), kb = toKg(b);
-  let sCap = 0.4;
-  if (ka != null && kb != null) sCap = Math.exp(-(((ka - kb) / 220) ** 2));
-  let sDoor = 0.15;
-  if (a.doorType && b.doorType) sDoor = a.doorType === b.doorType ? 1 : fam(a.doorType) === fam(b.doorType) ? 0.6 : 0.15;
-  let sDrive = 0.4;
-  if (a.driveType && b.driveType) sDrive = a.driveType === b.driveType ? 1 : 0.35;
-  const sFlag = ((a.home === b.home ? 1 : 0) + (a.goods === b.goods ? 1 : 0)) / 2;
-  return 0.34 * sDoor + 0.24 * sStops + 0.22 * sCap + 0.1 * sDrive + 0.1 * sFlag;
+/** Which template skeleton best fits this job (door + drive + flags)? */
+function pickSkeleton(target: PredictSpec): { keys: Set<string>; matchedDoor: boolean } {
+  const tf = target.home ? "auto-home" : doorFam(target.doorType);
+  let best: { name: string; score: number } | null = null;
+  for (const [name, t] of Object.entries(TEMPLATES)) {
+    let s = 0;
+    if (target.home && t.home) s += 6;
+    if (!target.home) {
+      const f = doorFam(t.door);
+      if (f === doorFam(target.doorType)) s += 4;
+    }
+    if (target.goods && t.goods) s += 3;
+    if (target.driveType && t.drive && target.driveType.toUpperCase() === t.drive.toUpperCase()) s += 2;
+    if (target.v3f && t.drive === "V3F") s += 1;
+    if (!best || s > best.score) best = { name, score: s };
+  }
+  // a real door-family match scores >= 4 (or home). otherwise fall back to core only.
+  const matchedDoor = !!best && best.score >= 4;
+  const keys = new Set<string>(CORE_KEYS);
+  if (matchedDoor && best) for (const k of TEMPLATES[best.name].sectionKeys) keys.add(k);
+  return { keys, matchedDoor };
 }
 
-function applyFormula(m: QtyModel | undefined, stops: number): number | null {
+function bandOf(target: PredictSpec): string {
+  const kg = toKg(target);
+  if (target.goods) {
+    if (kg == null) return "GoodsMR2-2.5";
+    if (kg < 1500) return "GoodsMR<1.5";
+    if (kg <= 2500) return "GoodsMR2-2.5";
+    return "GoodsMR3";
+  }
+  const pass = target.capPass ?? (kg != null ? Math.round(kg / KG_PER_PASS) : null);
+  if (pass == null) return "13-16P";
+  if (pass <= 10) return "4-10P";
+  if (pass <= 16) return "13-16P";
+  if ((kg ?? 0) >= 4000) return "4Ton";
+  return ">1Ton";
+}
+
+function applyModel(m: QtyModel | undefined, stops: number | null): number | null {
   if (!m) return null;
+  const s = stops ?? 0;
   switch (m.model) {
     case "constant": return m.value ?? null;
-    case "stops": return stops;
-    case "stops+1": return stops + 1;
-    case "stops-1": return stops - 1;
-    case "2*stops": return 2 * stops;
-    case "2*stops+1": return 2 * stops + 1;
-    case "linear": return m.a != null && m.b != null ? Math.round(m.a * stops + m.b) : null;
+    case "stops": return s;
+    case "stops+1": return s + 1;
+    case "stops-1": return s - 1;
+    case "2*stops": return 2 * s;
+    case "2*stops+1": return 2 * s + 1;
+    case "linear": return m.a != null && m.b != null ? Math.round(m.a * s + m.b) : null;
     default: return null;
   }
 }
 
-function qtyFor(canon: string, stops: number | null, travelMm: number | null | undefined, fallback: number): { qty: number; src: PredictedLine["qtySource"] } {
-  const tm = TMODELS[canon];
-  if (tm && tm.kind === "travelLinear" && travelMm != null) {
-    const t = Math.round(tm.perMm * travelMm + tm.b);
-    if (t > 0) return { qty: t, src: "travel" };
+function ruleQty(canon: string | null, target: PredictSpec): { qty: number; src: PredictedLine["qtySource"]; reliable: boolean } {
+  if (canon) {
+    const tm = TMODELS[canon];
+    if (tm && tm.kind === "travelLinear" && target.travelMm != null) {
+      const t = Math.round(tm.perMm * target.travelMm + tm.b);
+      if (t > 0) return { qty: t, src: "drawing", reliable: true };
+    }
+    const m = QMODELS[canon];
+    const f = applyModel(m, target.stops);
+    if (f != null && f >= 0) return { qty: Math.max(0, f) || 1, src: "formula", reliable: m?.source === "formula" };
   }
-  const m = QMODELS[canon];
-  if (m && m.source === "formula" && stops != null) {
-    const f = applyFormula(m, stops);
-    if (f != null && f >= 0) return { qty: f, src: "formula" };
-  }
-  return { qty: fallback, src: "knn" };
+  return { qty: 1, src: "default", reliable: false };
 }
 
-/** Most-similar past job's part list, qty-refined by formula/travel. */
-export function predictPartList(target: PredictSpec): { lines: PredictedLine[]; neighbours: { sheet: string; sim: number }[] } {
-  const ranked = CORPUS.map((rec) => ({ rec, sim: similarity(target, rec.spec) })).sort((a, b) => b.sim - a.sim);
-  if (!ranked.length) return { lines: [], neighbours: [] };
-  const best = ranked[0];
-  const stops = target.stops != null ? target.stops : best.rec.spec.stops;
-
-  const byCanon = new Map<string, { sectionKey: string | null; captureType: string | null; particular: string; qty: number; specs: string[] }>();
-  for (const l of best.rec.lines) {
-    if (!l.canon) continue;
-    let e = byCanon.get(l.canon);
-    if (!e) { e = { sectionKey: l.sectionKey, captureType: l.captureType, particular: l.canon, qty: 0, specs: [] }; byCanon.set(l.canon, e); }
-    if (l.qty != null) e.qty += l.qty;
-    if (l.spec) e.specs.push(l.spec);
+function ruleSpec(sectionKey: string, canon: string | null, target: PredictSpec): { spec: string | null; sized: boolean } {
+  // door-width-driven parts use the drawing's actual clear opening when available
+  if (target.doorWidthMm && /sill|header|linton|lintone|door-post/.test(sectionKey)) {
+    return { spec: `${target.doorWidthMm}mm`, sized: true };
   }
+  // band-conditioned mined size (beats the old hand-parsed Rules table; see compare-rules-vs-neighbor)
+  const bm = canon ? SIZING[canon]?.[bandOf(target)] : null;
+  if (bm) return { spec: bm, sized: true };
+  return { spec: SECTION.get(sectionKey)?.specHint || null, sized: false };
+}
 
+/** Rule-based draft lines for the applicable skeleton. */
+export function predictPartList(target: PredictSpec): { lines: PredictedLine[]; matchedDoor: boolean } {
+  const { keys, matchedDoor } = pickSkeleton(target);
   const lines: PredictedLine[] = [];
-  for (const [canon, e] of byCanon) {
-    const { qty, src } = qtyFor(canon, stops, target.travelMm, e.qty);
-    lines.push({ canon, sectionKey: e.sectionKey, captureType: e.captureType, particular: e.particular, specs: e.specs, qty, qtySource: src, neighbour: best.rec.sheet, sim: +best.sim.toFixed(3) });
+  for (const sk of keys) {
+    const sec = SECTION.get(sk);
+    if (!sec) continue;
+    const canon = SECTION_CANON.get(sk) ?? null;
+    const { spec, sized } = ruleSpec(sk, canon, target);
+    const { qty, src, reliable } = ruleQty(canon, target);
+    const confidence: PredictedLine["confidence"] = sized || src === "drawing" || reliable ? "high" : src === "formula" ? "medium" : "low";
+    lines.push({
+      canon, sectionKey: sk, captureType: sec.captureType, particular: sec.label,
+      specs: spec ? [spec] : [], qty, qtySource: src,
+      source: src === "drawing" ? "rule + drawing" : "rule", confidence,
+    });
   }
-  return { lines, neighbours: ranked.slice(0, 5).map((r) => ({ sheet: r.rec.sheet, sim: +r.sim.toFixed(3) })) };
+  return { lines, matchedDoor };
 }

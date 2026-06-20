@@ -15,14 +15,23 @@ import { PACKING_SECTIONS, packingSection } from "@/lib/packing-list/packing-lis
 import { predictPartList, type PredictSpec } from "@/lib/partlist/predict";
 import { buildResolver, type ItemLite } from "@/lib/partlist/resolve";
 import sectionGroups from "@/lib/partlist/section-groups.json";
+import overridesRaw from "@/lib/partlist/partlist-overrides.json";
 import type { DraftLine, PartListDraft, UnmappedBom } from "@/lib/partlist/types";
+
+const NON_INVENTORY = new Set(
+  Object.entries(overridesRaw as Record<string, { nonInventory?: boolean }>)
+    .filter(([, o]) => o.nonInventory).map(([k]) => k),
+);
 
 /** Shape of the cached drawing extraction (job_drawing_extractions.extracted). */
 interface RichLike {
   door_type?: { value?: string | null } | null;
   capacity?: { value?: string | null } | null;
   floors?: { value?: number | null } | null;
-  dimensions?: { travel_mm?: { value?: string | null } | null } | null;
+  dimensions?: {
+    travel_mm?: { value?: string | null } | null;
+    door_opening_width_mm?: { value?: string | null } | null;
+  } | null;
 }
 
 const GROUPS = sectionGroups as Record<string, string>;
@@ -125,6 +134,8 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
         target.capPass = c2.capPass; target.capKg = c2.capKg;
       }
       if (target.stops == null && d?.floors?.value != null) target.stops = d.floors.value;
+      const dw = num(d?.dimensions?.door_opening_width_mm?.value);
+      if (dw) target.doorWidthMm = dw;
     } else {
       warnings.push("Drawing not read yet — run AI auto-fill on this job to read the drawing, then regenerate for travel-based quantities. Using spec + BOM for now.");
     }
@@ -199,23 +210,25 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
         is_conflict = true;
         conflict_note = (conflict_note ? conflict_note + "; " : "") + `${bomList.length} BOM items map to this line`;
       }
-      if (brainLine?.qtySource === "travel" || brainLine?.qtySource === "formula") sources.push(brainLine.qtySource);
+      if (brainLine) sources.push("rule");
     } else if (brainLine) {
       qty = brainLine.qty;
-      if (captureType === "item") {
+      // skip resolution for sections research flagged as genuinely non-inventory
+      if (captureType === "item" && !NON_INVENTORY.has(sk)) {
         const r = resolver.resolve(sec.label, sk, spec);
         if (r.item) { item_id = r.item.id; item_code = r.item.code; item_name = r.item.name; }
       }
-      sources.push(brainLine.qtySource === "knn" ? "similar job" : brainLine.qtySource);
-      confidence = item_id || captureType === "free" ? (brainLine.sim > 0.6 ? "medium" : "low") : "low";
+      sources.push(NON_INVENTORY.has(sk) ? "rule (non-stock)" : brainLine.source);
+      confidence = captureType === "free" || item_id ? brainLine.confidence : "low";
     }
 
-    const needs_item = captureType === "item" && !item_id;
+    const non_inventory = NON_INVENTORY.has(sk) && !item_id;
+    const needs_item = captureType === "item" && !item_id && !non_inventory;
     lines.push({
       sectionKey: sk, label: sec.label, group: GROUPS[sk] || "PART E", captureType,
       item_id, item_code, item_name, spec, qty,
       source: sources.join(" + ") || "manual", confidence, is_conflict, conflict_note,
-      needs_item, bom_line_id,
+      needs_item, non_inventory, bom_line_id,
     });
   }
 
@@ -226,16 +239,17 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
       sectionKey: OTHER_SECTION_KEY, label: e.name || "(BOM item)", group: "OTHER", captureType: "item",
       item_id: e.item_id, item_code: e.code, item_name: e.name, spec: null, qty: e.qty,
       source: "BOM", confidence: "high", is_conflict: true,
-      conflict_note: "Couldn't auto-place — file into a section", needs_item: false, bom_line_id: e.id,
+      conflict_note: "Couldn't auto-place — file into a section", needs_item: false, non_inventory: false, bom_line_id: e.id,
     });
   }
 
   lines.sort((a, b) => (TEMPLATE_ORDER.get(a.sectionKey) ?? 9999) - (TEMPLATE_ORDER.get(b.sectionKey) ?? 9999));
 
+  if (!brain.matchedDoor && target.doorType) warnings.push("No rule template for this door type yet — showing core particulars only; the BOM fills the door-specific parts.");
+
   return {
     lines,
     coverage: { total: bomTotal, covered: bomTotal - unmapped.length, unmapped },
-    neighbours: brain.neighbours,
     drawingRead,
     doorType: target.doorType ?? null,
     warnings,

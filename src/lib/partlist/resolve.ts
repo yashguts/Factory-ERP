@@ -7,6 +7,7 @@
  *   const hit = r.resolve(particular, sectionKey, spec); // -> { item } | { item:null, reason }
  */
 import { packingSection } from "@/lib/packing-list/packing-list-sections";
+import overridesRaw from "./partlist-overrides.json";
 
 export interface ItemLite { id: string; code: string; name: string; category_id: string | null }
 export interface CategoryLite { id: string; name: string; parent_id: string | null }
@@ -29,11 +30,16 @@ function tokenize(s: string): Tok {
   return { all, sizes };
 }
 
-// SKUs that exist under a different category name than the part-list particular.
+// Section -> corrected ERP category, from the research+grounding pass
+// (partlist-overrides.json) plus a couple of hand-verified fixes. Lets particulars
+// whose template category was empty/wrong resolve to the right inventory category.
+interface Override { categoryPath?: string; nonInventory?: boolean; aliases?: string[] }
+const OVERRIDES = overridesRaw as Record<string, Override>;
 const CATEGORY_OVERRIDE: Record<string, string[]> = {
   "p-dade-weight-rod-ms": ["Header Systems > Dead Weight25x25"],
   "p-car-header-hanging-bkt": ["Header Systems > HEADER"],
 };
+for (const [sk, o] of Object.entries(OVERRIDES)) if (o.categoryPath) CATEGORY_OVERRIDE[sk] ??= [o.categoryPath];
 
 export interface Resolver { resolve: (label: string, sectionKey: string | null, spec: string | null) => ResolveHit }
 

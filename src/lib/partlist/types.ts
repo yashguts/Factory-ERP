@@ -12,13 +12,16 @@ export interface DraftLine {
   item_name: string | null;
   spec: string | null;
   qty: number;
-  /** Where the values came from, e.g. "BOM", "BOM + travel", "similar job", "formula". */
+  /** Where the values came from, e.g. "BOM", "rule", "rule + drawing", "BOM + rule". */
   source: string;
   confidence: Confidence;
   is_conflict: boolean;
   conflict_note: string | null;
   /** item-type line with no resolved SKU → engineer must pick/create or free-text. */
   needs_item: boolean;
+  /** genuinely not an inventory item (cut-from-sheet, fabricated, consumable) — a
+   *  valid line that doesn't need an item_id. */
+  non_inventory: boolean;
   bom_line_id: string | null;
 }
 
@@ -39,7 +42,6 @@ export interface BomCoverage {
 export interface PartListDraft {
   lines: DraftLine[];
   coverage: BomCoverage;
-  neighbours: { sheet: string; sim: number }[];
   drawingRead: boolean;
   doorType: string | null;
   warnings: string[];

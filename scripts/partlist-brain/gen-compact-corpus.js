@@ -16,17 +16,11 @@ const OUT = path.join(__dirname, "..", "..", "src", "lib", "partlist");
 fs.mkdirSync(OUT, { recursive: true });
 
 // co-locate the runtime model artifacts so the app imports them from one dir
-for (const f of ["quantity-models.json", "travel-models.json", "rules.json"]) {
+for (const f of ["quantity-models.json", "travel-models.json", "rules.json", "templates.json", "sizing-bands.json", "partlist-overrides.json"]) {
   fs.copyFileSync(path.join(__dirname, "data", f), path.join(OUT, f));
 }
 
-// ---- compact corpus ----
-const compact = corpus.map((r) => ({
-  sheet: r.sheet,
-  spec: r.spec,
-  lines: r.lines.filter((l) => l.canon).map((l) => ({ canon: l.canon, sectionKey: l.sectionKey, spec: l.spec, qty: l.qty, captureType: l.captureType })),
-}));
-fs.writeFileSync(path.join(OUT, "corpus-compact.json"), JSON.stringify(compact));
+// (Neighbour corpus removed — the runtime predictor is rules-only, no "similar job" copy.)
 
 // ---- dominant part-group per sectionKey ----
 const votes = new Map();
@@ -49,8 +43,8 @@ fs.writeFileSync(path.join(OUT, "section-groups.json"), JSON.stringify(groupOf))
 const byGroup = {};
 for (const s of sections) { (byGroup[groupOf[s.key]] ||= []).push(s.label); }
 const sz = (p) => (fs.statSync(p).size / 1024).toFixed(0) + "KB";
-console.log(`corpus-compact.json: ${compact.length} jobs, ${sz(path.join(OUT, "corpus-compact.json"))}`);
-console.log(`section-groups.json: ${Object.keys(groupOf).length} sections, ${sz(path.join(OUT, "section-groups.json"))}\n`);
+console.log(`section-groups.json: ${Object.keys(groupOf).length} sections, ${sz(path.join(OUT, "section-groups.json"))}`);
+console.log(`copied runtime artifacts: quantity-models, travel-models, rules, templates\n`);
 for (const g of ["PART A", "PART B", "PART C", "PART D", "PART E"]) {
   const items = byGroup[g] || [];
   console.log(`${g} (${items.length}): ${items.slice(0, 10).join(" · ")}`);

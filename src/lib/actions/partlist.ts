@@ -35,6 +35,7 @@ export interface SavedLine {
   is_conflict: boolean;
   checked: boolean;
   not_required: boolean;
+  non_inventory: boolean;
   bom_line_id: string | null;
   dismissed_reason: string | null;
   note: string | null;
@@ -62,6 +63,7 @@ export interface SaveLineInput {
   is_conflict?: boolean;
   checked?: boolean;
   not_required?: boolean;
+  non_inventory?: boolean;
   bom_line_id?: string | null;
   dismissed_reason?: string | null;
   note?: string | null;
@@ -105,7 +107,7 @@ export async function getPartList(jobId: string): Promise<PartListView> {
     .from("packing_list_lines")
     .select(
       `id, section_key, item_id, label, spec, qty, note, sort_order, source, confidence,
-       is_conflict, checked, not_required, bom_line_id, dismissed_reason,
+       is_conflict, checked, not_required, non_inventory, bom_line_id, dismissed_reason,
        item:items!packing_list_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("packing_list_id", list.id)
@@ -123,7 +125,7 @@ export async function getPartList(jobId: string): Promise<PartListView> {
       code: it?.code ?? null, name: (it?.name as string) ?? (row.label as string) ?? null,
       uom: uomRel?.abbreviation ?? null, spec: row.spec ?? null, qty: Number(row.qty ?? 0),
       source: row.source ?? null, confidence: row.confidence ?? null, is_conflict: !!row.is_conflict,
-      checked: !!row.checked, not_required: !!row.not_required, bom_line_id: row.bom_line_id ?? null,
+      checked: !!row.checked, not_required: !!row.not_required, non_inventory: !!row.non_inventory, bom_line_id: row.bom_line_id ?? null,
       dismissed_reason: row.dismissed_reason ?? null, note: row.note ?? null, sort_order: Number(row.sort_order ?? 0),
     });
   }
@@ -161,7 +163,7 @@ export async function savePartList(
     await supabase.from("packing_list_lines").delete().eq("packing_list_id", listId);
 
     const rows = input.lines
-      .filter((l) => l.item_id || (l.label && l.label.trim()) || l.bom_line_id || l.not_required)
+      .filter((l) => l.item_id || (l.label && l.label.trim()) || l.bom_line_id || l.not_required || l.non_inventory)
       .map((l, i) => ({
         packing_list_id: listId,
         section_key: l.sectionKey,
@@ -175,7 +177,7 @@ export async function savePartList(
         is_conflict: !!l.is_conflict,
         checked: !!l.checked,
         checked_at: l.checked ? new Date().toISOString() : null,
-        not_required: !!l.not_required,
+        not_required: !!l.not_required, non_inventory: !!l.non_inventory,
         bom_line_id: l.bom_line_id ?? null,
         dismissed_reason: l.dismissed_reason ?? null,
         sort_order: i,
@@ -212,10 +214,11 @@ export interface ReadyResult {
   blockers?: { uncheckedActive: number; uncoveredBom: number; undispositionedGroups: string[]; needsItem: number };
 }
 
-/** An item-type line that still has no inventory item linked (free-text fastener
- *  lines are exempt). */
-function isUnlinkedItem(sectionKey: string, item_id: string | null, not_required: boolean): boolean {
-  if (not_required || item_id) return false;
+/** An item-type line that still has no inventory item linked. Exempt: free-text
+ *  fastener lines, and lines the engineer marked "non-stock" (genuinely not an
+ *  inventory item, e.g. a cut-from-sheet fish plate). */
+function isUnlinkedItem(sectionKey: string, item_id: string | null, not_required: boolean, non_inventory: boolean): boolean {
+  if (not_required || item_id || non_inventory) return false;
   const captureType = sectionKey === OTHER_SECTION_KEY ? "item" : (packingSection(sectionKey)?.captureType ?? "item");
   return captureType !== "free";
 }
@@ -232,7 +235,7 @@ export async function markPartListReady(jobId: string, operator?: string): Promi
   const uncheckedActive = all.filter((l) => !l.not_required && !l.checked && (l.item_id || (l.name && l.name.trim()))).length;
   const uncoveredBom = view.coverage.unmapped.length;
   const undispositionedGroups = ALL_GROUPS.filter((g) => !view.sectionDispositions[g]);
-  const needsItem = all.filter((l) => isUnlinkedItem(l.sectionKey, l.item_id, l.not_required)).length;
+  const needsItem = all.filter((l) => isUnlinkedItem(l.sectionKey, l.item_id, l.not_required, l.non_inventory)).length;
 
   if (uncheckedActive > 0 || uncoveredBom > 0 || undispositionedGroups.length > 0 || needsItem > 0) {
     return {
@@ -276,13 +279,13 @@ export async function savePartListSection(
     await supabase.from("packing_list_lines").delete().eq("packing_list_id", listId).in("section_key", sectionKeys);
 
     const rows = lines
-      .filter((l) => keySet.has(l.sectionKey) && (l.item_id || (l.label && l.label.trim()) || l.bom_line_id || l.not_required))
+      .filter((l) => keySet.has(l.sectionKey) && (l.item_id || (l.label && l.label.trim()) || l.bom_line_id || l.not_required || l.non_inventory))
       .map((l, i) => ({
         packing_list_id: listId, section_key: l.sectionKey, item_id: l.item_id ?? null,
         label: l.item_id ? null : (l.label ?? null), spec: l.spec ?? null, qty: Number(l.qty ?? 0),
         note: l.note ?? null, source: l.source ?? null, confidence: l.confidence ?? null,
         is_conflict: !!l.is_conflict, checked: !!l.checked, checked_at: l.checked ? new Date().toISOString() : null,
-        not_required: !!l.not_required, bom_line_id: l.bom_line_id ?? null, dismissed_reason: l.dismissed_reason ?? null, sort_order: i,
+        not_required: !!l.not_required, non_inventory: !!l.non_inventory, bom_line_id: l.bom_line_id ?? null, dismissed_reason: l.dismissed_reason ?? null, sort_order: i,
       }));
     const BATCH = 200;
     for (let i = 0; i < rows.length; i += BATCH) {

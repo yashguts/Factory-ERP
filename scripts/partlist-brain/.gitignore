@@ -5,3 +5,6 @@ data/_*.json
 
 # backfill scratch (downloaded PDFs + manifest)
 _pending/
+
+# research scratch
+_research/

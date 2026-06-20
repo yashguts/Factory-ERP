@@ -44,6 +44,7 @@ interface Row {
   is_conflict: boolean;
   conflict_note: string | null;
   not_required: boolean;
+  non_inventory: boolean;
   bom_line_id: string | null;
   dismissed_reason: string | null;
   checked: boolean;
@@ -67,7 +68,7 @@ function rowsFromView(view: PartListView): Record<string, Row[]> {
     out[sk] = lines.map((l) => ({
       uid: uid(), item_id: l.item_id, code: l.code, name: l.name, uom: l.uom, spec: l.spec,
       qty: l.qty, source: l.source, confidence: l.confidence, is_conflict: l.is_conflict,
-      conflict_note: null, not_required: l.not_required, bom_line_id: l.bom_line_id,
+      conflict_note: null, not_required: l.not_required, non_inventory: l.non_inventory, bom_line_id: l.bom_line_id,
       dismissed_reason: l.dismissed_reason, checked: l.checked,
     }));
   }
@@ -106,7 +107,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     for (const [sk, arr] of Object.entries(rows)) {
       const ct = sk === OTHER_SECTION_KEY ? "item" : (SECTION_BY_KEY.get(sk)?.captureType ?? "item");
       if (ct === "free") continue;
-      for (const r of arr) if (!r.not_required && !r.item_id) n++;
+      for (const r of arr) if (!r.not_required && !r.item_id && !r.non_inventory) n++;
     }
     return n;
   }, [rows]);
@@ -121,7 +122,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     setStatus("draft");
   }, []);
   const addRow = useCallback((sk: string) => {
-    const r: Row = { uid: uid(), item_id: null, code: null, name: null, uom: null, spec: null, qty: 1, source: "manual", confidence: null, is_conflict: false, conflict_note: null, not_required: false, bom_line_id: null, dismissed_reason: null, checked: false };
+    const r: Row = { uid: uid(), item_id: null, code: null, name: null, uom: null, spec: null, qty: 1, source: "manual", confidence: null, is_conflict: false, conflict_note: null, not_required: false, non_inventory: false, bom_line_id: null, dismissed_reason: null, checked: false };
     setRows((prev) => ({ ...prev, [sk]: [...(prev[sk] || []), r] }));
     setStatus("draft");
     setDispositions((d) => { const g = sk === OTHER_SECTION_KEY ? "OTHER" : sectionGroup(sk); if (!d[g]) return d; const { [g]: _x, ...rest } = d; return rest; });
@@ -137,7 +138,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     setStatus("draft");
   }, [patchRow]);
   const toggleCheck = useCallback((sk: string, r: Row) => {
-    if (!r.not_required && !r.item_id && !(r.name && r.name.trim())) { toast.error("Add an item or text before confirming this line."); return; }
+    if (!r.not_required && !r.non_inventory && !r.item_id && !(r.name && r.name.trim())) { toast.error("Add an item, mark it non-stock, or type text before confirming this line."); return; }
     patchRow(sk, r.uid, { checked: !r.checked });
   }, [patchRow, toast]);
 
@@ -158,7 +159,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
       const r: Row = {
         uid: uid(), item_id: l.item_id, code: l.item_code, name: l.captureType === "free" ? (l.spec ?? null) : l.item_name,
         uom: null, spec: l.spec, qty: l.qty, source: l.source, confidence: l.confidence, is_conflict: l.is_conflict,
-        conflict_note: l.conflict_note, not_required: false, bom_line_id: l.bom_line_id, dismissed_reason: null, checked: false,
+        conflict_note: l.conflict_note, not_required: false, non_inventory: l.non_inventory, bom_line_id: l.bom_line_id, dismissed_reason: null, checked: false,
       };
       (next[l.sectionKey] ||= []).push(r);
     }
@@ -222,7 +223,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     for (const sk of keys) {
       const isFree = SECTION_BY_KEY.get(sk)?.captureType === "free";
       for (const r of rows[sk] || []) {
-        lines.push({ sectionKey: sk, item_id: isFree ? null : r.item_id, label: isFree ? r.name : (r.item_id ? null : r.name), spec: r.spec, qty: r.qty, source: r.source, confidence: r.confidence, is_conflict: r.is_conflict, checked: r.checked, not_required: r.not_required, bom_line_id: r.bom_line_id, dismissed_reason: r.dismissed_reason });
+        lines.push({ sectionKey: sk, item_id: isFree ? null : r.item_id, label: isFree ? r.name : (r.item_id ? null : r.name), spec: r.spec, qty: r.qty, source: r.source, confidence: r.confidence, is_conflict: r.is_conflict, checked: r.checked, not_required: r.not_required, non_inventory: r.non_inventory, bom_line_id: r.bom_line_id, dismissed_reason: r.dismissed_reason });
       }
     }
     setBusy("save");
@@ -416,7 +417,8 @@ function CoverageBanner({ coverage }: { coverage: { total: number; covered: numb
   );
 }
 
-const SRC_LABEL: Record<string, string> = { bom: "BOM", BOM: "BOM", travel: "drawing", formula: "rule", "similar job": "similar job", manual: "manual" };
+// sources are already human-readable ("rule", "rule + drawing", "BOM", "BOM + rule"); show as-is
+const SRC_LABEL: Record<string, string> = {};
 const confColor = (c: string | null) => (c === "high" ? "bg-emerald-500" : c === "medium" ? "bg-amber-500" : "bg-[var(--muted-foreground)]");
 
 interface LineRowProps {
@@ -432,7 +434,7 @@ interface LineRowProps {
 function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowProps) {
   const isFree = sec?.captureType === "free";
   const dismissed = row.not_required;
-  const needsItem = !dismissed && !isFree && !row.item_id;
+  const needsItem = !dismissed && !isFree && !row.item_id && !row.non_inventory;
   return (
     <div className={cn("flex items-center gap-2 px-3 py-1.5 text-[13px]", dismissed && "opacity-50", row.is_conflict && "bg-red-500/5")}>
       {/* check */}
@@ -446,14 +448,28 @@ function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowPr
         <span className="truncate" title={sec?.label || row.name || ""}>{sec ? (label ?? sec.label) : (row.name || "(BOM item)")}</span>
         {row.is_conflict && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label={row.conflict_note || "conflict"} />}
         {needsItem && <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] font-medium text-amber-600">needs item</span>}
+        {row.non_inventory && <span className="shrink-0 rounded bg-violet-500/15 px-1 text-[10px] font-medium text-violet-600">non-stock</span>}
       </div>
 
-      {/* item picker / free text */}
+      {/* item picker / free text / non-stock */}
       <div className="min-w-0 flex-1">
         {isFree
           ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={`e.g. ${sec?.specHint || "spec"}`} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
-          : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
+          : row.non_inventory
+            ? <div className="flex h-7 items-center px-2 text-[13px] italic text-[var(--muted-foreground)]">Non-stock — no inventory item (spec only)</div>
+            : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
       </div>
+
+      {/* non-stock toggle (item-type rows only) */}
+      {!isFree && (
+        <button
+          onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false } : { non_inventory: true, item_id: null, code: null, name: null, uom: null })}
+          title="Mark as a non-stock item (no inventory SKU — e.g. fish plate, cut part)"
+          className={cn("shrink-0 rounded border px-1 text-[10px] cursor-pointer", row.non_inventory ? "border-violet-400 bg-violet-500/15 text-violet-600" : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-violet-400")}
+        >
+          non-stock
+        </button>
+      )}
 
       {/* spec */}
       <input value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })} placeholder="spec" className="h-7 w-24 shrink-0 rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
