@@ -65,14 +65,36 @@ function applyFormula(m, stops) {
   }
 }
 
+// collapse one job's lines to one entry per canon (sum qty, keep specs)
+function collapse(rec) {
+  const byCanon = new Map();
+  for (const l of rec.lines) {
+    if (!l.canon) continue;
+    let e = byCanon.get(l.canon);
+    if (!e) { e = { canon: l.canon, sectionKey: l.sectionKey, captureType: l.captureType, particular: l.particular, qty: 0, specs: [] }; byCanon.set(l.canon, e); }
+    if (l.qty != null) e.qty += l.qty;
+    if (l.spec) e.specs.push(l.spec);
+  }
+  return byCanon;
+}
+
+// pick the value with the most summed weight (robust mode for discrete qtys/specs)
+function weightedMode(pairs) { // [{v, w}]
+  const m = new Map();
+  for (const { v, w } of pairs) m.set(v, (m.get(v) || 0) + w);
+  let best = null;
+  for (const [v, w] of m) if (!best || w > best.w) best = { v, w };
+  return best ? best.v : null;
+}
+
 /**
  * Predict a part list for targetSpec.
- * Strategy v1: nearest-neighbour copy + formula qty refinement.
- *   - structure & specs: from the single best neighbour
- *   - qty: reliable formula(stops) when available, else neighbour's qty
+ *   single-neighbour (default): copy the most similar job, refine qty by formula/travel.
+ *   consensus (opts.consensus): vote each part across the top-K neighbours; include a
+ *     part if its weighted support >= opts.threshold; qty/spec by weighted consensus.
  */
 function predict(target, idx, opts = {}) {
-  const { excludeSheet } = opts;
+  const { excludeSheet, consensus = false, k = 5, threshold = 0.4 } = opts;
   const ranked = [];
   for (const rec of idx.corpus) {
     if (excludeSheet && rec.sheet === excludeSheet) continue;
@@ -80,42 +102,59 @@ function predict(target, idx, opts = {}) {
   }
   ranked.sort((a, b) => b.sim - a.sim);
   if (!ranked.length) return { lines: [], neighbours: [] };
-  const best = ranked[0];
-  const stops = target.stops != null ? target.stops : best.rec.spec.stops;
+  const stops = target.stops != null ? target.stops : ranked[0].rec.spec.stops;
 
-  // collapse the neighbour's lines to one entry per canon (sum qty, keep specs)
-  const byCanon = new Map();
-  for (const l of best.rec.lines) {
-    if (!l.canon) continue;
-    let e = byCanon.get(l.canon);
-    if (!e) { e = { canon: l.canon, sectionKey: l.sectionKey, captureType: l.captureType, particular: l.particular, lines: [] }; byCanon.set(l.canon, e); }
-    e.lines.push({ spec: l.spec, qty: l.qty });
-  }
-
-  const out = [];
-  for (const [canon, e] of byCanon) {
+  const qtyOf = (canon, fallbackQty) => {
     const m = idx.q[canon];
-    const neighbourQty = e.lines.reduce((a, x) => a + (x.qty || 0), 0);
-    let qty = neighbourQty, qtySource = "knn";
-    if (m && m.source === "formula" && stops != null) {
-      const f = applyFormula(m, stops);
-      if (f != null && f >= 0) { qty = f; qtySource = "formula"; }
-    }
-    // travel-based model wins for variable parts when the drawing gives travel
     const tm = idx.travel[canon];
     if (tm && tm.kind === "travelLinear" && target.travelMm != null) {
       const t = Math.round(tm.perMm * target.travelMm + tm.b);
-      if (t > 0) { qty = t; qtySource = "travel"; }
+      if (t > 0) return { qty: t, src: "travel" };
     }
-    out.push({
-      canon, sectionKey: e.sectionKey, captureType: e.captureType, particular: e.particular,
-      specs: e.lines.map((x) => x.spec).filter(Boolean),
-      qty, qtySource,
-      provenance: { neighbour: best.rec.sheet, sim: +best.sim.toFixed(3), formula: m && m.source === "formula" ? m.model : null },
-      confidence: +best.sim.toFixed(3),
-    });
+    if (m && m.source === "formula" && stops != null) {
+      const f = applyFormula(m, stops);
+      if (f != null && f >= 0) return { qty: f, src: "formula" };
+    }
+    return { qty: fallbackQty, src: "knn" };
+  };
+
+  if (!consensus) {
+    const best = ranked[0];
+    const out = [];
+    for (const [canon, e] of collapse(best.rec)) {
+      const { qty, src } = qtyOf(canon, e.qty);
+      out.push({ canon, sectionKey: e.sectionKey, captureType: e.captureType, particular: e.particular,
+        specs: e.specs, qty, qtySource: src,
+        provenance: { neighbour: best.rec.sheet, sim: +best.sim.toFixed(3) }, confidence: +best.sim.toFixed(3) });
+    }
+    return { lines: out, neighbours: ranked.slice(0, 5).map((r) => ({ sheet: r.rec.sheet, sim: +r.sim.toFixed(3) })) };
   }
-  return { lines: out, neighbours: ranked.slice(0, 5).map((r) => ({ sheet: r.rec.sheet, sim: +r.sim.toFixed(3) })) };
+
+  // ---- consensus over top-K ----
+  const top = ranked.slice(0, k).filter((r) => r.sim > 0);
+  const totalW = top.reduce((a, r) => a + r.sim, 0) || 1;
+  const agg = new Map(); // canon -> { support, specVotes:[], qtyVotes:[], meta }
+  for (const { rec, sim } of top) {
+    for (const [canon, e] of collapse(rec)) {
+      let g = agg.get(canon);
+      if (!g) { g = { support: 0, specVotes: [], qtyVotes: [], sectionKey: e.sectionKey, captureType: e.captureType, particular: e.particular }; agg.set(canon, g); }
+      g.support += sim;
+      for (const s of e.specs) g.specVotes.push({ v: s, w: sim });
+      g.qtyVotes.push({ v: e.qty, w: sim });
+    }
+  }
+  const out = [];
+  for (const [canon, g] of agg) {
+    const support = g.support / totalW;
+    if (support < threshold) continue;
+    const knnQty = weightedMode(g.qtyVotes);
+    const { qty, src } = qtyOf(canon, knnQty);
+    const spec = weightedMode(g.specVotes);
+    out.push({ canon, sectionKey: g.sectionKey, captureType: g.captureType, particular: g.particular,
+      specs: spec ? [spec] : [], qty, qtySource: src,
+      provenance: { support: +support.toFixed(2), k: top.length }, confidence: +support.toFixed(3) });
+  }
+  return { lines: out, neighbours: top.map((r) => ({ sheet: r.rec.sheet, sim: +r.sim.toFixed(3) })) };
 }
 
 module.exports = { buildIndex, predict, similarity, toKg, applyFormula };

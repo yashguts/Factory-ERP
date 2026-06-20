@@ -17,7 +17,7 @@ your 227 past jobs in turn and predicting it from the other 226:
 | Did it get the **quantity** right? | **80% exact**, 87% within ±1 |
 | Did it get the **size/spec** right? | **79%** |
 | **Whole lines perfect** (right part + qty + size, no edit needed) | **67%** |
-| Lines **auto-linked to a real inventory item** | **82%** (rest flagged "needs item") |
+| Lines **auto-linked to a real inventory item** | **83%** (rest flagged "needs item") |
 
 Plain English: for a typical job the brain produces a part list where **~2 out of 3
 lines are exactly right and need no touch**, **9 of 10 of the right parts are
@@ -99,17 +99,14 @@ Presence  ITEM : precision 90.0%  recall 90.4%  F1 90.2%
 Quantity (matched item lines, n=19030): exact 80.2%  within±1 87.0%
 Spec/size (matched item lines w/ spec, n=15198): 78.6%
 Lines correct as-is (present + qty + spec): 67.4%
-Inventory resolution (27,092 item lines): 81.6% linked, 4,989 flagged
+Inventory resolution (27,092 item lines): 82.9% linked, 4,645 flagged
 ```
 
-Resolver v2 lifted resolution 75% → 82% by matching the SKU's size tokens as a
-subset of the (verbose) part-list spec — e.g. spec `DBG-850mm/100x40x40x3/1.7M`
+Resolver v2 + category overrides lifted resolution 75% → **83%**. The subset-match
+handles verbose specs — e.g. spec `DBG-850mm/100x40x40x3/1.7M`
 now matches SKU `Counter Weight Frame Goods DBG-850mm`, and `8mm (34mtr x 6nos)`
-matches `Wire Rope 8mm`. The residual ~18% is: finish-only specs (e.g. Linton
-`SS`) that resolve at **runtime** once the drawing gives the door width; a few
-wrong-category template mappings (Dade Weight Rod, Car Header Hanging Bkt); cabin
-items (out of mechanical scope); and naming-convention mismatches (Buffer Channel
-`DBG-1242` vs SKU `Combination 700`).
+matches `Wire Rope 8mm`; category overrides recovered Dade Weight Rod → SKU
+`Dead Weight25x25 600MM` and Car Header Hanging Bkt → `HEADER Hanging Car Bkt`.
 
 ## Where it's strongest / weakest
 
@@ -120,19 +117,33 @@ items (out of mechanical scope); and naming-convention mismatches (Buffer Channe
   multi-size; they're copied from the nearest job and are the bulk of the misses.
   These are cheap consumables bought in bulk, so low precision there is low-cost.
 
-## Known accuracy levers
+## Headroom — what we tested (measured, not assumed)
 
-1. ~~**Drawing read (vision)**~~ — **DONE.** Travel/openings extraction is wired; cut
-   Guide Rail / Troughing MAE ~30% (above).
-2. **Top-K consensus** — vote presence across the 5 nearest jobs instead of copying
-   one, to cut both false positives and false negatives. (Not yet on.)
-3. **Rules band-sizing** as a sanity override when no close neighbour exists. (Artifact
-   built; wire at runtime.)
-4. **Runtime resolution of finish-only parts** — Linton/False-ceiling specs are just
-   `SS`/`MS`; resolve them via the drawing's door width + finish at generate time.
-5. **More canonicalisation** — material (PVC/MS) and side (LHS/RHS) variants, a few
-   wrong-category template maps (Dade Weight Rod, Car Header Hanging Bkt), and
-   naming-convention mismatches (Buffer Channel `DBG` vs SKU) still cost a few points.
+- **Drawing read (travel/openings)** — **DONE.** Cut Guide Rail / Troughing MAE ~30%.
+- **Top-K consensus** — **tested, no gain** (`tune-consensus.js`): F1 90.2 (single-NN)
+  vs 90.0 (best consensus). Jobs cluster so tightly by door/drive/capacity that the
+  single most-similar job is already the right template; averaging in less-similar jobs
+  adds noise. *Nuance:* low-threshold consensus reaches **92.6% recall** at lower
+  precision — useful for a review-first draft (deleting extras is easier than adding
+  misses).
+- **Category overrides** — **+1.3%** resolution: SKUs that existed under different
+  category names, remapped in the resolver (verified in DB).
+
+This puts the **spec-only** brain near its practical ceiling. The remaining ~17%
+unresolved / ~33% imperfect lines are dominated by things spec-tuning can't fix, only
+the named next steps can:
+
+1. **Runtime, not spec-time** — finish-only parts (Linton `SS`) and travel-scaled
+   quantities need the *drawing* at generate time (travel wired; door-width resolution
+   is a Milestone-2 step).
+2. **Genuine inventory gaps** — e.g. G.I Wire No-24, Brake Releaser Stand have no SKU;
+   surfaced as "needs item" / create-item prompts.
+3. **Out of scope** — cabin items (separate corpus).
+4. **Long tail** — naming-convention mismatches (Buffer Channel `DBG` vs `Combination`),
+   each <0.5%.
+
+Net: the biggest real gains now come from the drawing at runtime, closing inventory
+gaps, and the engineer-review learning loop — i.e. Milestone 2, not more brain-tuning.
 
 ## Reproduce
 

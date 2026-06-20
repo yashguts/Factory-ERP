@@ -84,14 +84,24 @@ async function main() {
     if (!it.category_id || !cabinIds.has(it.category_id)) globalItems.push(it);
   }
 
+  // Resolver-side category fixes: particulars whose template categoryPath is empty
+  // or points at the wrong category, but whose SKU exists elsewhere (verified in DB).
+  // Cheaper + safer than regenerating the live packing template.
+  const CATEGORY_OVERRIDE = {
+    "p-dade-weight-rod-ms": ["Header Systems > Dead Weight25x25"], // SKU "Dead Weight25x25 600MM"
+    "p-car-header-hanging-bkt": ["Header Systems > HEADER"],        // SKU "HEADER Hanging Car Bkt"
+  };
+
   // resolve categoryPaths -> candidate items, cached per section
   const candCache = new Map();
   function candidates(sectionKey) {
     if (candCache.has(sectionKey)) return candCache.get(sectionKey);
     const sec = sectionByKey.get(sectionKey);
+    const overridePaths = CATEGORY_OVERRIDE[sectionKey];
     let list = [];
-    if (sec && sec.categoryPaths && sec.categoryPaths.length) {
-      const roots = sec.categoryPaths.map((p) => idByPath.get(p)).filter(Boolean);
+    const paths = overridePaths || (sec && sec.categoryPaths);
+    if (paths && paths.length) {
+      const roots = paths.map((p) => idByPath.get(p)).filter(Boolean);
       const all = descendants(roots);
       const seen = new Set();
       for (const cid of all) for (const it of (itemsByCat.get(cid) || [])) if (!seen.has(it.id)) { seen.add(it.id); list.push(it); }
