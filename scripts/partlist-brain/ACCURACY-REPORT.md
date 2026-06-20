@@ -1,9 +1,9 @@
 # Auto Part-List Brain — Accuracy Report (Milestone 1 gate)
 
-_Generated from the offline brain in `scripts/partlist-brain/`. This is the
-**spec → part-list** half of the system, validated leave-one-out on the factory's
-own 227 historical part lists (`Part List.xlsx`). The **drawing → spec** half
-(vision) is reported separately below once the fan-out completes._
+_Generated from the offline brain in `scripts/partlist-brain/`. Two halves:
+**drawing → spec** (vision, validated on 23 paired drawings) and **spec → part-list**
+(validated leave-one-out on the factory's 227 historical part lists in
+`Part List.xlsx`). Both are reported below._
 
 ## TL;DR for the owner
 
@@ -25,8 +25,31 @@ present**, and **3 of 4 item lines come pre-linked to stock**. The engineer revi
 and fixes the rest instead of building 200+ lines by hand. That is the time saving.
 
 This is a **floor, not a ceiling** — it's pure "copy the most similar past job +
-formula-adjust", with no drawing read yet and before the known accuracy levers
-(below) are switched on.
+formula-adjust", before the known accuracy levers (below) are switched on.
+
+## Drawing → spec (vision), 23 paired drawings
+
+Can a model read the job spec straight off the GA drawing (replacing the manual
+spec-entry step)? Each drawing was read blind and scored against the engineer's spec:
+
+| Field | Accuracy |
+|---|---|
+| Drawings successfully read | **23 / 23** |
+| Stops / floors | **96%** |
+| Door type | **100%** |
+| Drive type | **96%** |
+| Capacity (KG↔passenger normalised) | **87%** |
+| **Full core spec correct** | **83%** |
+
+Note: the raw scorer first showed 52% on capacity — an artifact, because the model
+reads capacity in **KG off the drawing** while the engineer's spec uses **passengers**
+(272 kg = 4 pass at 68 kg/pass). After unit-normalising it's 87%. The 4 remaining
+misses are a roof-level miscount and 2 drawings whose stated KG implies a different
+passenger count than the engineer wrote (real drawing-vs-spec discrepancies the review
+step surfaces). Re-score: `node scripts/partlist-brain/rescore-vision.js`.
+
+**Takeaway:** the drawing read is reliable enough to pre-fill the Job Order; the
+engineer confirms the spec, then the part list follows.
 
 ## How it works (transparent, not a black box)
 
