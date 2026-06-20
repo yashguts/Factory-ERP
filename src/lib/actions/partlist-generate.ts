@@ -14,9 +14,16 @@ import { buildCategorySectionMap, OTHER_SECTION_KEY } from "@/lib/packing-list/h
 import { PACKING_SECTIONS, packingSection } from "@/lib/packing-list/packing-list-sections";
 import { predictPartList, type PredictSpec } from "@/lib/partlist/predict";
 import { buildResolver, type ItemLite } from "@/lib/partlist/resolve";
-import { extractDrawingData } from "@/lib/actions/spec-vision";
 import sectionGroups from "@/lib/partlist/section-groups.json";
 import type { DraftLine, PartListDraft, UnmappedBom } from "@/lib/partlist/types";
+
+/** Shape of the cached drawing extraction (job_drawing_extractions.extracted). */
+interface RichLike {
+  door_type?: { value?: string | null } | null;
+  capacity?: { value?: string | null } | null;
+  floors?: { value?: number | null } | null;
+  dimensions?: { travel_mm?: { value?: string | null } | null } | null;
+}
 
 const GROUPS = sectionGroups as Record<string, string>;
 const TEMPLATE_ORDER = new Map(PACKING_SECTIONS.map((s, i) => [s.key, i]));
@@ -91,30 +98,32 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
     travelMm: null,
   };
 
-  // --- live drawing read (best-effort; fills door type + travel) ---
+  // --- drawing features from the CACHED extraction (fast; no inline vision call,
+  //     which would blow the serverless timeout). The drawing is read+cached by the
+  //     existing AI auto-fill / readJobDrawing; here we just reuse what's stored. ---
   let drawingRead = false;
   if (job.gad_drawing_url) {
-    try {
-      const res = await extractDrawingData(jobId);
-      if (res.ok) {
-        drawingRead = true;
-        const d = res.rich;
-        const travel = num(d.dimensions?.travel_mm?.value);
-        if (travel) target.travelMm = travel;
-        const dDoor = mapDoorDrawing(d.door_type?.value ?? null);
-        if (dDoor) target.doorType = dDoor; // drawing wins (vision reads door at ~100%)
-        if (target.capPass == null && target.capKg == null) {
-          const c2 = parseCapacity(d.capacity?.value ?? null);
-          target.capPass = c2.capPass; target.capKg = c2.capKg;
-        }
-        if (target.stops == null && d.floors?.value != null) target.stops = d.floors.value;
-      } else if (res.reason === "not_configured") {
-        warnings.push("Drawing reader not configured (ANTHROPIC_API_KEY) — using spec + BOM only; travel-scaled quantities are estimates.");
-      } else {
-        warnings.push("Couldn't read the drawing — using spec + BOM only.");
+    const { data: ext } = await supabase
+      .from("job_drawing_extractions")
+      .select("extracted")
+      .eq("job_id", jobId)
+      .order("extracted_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const d = ext?.extracted as RichLike | null;
+    if (d) {
+      drawingRead = true;
+      const travel = num(d?.dimensions?.travel_mm?.value);
+      if (travel) target.travelMm = travel;
+      const dDoor = mapDoorDrawing(d?.door_type?.value ?? null);
+      if (dDoor) target.doorType = dDoor; // drawing wins (vision reads door at ~100%)
+      if (target.capPass == null && target.capKg == null) {
+        const c2 = parseCapacity(d?.capacity?.value ?? null);
+        target.capPass = c2.capPass; target.capKg = c2.capKg;
       }
-    } catch {
-      warnings.push("Drawing read failed — using spec + BOM only.");
+      if (target.stops == null && d?.floors?.value != null) target.stops = d.floors.value;
+    } else {
+      warnings.push("Drawing not read yet — run AI auto-fill on this job to read the drawing, then regenerate for travel-based quantities. Using spec + BOM for now.");
     }
   } else {
     warnings.push("No drawing uploaded — quantities use spec-based estimates.");
