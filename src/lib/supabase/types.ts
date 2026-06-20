@@ -81,6 +81,12 @@ export interface Item {
    */
   purchase_uom_id: string | null;
   purchase_conversion: number | null;
+  /** GST master for landed costing. `gst_rate` varies item-wise (%). When
+   *  `gst_creditable` is true (default), GST is recorded but EXCLUDED from cost
+   *  (claimed as input credit); false folds it into the landed cost. */
+  gst_rate: number;
+  hsn_code: string | null;
+  gst_creditable: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -480,8 +486,45 @@ export interface PurchaseOrder {
   /** Approval sign-off — set when someone marks the PO audited/verified. */
   audited_at: string | null;
   audited_by: string | null;
+  /** Landed-cost context. `procurement_kind` switches domestic vs import; for
+   *  imports `currency`/`fx_rate` convert charges + rates to INR. */
+  procurement_kind: ProcurementKind;
+  currency: string;
+  fx_rate: number;
+  incoterm: string | null;
+  supplier_gstin: string | null;
+  place_of_supply: string | null;
   created_at: string;
   updated_at: string;
+}
+
+export type ProcurementKind = "domestic" | "import";
+
+/** A charge on a PO (`receipt_id` null) or a receipt (`receipt_id` set). Only
+ *  receipt-level charges are allocated into landed cost. */
+export type ChargeType =
+  // domestic
+  | "freight_in" | "insurance" | "packing_forwarding" | "loading_unloading"
+  | "handling" | "inspection" | "other"
+  // import
+  | "ocean_air_freight" | "origin_charges" | "inland_freight" | "cha_fee"
+  | "port_thc" | "demurrage" | "warehousing" | "bank_charge"
+  | "customs_bcd" | "customs_sws" | "customs_igst" | "customs_comp_cess"
+  | "customs_add_cvd";
+
+export interface PoCharge {
+  id: string;
+  po_id: string;
+  receipt_id: string | null;
+  charge_type: ChargeType;
+  label: string | null;
+  amount: number;
+  currency: string;
+  fx_rate: number;
+  /** Creditable charges (e.g. customs_igst) are recorded but excluded from cost. */
+  creditable: boolean;
+  allocation_basis: string;
+  created_at: string;
 }
 
 export type PoChangeAction = "create" | "update" | "delete" | "audit" | "unaudit";
@@ -529,6 +572,10 @@ export interface PurchaseOrderLine {
    * none recorded as dual-UOM; callers coalesce to `received_qty`.
    */
   received_stock_qty: number | null;
+  /** Per-line tax. NULL `gst_rate`/`gst_creditable` ⇒ inherit the item's master. */
+  discount_pct: number;
+  gst_rate: number | null;
+  gst_creditable: boolean | null;
 }
 
 // ── Packing lists ──────────────────────────────────────────────────────────

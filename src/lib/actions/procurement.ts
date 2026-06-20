@@ -7,6 +7,11 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { getMrpData } from "@/lib/actions/mrp";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import {
+  computeLanded,
+  type LandedChargeInput,
+  type LandedLineInput,
+} from "@/lib/procurement/landed-cost";
 import type {
   PurchaseOrder,
   PurchaseOrderStatus,
@@ -53,6 +58,9 @@ export interface PoLineDetail {
   tentative_stock_qty: number | null;
   /** Actual stock-UOM qty received so far. NULL ⇒ same-UOM (use `received_qty`). */
   received_stock_qty: number | null;
+  /** Item's current GST master — pre-fills the receive screen (auto-learned). */
+  gst_rate: number | null;
+  gst_creditable: boolean | null;
 }
 
 type SaveResult = { ok: true } | { ok: false; error: string };
@@ -141,7 +149,7 @@ async function _getPurchaseOrderUncached(
     .select(
       `id, item_id, qty, unit_cost, received_qty, sort_order, description,
        purchase_uom_id, tentative_stock_qty, received_stock_qty,
-       item:items(code, name, reorder_point, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+       item:items(code, name, reorder_point, gst_rate, gst_creditable, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("po_id", id)
     .order("sort_order");
@@ -201,6 +209,9 @@ async function _getPurchaseOrderUncached(
         l.tentative_stock_qty != null ? Number(l.tentative_stock_qty) : null,
       received_stock_qty:
         l.received_stock_qty != null ? Number(l.received_stock_qty) : null,
+      gst_rate: item?.gst_rate != null ? Number(item.gst_rate) : null,
+      gst_creditable:
+        item?.gst_creditable != null ? Boolean(item.gst_creditable) : null,
     };
   });
 
@@ -976,6 +987,8 @@ export async function recordReceipt(input: {
   receiptDate: string;
   invoiceNumber?: string | null;
   note?: string | null;
+  /** PO currency → INR. Defaults to 1 (domestic). */
+  fxRate?: number | null;
   lines: {
     poLineId: string | null;
     itemId: string;
@@ -986,6 +999,20 @@ export async function recordReceipt(input: {
     stockQty?: number | null;
     /** Rate paid, per ORDER unit (matches the supplier invoice). */
     unitRate?: number | null;
+    /** Per-line tax (null/undefined => inherit the item's master). */
+    discountPct?: number | null;
+    gstRate?: number | null;
+    gstCreditable?: boolean | null;
+  }[];
+  /** Actual additional charges for THIS receipt — these drive landed cost. */
+  charges?: {
+    chargeType: string;
+    label?: string | null;
+    amount: number;
+    currency?: string | null;
+    fxRate?: number | null;
+    creditable?: boolean | null;
+    allocationBasis?: string | null;
   }[];
 }): Promise<{ ok: true; receiptId: string; lines: number } | { ok: false; error: string }> {
   try {
@@ -1004,6 +1031,48 @@ export async function recordReceipt(input: {
       return { ok: false, error: "Add at least one item with a quantity to receive." };
     }
 
+    // Landed cost: resolve each line's GST (line override → item master), then run
+    // the shared engine over the receipt's lines + actual charges. With no GST/
+    // charges this reduces to (rate × qty) / stock — identical to the old formula.
+    const fxRate = input.fxRate != null && Number(input.fxRate) > 0 ? Number(input.fxRate) : 1;
+    const itemIds = [...new Set(valid.map((l) => l.itemId))];
+    const gstByItem = new Map<
+      string,
+      { rate: number; creditable: boolean; code: string | null; name: string | null }
+    >();
+    if (itemIds.length > 0) {
+      const { data: its } = await supabase
+        .from("items")
+        .select("id, code, name, gst_rate, gst_creditable")
+        .in("id", itemIds);
+      for (const it of its ?? [])
+        gstByItem.set(it.id as string, {
+          rate: Number(it.gst_rate) || 0,
+          creditable: it.gst_creditable !== false,
+          code: (it.code as string | null) ?? null,
+          name: (it.name as string | null) ?? null,
+        });
+    }
+    const landedInputs: LandedLineInput[] = valid.map((l, i) => {
+      const dft = gstByItem.get(l.itemId);
+      return {
+        key: String(i),
+        unitRate: l.unitRate != null ? Number(l.unitRate) : 0,
+        qty: Number(l.qty),
+        stockQty: l.stockQtyResolved,
+        discountPct: l.discountPct != null ? Number(l.discountPct) : 0,
+        gstRate: l.gstRate != null ? Number(l.gstRate) : (dft?.rate ?? 0),
+        gstCreditable: l.gstCreditable != null ? l.gstCreditable : (dft?.creditable ?? true),
+      };
+    });
+    const charges: LandedChargeInput[] = (input.charges ?? []).map((c) => ({
+      amountInr:
+        (Number(c.amount) || 0) *
+        (c.fxRate != null && Number(c.fxRate) > 0 ? Number(c.fxRate) : 1),
+      creditable: c.creditable === true,
+    }));
+    const landed = computeLanded(landedInputs, charges, fxRate); // landed[i] ↔ valid[i]
+
     // 1. Receipt header.
     const { data: receipt, error: rErr } = await supabase
       .from("purchase_order_receipts")
@@ -1017,18 +1086,42 @@ export async function recordReceipt(input: {
       .single();
     if (rErr || !receipt) throw rErr ?? new Error("Could not create the receipt");
 
-    // 2. Receipt lines — qty in the order unit + the actual stock qty counted.
+    // 2. Receipt lines — qty in the order unit + the actual stock qty counted +
+    //    a snapshot of the tax and landed unit cost that were applied.
     const { error: rlErr } = await supabase.from("purchase_order_receipt_lines").insert(
-      valid.map((l) => ({
+      valid.map((l, i) => ({
         receipt_id: receipt.id,
         po_line_id: l.poLineId || null,
         item_id: l.itemId,
         qty: l.qty,
         stock_qty: l.stockQtyResolved,
         unit_rate: l.unitRate != null ? l.unitRate : null,
+        discount_pct: landedInputs[i].discountPct ?? 0,
+        gst_rate: landedInputs[i].gstRate ?? 0,
+        gst_amount: landed[i].gstAmount,
+        gst_creditable: landedInputs[i].gstCreditable ?? true,
+        landed_unit_cost: landed[i].landedUnitCost,
       })),
     );
     if (rlErr) throw rlErr;
+
+    // 2b. Persist this receipt's actual charges (receipt_id set ⇒ these are costed).
+    if ((input.charges ?? []).length > 0) {
+      const { error: chErr } = await supabase.from("po_charges").insert(
+        (input.charges ?? []).map((c) => ({
+          po_id: input.poId,
+          receipt_id: receipt.id,
+          charge_type: c.chargeType,
+          label: c.label?.trim() || null,
+          amount: Number(c.amount) || 0,
+          currency: c.currency || "INR",
+          fx_rate: c.fxRate != null && Number(c.fxRate) > 0 ? Number(c.fxRate) : 1,
+          creditable: c.creditable === true,
+          allocation_basis: c.allocationBasis || "value",
+        })),
+      );
+      if (chErr) throw chErr;
+    }
 
     // 3. Post stock (in stock units) + accumulate received_qty (order unit) and
     //    received_stock_qty (stock units) + latest rate -> per-stock-unit cost.
@@ -1048,7 +1141,8 @@ export async function recordReceipt(input: {
         );
       }
     }
-    for (const l of valid) {
+    for (let i = 0; i < valid.length; i++) {
+      const l = valid[i];
       // The ONE conversion point: inventory always gets the actual stock qty.
       await recordTransaction({
         item_id: l.itemId,
@@ -1070,14 +1164,42 @@ export async function recordReceipt(input: {
           .eq("id", l.poLineId);
         if (uErr) throw uErr;
       }
-      // Latest paid wins. unitRate is per ORDER unit, so convert to a per-stock-unit
-      // cost price: (rate × order qty) ÷ actual stock qty (= rate for same-UOM lines).
-      if (l.unitRate != null && l.unitRate >= 0 && l.stockQtyResolved > 0) {
-        const costPerStock = (Number(l.unitRate) * Number(l.qty)) / l.stockQtyResolved;
+      // Latest paid wins. The price book gets the full LANDED unit cost (basic net
+      // of discount + non-creditable GST + allocated non-creditable charges, all
+      // INR, per stock unit). With no GST/charges this equals (rate × qty) / stock.
+      if (l.unitRate != null && l.stockQtyResolved > 0 && landed[i].landedUnitCost > 0) {
         await supabase
           .from("items")
-          .update({ cost_price: costPerStock, updated_at: new Date().toISOString() })
+          .update({ cost_price: landed[i].landedUnitCost, updated_at: new Date().toISOString() })
           .eq("id", l.itemId);
+      }
+      // Auto-learn GST: when the receipt PROVIDED a rate that differs from the
+      // item master, persist it (last-known wins) so the next receipt pre-fills.
+      // A change to an already-established rate (a revision) is logged for audit.
+      // Past receipts are untouched — their snapshot already costed them.
+      const provided = l.gstRate != null || l.gstCreditable != null;
+      const prev = gstByItem.get(l.itemId);
+      const usedRate = landedInputs[i].gstRate ?? 0;
+      const usedCred = landedInputs[i].gstCreditable ?? true;
+      if (provided && prev && (prev.rate !== usedRate || prev.creditable !== usedCred)) {
+        await supabase
+          .from("items")
+          .update({ gst_rate: usedRate, gst_creditable: usedCred, updated_at: new Date().toISOString() })
+          .eq("id", l.itemId);
+        if (prev.rate > 0 && prev.rate !== usedRate) {
+          try {
+            await supabase.from("item_change_log").insert({
+              item_id: l.itemId,
+              item_code: prev.code,
+              item_name: prev.name,
+              action: "update",
+              changes: [{ field: "gst_rate", old: prev.rate, new: usedRate }],
+              note: `GST revised via receipt${input.invoiceNumber ? ` · inv ${input.invoiceNumber.trim()}` : ""}`,
+            });
+          } catch {
+            /* best-effort log; never block the receipt */
+          }
+        }
       }
     }
 
