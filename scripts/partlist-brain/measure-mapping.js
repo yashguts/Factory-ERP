@@ -165,6 +165,7 @@ function tokenize(s) {
   for (let t of String(s || "").toLowerCase().replace(/[(),"']/g, " ").split(/[\s/]+/)) {
     t = t.replace(/[^a-z0-9.x+-]/g, ""); if (!t || STOP.has(t)) continue; if (t.length < 2 && !SHAPE.has(t)) continue;
     if (/[0-9]/.test(t)) { const sz = t.replace(/mm$/, ""); if (sz.length >= 2) t = sz; }
+    else if (t === "rhs") t = "rh"; else if (t === "lhs") t = "lh";
     all.add(t); if (/[0-9]/.test(t)) sizes.add(t);
   }
   return { all, sizes };
@@ -245,8 +246,10 @@ async function main() {
   // bom item category_ids per job (which sections the BOM covers)
   const headerJob = new Map(headers.map((h) => [h.id, h.job_id]));
   const bomSectionsByJob = new Map();
+  const bomCountByJob = new Map();
   for (const l of bomLines) {
     const jobId = headerJob.get(l.job_bom_id); if (!jobId) continue;
+    bomCountByJob.set(jobId, (bomCountByJob.get(jobId) || 0) + 1);
     const it = l.item_id ? itemById.get(l.item_id) : null;
     const sk = it?.category_id ? catToSection.get(it.category_id) : undefined;
     if (sk && sk !== OTHER_SECTION_KEY) { if (!bomSectionsByJob.has(jobId)) bomSectionsByJob.set(jobId, new Set()); bomSectionsByJob.get(jobId).add(sk); }
@@ -285,7 +288,7 @@ async function main() {
       if (r.item) { resolved++; ps.resolved++; } else ps.reasons.set(r.reason, (ps.reasons.get(r.reason) || 0) + 1);
       perSection.set(sk, ps);
     }
-    perJob.push({ job: job.job_number, hasExt: !!ext, itemLines, resolved, freeLines, nonStock, rate: itemLines ? resolved / itemLines : null });
+    perJob.push({ job: job.job_number, hasExt: !!ext, bomLines: bomCountByJob.get(job.id) || 0, itemLines, resolved, freeLines, nonStock, rate: itemLines ? resolved / itemLines : null });
   }
 
   const withLines = perJob.filter((j) => j.itemLines > 0);
@@ -327,6 +330,20 @@ async function main() {
     console.log(`  ${pct(v.resolved, v.total).padStart(6)}  ${String(v.resolved).padStart(3)}/${String(v.total).padStart(3)}  ${v.label.slice(0, 38).padEnd(38)} [${String(cands.length).padStart(5)} cands]  spec="${(topSpec?.[0]||"").slice(0,18)}"  ${reasons}`);
     if (process.argv.includes("--why")) console.log(`        cands: ${cands.slice(0, 6).map((c) => c.name).join(" | ").slice(0, 130)}`);
   }
+
+  // ---- JOB-WISE table + CSV (owner ask: per job, non-BOM lines created vs linked) ----
+  const sorted = [...perJob].sort((a, b) => String(a.job).localeCompare(String(b.job), undefined, { numeric: true }));
+  const csv = ["job,bom_lines_all_included,nonbom_item_lines,nonbom_linked_to_inventory,link_pct,free_text_lines,non_stock_lines,drawing_read"];
+  for (const j of sorted) csv.push([j.job, j.bomLines, j.itemLines, j.resolved, j.rate == null ? "" : (100 * j.rate).toFixed(0), j.freeLines, j.nonStock, j.hasExt ? "yes" : "no"].join(","));
+  const csvPath = path.join(__dirname, "data", "per-job-mapping.csv");
+  fs.writeFileSync(csvPath, csv.join("\n"));
+
+  if (process.argv.includes("--jobs")) {
+    console.log(`\n=== JOB-WISE — non-BOM lines created vs auto-linked (all ${sorted.length} jobs) ===`);
+    console.log(`  ${"JOB".padEnd(14)} ${"BOM".padStart(4)} ${"nonBOM".padStart(7)} ${"linked".padStart(7)} ${"link%".padStart(6)} ${"free".padStart(5)} ${"n/stk".padStart(6)}`);
+    for (const j of sorted) console.log(`  ${String(j.job).slice(0, 14).padEnd(14)} ${String(j.bomLines).padStart(4)} ${String(j.itemLines).padStart(7)} ${String(j.resolved).padStart(7)} ${(j.rate == null ? "-" : (100 * j.rate).toFixed(0) + "%").padStart(6)} ${String(j.freeLines).padStart(5)} ${String(j.nonStock).padStart(6)}`);
+  }
+  console.log(`\nWrote per-job CSV → scripts/partlist-brain/data/per-job-mapping.csv (${sorted.length} jobs)`);
 
   fs.writeFileSync(path.join(__dirname, "data", "mapping-measure.json"), JSON.stringify({
     jobs: jobs.length, overallRate: totalRes / (totalItem || 1), avgItemLines: avg(perJob, (j) => j.itemLines), avgResolved: avg(perJob, (j) => j.resolved),

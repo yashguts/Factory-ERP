@@ -40,6 +40,8 @@ function tokenize(s) {
     // normalise the size unit: "350mm" -> "350" so a "350mm" spec matches a "350" SKU
     // (only when >=2 chars remain, to keep single-digit thicknesses like "8mm" intact)
     if (/[0-9]/.test(t)) { const sz = t.replace(/mm$/, ""); if (sz.length >= 2) t = sz; }
+    // normalise side: part-list says "RHS"/"LHS", SKUs say "(RH)"/"(LH)" — pick the right side
+    else if (t === "rhs") t = "rh"; else if (t === "lhs") t = "lh";
     all.add(t);
     if (/[0-9]/.test(t)) sizes.add(t);
   }
