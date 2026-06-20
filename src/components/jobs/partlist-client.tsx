@@ -14,7 +14,7 @@ import { OTHER_SECTION_KEY } from "@/lib/packing-list/helpers";
 import groupsJson from "@/lib/partlist/section-groups.json";
 import type { SearchableItem } from "@/lib/actions/items";
 import {
-  savePartList, markPartListReady, reopenPartList, getPartList, searchPartItems,
+  savePartList, savePartListSection, markPartListReady, reopenPartList, getPartList, searchPartItems,
   type PartListView, type SaveLineInput,
 } from "@/lib/actions/partlist";
 import { generatePartListDraft } from "@/lib/actions/partlist-generate";
@@ -100,7 +100,16 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
   const allRows = useMemo(() => Object.values(rows).flat(), [rows]);
   const activeRows = useMemo(() => allRows.filter((r) => !r.not_required && (r.item_id || (r.name && r.name.trim()))), [allRows]);
   const uncheckedActive = activeRows.filter((r) => !r.checked).length;
-  const needsItemCount = allRows.filter((r) => !r.not_required && !r.item_id && !(r.name && r.name.trim())).length;
+  // item-type lines with no inventory item linked (free-text fastener lines exempt)
+  const needsItemCount = useMemo(() => {
+    let n = 0;
+    for (const [sk, arr] of Object.entries(rows)) {
+      const ct = sk === OTHER_SECTION_KEY ? "item" : (SECTION_BY_KEY.get(sk)?.captureType ?? "item");
+      if (ct === "free") continue;
+      for (const r of arr) if (!r.not_required && !r.item_id) n++;
+    }
+    return n;
+  }, [rows]);
   const groupsPresent = GROUP_ORDER.filter((g) => (TEMPLATE_BY_GROUP[g]?.length || 0) > 0 || (g === "OTHER" && (rows[OTHER_SECTION_KEY]?.length || 0) > 0));
   const undisposed = groupsPresent.filter((g) => !dispositions[g]);
   const coverageOk = coverage.total === 0 || coverage.covered >= coverage.total;
@@ -207,6 +216,24 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     try { if (await doSave()) toast.success("Saved."); } finally { setBusy(null); }
   }, [doSave, toast]);
 
+  const onSaveSection = useCallback(async (g: string) => {
+    const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (TEMPLATE_BY_GROUP[g] || []).map((s) => s.key);
+    const lines: SaveLineInput[] = [];
+    for (const sk of keys) {
+      const isFree = SECTION_BY_KEY.get(sk)?.captureType === "free";
+      for (const r of rows[sk] || []) {
+        lines.push({ sectionKey: sk, item_id: isFree ? null : r.item_id, label: isFree ? r.name : (r.item_id ? null : r.name), spec: r.spec, qty: r.qty, source: r.source, confidence: r.confidence, is_conflict: r.is_conflict, checked: r.checked, not_required: r.not_required, bom_line_id: r.bom_line_id, dismissed_reason: r.dismissed_reason });
+      }
+    }
+    setBusy("save");
+    try {
+      const res = await savePartListSection(jobId, keys, lines, dispositions[g] ? { group: g, value: dispositions[g] } : undefined);
+      if (!res.ok) { toast.error(res.error); return; }
+      const view = await getPartList(jobId); setCoverage(view.coverage);
+      toast.success(`${GROUP_LABELS[g].split(" — ")[0]} saved.`);
+    } finally { setBusy(null); }
+  }, [rows, dispositions, jobId, toast]);
+
   const onMarkReady = useCallback(async () => {
     setBusy("ready");
     try {
@@ -216,6 +243,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
       else {
         const b = res.blockers;
         const parts: string[] = [];
+        if (b?.needsItem) parts.push(`${b.needsItem} line(s) need an inventory item`);
         if (b?.uncheckedActive) parts.push(`${b.uncheckedActive} line(s) unconfirmed`);
         if (b?.uncoveredBom) parts.push(`${b.uncoveredBom} BOM item(s) missing`);
         if (b?.undispositionedGroups?.length) parts.push(`confirm: ${b.undispositionedGroups.join(", ")}`);
@@ -312,6 +340,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
               </button>
               <span className="text-xs text-[var(--muted-foreground)]">{groupChecked}/{groupActive.length} confirmed{greyCount ? ` · ${greyCount} n/a` : ""}</span>
               <div className="ml-auto flex items-center gap-2">
+                <Button variant="ghost" size="sm" onClick={() => onSaveSection(g)} disabled={!!busy} title="Save just this section">Save section</Button>
                 {dispositions[g] ? (
                   <span className="flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600"><CircleCheck className="h-3.5 w-3.5" /> Confirmed</span>
                 ) : (
@@ -403,7 +432,7 @@ interface LineRowProps {
 function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowProps) {
   const isFree = sec?.captureType === "free";
   const dismissed = row.not_required;
-  const needsItem = !dismissed && !isFree && !row.item_id && sec !== null;
+  const needsItem = !dismissed && !isFree && !row.item_id;
   return (
     <div className={cn("flex items-center gap-2 px-3 py-1.5 text-[13px]", dismissed && "opacity-50", row.is_conflict && "bg-red-500/5")}>
       {/* check */}

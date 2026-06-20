@@ -9,6 +9,7 @@ import {
   deleteGadDrawing,
 } from "@/lib/actions/gad-drawings";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
+import { resetPartListForNewDrawing } from "@/lib/actions/partlist";
 import { createClient } from "@/lib/supabase/client";
 import { useOperator } from "@/lib/jobs/use-operator";
 
@@ -83,6 +84,13 @@ export function GadDrawingPanel({
     // Reset for next picks of the same filename
     e.target.value = "";
 
+    // Replacing an existing drawing implies a spec change: warn that it clears
+    // the cached read + the existing Part List (rebuilt fresh from the new drawing).
+    const wasReplacing = !!url;
+    if (wasReplacing && !confirm("Replacing the drawing will clear this job's existing Part List and re-read the new drawing. Continue?")) {
+      return;
+    }
+
     // Record WHO is uploading (prompts once per device if not yet set).
     const operator = ensureOperator();
 
@@ -144,6 +152,12 @@ export function GadDrawingPanel({
         setFilename(result.filename);
         setUploadedAt(result.uploaded_at);
         onAfterUpload?.();
+
+        // A replacement means the spec likely changed — wipe the stale cached read
+        // and the old Part List so both are rebuilt from the new drawing.
+        if (wasReplacing) {
+          await resetPartListForNewDrawing(id).catch(() => {});
+        }
 
         // Auto-read the drawing in the background + cache it, so the Part List
         // can be generated instantly later (no inline vision at generate time).

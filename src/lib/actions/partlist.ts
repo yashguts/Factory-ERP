@@ -13,7 +13,8 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
-import { PACKING_SECTIONS } from "@/lib/packing-list/packing-list-sections";
+import { PACKING_SECTIONS, packingSection } from "@/lib/packing-list/packing-list-sections";
+import { OTHER_SECTION_KEY } from "@/lib/packing-list/helpers";
 import sectionGroups from "@/lib/partlist/section-groups.json";
 import type { BomCoverage, UnmappedBom } from "@/lib/partlist/types";
 
@@ -208,11 +209,20 @@ export async function savePartList(
 export interface ReadyResult {
   ok: boolean;
   error?: string;
-  blockers?: { uncheckedActive: number; uncoveredBom: number; undispositionedGroups: string[] };
+  blockers?: { uncheckedActive: number; uncoveredBom: number; undispositionedGroups: string[]; needsItem: number };
+}
+
+/** An item-type line that still has no inventory item linked (free-text fastener
+ *  lines are exempt). */
+function isUnlinkedItem(sectionKey: string, item_id: string | null, not_required: boolean): boolean {
+  if (not_required || item_id) return false;
+  const captureType = sectionKey === OTHER_SECTION_KEY ? "item" : (packingSection(sectionKey)?.captureType ?? "item");
+  return captureType !== "free";
 }
 
 /** The completion gate (server-enforced): all active lines checked + all groups
- *  dispositioned + every BOM line represented/dismissed. */
+ *  dispositioned + every BOM line represented/dismissed + every item line LINKED
+ *  to an inventory item (free-text fastener lines exempt). */
 export async function markPartListReady(jobId: string, operator?: string): Promise<ReadyResult> {
   const supabase = await createClient();
   const view = await getPartList(jobId);
@@ -222,12 +232,13 @@ export async function markPartListReady(jobId: string, operator?: string): Promi
   const uncheckedActive = all.filter((l) => !l.not_required && !l.checked && (l.item_id || (l.name && l.name.trim()))).length;
   const uncoveredBom = view.coverage.unmapped.length;
   const undispositionedGroups = ALL_GROUPS.filter((g) => !view.sectionDispositions[g]);
+  const needsItem = all.filter((l) => isUnlinkedItem(l.sectionKey, l.item_id, l.not_required)).length;
 
-  if (uncheckedActive > 0 || uncoveredBom > 0 || undispositionedGroups.length > 0) {
+  if (uncheckedActive > 0 || uncoveredBom > 0 || undispositionedGroups.length > 0 || needsItem > 0) {
     return {
       ok: false,
       error: "Part List isn't fully confirmed yet.",
-      blockers: { uncheckedActive, uncoveredBom, undispositionedGroups },
+      blockers: { uncheckedActive, uncoveredBom, undispositionedGroups, needsItem },
     };
   }
 
@@ -244,6 +255,60 @@ export async function markPartListReady(jobId: string, operator?: string): Promi
 export async function reopenPartList(jobId: string): Promise<{ ok: boolean }> {
   const supabase = await createClient();
   await supabase.from("packing_lists").update({ status: "draft" }).eq("job_id", jobId);
+  revalidateTag("packing-lists");
+  revalidatePath(`/jobs/${jobId}/packing-list`);
+  return { ok: true };
+}
+
+/** Save ONE section group's lines without touching the rest (delete+reinsert only
+ *  the given section_keys). Optionally record that group's disposition. */
+export async function savePartListSection(
+  jobId: string,
+  sectionKeys: string[],
+  lines: SaveLineInput[],
+  disposition?: { group: string; value: string },
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  try {
+    const supabase = await createClient();
+    const listId = await ensureList(supabase, jobId);
+    const keySet = new Set(sectionKeys);
+
+    await supabase.from("packing_list_lines").delete().eq("packing_list_id", listId).in("section_key", sectionKeys);
+
+    const rows = lines
+      .filter((l) => keySet.has(l.sectionKey) && (l.item_id || (l.label && l.label.trim()) || l.bom_line_id || l.not_required))
+      .map((l, i) => ({
+        packing_list_id: listId, section_key: l.sectionKey, item_id: l.item_id ?? null,
+        label: l.item_id ? null : (l.label ?? null), spec: l.spec ?? null, qty: Number(l.qty ?? 0),
+        note: l.note ?? null, source: l.source ?? null, confidence: l.confidence ?? null,
+        is_conflict: !!l.is_conflict, checked: !!l.checked, checked_at: l.checked ? new Date().toISOString() : null,
+        not_required: !!l.not_required, bom_line_id: l.bom_line_id ?? null, dismissed_reason: l.dismissed_reason ?? null, sort_order: i,
+      }));
+    const BATCH = 200;
+    for (let i = 0; i < rows.length; i += BATCH) {
+      const { error } = await supabase.from("packing_list_lines").insert(rows.slice(i, i + BATCH));
+      if (error) return { ok: false, error: error.message };
+    }
+
+    const { data: cur } = await supabase.from("packing_lists").select("section_dispositions").eq("id", listId).maybeSingle();
+    const dispositions = { ...((cur?.section_dispositions as Record<string, string>) ?? {}) };
+    if (disposition) dispositions[disposition.group] = disposition.value;
+    await supabase.from("packing_lists").update({ status: "draft", section_dispositions: dispositions, updated_at: new Date().toISOString() }).eq("id", listId);
+
+    revalidateTag("packing-lists");
+    revalidatePath(`/jobs/${jobId}/packing-list`);
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Save failed" };
+  }
+}
+
+/** A new drawing means the spec likely changed: wipe the cached extractions AND
+ *  the existing Part List for this job so it's rebuilt clean from the new drawing. */
+export async function resetPartListForNewDrawing(jobId: string): Promise<{ ok: boolean }> {
+  const supabase = await createClient();
+  await supabase.from("packing_lists").delete().eq("job_id", jobId); // cascade deletes lines
+  await supabase.from("job_drawing_extractions").delete().eq("job_id", jobId);
   revalidateTag("packing-lists");
   revalidatePath(`/jobs/${jobId}/packing-list`);
   return { ok: true };

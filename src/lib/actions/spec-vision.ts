@@ -300,14 +300,15 @@ export async function ensureDrawingRead(jobId: string): Promise<{ ok: boolean; c
   if (!jobId) return { ok: false, reason: "missing-job" };
   const supabase = createCacheClient();
   const { data: job } = await supabase.from("jobs").select("gad_drawing_url").eq("id", jobId).maybeSingle();
-  const url = (job?.gad_drawing_url as string | null) ?? null;
-  if (!url) return { ok: false, reason: "no-drawing" };
+  if (!job?.gad_drawing_url) return { ok: false, reason: "no-drawing" };
 
+  // Skip if this job already has a cached read. On re-upload the old extractions
+  // are wiped first (resetPartListForNewDrawing), so "any extraction" is the right
+  // signal — and avoids paying for a re-read of the ~113 already-read jobs.
   const { data: existing } = await supabase
     .from("job_drawing_extractions")
     .select("id")
     .eq("job_id", jobId)
-    .eq("drawing_url", url)
     .limit(1)
     .maybeSingle();
   if (existing) return { ok: true, cached: true };
