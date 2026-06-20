@@ -69,12 +69,14 @@ export function CabinWeeklyClient({ plan }: { plan: CabinWeeklyPlan }) {
         emptyLabel="No cabin demand falls in the next 8 weeks."
       />
 
-      {(plan.laterCount > 0 || plan.undatedCount > 0) && (
+      {plan.laterCount > 0 && (
         <p className="mt-3 text-xs text-[var(--muted-foreground)]">
-          Not planned here:{" "}
-          {plan.laterCount > 0 && <><strong className="text-[var(--foreground)]">{plan.laterCount}</strong> cabin job{plan.laterCount === 1 ? "" : "s"} due after 8 weeks</>}
-          {plan.laterCount > 0 && plan.undatedCount > 0 && " · "}
-          {plan.undatedCount > 0 && <><strong className="text-[var(--foreground)]">{plan.undatedCount}</strong> with no linked-job date</>}.
+          Not planned here: <strong className="text-[var(--foreground)]">{plan.laterCount}</strong> cabin job{plan.laterCount === 1 ? "" : "s"} due after 8 weeks.
+        </p>
+      )}
+      {plan.undatedCount > 0 && (
+        <p className="mt-1 text-xs text-[var(--muted-foreground)]">
+          <strong className="text-[var(--foreground)]">{plan.undatedCount}</strong> cabin job{plan.undatedCount === 1 ? "" : "s"} have no linked dated Job — their demand is shown in the <strong className="text-[var(--foreground)]">Undated</strong> column. Give the matching Job a Requirement Dispatch Date (or fix the job number) to schedule it.
         </p>
       )}
     </div>

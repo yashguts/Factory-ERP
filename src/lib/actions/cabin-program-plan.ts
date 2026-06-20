@@ -477,6 +477,13 @@ function buildCabinWeeks(curWeek: Date): WeekMeta[] {
       isCurrent: w === 0, isOverdue: false,
     });
   }
+  // Trailing bucket for cabin jobs with no linked dated Job — keeps their demand
+  // (and finishes) visible & filterable instead of silently dropping off the board.
+  weeks.push({
+    index: 99, key: "undated", label: "Undated", title: "Undated",
+    subtitle: "Cabin job has no linked dated Job",
+    weekStartIso: null, isCurrent: false, isOverdue: false,
+  });
   return weeks;
 }
 
@@ -536,14 +543,18 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
   const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();
   const laterJobs = new Set<string>();
   const undatedJobs = new Set<string>();
+  const undatedPos = N - 1; // the appended "Undated" bucket is the last column
   for (const l of lines) {
     if (!l.item_id) continue;
     const b = bucketOf(dateByCabinJob.get(l.cabin_job_id) ?? null);
-    if (b.later) laterJobs.add(l.cabin_job_id);
-    if (b.undated) undatedJobs.add(l.cabin_job_id);
-    if (b.pos == null) continue; // later / undated demand isn't placed on the 8-week board
+    if (b.later) { laterJobs.add(l.cabin_job_id); continue; } // dated beyond the horizon -> footnote only
+    // Undated demand (no linked dated Job) goes in the trailing "Undated" column
+    // so it stays visible & filterable rather than disappearing from the board.
+    let pos = b.pos;
+    if (b.undated) { undatedJobs.add(l.cabin_job_id); pos = undatedPos; }
+    if (pos == null) continue;
     const ex = demandByItemWeek.get(l.item_id) ?? { type: l.cabin_type, arr: new Array(N).fill(0) };
-    ex.arr[b.pos] += Number(l.qty) || 0;
+    ex.arr[pos] += Number(l.qty) || 0;
     demandByItemWeek.set(l.item_id, ex);
   }
 
