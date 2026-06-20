@@ -8,6 +8,7 @@ import {
   recordGadDrawing,
   deleteGadDrawing,
 } from "@/lib/actions/gad-drawings";
+import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 import { createClient } from "@/lib/supabase/client";
 import { useOperator } from "@/lib/jobs/use-operator";
 
@@ -68,6 +69,7 @@ export function GadDrawingPanel({
   );
   const [busy, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const [reading, setReading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { ensureOperator } = useOperator();
 
@@ -142,6 +144,14 @@ export function GadDrawingPanel({
         setFilename(result.filename);
         setUploadedAt(result.uploaded_at);
         onAfterUpload?.();
+
+        // Auto-read the drawing in the background + cache it, so the Part List
+        // can be generated instantly later (no inline vision at generate time).
+        // Separate request (own timeout budget); runs to completion server-side.
+        setReading(true);
+        ensureDrawingRead(id)
+          .catch(() => {})
+          .finally(() => setReading(false));
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Upload failed");
       }
@@ -199,6 +209,11 @@ export function GadDrawingPanel({
                     · {new Date(uploadedAt).toLocaleString()}
                   </span>
                 )}
+              </div>
+            )}
+            {reading && (
+              <div className="flex items-center gap-1 text-[11px] text-[var(--primary)]">
+                <Loader2 className="h-3 w-3 animate-spin" /> Reading drawing for Part List…
               </div>
             )}
           </div>

@@ -291,6 +291,31 @@ export async function extractDrawingData(jobId: string): Promise<RichResult> {
   }
 }
 
+/**
+ * Idempotent "read the drawing once and cache it." Skips the (slow, ~22s) vision
+ * call if this job's CURRENT drawing has already been extracted. Fired on upload
+ * so the Part List can be generated instantly later (and used as a catch-up).
+ */
+export async function ensureDrawingRead(jobId: string): Promise<{ ok: boolean; cached?: boolean; reason?: string }> {
+  if (!jobId) return { ok: false, reason: "missing-job" };
+  const supabase = createCacheClient();
+  const { data: job } = await supabase.from("jobs").select("gad_drawing_url").eq("id", jobId).maybeSingle();
+  const url = (job?.gad_drawing_url as string | null) ?? null;
+  if (!url) return { ok: false, reason: "no-drawing" };
+
+  const { data: existing } = await supabase
+    .from("job_drawing_extractions")
+    .select("id")
+    .eq("job_id", jobId)
+    .eq("drawing_url", url)
+    .limit(1)
+    .maybeSingle();
+  if (existing) return { ok: true, cached: true };
+
+  const r = await extractDrawingData(jobId);
+  return { ok: r.ok, cached: false, reason: r.ok ? undefined : r.reason ?? "read-failed" };
+}
+
 /** Backwards-compatible 5-field spec for the autofill form (now rich-backed + stored). */
 export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResult> {
   const r = await extractDrawingData(jobId);

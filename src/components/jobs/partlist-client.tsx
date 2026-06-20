@@ -3,7 +3,7 @@
 import { useCallback, useMemo, useRef, useState } from "react";
 import {
   Check, Search, X, Loader2, AlertTriangle, Sparkles, ChevronDown, ChevronRight,
-  Plus, CircleCheck, ShieldCheck, PackageCheck, Pencil,
+  Plus, CircleCheck, ShieldCheck, PackageCheck, Pencil, FileText,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -18,6 +18,7 @@ import {
   type PartListView, type SaveLineInput,
 } from "@/lib/actions/partlist";
 import { generatePartListDraft } from "@/lib/actions/partlist-generate";
+import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 
 const GROUPS = groupsJson as Record<string, string>;
 const GROUP_ORDER = ["PART A", "PART B", "PART C", "PART D", "PART E", "OTHER"];
@@ -89,7 +90,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showGreyed, setShowGreyed] = useState<Set<string>>(new Set(GROUP_ORDER)); // greyed visible by default
   const [filter, setFilter] = useState("");
-  const [busy, setBusy] = useState<null | "generate" | "save" | "ready">(null);
+  const [busy, setBusy] = useState<null | "generate" | "save" | "ready" | "read">(null);
   const [confirmGen, setConfirmGen] = useState(false);
   const lastWarnings = useRef<string[]>(initial ? [] : []);
 
@@ -225,6 +226,19 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
 
   const onReopen = useCallback(async () => { await reopenPartList(jobId); setStatus("draft"); toast.info("Re-opened for edits."); }, [jobId, toast]);
 
+  const onReadDrawing = useCallback(async () => {
+    setBusy("read");
+    try {
+      const r = await ensureDrawingRead(jobId);
+      if (r.ok && r.cached) toast.info("Drawing already read — Generate will use it.");
+      else if (r.ok) toast.success("Drawing read ✓ — click Generate (or Regenerate) to use it.");
+      else if (r.reason === "no-drawing") toast.error("No drawing uploaded on this job.");
+      else if (r.reason === "not_configured") toast.error("Drawing reader not configured (ANTHROPIC_API_KEY).");
+      else toast.error("Couldn't read the drawing — try again.");
+    } catch { toast.error("Couldn't read the drawing — try again."); }
+    finally { setBusy(null); }
+  }, [jobId, toast]);
+
   /* --------------------------- render --------------------------- */
   const matchFilter = (s: PackingSection) => !filter || s.label.toLowerCase().includes(filter.toLowerCase());
 
@@ -242,6 +256,10 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
             {customerName && <p className="truncate text-xs text-[var(--muted-foreground)]">{customerName}</p>}
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <Button variant="ghost" size="sm" onClick={onReadDrawing} disabled={!!busy} title="Read this job's drawing and cache it for Generate">
+              {busy === "read" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileText className="h-3.5 w-3.5" />}
+              Read drawing
+            </Button>
             <Button variant="secondary" size="sm" onClick={() => (hasAnyRows ? setConfirmGen(true) : runGenerate())} disabled={!!busy}>
               {busy === "generate" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
               {hasAnyRows ? "Regenerate" : "Generate Part List"}
