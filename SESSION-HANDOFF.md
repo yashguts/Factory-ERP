@@ -1,217 +1,143 @@
-# Session Handoff — 2026-06-17 (Factory ERP)
+# Session Handoff — 2026-06-20 (Factory ERP)
 
-Read this top-to-bottom, then continue at **"What's left to do"**. Read
-**CLAUDE.md** first. Working dir is on **`main`**. Confirm before any
-data-mutating step. The Supabase MCP connector was intermittently timing out
-during this session — just retry the same call.
+Live: **https://lt-factory-erp.netlify.app** · deployed commit `f11b714` · `main` · Netlify build clean.
+Local == repo (`npm install` done, `tsc` + `npm run build` pass). Owner is **non-developer** — they review the deployed app, not code. **Read `CLAUDE.md` first** (deep reference); this file is the quick orientation.
 
 ---
 
-## TL;DR
+## 0 — What this is
 
-1. **Deploy was failing** → root-caused and **fixed + pushed to `main`**
-   (commit `99bf3fa`). Netlify should be green now.
-2. **Dispatch "0 dispatched" bug** (owner reported on job **4802**, Guide Rail
-   9X65X70) → root-caused, and **4 jobs' data already repaired via SQL**
-   (no inventory touched, per owner instruction).
-3. **NOT yet done:** the durable code-level *prevention* so the bug can't
-   recur, and a final SQL verification pass. Details below.
+ERP for an **elevator-manufacturing** business in India (the owner makes lifts +
+a car-parking product). Tracks **inventory, BOMs, job orders, packing/part lists,
+MRP/planning, programs (CNC recipes), procurement, dispatch**. Built incrementally
+with the owner over many sessions. Next.js app, Supabase backend, auto-deploys to
+Netlify on push to `main`.
 
----
+## 1 — Stack & infra
 
-## 1. Deploy failure — DONE (committed `99bf3fa`, pushed to main)
+- **Frontend**: Next.js 15.5 App Router, React 19, TypeScript, Tailwind 4.
+- **DB**: Supabase Postgres — project `qwzisnmueuqnzzokkpmn`, region ap-south-1.
+- **Storage**: Supabase buckets `gad-drawings` (job drawings), `program-sketches`,
+  `po-invoices`.
+- **Hosting**: Netlify, auto-deploys `main` (~1 min). Hard-refresh tabs after deploy.
+- **Auth**: NOT wired yet. Anon key used everywhere; RLS is permissive (`Allow all
+  for anon`, `FOR ALL TO anon USING(true) WITH CHECK(true)`) on every table. New
+  tables: enable RLS + add that policy to match.
 
-**Root cause:** a separate contributor's commit `6fabef0`
-("feat(inventory): item purchase UOM + conversion (foundation)") added
-`items.purchase_uom_id` as a **second FK from `items` to
-`units_of_measurement`**. That made every PostgREST embed of the form
-`uom:units_of_measurement(...)` **ambiguous** → PostgREST throws `PGRST201`
-("more than one relationship was found"). The production build died while
-**prerendering `/settings`** (it exits at the first failing prerender; other
-items+uom reads would also fail at runtime).
+## 2 — Daily commands
 
-**Fix applied:** qualified all **27 embeds across 12 action files** with the
-explicit FK name: `uom:units_of_measurement!items_uom_id_fkey(...)`. The
-item's own UOM is always `uom_id`, so the transform was uniform. Files:
-`bom-predict, cabin-jobs, cabin-programs, dispatch, inventory, item-bom,
-items, jobs, mrp-weekly, mrp, operations, procurement` (all in
-`src/lib/actions/`). Full `npm run build` is **green**; `/settings`
-prerenders again.
-
-> If you ever add another items↔units_of_measurement embed, you MUST name the
-> FK (`!items_uom_id_fkey`, or `!items_purchase_uom_id_fkey` for the purchase
-> unit) or the build breaks again.
-
-**Owner's UOM question — answer to relay:** "Do items now have a different
-Inventory UOM and Purchase UOM?" → The purchase-UOM feature (commit `6fabef0`,
-**not** my deploy fix) added an **optional** Purchase UOM + conversion factor
-per item. Default is **"Same as stock"** (`purchase_uom_id` NULL = bought and
-stocked in the same unit). Every item's **Inventory/stock UOM is unchanged**.
-It's foundation-only — the commit says *"everything stored stays in the stock
-UOM; PO/receipt wiring comes in the next phases."* My deploy fix changed **no**
-UOM data — it only told the query which relationship to follow (still the
-stock UOM). (Couldn't confirm how many items have a purchase UOM set yet —
-connector was down; run the verify query in section A.)
-
----
-
-## 2. Dispatch "0 dispatched" bug — ROOT CAUSE + data repaired (no inventory)
-
-**Symptom:** owner dispatched job 4802 (incl. Guide Rail 9X65X70 qty 6) but the
-Dispatch modal showed "0 dispatched" for it.
-
-**Root cause (NOT a regression from recent dispatch features):**
-- `job_dispatch_lines.job_bom_line_id` is an FK **`ON DELETE SET NULL`**.
-- `saveBomSection` (`src/lib/actions/jobs.ts:614`) **deletes + reinserts** all
-  BOM lines for the saved categories ("picker is source of truth").
-- So **editing/re-saving a job's BOM *after* dispatching it** deletes the old
-  BOM lines → the FK nulls every dispatch→line link → dispatched reads as
-  **0** and **stops netting in MRP** (MRP also nets via that FK).
-- Proven on 4802: dispatch created `11:17:15`; all 48 current BOM lines created
-  `11:38:08` (21 min later) → all 11 dispatch links nulled.
-
-**Data already repaired (pure FK re-link, ZERO inventory effect):**
-- **4802** — re-linked its 11 orphaned lines by `item_id` (Guide Rail 9X65X70
-  now 6 of 7 dispatched).
-- **RNLKOL-0035 (34), RNLNAG011 (13), 4907 (5)** — same silent bug; re-linked by
-  `item_id` preferring same `category`. Owner said **"mark dispatch but don't
-  deduct from inventory"** — satisfied by construction: re-linking only sets
-  `job_bom_line_id`, posts no stock transactions, and these dispatches predate
-  the deduct-on-dispatch feature anyway.
-
-The exact repair UPDATE used (for reference / re-runnable, idempotent):
-```sql
-UPDATE job_dispatch_lines dl
-SET job_bom_line_id = (
-  SELECT bl.id FROM job_bom_lines bl
-  JOIN job_bom_headers h ON h.id = bl.job_bom_id
-  JOIN job_dispatches d2 ON d2.id = dl.dispatch_id
-  WHERE h.job_id = d2.job_id AND bl.item_id = dl.item_id
-  ORDER BY (bl.category IS DISTINCT FROM dl.category), bl.sort_order, bl.id
-  LIMIT 1)
-WHERE dl.job_bom_line_id IS NULL AND dl.item_id IS NOT NULL
-  AND dl.dispatch_id IN (SELECT d.id FROM job_dispatches d JOIN jobs j ON j.id=d.job_id
-                         WHERE j.job_number IN ('RNLKOL-0035','RNLNAG011','4907'))
-  AND EXISTS (SELECT 1 FROM job_bom_lines bl JOIN job_bom_headers h ON h.id=bl.job_bom_id
-              JOIN job_dispatches d3 ON d3.id=dl.dispatch_id
-              WHERE h.job_id=d3.job_id AND bl.item_id=dl.item_id);
-```
-> Caches (dispatch summary + MRP, ~600s TTL) won't reflect these repairs until
-> they expire OR a redeploy wipes them. The `99bf3fa` push already triggers a
-> Netlify redeploy → cache wiped → repairs should show.
-
----
-
-## What's left to do
-
-### A. VERIFY the repairs (connector was down — re-run this)
-```sql
-SELECT
-  (SELECT COUNT(*) FROM job_dispatch_lines dl
-     JOIN job_dispatches d ON d.id=dl.dispatch_id JOIN jobs j ON j.id=d.job_id
-     WHERE dl.job_bom_line_id IS NULL AND dl.item_id IS NOT NULL
-       AND j.job_number IN ('RNLKOL-0035','RNLNAG011','4907','4802')
-       AND EXISTS (SELECT 1 FROM job_bom_lines bl JOIN job_bom_headers h ON h.id=bl.job_bom_id
-                   WHERE h.job_id=d.job_id AND bl.item_id=dl.item_id)
-  ) AS still_orphaned_relinkable,          -- expect 0
-  (SELECT COUNT(*) FROM inventory_transactions
-     WHERE reference_type='dispatch' AND reference_id IN (
-       SELECT d.id FROM job_dispatches d JOIN jobs j ON j.id=d.job_id
-       WHERE j.job_number IN ('RNLKOL-0035','RNLNAG011','4907','4802'))
-  ) AS dispatch_inv_txns_for_these_jobs,   -- expect 0 (no inventory deducted)
-  (SELECT COUNT(*) FROM items WHERE purchase_uom_id IS NOT NULL) AS items_with_purchase_uom,
-  (SELECT COUNT(*) FROM items) AS total_items;
+```bash
+npm run dev          # local dev (OneDrive makes this flaky — see gotchas)
+npx tsc --noEmit     # the gate — must be clean before every commit
+rm -rf .next && npm run build   # the prod build Netlify runs; clear .next first (OneDrive)
 ```
 
-### B. CODE the durable prevention (NOT started) — the main remaining task
-Make `saveBomSection` self-heal so a post-dispatch BOM edit can't orphan
-dispatch links again. **Pure link repair — must NOT post any inventory
-transaction.**
+## 3 — Tools you have
 
-In `src/lib/actions/jobs.ts`, add a non-exported async helper and call it at
-the **end of `saveBomSection`** (after the insert loop finishes ~line 676,
-before the `revalidateTag` calls at ~678):
+- **Supabase MCP** (`mcp__ea97…__*`): `execute_sql` (reads + ad-hoc writes),
+  `apply_migration` (DDL), `get_logs`, `get_advisors`. Times out intermittently →
+  just retry. **Confirm with owner before any data-mutating SQL > 1 row**; preview
+  a count first.
+- **Claude Preview MCP** (`mcp__Claude_Preview__*`): real browser to verify UI.
+  Quirk: it intermittently bounces the tab to `/jobs`; re-`location.href` and wait.
+  Screenshots sometimes downscale — read the DOM (`preview_eval`) to confirm content.
+- **Netlify MCP**: deploy state / env vars (rarely needed; push is enough).
 
-```ts
-// type for the cookies-aware client:  Awaited<ReturnType<typeof createClient>>
-async function relinkOrphanedDispatchLines(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  jobId: string,
-  headerId: string,
-) {
-  const { data: dispatches } = await supabase
-    .from("job_dispatches").select("id").eq("job_id", jobId);
-  const ids = (dispatches ?? []).map((d) => d.id);
-  if (ids.length === 0) return;
+## 4 — Codebase map
 
-  const { data: orphans } = await supabase
-    .from("job_dispatch_lines")
-    .select("id, item_id, category")
-    .in("dispatch_id", ids)
-    .is("job_bom_line_id", null)
-    .not("item_id", "is", null);
-  if (!orphans?.length) return;
-
-  const { data: lines } = await supabase
-    .from("job_bom_lines")
-    .select("id, item_id, category, sort_order")
-    .eq("job_bom_id", headerId)
-    .not("item_id", "is", null);
-
-  const byItem = new Map<string, { id: string; category: string | null }[]>();
-  for (const l of (lines ?? []).sort((a,b)=>(a.sort_order??0)-(b.sort_order??0))) {
-    const arr = byItem.get(l.item_id) ?? [];
-    arr.push({ id: l.id, category: l.category });
-    byItem.set(l.item_id, arr);
-  }
-  for (const o of orphans) {
-    const cands = byItem.get(o.item_id);
-    if (!cands?.length) continue;                 // item no longer on BOM → leave as genuine "extra item"
-    const match = cands.find((c) => c.category === o.category) ?? cands[0];
-    await supabase.from("job_dispatch_lines")
-      .update({ job_bom_line_id: match.id }).eq("id", o.id);
-  }
-}
 ```
-Call site: `await relinkOrphanedDispatchLines(supabase, jobId, headerId);`
-Notes:
-- Restores the FK, so BOTH the dispatch summary AND MRP netting auto-correct
-  (no change to their read logic). Going forward, *any* BOM save heals orphans.
-- An "extra item" genuinely not on the BOM stays orphaned (correct) → still
-  shows the "extra item" pill (`l.adhoc` is derived from null `job_bom_line_id`).
-- Common case (job never dispatched) = 1 cheap query then early-return.
-- `jobs.ts` is `"use server"` — only **exports** must be async functions; a
-  non-exported async helper is fine.
+src/app/(app)/        Route group with the shared sidebar (AppShell)
+  inventory/          Main inventory list (server-paginated RPC) + item detail [id] + import
+  cabin-inventory/    Cabin items by type (11 types under "Cabin" category) — kept OUT of /inventory
+  subassemblies/      Items that have a parts list
+  inventory/changes/  Daily Changes feed (edits + stock moves + undo)
+  jobs/               Job Orders: list, new, [id] detail, [id]/edit, [id]/packing-list, unmatched, import
+  cabin-jobs/         Cabin job orders
+  programs/           Programs (CNC/assembly recipes) + [id]
+  cabin-programs/     Finish-aware cabin cutting programs
+  program-runs/       Daily program-run logbook
+  mrp/                Make MRP (req/programs/weekly) ; mrp/trade (buy) ; mrp/cabin ; mrp/shortfall
+  procurement/        Purchase orders + receipts
+  demand/, settings/, assistant/
+src/components/<area>/ Client components per area (jobs/, inventory/, cabin/, mrp/, ui/)
+src/lib/
+  actions/<domain>.ts  Server actions, one file per domain (jobs, inventory, mrp, dispatch, cabin, …)
+  bom/bom-sections.ts        BOM section config for the job form (single source of truth)
+  packing-list/              Part-list template (packing-list-sections.ts) + helpers.ts
+  supabase/{server,cache-client,types}.ts   SSR client (mutations) / anon cached client (reads) / hand types
+  hooks/use-url-list-state.ts  URL-backed list state (every list keeps filters/sort/page in the URL)
+supabase/migrations/   SQL migrations (latest applied: 039_packing_lists)
+scripts/               Dev/data scripts (gen-*, seed-*, analysis) — mostly untracked scratch
+```
 
-### C. Verify + ship B
-- `npx tsc --noEmit` (clean) → `npm run build` (green).
-  - **OneDrive flake:** if build dies with `readlink EINVAL` on
-    `.next/diagnostics/...`, run `rm -rf .next` then rebuild — it's not a code
-    error.
-- Branch: this is a localised bug-fix → `main` is fine (per CLAUDE.md rubric).
-- `git add` ONLY `src/lib/actions/jobs.ts` (the repo root + `scripts/` are full
-  of untracked scratch files — never `git add -A`).
-- Co-author trailer: **`Claude Opus 4.8 <noreply@anthropic.com>`** (matches the
-  repo's recent commits, incl. `6fabef0`).
-- Tell the owner: which jobs were repaired, that no stock was touched, and that
-  editing a dispatched job's BOM is now safe.
+## 5 — Conventions that bite if ignored
+
+- **Branch strategy** (CLAUDE.md §0): typos/small fixes/new-column features → `main`.
+  Risky schema change / big refactor / speculative → feature branch + tell the owner.
+  Owner reviews the **deployed app**; default to merging to `main` so they can see it.
+- **Cache**: cached reads use `unstable_cache` + tags (`items`, `jobs`, `bom-lines`,
+  `inventory-stock`, `categories`, `operations`, `packing-lists`, …) via the anon
+  `cache-client`. Mutations use the cookies-aware `server` client + must
+  `revalidateTag()`. After raw SQL (outside the app), push an empty commit to wipe
+  the build-tier cache, or wait for the 60–600s TTL.
+- **Server-action errors are stripped in prod** → return a discriminated
+  `{ ok:false, error }` for user-facing validation, don't throw.
+- **`items.name` is the display name everywhere**; `lookup_key` is synced = name
+  (legacy search fallback) — never show `lookup_key || name`.
+- **Make vs Trade**: effective = `item.procurement_type ?? category.procurement_type`.
+- Every route needs a `loading.tsx`. Use `useToast()` for all mutation feedback.
+- DB category names have intentional typos (`Pannel`, `Miscallaneous`, `Thimbel`,
+  `Pully`) — match them exactly, don't "fix".
+
+## 6 — Recent work (context for what's fresh)
+
+- **Part List / Packing List** (per job, `/jobs/[id]/packing-list`): rebuilt 06-20
+  around the real **Mechanical Part List** format (corpus `~/Downloads/Part List.xlsx`,
+  238 jobs). Template = **501 "Particulars" (Col C = category) in canonical order**,
+  each `item` (inventory search, scoped to a category) or `free` (fastener/kit/
+  consumable free-text). Generated by `scripts/gen-partlist-template.js` →
+  `src/lib/packing-list/packing-list-sections.ts` + `scripts/_packing_sections.json`.
+  Seeded from each job's BOM (`scripts/seed-packing-lists.js --reseed`). To change it:
+  edit the generator's OVERRIDES/classify, re-run, then `--reseed`. Migration 039 =
+  `packing_lists` + `packing_list_lines`. Memory: `project_packing_list.md`.
+- **Cabin inventory stock now hand-editable** (06-20): the same `InlineStockAdjust`
+  widget as `/inventory` is on each cabin-type row (`cabin-type-client.tsx`).
+- **Parallel session also shipped** (already merged): per-item **stock ledger**
+  (hover + PDF via jspdf) and **program-count-per-item** hover on inventory.
+
+## 7 — Gotchas (real, recurring)
+
+- **OneDrive** corrupts `.next` (`readlink EINVAL`) and makes local dev/preview
+  flaky → `rm -rf .next` before a local build; prefer verifying via deployed or
+  short preview sessions. (Memory: `env_preview_caveat.md`.)
+- **PostgREST 1000-row cap**: any read that can exceed 1000 rows MUST page with
+  `.range()` (cabin/inventory/MRP do). `unstable_cache` silently won't cache
+  entries > ~2 MB — project to the few fields you need on hot pages.
+- **Stale deploy guard** prompts reload when a long-open tab hits a stale server
+  action after a deploy — expected, not a bug.
+- **Staging**: repo has many untracked scratch files (`scripts/_*.js`, `_*.png`,
+  `*.xlsx`) — `git add` explicit paths only, never `git add -A`.
+- Co-author trailer on commits: `Claude Opus 4.8 <noreply@anthropic.com>`.
+
+## 8 — Deeper docs
+
+- **`CLAUDE.md`** — full schema, every feature, all conventions. Read first.
+- **Auto-memory** (`~/.claude/.../memory/MEMORY.md` index) — per-feature project
+  notes (packing list, cabin programs, MRP rules, procurement, inventory movements,
+  UX rules, optimiser-locked, etc.). Loaded automatically each session.
 
 ---
 
-## Gotchas / environment
-- **Supabase MCP** times out intermittently → just retry the same call.
-- **OneDrive** corrupts `.next` (`readlink EINVAL`) → `rm -rf .next` before build.
-- Repo working tree has MANY untracked scratch files (root `_*.png`, `a_copy.xlsx`,
-  `scripts/_*`, `scripts/*.json`, `pdf-dxf-pilot/`, `.claude/`). Stage explicit
-  paths only.
-- `verify-trade-part-demand.ts` has a **pre-existing** stale assertion (fails on
-  base commit too) — not a regression; ignore for this work.
-- After SQL data changes, the cached dispatch/MRP reads lag until TTL (~600s) or
-  a redeploy wipes the cache.
+## OPEN / carried forward
 
-## Key files
-- `src/lib/actions/jobs.ts` — `saveBomSection` (line ~614); add the helper here.
-- `src/lib/actions/dispatch.ts` — `getJobDispatchSummary`, `createDispatch`,
-  `postDispatchInventory`, `reverseDispatchInventory` (dispatch + its inventory).
-- `src/components/jobs/dispatch-modal.tsx` / `dispatch-panel.tsx` — dispatch UI
-  ("extra item" pill is driven by null `job_bom_line_id`).
+- **Part List polish** (optional): ~123 of the 501 item-particulars search ALL
+  inventory (no category scope) — tighten `OVERRIDES` in
+  `gen-partlist-template.js` over time. Owner has the reviewable
+  `Desktop/Proposed Part List Master Template.xlsx` and can edit order/rows; rebuild
+  from their edits if sent.
+- **Durable fix not yet done** (from prior handoff): `saveBomSection`
+  (`lib/actions/jobs.ts`) deletes+reinserts BOM lines, nulling dispatch→line FK
+  links (`ON DELETE SET NULL`). A `relinkOrphanedDispatchLines` helper was drafted
+  to re-link orphans at the end — verify it's still missing (grep) and add if so.
+
+**Ready for the next big feature — describe it and I'll scope + build.**
