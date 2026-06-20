@@ -1,143 +1,94 @@
 # Session Handoff — 2026-06-20 (Factory ERP)
 
-Live: **https://lt-factory-erp.netlify.app** · deployed commit `f11b714` · `main` · Netlify build clean.
-Local == repo (`npm install` done, `tsc` + `npm run build` pass). Owner is **non-developer** — they review the deployed app, not code. **Read `CLAUDE.md` first** (deep reference); this file is the quick orientation.
+Live: **https://lt-factory-erp.netlify.app** · `main` · auto-deploys ~1 min on push (hard-refresh tabs).
+Owner is a **non-developer** — reviews the deployed app, not code. **Read `CLAUDE.md`** (deep reference) and
+the auto-memory index (`~/.claude/.../memory/MEMORY.md`); this file is the quick orientation + what's fresh.
+
+This session built one big feature end-to-end: the **Auto Part List generator**. Everything below is the state of it.
 
 ---
 
-## 0 — What this is
+## 0 — Headline: Auto Part List (the per-job "Part List" tab) — LIVE
 
-ERP for an **elevator-manufacturing** business in India (the owner makes lifts +
-a car-parking product). Tracks **inventory, BOMs, job orders, packing/part lists,
-MRP/planning, programs (CNC recipes), procurement, dispatch**. Built incrementally
-with the owner over many sessions. Next.js app, Supabase backend, auto-deploys to
-Netlify on push to `main`.
+**What it does.** On a job's **Part List** tab (`/jobs/[id]/packing-list`), the engineer clicks **Generate**
+and the system drafts the full Mechanical Part List from **rules + the job's BOM + the GA drawing**, each line
+linked to a real inventory item (or marked non-stock). It's a **watertight checklist**: the whole universe of
+~501 particulars is shown in order (not-applicable ones greyed, click to add), every active line must be
+**✓ checked**, every part-group **confirmed**, every BOM item placed, before it can be **Marked Ready**.
 
-## 1 — Stack & infra
+**How it generates (RULES-ONLY — important):**
+- **Presence**: the door/drive **template skeleton** (`templates.json`) + a door-independent core.
+- **Spec/size**: **band-conditioned mined sizing** (`sizing-bands.json` — most-common size per part per
+  capacity band) + the drawing's door-opening width; falls back to each particular's standard spec.
+- **Quantity**: mined formulas (`quantity-models.json`: header=stops+1, sill=stops, …) and **travel-scaled**
+  models (`travel-models.json`) when the drawing gives travel.
+- **Inventory link**: `resolve.ts` matches (category + size). Category corrections + genuine non-inventory
+  flags come from `partlist-overrides.json` (research-grounded). **BOM is read-only** and blended on top
+  (BOM item wins; conflicts flagged).
+- The old **"similar jobs" (k-NN neighbour copy) was removed** — it produced wrong/bloated lists. Evidence
+  it was right to drop: `scripts/partlist-brain/compare-rules-vs-neighbor.js` (band-mode ties/beats neighbour
+  on specs, e.g. counter rail 23%→90%; rules win on quantities 79% vs 62%).
 
-- **Frontend**: Next.js 15.5 App Router, React 19, TypeScript, Tailwind 4.
-- **DB**: Supabase Postgres — project `qwzisnmueuqnzzokkpmn`, region ap-south-1.
-- **Storage**: Supabase buckets `gad-drawings` (job drawings), `program-sketches`,
-  `po-invoices`.
-- **Hosting**: Netlify, auto-deploys `main` (~1 min). Hard-refresh tabs after deploy.
-- **Auth**: NOT wired yet. Anon key used everywhere; RLS is permissive (`Allow all
-  for anon`, `FOR ALL TO anon USING(true) WITH CHECK(true)`) on every table. New
-  tables: enable RLS + add that policy to match.
+**Drawing reads are cached.** On drawing upload, `ensureDrawingRead` fires (background) and stores the vision
+read in `job_drawing_extractions`; Generate uses the **cached** read (NEVER inline vision — that caused a
+serverless-timeout "unexpected response" bug). All 151 drawing-jobs are pre-cached. Needs `ANTHROPIC_API_KEY`
+in Netlify for *new* reads (graceful spec+BOM fallback if absent). A "Read drawing" button is the catch-up.
 
-## 2 — Daily commands
+**Re-upload = spec change**: replacing a drawing wipes the cached read + the existing Part List, then re-reads
+(panel confirms first).
 
-```bash
-npm run dev          # local dev (OneDrive makes this flaky — see gotchas)
-npx tsc --noEmit     # the gate — must be clean before every commit
-rm -rf .next && npm run build   # the prod build Netlify runs; clear .next first (OneDrive)
-```
+### Files
+- Runtime brain: `src/lib/partlist/` — `predict.ts` (rules), `resolve.ts` (inventory match), `types.ts`,
+  + committed JSON artifacts (`sizing-bands`, `quantity-models`, `travel-models`, `templates`,
+  `section-groups`, `partlist-overrides`; `rules.json` is legacy, superseded by sizing-bands).
+- Server actions: `src/lib/actions/partlist.ts` (getPartList, savePartList, **savePartListSection**,
+  markPartListReady, reopenPartList, searchPartItems, **resetPartListForNewDrawing**) and
+  `partlist-generate.ts` (`generatePartListDraft` — the blend engine). `spec-vision.ts` has
+  `extractDrawingData` + `ensureDrawingRead`.
+- UI: `src/components/jobs/partlist-client.tsx` (the checklist) + the route `page.tsx`.
+  `gad-drawing-panel.tsx` auto-reads on upload.
+- DB: `packing_lists` / `packing_list_lines` (migrations 039 + **040 watertight** + **041 non_inventory**).
+- Offline pipeline (`scripts/partlist-brain/`, run in order): `parse-corpus` → `mine-quantities` →
+  `mine-sizing` → `extract-rules` → `gen-compact-corpus` (copies artifacts to `src/lib/partlist/`).
+  Research/aliases: `dump-research-inputs` → (Workflow) → `build-overrides`. Drawing backfill:
+  `dl-pending-drawings` → (Workflow) → `cache-extractions`. Evidence: `compare-rules-vs-neighbor`,
+  `backtest`. Merge-time: `wipe-old-partlists`. Full write-up: `scripts/partlist-brain/ACCURACY-REPORT.md`
+  + memory `project_auto_partlist.md`.
 
-## 3 — Tools you have
-
-- **Supabase MCP** (`mcp__ea97…__*`): `execute_sql` (reads + ad-hoc writes),
-  `apply_migration` (DDL), `get_logs`, `get_advisors`. Times out intermittently →
-  just retry. **Confirm with owner before any data-mutating SQL > 1 row**; preview
-  a count first.
-- **Claude Preview MCP** (`mcp__Claude_Preview__*`): real browser to verify UI.
-  Quirk: it intermittently bounces the tab to `/jobs`; re-`location.href` and wait.
-  Screenshots sometimes downscale — read the DOM (`preview_eval`) to confirm content.
-- **Netlify MCP**: deploy state / env vars (rarely needed; push is enough).
-
-## 4 — Codebase map
-
-```
-src/app/(app)/        Route group with the shared sidebar (AppShell)
-  inventory/          Main inventory list (server-paginated RPC) + item detail [id] + import
-  cabin-inventory/    Cabin items by type (11 types under "Cabin" category) — kept OUT of /inventory
-  subassemblies/      Items that have a parts list
-  inventory/changes/  Daily Changes feed (edits + stock moves + undo)
-  jobs/               Job Orders: list, new, [id] detail, [id]/edit, [id]/packing-list, unmatched, import
-  cabin-jobs/         Cabin job orders
-  programs/           Programs (CNC/assembly recipes) + [id]
-  cabin-programs/     Finish-aware cabin cutting programs
-  program-runs/       Daily program-run logbook
-  mrp/                Make MRP (req/programs/weekly) ; mrp/trade (buy) ; mrp/cabin ; mrp/shortfall
-  procurement/        Purchase orders + receipts
-  demand/, settings/, assistant/
-src/components/<area>/ Client components per area (jobs/, inventory/, cabin/, mrp/, ui/)
-src/lib/
-  actions/<domain>.ts  Server actions, one file per domain (jobs, inventory, mrp, dispatch, cabin, …)
-  bom/bom-sections.ts        BOM section config for the job form (single source of truth)
-  packing-list/              Part-list template (packing-list-sections.ts) + helpers.ts
-  supabase/{server,cache-client,types}.ts   SSR client (mutations) / anon cached client (reads) / hand types
-  hooks/use-url-list-state.ts  URL-backed list state (every list keeps filters/sort/page in the URL)
-supabase/migrations/   SQL migrations (latest applied: 039_packing_lists)
-scripts/               Dev/data scripts (gen-*, seed-*, analysis) — mostly untracked scratch
-```
-
-## 5 — Conventions that bite if ignored
-
-- **Branch strategy** (CLAUDE.md §0): typos/small fixes/new-column features → `main`.
-  Risky schema change / big refactor / speculative → feature branch + tell the owner.
-  Owner reviews the **deployed app**; default to merging to `main` so they can see it.
-- **Cache**: cached reads use `unstable_cache` + tags (`items`, `jobs`, `bom-lines`,
-  `inventory-stock`, `categories`, `operations`, `packing-lists`, …) via the anon
-  `cache-client`. Mutations use the cookies-aware `server` client + must
-  `revalidateTag()`. After raw SQL (outside the app), push an empty commit to wipe
-  the build-tier cache, or wait for the 60–600s TTL.
-- **Server-action errors are stripped in prod** → return a discriminated
-  `{ ok:false, error }` for user-facing validation, don't throw.
-- **`items.name` is the display name everywhere**; `lookup_key` is synced = name
-  (legacy search fallback) — never show `lookup_key || name`.
-- **Make vs Trade**: effective = `item.procurement_type ?? category.procurement_type`.
-- Every route needs a `loading.tsx`. Use `useToast()` for all mutation feedback.
-- DB category names have intentional typos (`Pannel`, `Miscallaneous`, `Thimbel`,
-  `Pully`) — match them exactly, don't "fix".
-
-## 6 — Recent work (context for what's fresh)
-
-- **Part List / Packing List** (per job, `/jobs/[id]/packing-list`): rebuilt 06-20
-  around the real **Mechanical Part List** format (corpus `~/Downloads/Part List.xlsx`,
-  238 jobs). Template = **501 "Particulars" (Col C = category) in canonical order**,
-  each `item` (inventory search, scoped to a category) or `free` (fastener/kit/
-  consumable free-text). Generated by `scripts/gen-partlist-template.js` →
-  `src/lib/packing-list/packing-list-sections.ts` + `scripts/_packing_sections.json`.
-  Seeded from each job's BOM (`scripts/seed-packing-lists.js --reseed`). To change it:
-  edit the generator's OVERRIDES/classify, re-run, then `--reseed`. Migration 039 =
-  `packing_lists` + `packing_list_lines`. Memory: `project_packing_list.md`.
-- **Cabin inventory stock now hand-editable** (06-20): the same `InlineStockAdjust`
-  widget as `/inventory` is on each cabin-type row (`cabin-type-client.tsx`).
-- **Parallel session also shipped** (already merged): per-item **stock ledger**
-  (hover + PDF via jspdf) and **program-count-per-item** hover on inventory.
-
-## 7 — Gotchas (real, recurring)
-
-- **OneDrive** corrupts `.next` (`readlink EINVAL`) and makes local dev/preview
-  flaky → `rm -rf .next` before a local build; prefer verifying via deployed or
-  short preview sessions. (Memory: `env_preview_caveat.md`.)
-- **PostgREST 1000-row cap**: any read that can exceed 1000 rows MUST page with
-  `.range()` (cabin/inventory/MRP do). `unstable_cache` silently won't cache
-  entries > ~2 MB — project to the few fields you need on hot pages.
-- **Stale deploy guard** prompts reload when a long-open tab hits a stale server
-  action after a deploy — expected, not a bug.
-- **Staging**: repo has many untracked scratch files (`scripts/_*.js`, `_*.png`,
-  `*.xlsx`) — `git add` explicit paths only, never `git add -A`.
-- Co-author trailer on commits: `Claude Opus 4.8 <noreply@anthropic.com>`.
-
-## 8 — Deeper docs
-
-- **`CLAUDE.md`** — full schema, every feature, all conventions. Read first.
-- **Auto-memory** (`~/.claude/.../memory/MEMORY.md` index) — per-feature project
-  notes (packing list, cabin programs, MRP rules, procurement, inventory movements,
-  UX rules, optimiser-locked, etc.). Loaded automatically each session.
+### Locked design decisions (owner)
+Blend per line (no single backbone) · on-demand Generate · replace-from-scratch with confirm · cached drawing
+read · **RULES not similar-jobs** · non-inventory lines allowed (engineer marks "non-stock"; not every line
+needs a SKU).
 
 ---
 
-## OPEN / carried forward
+## 1 — Stack / commands / tools (condensed; see CLAUDE.md)
+- Next.js 15.5 App Router · React 19 · TS · Tailwind 4. Supabase Postgres (`qwzisnmueuqnzzokkpmn`, ap-south-1).
+- `npx tsc --noEmit` (the gate) · `rm -rf .next && npm run build` (OneDrive corrupts `.next`; clear first).
+- Supabase MCP (`execute_sql`/`apply_migration`/`get_logs`); confirm >1-row writes with a count first.
+- Preview MCP for verifying UI — but flaky here (see gotchas); prefer the **prod** launch config over dev.
 
-- **Part List polish** (optional): ~123 of the 501 item-particulars search ALL
-  inventory (no category scope) — tighten `OVERRIDES` in
-  `gen-partlist-template.js` over time. Owner has the reviewable
-  `Desktop/Proposed Part List Master Template.xlsx` and can edit order/rows; rebuild
-  from their edits if sent.
-- **Durable fix not yet done** (from prior handoff): `saveBomSection`
-  (`lib/actions/jobs.ts`) deletes+reinserts BOM lines, nulling dispatch→line FK
-  links (`ON DELETE SET NULL`). A `relinkOrphanedDispatchLines` helper was drafted
-  to re-link orphans at the end — verify it's still missing (grep) and add if so.
+## 2 — Open / carried forward
+- **Verify on the live deploy** (couldn't fully click-test locally — preview bounces to `/jobs`): Save,
+  Mark Ready (gate), the **non-stock** toggle, **Save section**, and **re-upload reset**. Generate itself is
+  verified (job 4732: 98 lines, counter rail 5X45X45, fish plate→non-stock, BOM 52/53).
+- **Confirm `ANTHROPIC_API_KEY` is set in Netlify** (for reading newly-uploaded drawings).
+- **Flywheel not built yet**: a `mine-from-ready.js` to re-mine rules (sizing/quantity/presence) from Part
+  Lists the engineers mark **Ready**, so accuracy compounds over months. Owner explicitly wants this.
+- ~7 unscoped particulars still have no category mapping (engineer links or marks non-stock at review).
+- **Pre-existing, still undone** (from the prior handoff, unrelated to part list): `saveBomSection`
+  (`lib/actions/jobs.ts`) delete+reinserts BOM lines, nulling dispatch→line FK links; a
+  `relinkOrphanedDispatchLines` helper was drafted but never added. Grep confirms still missing.
 
-**Ready for the next big feature — describe it and I'll scope + build.**
+## 3 — Gotchas (recurring)
+- **OneDrive** corrupts `.next` and makes dev/preview flaky; the Preview tool intermittently bounces the tab
+  to `/jobs` (re-`location.href` + poll fast to catch state). Prefer verifying on the deploy.
+- **Shared DB**: SQL/wipes hit the live site immediately (the old part-list data was wiped at this merge).
+- **Generate must stay serverless-fast** — never call inline Claude vision inside it (timeout). Use cached
+  `job_drawing_extractions`; parallelise item fetches.
+- Staging: many untracked scratch files (`scripts/_*`, `_*.png`, `*.xlsx`, `scripts/partlist-brain/_*`
+  gitignored) — `git add` explicit paths, never `-A`.
+- Co-author trailer: `Claude Opus 4.8 <noreply@anthropic.com>`.
+
+---
+**Next obvious step:** owner verifies the flow on the live job pages; then build the **Ready→rules flywheel**.
