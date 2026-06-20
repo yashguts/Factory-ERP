@@ -11,6 +11,7 @@ import { Card, SectionHeader } from "@/components/ui/card";
 import { useToast } from "@/components/ui/toast";
 import { CabinItemPicker } from "@/components/cabin/cabin-item-picker";
 import { CabinBaseFinishPicker } from "@/components/cabin/cabin-base-finish-picker";
+import { CabinJobOrderPicker } from "@/components/cabin/cabin-job-order-picker";
 import { CABIN_TYPES, isFinishSplitType } from "@/lib/cabin/cabin-types";
 import {
   createCabinJob,
@@ -94,6 +95,8 @@ export function CabinJobForm({
 
   // Editing keeps the job's number; cloning starts blank (it's a new job).
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
+  // Customer comes from the linked Job Order (auto-filled on pick).
+  const [customerName, setCustomerName] = useState<string | null>(job?.customer_name ?? null);
 
   const [rowsByType, setRowsByType] = useState<Record<string, Row[]>>(() => {
     const map: Record<string, Row[]> = {};
@@ -233,8 +236,8 @@ export function CabinJobForm({
     );
     startTransition(async () => {
       const res = isEditing
-        ? await updateCabinJob(job!.id, { job_number: jobNumber, lines })
-        : await createCabinJob({ job_number: jobNumber, lines });
+        ? await updateCabinJob(job!.id, { job_number: jobNumber, customer_name: customerName, lines })
+        : await createCabinJob({ job_number: jobNumber, customer_name: customerName, lines });
       if (!res.ok) {
         setError(res.error);
         return;
@@ -320,23 +323,32 @@ export function CabinJobForm({
       {cloning && (
         <div className="mb-3 p-3 text-sm bg-[var(--info-bg,var(--muted))] text-[var(--foreground)] rounded-md border border-[var(--border)] inline-flex items-center gap-1.5">
           <Copy className="h-3.5 w-3.5 text-[var(--muted-foreground)]" />
-          Cloned from <strong>{cloneFrom!.job_number}</strong> — enter a new job
-          number, adjust items, and save as a separate job.
+          Cloned from <strong>{cloneFrom!.job_number}</strong> — pick its Job
+          Order, adjust items, and save as a separate job.
         </div>
       )}
 
-      {/* Header field */}
-      <div className="card-surface p-3 mb-3 max-w-sm">
+      {/* Header field — a cabin job must point at a real Job Order */}
+      <div className="card-surface p-3 mb-3 max-w-md">
         <label className="block text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)] mb-1">
-          Job Number <span className="text-[var(--destructive)]">*</span>
+          Job Order <span className="text-[var(--destructive)]">*</span>
         </label>
-        <Input
-          size="sm"
+        <CabinJobOrderPicker
           value={jobNumber}
-          onChange={(e) => setJobNumber(e.target.value)}
-          placeholder="e.g., RNLBLR-0051"
+          customer={customerName}
           autoFocus={!isEditing}
+          onPick={(j) => {
+            setJobNumber(j.job_number);
+            setCustomerName(j.customer_name);
+          }}
+          onClear={() => {
+            setJobNumber("");
+            setCustomerName(null);
+          }}
         />
+        <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+          Pick the matching Job Order — cabin jobs must link to one. Not listed? Create it in Jobs first.
+        </p>
       </div>
 
       <p className="text-xs text-[var(--muted-foreground)] mb-3">

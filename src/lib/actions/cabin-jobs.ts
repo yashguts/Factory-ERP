@@ -564,6 +564,58 @@ export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
   };
 }
 
+/* ------------------------------------------------------------------ *
+ * Job-Order link. A cabin job must correspond to a real Job Order
+ * (jobs.job_number) — otherwise it never gets a dispatch date and falls
+ * off the weekly plan. The form picks from this search; the create/update
+ * actions hard-enforce it server-side.
+ * ------------------------------------------------------------------ */
+
+export interface JobOrderOption {
+  job_number: string;
+  customer_name: string | null;
+  requirement_dispatch_date: string | null;
+}
+
+/** Search Job Orders (the `jobs` table) by number or customer. Empty query
+ *  returns the most recent jobs so the picker shows options on focus. */
+export async function searchJobOrders(query: string, limit = 20): Promise<JobOrderOption[]> {
+  const supabase = createCacheClient();
+  let q = supabase
+    .from("jobs")
+    .select("job_number, customer_name, requirement_dispatch_date, created_at")
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  for (const token of (query ?? "").trim().toLowerCase().split(/\s+/).filter(Boolean)) {
+    const safe = token.replace(/[%,()]/g, "");
+    if (!safe) continue;
+    q = q.or(`job_number.ilike.%${safe}%,customer_name.ilike.%${safe}%`);
+  }
+  const { data, error } = await q;
+  if (error) throw error;
+  return (data ?? []).map((j: any) => ({
+    job_number: j.job_number as string,
+    customer_name: (j.customer_name as string | null) ?? null,
+    requirement_dispatch_date: (j.requirement_dispatch_date as string | null) ?? null,
+  }));
+}
+
+/** True if a Job Order exists with this number (case-insensitive, trimmed). */
+async function jobOrderExists(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  jobNumber: string,
+): Promise<boolean> {
+  const target = jobNumber.trim().toLowerCase();
+  if (!target) return false;
+  const { data } = await supabase
+    .from("jobs")
+    .select("job_number")
+    .ilike("job_number", jobNumber.trim());
+  return (data ?? []).some(
+    (r: any) => ((r.job_number as string) ?? "").trim().toLowerCase() === target,
+  );
+}
+
 export type CabinJobResult =
   | { ok: true; id: string }
   | { ok: false; error: string };
@@ -595,6 +647,12 @@ export async function createCabinJob(input: {
   if (!job_number) return { ok: false, error: "Job number is required." };
 
   const supabase = await createClient();
+  if (!(await jobOrderExists(supabase, job_number)))
+    return {
+      ok: false,
+      error: `No Job Order "${job_number}" exists. Create the Job Order first (Jobs → New), then build its cabin items here.`,
+    };
+
   const { data: head, error } = await supabase
     .from("cabin_jobs")
     .insert({
@@ -645,6 +703,22 @@ export async function updateCabinJob(
   if (!job_number) return { ok: false, error: "Job number is required." };
 
   const supabase = await createClient();
+  // Enforce the Job-Order link only when the number CHANGES — existing cabin jobs
+  // (incl. legacy ones created before this rule) stay editable; renaming requires
+  // the new number to be a real Job Order.
+  const { data: cur } = await supabase
+    .from("cabin_jobs")
+    .select("job_number")
+    .eq("id", id)
+    .maybeSingle();
+  const numberChanged =
+    !cur || ((cur.job_number as string) ?? "").trim().toLowerCase() !== job_number.toLowerCase();
+  if (numberChanged && !(await jobOrderExists(supabase, job_number)))
+    return {
+      ok: false,
+      error: `No Job Order "${job_number}" exists. Pick an existing Job Order.`,
+    };
+
   // Only touch customer/note when explicitly provided — the form no longer asks
   // for them, so omitting must leave any existing values untouched.
   const payload: Record<string, unknown> = {
