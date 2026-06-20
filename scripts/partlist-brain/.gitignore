@@ -1,2 +1,4 @@
 # Large regenerable artifact (rebuild with parse-corpus.js from Part List.xlsx)
 data/corpus.json
+# Scratch intermediates (workflow inputs / temp lists)
+data/_*.json

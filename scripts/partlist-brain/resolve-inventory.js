@@ -29,12 +29,14 @@ const sectionByKey = new Map(sections.map((s) => [s.key, s]));
 
 const STOP = new Set(["the", "for", "with", "and", "type", "nos", "no", "set", "pcs", "pc",
   "size", "of", "as", "per", "mm", "kg", "qty", "each", "new", "old", "sr"]);
+const SHAPE = new Set(["l", "u", "c", "z", "t", "i", "h"]); // shape codes worth keeping ("L"Type)
 // tokens of a string -> { all:Set, sizes:Set } where sizes carry a digit (decisive).
 function tokenize(s) {
   const all = new Set(), sizes = new Set();
   for (let t of String(s || "").toLowerCase().replace(/[(),"']/g, " ").split(/[\s\/]+/)) {
     t = t.replace(/[^a-z0-9.x+-]/g, "");
-    if (!t || t.length < 2 || STOP.has(t)) continue;
+    if (!t || STOP.has(t)) continue;
+    if (t.length < 2 && !SHAPE.has(t)) continue;
     all.add(t);
     if (/[0-9]/.test(t)) sizes.add(t);
   }
@@ -117,23 +119,30 @@ async function main() {
     const sizeArr = [...q.sizes], allArr = [...q.all];
     const sized = sizedFrac(cands, sectionKey) >= 0.5;
 
-    let pool = cands;
+    let pool = cands, enforced = false;
     if (sizeArr.length && sized) {
-      // size-discriminated category: the SKU must carry every size token, else flag
-      const exact = cands.filter((it) => sizeArr.every((t) => it.tok.all.has(t)));
-      if (!exact.length) return { item: null, reason: "no-match" };
-      pool = exact;
+      // The part-list spec is verbose ("DBG-850mm/100x40x40x3/1.7M", "8mm (34mtr x 6nos)")
+      // but contains the canonical size. Match SKUs whose OWN size tokens all appear
+      // in the spec (item ⊆ spec), preferring the most specific (most size tokens).
+      const subset = cands.filter((it) => it.tok.sizes.size > 0 && [...it.tok.sizes].every((t) => q.sizes.has(t)));
+      if (subset.length) { pool = subset; enforced = true; }
+      else {
+        // fallback: SKU carries every spec size token (item is the verbose one)
+        const exact = cands.filter((it) => sizeArr.every((t) => it.tok.all.has(t)));
+        if (exact.length) { pool = exact; enforced = true; } else return { item: null, reason: "no-match" };
+      }
     }
     let best = null;
     for (const it of pool) {
       const allHit = allArr.filter((t) => it.tok.all.has(t)).length;
       const cov = allHit / allArr.length;
+      const sizeSpecificity = [...it.tok.sizes].filter((t) => q.sizes.has(t)).length; // reward most-specific size match
       const extra = [...it.tok.sizes].filter((t) => !q.sizes.has(t)).length; // penalise stray sizes
-      const score = cov - 0.03 * extra;
+      const score = sizeSpecificity * 1.0 + cov * 0.5 - 0.05 * extra;
       if (!best || score > best.score) best = { it, score, cov };
     }
     if (!best) return { item: null, reason: "no-match" };
-    if ((sizeArr.length && sized) || best.cov >= 0.45) return { item: best.it, reason: "matched", cov: +best.cov.toFixed(2) };
+    if (enforced || best.cov >= 0.45) return { item: best.it, reason: "matched", cov: +best.cov.toFixed(2) };
     return { item: null, reason: "no-match" };
   }
   // cache resolution by (sectionKey | specNorm | labelNorm)
@@ -147,6 +156,7 @@ async function main() {
   // run over all corpus item lines that have a sectionKey
   let total = 0, resolved = 0, noCat = 0, noMatch = 0, noSpec = 0;
   const perCat = new Map(); // categoryPath -> {total,resolved}
+  const perSection = new Map(); // sectionKey -> {total,resolved,label,unres:Map(spec->n)}
   const unresolved = new Map(); // "sectionKey | spec" -> count
   for (const rec of corpus) {
     for (const l of rec.lines) {
@@ -155,17 +165,34 @@ async function main() {
       const sec = sectionByKey.get(l.sectionKey);
       const cp = sec && sec.categoryPaths && sec.categoryPaths[0] ? sec.categoryPaths[0] : "(unscoped)";
       const pc = perCat.get(cp) || { total: 0, resolved: 0 }; pc.total++;
+      const ps = perSection.get(l.sectionKey) || { total: 0, resolved: 0, label: (sec && sec.label) || l.particular, unres: new Map() }; ps.total++;
       const r = resolveCached(l.particular, l.sectionKey, l.spec);
-      if (r.item) { resolved++; pc.resolved++; }
+      if (r.item) { resolved++; pc.resolved++; ps.resolved++; }
       else {
         if (r.reason === "no-category") noCat++;
         else if (r.reason === "no-spec") noSpec++;
         else noMatch++;
         const k = `${l.sectionKey} | ${l.spec || "(blank)"}`;
         unresolved.set(k, (unresolved.get(k) || 0) + 1);
+        ps.unres.set(l.spec || "(blank)", (ps.unres.get(l.spec || "(blank)") || 0) + 1);
       }
-      perCat.set(cp, pc);
+      perCat.set(cp, pc); perSection.set(l.sectionKey, ps);
     }
+  }
+
+  if (process.argv[2] === "diag") {
+    const weak = [...perSection.entries()].filter(([, v]) => v.total >= 25 && v.resolved / v.total < 0.75)
+      .sort((a, b) => (b[1].total - b[1].resolved) - (a[1].total - a[1].resolved));
+    console.log(`RESOLVER DIAGNOSTIC — weak sections (>=25 lines, <75% resolved):\n`);
+    for (const [key, v] of weak.slice(0, 16)) {
+      const cands = candidates(key);
+      const sf = cands.length ? sizedFrac(cands, key) : 0;
+      console.log(`■ ${v.label}  [${key}]  ${v.resolved}/${v.total} resolved  | ${cands.length} candidates, sizedFrac=${sf.toFixed(2)}`);
+      console.log(`   candidate names: ${cands.slice(0, 6).map((c) => c.name).join(" | ") || "(none)"}`);
+      const us = [...v.unres.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6);
+      console.log(`   unresolved specs: ${us.map(([s, n]) => `"${s}"x${n}`).join(", ")}\n`);
+    }
+    return;
   }
 
   const pct = (a, b) => (100 * a / (b || 1)).toFixed(1) + "%";

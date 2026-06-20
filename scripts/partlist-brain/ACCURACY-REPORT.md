@@ -17,7 +17,7 @@ your 227 past jobs in turn and predicting it from the other 226:
 | Did it get the **quantity** right? | **80% exact**, 87% within ±1 |
 | Did it get the **size/spec** right? | **79%** |
 | **Whole lines perfect** (right part + qty + size, no edit needed) | **67%** |
-| Lines **auto-linked to a real inventory item** | **75%** (rest flagged "needs item") |
+| Lines **auto-linked to a real inventory item** | **82%** (rest flagged "needs item") |
 
 Plain English: for a typical job the brain produces a part list where **~2 out of 3
 lines are exactly right and need no touch**, **9 of 10 of the right parts are
@@ -79,8 +79,17 @@ Presence  ITEM : precision 90.0%  recall 90.4%  F1 90.2%
 Quantity (matched item lines, n=19030): exact 80.2%  within±1 87.0%
 Spec/size (matched item lines w/ spec, n=15198): 78.6%
 Lines correct as-is (present + qty + spec): 67.4%
-Inventory resolution (27,092 item lines): 74.8% linked, 6,818 flagged
+Inventory resolution (27,092 item lines): 81.6% linked, 4,989 flagged
 ```
+
+Resolver v2 lifted resolution 75% → 82% by matching the SKU's size tokens as a
+subset of the (verbose) part-list spec — e.g. spec `DBG-850mm/100x40x40x3/1.7M`
+now matches SKU `Counter Weight Frame Goods DBG-850mm`, and `8mm (34mtr x 6nos)`
+matches `Wire Rope 8mm`. The residual ~18% is: finish-only specs (e.g. Linton
+`SS`) that resolve at **runtime** once the drawing gives the door width; a few
+wrong-category template mappings (Dade Weight Rod, Car Header Hanging Bkt); cabin
+items (out of mechanical scope); and naming-convention mismatches (Buffer Channel
+`DBG-1242` vs SKU `Combination 700`).
 
 ## Where it's strongest / weakest
 

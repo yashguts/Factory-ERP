@@ -21,7 +21,7 @@ function tokens(raw) {
     .replace(/\bMODEL\b/g, " ").replace(/\bECO\b/g, " ").replace(/\bSHEET\b/g, " ")
     .replace(/&/g, " ");
   const out = new Set(); let m;
-  const re1 = /([A-Z]{2,6})[ \-_]?(\d{3,4})/g;
+  const re1 = /([A-Z]{2,6})[ \-_]*(\d{2,4})/g; // allow spaced dashes ("ANDH - 045") + 2-digit nums
   while ((m = re1.exec(s))) out.add(m[1] + m[2].padStart(4, "0"));
   const re2 = /\b(\d{4,})\b/g;
   while ((m = re2.exec(s))) { const d = m[1]; for (let i = 0; i + 4 <= d.length; i += 4) out.add(d.slice(i, i + 4)); }
