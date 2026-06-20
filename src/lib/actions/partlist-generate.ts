@@ -191,45 +191,50 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
     const brainLine = brainBySection.get(sk);
     const bomList = bomBySection.get(sk);
     const captureType = sec.captureType;
-    const sources: string[] = [];
-    let item_id: string | null = null, item_code: string | null = null, item_name: string | null = null;
-    let spec: string | null = brainLine?.specs[0] ?? null;
-    let qty = brainLine?.qty ?? 0;
-    let confidence: DraftLine["confidence"] = "low";
-    let is_conflict = false, conflict_note: string | null = null, bom_line_id: string | null = null;
+    const group = GROUPS[sk] || "PART E";
 
     if (bomList && bomList.length) {
-      const bl = bomList[0];
-      bom_line_id = bl.id; item_id = bl.item_id; item_code = bl.code; item_name = bl.name;
-      sources.push("BOM"); confidence = "high";
-      qty = bl.qty || brainLine?.qty || 0;
-      if (brainLine && brainLine.qty > 0 && bl.qty > 0 && Math.abs(brainLine.qty - bl.qty) > QTY_TOL) {
-        is_conflict = true; conflict_note = `BOM qty ${bl.qty} vs predicted ${brainLine.qty}`;
+      // ONE draft line per BOM item — never collapse. Every BOM line must appear
+      // in the Part List (the owner's hard rule). When a single BOM item lands in
+      // a section it confirms the predicted particular, so blend the rule's spec/qty
+      // onto it; when several land in one section they're distinct parts, each its
+      // own line (rule spec doesn't apply across them).
+      const ruleForSection = bomList.length === 1 ? brainLine : undefined;
+      for (const bl of bomList) {
+        const sources = ["BOM"];
+        let is_conflict = false, conflict_note: string | null = null;
+        if (ruleForSection) {
+          sources.push("rule");
+          if (ruleForSection.qty > 0 && bl.qty > 0 && Math.abs(ruleForSection.qty - bl.qty) > QTY_TOL) {
+            is_conflict = true; conflict_note = `BOM qty ${bl.qty} vs predicted ${ruleForSection.qty}`;
+          }
+        }
+        lines.push({
+          sectionKey: sk, label: sec.label, group, captureType,
+          item_id: bl.item_id, item_code: bl.code, item_name: bl.name,
+          spec: ruleForSection?.specs[0] ?? null, qty: bl.qty || ruleForSection?.qty || 0,
+          source: sources.join(" + "), confidence: "high", is_conflict, conflict_note,
+          needs_item: false, non_inventory: false, bom_line_id: bl.id,
+        });
       }
-      if (bomList.length > 1) {
-        is_conflict = true;
-        conflict_note = (conflict_note ? conflict_note + "; " : "") + `${bomList.length} BOM items map to this line`;
-      }
-      if (brainLine) sources.push("rule");
     } else if (brainLine) {
-      qty = brainLine.qty;
+      const spec = brainLine.specs[0] ?? null;
+      let item_id: string | null = null, item_code: string | null = null, item_name: string | null = null;
       // skip resolution for sections research flagged as genuinely non-inventory
       if (captureType === "item" && !NON_INVENTORY.has(sk)) {
         const r = resolver.resolve(sec.label, sk, spec);
         if (r.item) { item_id = r.item.id; item_code = r.item.code; item_name = r.item.name; }
       }
-      sources.push(NON_INVENTORY.has(sk) ? "rule (non-stock)" : brainLine.source);
-      confidence = captureType === "free" || item_id ? brainLine.confidence : "low";
+      const non_inventory = NON_INVENTORY.has(sk) && !item_id;
+      const needs_item = captureType === "item" && !item_id && !non_inventory;
+      lines.push({
+        sectionKey: sk, label: sec.label, group, captureType,
+        item_id, item_code, item_name, spec, qty: brainLine.qty,
+        source: NON_INVENTORY.has(sk) ? "rule (non-stock)" : brainLine.source,
+        confidence: captureType === "free" || item_id ? brainLine.confidence : "low",
+        is_conflict: false, conflict_note: null, needs_item, non_inventory, bom_line_id: null,
+      });
     }
-
-    const non_inventory = NON_INVENTORY.has(sk) && !item_id;
-    const needs_item = captureType === "item" && !item_id && !non_inventory;
-    lines.push({
-      sectionKey: sk, label: sec.label, group: GROUPS[sk] || "PART E", captureType,
-      item_id, item_code, item_name, spec, qty,
-      source: sources.join(" + ") || "manual", confidence, is_conflict, conflict_note,
-      needs_item, non_inventory, bom_line_id,
-    });
   }
 
   // Unmapped BOM items → an "Unsorted (from BOM)" group so NO BOM line is ever
