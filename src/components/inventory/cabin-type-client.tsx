@@ -31,8 +31,10 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
+import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
 import { getCabinTypePage, type CabinTypeRow } from "@/lib/actions/cabin";
 import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
+import type { Warehouse } from "@/lib/supabase/types";
 
 interface Props {
   typeId: string;
@@ -46,6 +48,8 @@ interface Props {
   initialInStock: number;
   /** Total items in this type, ignoring filters (the "of Y items" figure). */
   typeTotal: number;
+  /** Warehouses for the inline stock-adjust widget. */
+  warehouses: Warehouse[];
 }
 
 const PAGE_SIZE = 100;
@@ -58,6 +62,7 @@ export function CabinTypeClient({
   initialTotal,
   initialInStock,
   typeTotal,
+  warehouses,
 }: Props) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
@@ -224,6 +229,7 @@ export function CabinTypeClient({
                 <TableHead>Name</TableHead>
                 <TableHead>Sub-type</TableHead>
                 <TableHead className="text-right">Stock</TableHead>
+                <TableHead className="w-10 text-right">Adjust</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -251,6 +257,22 @@ export function CabinTypeClient({
                       {it.total_stock.toLocaleString()}
                     </span>{" "}
                     <span className="text-xs text-[var(--muted-foreground)]">{it.uom}</span>
+                  </TableCell>
+                  <TableCell
+                    className="text-right"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <InlineStockAdjust
+                      item={{
+                        id: it.id,
+                        code: it.code,
+                        name: it.name,
+                        lookup_key: null,
+                        uom: { id: "", abbreviation: it.uom },
+                      }}
+                      warehouses={warehouses}
+                      onSuccess={runQuery}
+                    />
                   </TableCell>
                 </TableRow>
               ))}

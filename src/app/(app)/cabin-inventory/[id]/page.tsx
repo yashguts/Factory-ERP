@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getCabinTypeMeta, getCabinTypeFirstPage } from "@/lib/actions/cabin";
+import { getWarehouses } from "@/lib/actions/inventory";
 import { CabinTypeClient } from "@/components/inventory/cabin-type-client";
 
 interface Props {
@@ -10,9 +11,12 @@ export default async function CabinTypePage({ params }: Props) {
   const { id } = await params;
   // Light identity + sub-type options, plus the first (default) page of rows —
   // both small. Subsequent pages / filtered queries are fetched client-side.
-  const [meta, first] = await Promise.all([
+  // Warehouses drive the inline stock-adjust widget — cabin items are make
+  // items whose stock should be hand-editable like regular inventory.
+  const [meta, first, warehouses] = await Promise.all([
     getCabinTypeMeta(id),
     getCabinTypeFirstPage(id),
+    getWarehouses(),
   ]);
   if (!meta.type) notFound();
 
@@ -25,6 +29,7 @@ export default async function CabinTypePage({ params }: Props) {
       initialTotal={first.total}
       initialInStock={first.inStock}
       typeTotal={first.typeTotal}
+      warehouses={warehouses}
     />
   );
 }
