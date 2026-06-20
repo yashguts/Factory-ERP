@@ -51,6 +51,26 @@ step surfaces). Re-score: `node scripts/partlist-brain/rescore-vision.js`.
 **Takeaway:** the drawing read is reliable enough to pre-fill the Job Order; the
 engineer confirms the spec, then the part list follows.
 
+## Drawing → features → smarter quantities (69 drawings)
+
+A second, deeper read pulled the dimensional features that drive the *variable*
+quantities — **travel, floor height, openings (count + sides), shaft & car dims**
+(travel 68/69, openings 69/69, door width 66/69). Re-mining the travel-scaled parts
+on real travel instead of stops-as-a-proxy measurably tightens exactly the parts that
+were on k-NN fallback:
+
+| Part | Stops-only MAE | With travel | Δ |
+|---|---|---|---|
+| Guide Rail (Main) | 1.32 | **0.92** | −30% |
+| Guide Rail (Counter) | 1.35 | **0.94** | −30% |
+| Troughing | 2.02 | **1.34** | −34% |
+
+These travel models (`data/travel-models.json`) are wired into the predictor and fire
+at runtime whenever the drawing yields travel; otherwise it falls back to the stops
+formula / k-NN. (Headers, sills, cable-hanger were already nailed by the stops models;
+openings didn't help on this single-entrance-heavy sample but is captured for the rare
+through-car jobs.) Reproduce: `node scripts/partlist-brain/remine-with-features.js`.
+
 ## How it works (transparent, not a black box)
 
 Every predicted line carries provenance (which neighbour job / which formula) and a
@@ -100,16 +120,19 @@ items (out of mechanical scope); and naming-convention mismatches (Buffer Channe
   multi-size; they're copied from the nearest job and are the bulk of the misses.
   These are cheap consumables bought in bulk, so low precision there is low-cost.
 
-## Known accuracy levers (not yet switched on — Milestone 2)
+## Known accuracy levers
 
-1. **Drawing read (vision)** — replace the hand-typed spec with features read from
-   the GA drawing (travel, openings, door width) → tightens the travel-scaled
-   quantities (Guide Rail, Troughing) the spec alone can't pin down.
+1. ~~**Drawing read (vision)**~~ — **DONE.** Travel/openings extraction is wired; cut
+   Guide Rail / Troughing MAE ~30% (above).
 2. **Top-K consensus** — vote presence across the 5 nearest jobs instead of copying
-   one, to cut both false positives and false negatives.
-3. **Rules band-sizing** as a sanity override when no close neighbour exists.
-4. **More canonicalisation** — material (PVC/MS) and side (LHS/RHS) variants, and a
-   few truncated labels, still split a handful of parts.
+   one, to cut both false positives and false negatives. (Not yet on.)
+3. **Rules band-sizing** as a sanity override when no close neighbour exists. (Artifact
+   built; wire at runtime.)
+4. **Runtime resolution of finish-only parts** — Linton/False-ceiling specs are just
+   `SS`/`MS`; resolve them via the drawing's door width + finish at generate time.
+5. **More canonicalisation** — material (PVC/MS) and side (LHS/RHS) variants, a few
+   wrong-category template maps (Dade Weight Rod, Car Header Hanging Bkt), and
+   naming-convention mismatches (Buffer Channel `DBG` vs SKU) still cost a few points.
 
 ## Reproduce
 

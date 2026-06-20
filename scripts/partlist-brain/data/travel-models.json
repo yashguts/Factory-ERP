@@ -1,0 +1,1 @@
+{"guide rail(main)":{"kind":"travelLinear","perMm":0.000359,"b":2.75,"n":68,"mae":0.92},"guide rail(counter)":{"kind":"travelLinear","perMm":0.00035,"b":2.91,"n":60,"mae":0.94},"troughing":{"kind":"travelLinear","perMm":0.00057,"b":6.86,"n":65,"mae":1.34}}

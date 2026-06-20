@@ -47,8 +47,8 @@ function similarity(a, b) {
   return 0.34 * sDoor + 0.24 * sStops + 0.22 * sCap + 0.10 * sDrive + 0.10 * sFlag;
 }
 
-function buildIndex(corpus, quantityModels) {
-  return { corpus, q: quantityModels || {} };
+function buildIndex(corpus, quantityModels, travelModels) {
+  return { corpus, q: quantityModels || {}, travel: travelModels || {} };
 }
 
 function applyFormula(m, stops) {
@@ -100,6 +100,12 @@ function predict(target, idx, opts = {}) {
     if (m && m.source === "formula" && stops != null) {
       const f = applyFormula(m, stops);
       if (f != null && f >= 0) { qty = f; qtySource = "formula"; }
+    }
+    // travel-based model wins for variable parts when the drawing gives travel
+    const tm = idx.travel[canon];
+    if (tm && tm.kind === "travelLinear" && target.travelMm != null) {
+      const t = Math.round(tm.perMm * target.travelMm + tm.b);
+      if (t > 0) { qty = t; qtySource = "travel"; }
     }
     out.push({
       canon, sectionKey: e.sectionKey, captureType: e.captureType, particular: e.particular,
