@@ -85,6 +85,26 @@ async function fetchActiveItems(supabase: Awaited<ReturnType<typeof createClient
   return out;
 }
 
+/**
+ * The job's effective door type (drawing-derived, falling back to the job field),
+ * using the SAME resolution as the draft engine — so the Part List universe can
+ * gate door-specific lines the same way Generate does. Null = unknown (don't hide).
+ */
+export async function getJobDoorType(jobId: string): Promise<string | null> {
+  const supabase = await createClient();
+  const { data: job } = await supabase
+    .from("jobs").select("door_type, gad_drawing_url").eq("id", jobId).maybeSingle();
+  let door = mapDoorErp(job?.door_type ?? null);
+  if (job?.gad_drawing_url) {
+    const { data: ext } = await supabase
+      .from("job_drawing_extractions").select("extracted").eq("job_id", jobId)
+      .order("extracted_at", { ascending: false }).limit(1).maybeSingle();
+    const dDoor = mapDoorDrawing((ext?.extracted as RichLike | null)?.door_type?.value ?? null);
+    if (dDoor) door = dDoor;
+  }
+  return door;
+}
+
 export async function generatePartListDraft(jobId: string): Promise<PartListDraft> {
   const supabase = await createClient();
   const warnings: string[] = [];

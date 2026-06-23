@@ -56,12 +56,14 @@ const sectionGroup = (key: string) => GROUPS[key] || "PART E";
 
 const SECTION_BY_KEY = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));
 
-// A section applies to the universe view when its DRIVE gate passes for this job
-// (door gates are resolved at generate time from the drawing, so door-gated lines
-// stay visible/greyed here regardless).
-function driveApplies(s: PackingSection, drive: string | null): boolean {
-  if (!s.drives || !s.drives.length) return true;
-  return !!drive && s.drives.includes(drive.toUpperCase());
+// Whether a section shows in the universe for this job. Drive type is always
+// known, so a drive-gated line is hidden when it doesn't match. Door type may be
+// unknown (drawing not read yet) — a door-gated line is hidden ONLY when the door
+// type is known and doesn't match, otherwise it stays visible/greyed.
+function sectionVisible(s: PackingSection, drive: string | null, door: string | null): boolean {
+  if (s.drives && s.drives.length && !(drive && s.drives.includes(drive.toUpperCase()))) return false;
+  if (s.doors && s.doors.length && door && !s.doors.includes(door.toUpperCase())) return false;
+  return true;
 }
 
 function rowsFromView(view: PartListView): Record<string, Row[]> {
@@ -82,22 +84,24 @@ interface Props {
   jobNumber: string;
   customerName: string | null;
   driveType: string | null;
+  doorType: string | null;
   initial: PartListView;
 }
 
-export function PartListClient({ jobId, jobNumber, customerName, driveType, initial }: Props) {
+export function PartListClient({ jobId, jobNumber, customerName, driveType, doorType, initial }: Props) {
   const toast = useToast();
-  // Curated template sections per group, drive-gated for this job (e.g. R1000-only
-  // lines hidden on a non-R1000 job). Door gates are applied at generate time.
+  // Curated template sections per group, drive- AND door-gated for this job (e.g.
+  // R1000-only or Collapsible-only lines hidden on jobs they don't apply to; door
+  // gates only bite once the door type is known from the drawing).
   const templateByGroup = useMemo<Record<string, PackingSection[]>>(() => {
     const m: Record<string, PackingSection[]> = {};
     for (const g of GROUP_ORDER) m[g] = [];
     for (const s of PACKING_SECTIONS) {
-      if (!driveApplies(s, driveType)) continue;
+      if (!sectionVisible(s, driveType, doorType)) continue;
       (m[sectionGroup(s.key)] ||= []).push(s);
     }
     return m;
-  }, [driveType]);
+  }, [driveType, doorType]);
   const [rows, setRows] = useState<Record<string, Row[]>>(() => rowsFromView(initial));
   const [dispositions, setDispositions] = useState<Record<string, string>>(initial.sectionDispositions || {});
   const [status, setStatus] = useState<"draft" | "ready">(initial.status);
