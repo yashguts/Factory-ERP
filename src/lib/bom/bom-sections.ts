@@ -303,7 +303,7 @@ export const BOM_SECTIONS: BomSection[] = [
 
   // ──────────────── WIRE ROPE / BELT ────────────────
   {
-    category: "Wire Rope Main",
+    category: "Wire Rope Main/Belt Main",
     phase: "Wire Rope/Belt",
     gate: ALWAYS,
     description: "Main hoist rope or drive belt.",
