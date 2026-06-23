@@ -256,6 +256,40 @@ async function assembleRows(
       });
   }
 
+  // Resolve the source job (number + id) for dispatch movements so the feed can
+  // show which job a stock-out belongs to. txn.reference_id is the dispatch id →
+  // job_dispatches.job_id → jobs.job_number. Covers both 'dispatch' (the
+  // deduction) and 'dispatch_undo' (its reversal), which share the dispatch id.
+  const dispatchIds = [
+    ...new Set(
+      txns
+        .filter((t) => t.reference_type === "dispatch" || t.reference_type === "dispatch_undo")
+        .map((t) => t.reference_id as string | null)
+        .filter((x): x is string => !!x),
+    ),
+  ];
+  const jobByDispatch = new Map<string, { job_id: string; job_number: string | null }>();
+  if (dispatchIds.length > 0) {
+    const { data: dispatches } = await supabase
+      .from("job_dispatches")
+      .select("id, job_id")
+      .in("id", dispatchIds);
+    const jobIds = [...new Set((dispatches ?? []).map((d) => d.job_id as string).filter(Boolean))];
+    const jobNum = new Map<string, string | null>();
+    if (jobIds.length > 0) {
+      const { data: jobs } = await supabase
+        .from("jobs")
+        .select("id, job_number")
+        .in("id", jobIds);
+      for (const j of jobs ?? []) jobNum.set(j.id as string, (j.job_number as string | null) ?? null);
+    }
+    for (const d of dispatches ?? [])
+      jobByDispatch.set(d.id as string, {
+        job_id: d.job_id as string,
+        job_number: jobNum.get(d.job_id as string) ?? null,
+      });
+  }
+
   const itemRows: ItemChangeRow[] = logRows.map((row) => ({
     kind: "item",
     id: row.id,
@@ -285,6 +319,10 @@ async function assembleRows(
       refType === "po_receipt" && t.reference_id
         ? poByReceipt.get(t.reference_id as string)
         : undefined;
+    const job =
+      (refType === "dispatch" || refType === "dispatch_undo") && t.reference_id
+        ? jobByDispatch.get(t.reference_id as string)
+        : undefined;
     return {
       kind: "stock",
       id,
@@ -301,6 +339,8 @@ async function assembleRows(
       reference_type: refType,
       po_id: po?.po_id ?? null,
       po_number: po?.po_number ?? null,
+      job_id: job?.job_id ?? null,
+      job_number: job?.job_number ?? null,
     };
   });
 

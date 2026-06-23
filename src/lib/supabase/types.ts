@@ -342,6 +342,9 @@ export interface StockChangeRow {
   /** For PO-receipt movements: the source purchase order (for showing + filtering by PO no). */
   po_id: string | null;
   po_number: string | null;
+  /** For dispatch movements (and their undo): the source job — show + click through to it. */
+  job_id: string | null;
+  job_number: string | null;
 }
 
 export type InventoryChangeRow = ItemChangeRow | StockChangeRow;

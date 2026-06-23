@@ -801,6 +801,15 @@ function StockChangeCard({
                 PO {row.po_number ?? "—"}
               </Link>
             )}
+            {row.job_id && (
+              <Link
+                href={`/jobs/${row.job_id}`}
+                className="inline-flex items-center gap-1 rounded bg-[var(--accent)] px-1.5 py-0.5 text-[11px] font-mono text-[var(--primary)] hover:underline"
+                title="Open this job"
+              >
+                Job {row.job_number ?? "—"}
+              </Link>
+            )}
           </div>
 
           <div className="mt-2 text-sm flex items-center gap-2 flex-wrap">
