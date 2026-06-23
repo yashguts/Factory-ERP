@@ -45,13 +45,34 @@ const flat = (x: any) => (Array.isArray(x) ? x[0] : x);
 const fv = (x: any): any => (x && typeof x === "object" && !Array.isArray(x) && "value" in x ? x.value : x);
 
 interface Drawing { door_type: string | null; openingWidth: number | null; drive_type: string | null; }
+// Door-opening width lives under a clean key in the rich_v1 reads but under many
+// free-form keys in the agent backfill ("door_opening", "clear_opening", …) with
+// messy values ("800 mm (OPENING 800)"). Scan candidates in priority order and
+// take the first number in the door-width window (500–1400) — distinct from the
+// wall/hoistway numbers that also appear in the same string.
+const OW_KEYS = [
+  "door_opening_width_mm", "door_opening_width", "door_opening_mm", "door_opening_clear",
+  "door_opening", "clear_opening", "opening_clear_mm", "opening_mm", "opening",
+  "clear_entrance", "car_and_landing_door_opening", "car_door_opening", "hall_door_opening",
+];
+function openingWidthFromDims(dims: any): number | null {
+  if (!dims || typeof dims !== "object") return null;
+  for (const k of OW_KEYS) {
+    if (!(k in dims)) continue;
+    const raw = fv(dims[k]);
+    if (raw == null) continue;
+    for (const m of String(raw).matchAll(/\d{3,4}/g)) {
+      const v = Number(m[0]);
+      if (v >= 500 && v <= 1400) return v;
+    }
+  }
+  return null;
+}
 function drawingOf(ext: any): Drawing {
   const r = ext.extracted ?? {}, sp = ext.spec ?? {};
-  const owRaw = fv(r.dimensions?.door_opening_width_mm) ?? null;
-  const ow = owRaw != null ? parseInt(String(owRaw).replace(/[^0-9]/g, ""), 10) : NaN;
   return {
     door_type: normaliseDoorType(fv(r.door_type) ?? fv(sp.door_type) ?? null),
-    openingWidth: Number.isFinite(ow) && ow >= 300 && ow <= 4000 ? ow : null,
+    openingWidth: openingWidthFromDims(r.dimensions),
     drive_type: (fv(r.drive_type) ?? fv(sp.drive_type) ?? null) || null,
   };
 }
