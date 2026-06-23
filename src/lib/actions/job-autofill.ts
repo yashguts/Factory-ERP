@@ -70,6 +70,8 @@ export async function autofillFromDrawing(
       door_finish: (spec?.door_finish.value as string | null) ?? typedSpec.door_finish ?? null,
       brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
       door_type: drawingDoorType ?? typedSpec.door_type ?? null,
+      // Door opening width drives the door-system SKU size; from the drawing read.
+      door_opening_width: (vision.ok ? vision.spec.door_opening_width_mm : null) ?? typedSpec.door_opening_width ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);

@@ -30,6 +30,8 @@ export interface ExtractedSpec {
   door_type: SpecField<string>;
   door_finish: SpecField<string>;
   brand: SpecField<string>;
+  /** Door opening width in mm parsed from the drawing — the door SKU size driver. */
+  door_opening_width_mm: number | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -320,6 +322,17 @@ export async function ensureDrawingRead(jobId: string): Promise<{ ok: boolean; c
   return { ok: r.ok, cached: false, reason: r.ok ? undefined : r.reason ?? "read-failed" };
 }
 
+/** Parse a door-opening-width dimension string ("1000", "1000 mm", "1.0m") to mm. */
+function parseWidthMm(v: string | null | undefined): number | null {
+  if (v == null) return null;
+  const digits = String(v).replace(/[^0-9.]/g, "");
+  if (!digits) return null;
+  let n = parseFloat(digits);
+  if (!Number.isFinite(n)) return null;
+  if (n > 0 && n < 10) n *= 1000; // metres → mm
+  return n >= 300 && n <= 4000 ? Math.round(n) : null;
+}
+
 /** Backwards-compatible 5-field spec for the autofill form (now rich-backed + stored). */
 export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResult> {
   const r = await extractDrawingData(jobId);
@@ -334,6 +347,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       door_type: rich.door_type,
       door_finish: rich.door_finish,
       brand: rich.brand,
+      door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
       notes: rich.notes ?? "",
     },
   };

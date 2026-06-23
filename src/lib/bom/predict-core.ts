@@ -48,6 +48,13 @@ export const TUNING = {
   // encodes the topology — and added cost + rare-drive dilution, so it's off. The
   // hook stays so the flywheel can revisit it once each drive has more jobs.
   DRIVE_USE_LEARNED: false,
+  // Door-opening-width size matching (door-system sections only). When the drawing
+  // gives the opening width, boost the same-width SKU variant and push down a
+  // different-width one — the drawing→BOM eval showed 91% of door item-misses were
+  // a wrong-width pick of the right family. No-op when width is absent.
+  SIZE_BOOST: 4,
+  SIZE_PENALTY: 0.3,
+  SIZE_TOL: 30, // mm tolerance when matching a name width to the drawing width
 };
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
@@ -104,7 +111,7 @@ const DOOR_SECTIONS = new Set<string>([
  * when no token is recognised (a non-door item, or an unlabelled header).
  */
 export function classifyDoorToken(text: string | null | undefined): string | null {
-  if (!text) return null;
+  if (!text || typeof text !== "string") return null;
   const n = " " + text.toUpperCase().replace(/[^A-Z0-9]+/g, " ") + " ";
   if (/\bAFF\b/.test(n) || /FOUR ?FOLD/.test(n)) return "AFF";
   if (/COLLAPS/.test(n) || /\bCOLL?\b/.test(n)) return "COL";
@@ -134,6 +141,27 @@ export function deriveDoorType(sections: Record<string, TrainingLine[]>): string
   let best: string | null = null, bv = 0;
   for (const [t, v] of votes) if (v > bv) { best = t; bv = v; }
   return best;
+}
+
+// Door-system SKUs are distinguished by the door OPENING WIDTH baked into the
+// name ("Car Pannel CO/SS/LV/800", "Car Header System CO 800mm", "Alluminium Sill
+// CO 800mm/LT/1660"). The 500–1400 window isolates the opening width from sill
+// lengths (1300+) and door heights (2000+). When the drawing gives the width we
+// boost the matching variant and demote a different one.
+function namedWidths(name: string): number[] {
+  const out: number[] = [];
+  for (const m of name.matchAll(/\d{3,4}/g)) {
+    const v = Number(m[0]);
+    if (v >= 500 && v <= 1400) out.push(v);
+  }
+  return out;
+}
+function sizeFactor(name: string, section: string, targetWidth: number | null | undefined): number {
+  if (!targetWidth || !DOOR_SECTIONS.has(section)) return 1;
+  const ws = namedWidths(name);
+  if (ws.length === 0) return 1; // no width token (e.g. a collapsible gate) — neutral
+  if (ws.some((w) => Math.abs(w - targetWidth) <= TUNING.SIZE_TOL)) return TUNING.SIZE_BOOST;
+  return TUNING.SIZE_PENALTY; // a different, conflicting width
 }
 
 export type DriveSimFn = (a: string | null, b: string | null) => number | null;
@@ -238,6 +266,12 @@ export interface BomTargetSpec {
    * simply dropped, so behaviour is unchanged until it's wired through.
    */
   door_type?: string | null;
+  /**
+   * Door OPENING WIDTH in mm (the "700"/"800"/… that distinguishes door-system
+   * SKU variants of the same family). From the drawing's door_opening_width_mm.
+   * When known, item selection prefers the matching-width variant. Optional.
+   */
+  door_opening_width?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -477,12 +511,20 @@ export function aggregateDraft(
       }
     }
 
+    // Size match: when the drawing's opening width is known, re-weight door-system
+    // candidates toward the matching-width variant before ranking/thresholding.
+    // (A finish-matching factor was tried here too and measured net-zero — the door
+    // SKU finish tokens don't align cleanly with the spec finish — so it was cut.)
+    const tw = target.door_opening_width ?? null;
+    if (tw && DOOR_SECTIONS.has(section))
+      for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, tw);
+
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
     const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, TUNING.MAX_ITEMS_PER_SECTION);
     if (kept.length === 0 && ranked.length) kept.push(ranked[0]); // always at least the modal item
 
     for (const g of kept) {
-      const cItem = g.w / haveW;
+      const cItem = Math.min(1, g.w / haveW); // a size boost can exceed haveW — cap the confidence
       const m = weightedMedian(g.qtys, g.qw);
       const floorScaled = FLOOR_SCALED.has(section);
       // C_qty: 1 - normalized weighted dispersion (floored at 0.3).
