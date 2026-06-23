@@ -143,25 +143,50 @@ export function deriveDoorType(sections: Record<string, TrainingLine[]>): string
   return best;
 }
 
-// Door-system SKUs are distinguished by the door OPENING WIDTH baked into the
-// name ("Car Pannel CO/SS/LV/800", "Car Header System CO 800mm", "Alluminium Sill
-// CO 800mm/LT/1660"). The 500–1400 window isolates the opening width from sill
-// lengths (1300+) and door heights (2000+). When the drawing gives the width we
-// boost the matching variant and demote a different one.
-function namedWidths(name: string): number[] {
+// Which DRAWING DIMENSION sets each section's SKU size — mined from the corpus
+// (scripts/_mine_signals.ts): the dimension value appears baked into the SKU name.
+//  • door-system SKUs  -> door OPENING WIDTH ("Car Pannel CO/SS/LV/800", "...Sill
+//    CO 800mm/LT/1660", "Linton ... 800mm").
+//  • Safety frame + main buffer channel -> car DBG (distance between car guides).
+//  • counterweight frame/guard/filler/counter buffer -> counter DBG.
+// When the drawing gives that dimension we boost the matching variant and demote a
+// conflicting one. A no-op when the dimension is absent.
+type SizeDim = "door_opening_width" | "dbg_main" | "dbg_counter";
+const SIZE_RULES: Record<string, SizeDim> = {
+  "Car Door Panel": "door_opening_width", "Landing Door Panel": "door_opening_width",
+  "Car Header System": "door_opening_width", "Landing Header System": "door_opening_width",
+  "Door Sill": "door_opening_width", "Door Post / Frame": "door_opening_width",
+  "Linton Panel": "door_opening_width", "Gate Lock": "door_opening_width",
+  // DBG (distance between guides) sizes the safety + counterweight frames. Only the
+  // sections where the backtest showed a NET GAIN are kept: Safety (+11pt), Counter
+  // Frame / Guard Net (+2pt). Filler Weight + Buffer Channels had a weak signal that
+  // regressed, so they're deliberately excluded (left to the retrieval median).
+  "Safety": "dbg_main",
+  "Counter Frame": "dbg_counter", "Counter Guard Net": "dbg_counter",
+};
+// Numbers in a structural-dimension window (mm); excludes tiny counts and the
+// 2000+ door heights / long sill lengths that would create false matches.
+function namedDims(name: string): number[] {
   const out: number[] = [];
   for (const m of name.matchAll(/\d{3,4}/g)) {
     const v = Number(m[0]);
-    if (v >= 500 && v <= 1400) out.push(v);
+    if (v >= 320 && v <= 1800) out.push(v);
   }
   return out;
 }
-function sizeFactor(name: string, section: string, targetWidth: number | null | undefined): number {
-  if (!targetWidth || !DOOR_SECTIONS.has(section)) return 1;
-  const ws = namedWidths(name);
-  if (ws.length === 0) return 1; // no width token (e.g. a collapsible gate) — neutral
-  if (ws.some((w) => Math.abs(w - targetWidth) <= TUNING.SIZE_TOL)) return TUNING.SIZE_BOOST;
-  return TUNING.SIZE_PENALTY; // a different, conflicting width
+function sizeTargetFor(section: string, target: BomTargetSpec): number | null | undefined {
+  const rule = SIZE_RULES[section];
+  if (!rule) return null;
+  return rule === "door_opening_width" ? target.door_opening_width
+    : rule === "dbg_main" ? target.dbg_main_mm : target.dbg_counter_mm;
+}
+function sizeFactor(name: string, section: string, target: BomTargetSpec): number {
+  const tv = sizeTargetFor(section, target);
+  if (!tv) return 1;
+  const ds = namedDims(name);
+  if (ds.length === 0) return 1; // no dimension token in the name — neutral
+  if (ds.some((d) => Math.abs(d - tv) <= TUNING.SIZE_TOL)) return TUNING.SIZE_BOOST;
+  return TUNING.SIZE_PENALTY; // a different, conflicting dimension
 }
 
 export type DriveSimFn = (a: string | null, b: string | null) => number | null;
@@ -272,6 +297,15 @@ export interface BomTargetSpec {
    * When known, item selection prefers the matching-width variant. Optional.
    */
   door_opening_width?: number | null;
+  /**
+   * DBG — distance between guide rails (mm). dbg_main = car guides (sets the
+   * SAFETY frame + main buffer channel size); dbg_counter = counterweight guides
+   * (sets the COUNTER frame / guard net / filler weight / counter buffer size).
+   * Mined from the corpus: these dimensions appear in those SKUs' names. From the
+   * drawing. Optional — size-matching for those sections is a no-op when absent.
+   */
+  dbg_main_mm?: number | null;
+  dbg_counter_mm?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -511,13 +545,14 @@ export function aggregateDraft(
       }
     }
 
-    // Size match: when the drawing's opening width is known, re-weight door-system
-    // candidates toward the matching-width variant before ranking/thresholding.
-    // (A finish-matching factor was tried here too and measured net-zero — the door
-    // SKU finish tokens don't align cleanly with the spec finish — so it was cut.)
-    const tw = target.door_opening_width ?? null;
-    if (tw && DOOR_SECTIONS.has(section))
-      for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, tw);
+    // Size match: when the drawing gives the dimension that sets this section's SKU
+    // size (door opening width for the door system; car/counter DBG for the safety
+    // & counterweight frames), re-weight candidates toward the matching-size variant
+    // before ranking/thresholding. A no-op for sections without a SIZE_RULE or when
+    // the dimension is absent. (A finish-matching factor was tried and measured
+    // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
+    if (SIZE_RULES[section] && sizeTargetFor(section, target))
+      for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
 
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
     const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, TUNING.MAX_ITEMS_PER_SECTION);
