@@ -157,6 +157,26 @@ const CURATED = [
   C("p-cable-hangern-bkt", "Cable Hanger Bracket", { group: "Misc Fitted", cats: ["Small Manufactured Items > Cable Hangern Bkt"] }),
   C("p-cable-hanger-fixing-kit", "Cable Hanger Fixing Kit", { group: "Misc Fitted", capture: "free" }),
   C("p-controller-bracket", "Controller Bracket", { group: "Misc Fitted", merge: ["p-controller-bracket-new", "p-controller-bracket-home"], cats: ["Small Manufactured Items > Controller Bracket"] }),
+
+  // Cabin Items — main panels come from the linked Cabin Job (dynamic holder,
+  // filled at generate time); the smaller cabin-interior/finishing parts are
+  // pulled in from inventory.
+  C("__new_cabin_from_job", "Cabin Panels (from Cabin Job)", { group: "Cabin Items", cats: ["Cabin"] }),
+  C("p-cabin-handrail-with-cover", "Cabin Handrail", { group: "Cabin Items", cats: ["Cabin"] }),
+  C("p-cabin-glass-10mm", "Cabin Glass", { group: "Cabin Items", cats: ["Glass > Cabin Glass"] }),
+  C("p-false-ceiling", "False Ceiling", { group: "Cabin Items" }),
+  C("p-flooring", "Flooring", { group: "Cabin Items" }),
+  C("p-floor-tiles", "Floor Tiles", { group: "Cabin Items" }),
+  C("p-chequered-plate", "Chequered Plate", { group: "Cabin Items" }),
+  C("p-skirting", "Skirting", { group: "Cabin Items" }),
+  C("p-toe-guard", "Toe Guard", { group: "Cabin Items" }),
+  C("p-toe-guard-bracket", "Toe Guard Bracket", { group: "Cabin Items" }),
+  C("p-kick-angle", "Kick Angle", { group: "Cabin Items" }),
+  C("p-rubber-pad", "Cabin Rubber Pad", { group: "Cabin Items" }),
+  C("p-handle-with-cover", "Handle With Cover", { group: "Cabin Items" }),
+  C("p-danger-plate", "Danger Plate", { group: "Cabin Items" }),
+  C("p-car-location-plate", "Car Location Plate", { group: "Cabin Items" }),
+  C("p-safety-tips-plate", "Safety Tips Plate", { group: "Cabin Items" }),
 ];
 
 // New lines that don't reuse an existing key get a fresh slug.
@@ -173,6 +193,7 @@ const NEW = {
   "__new_header_system": "p-header-system",
   "__new_door_post": "p-door-post",
   "__new_door_panel": "p-door-panel",
+  "__new_cabin_from_job": "p-cabin-from-job",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.

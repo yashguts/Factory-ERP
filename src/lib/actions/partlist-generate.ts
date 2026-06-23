@@ -12,6 +12,7 @@ import { createClient } from "@/lib/supabase/server";
 import { getAllCategories } from "@/lib/actions/categories";
 import { buildCategorySectionMap, OTHER_SECTION_KEY } from "@/lib/packing-list/helpers";
 import { PACKING_SECTIONS, packingSection, sectionApplies } from "@/lib/packing-list/packing-list-sections";
+import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
 import { predictPartList, type PredictSpec } from "@/lib/partlist/predict";
 import { buildResolver, type ItemLite } from "@/lib/partlist/resolve";
 import sectionGroups from "@/lib/partlist/section-groups.json";
@@ -91,7 +92,7 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
   // --- job spec ---
   const { data: job } = await supabase
     .from("jobs")
-    .select("id, floors, drive_type, capacity, door_type, gad_drawing_url")
+    .select("id, job_number, floors, drive_type, capacity, door_type, gad_drawing_url")
     .eq("id", jobId)
     .single();
   if (!job) throw new Error("Job not found");
@@ -257,6 +258,35 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
       spec: sec.specHint || null, qty: 0, source: "pinned", confidence: it ? "high" : "low",
       is_conflict: false, conflict_note: null, needs_item: !it, non_inventory: false, bom_line_id: null,
     });
+  }
+
+  // Cabin Items: pull the linked Cabin Job's panels (matched by job_number) into
+  // the "Cabin Panels (from Cabin Job)" line, ordered by cabin type then sort_order.
+  // The cabin type shows in the spec column so the packer can tell panels apart.
+  if (job.job_number) {
+    const { data: cabinJob } = await supabase
+      .from("cabin_jobs").select("id").ilike("job_number", job.job_number).maybeSingle();
+    if (cabinJob) {
+      const { data: cl } = await supabase
+        .from("cabin_job_lines")
+        .select(`cabin_type, qty, sort_order, item:items!cabin_job_lines_item_id_fkey(id, code, name)`)
+        .eq("cabin_job_id", cabinJob.id);
+      const order = new Map(CABIN_TYPES.map((t, i) => [t as string, i]));
+      const sorted = (cl ?? []).slice().sort((a, b) =>
+        ((order.get(a.cabin_type as string) ?? 99) - (order.get(b.cabin_type as string) ?? 99)) ||
+        (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)));
+      for (const l of sorted) {
+        const it = flat(l.item) as { id: string; code: string | null; name: string | null } | null;
+        lines.push({
+          sectionKey: "p-cabin-from-job", label: it?.name ?? "(cabin item)",
+          group: GROUPS["p-cabin-from-job"] || "Cabin Items", captureType: "item",
+          item_id: it?.id ?? null, item_code: it?.code ?? null, item_name: it?.name ?? null,
+          spec: (l.cabin_type as string) ?? null, qty: Number(l.qty ?? 0) || 1, source: "Cabin Job",
+          confidence: it ? "high" : "low", is_conflict: false, conflict_note: null,
+          needs_item: !it, non_inventory: false, bom_line_id: null,
+        });
+      }
+    }
   }
 
   // Unmapped BOM items → an "Unsorted (from BOM)" group so NO BOM line is ever
