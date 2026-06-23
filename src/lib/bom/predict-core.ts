@@ -293,7 +293,7 @@ const COMPOSE: Record<string, AttrKey[]> = {
   "Landing Door Panel": ["doorType", "material", "vision", "width", "color", "side"],
   "Linton Panel": ["doorType", "material", "width", "color"],
   "Door Sill": ["doorType", "width"],
-  "Door Post / Frame": ["doorType", "width", "color", "side"],
+  "Door Post / Frame": ["doorType", "material", "color", "side"], // door post SKU carries no width
   "Car Header System": ["doorType", "width", "side"],
   "Landing Header System": ["doorType", "width", "side"],
   "Safety": ["frameType", "dbgCar"],
