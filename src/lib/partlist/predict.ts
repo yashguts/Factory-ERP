@@ -169,7 +169,7 @@ export function predictPartList(target: PredictSpec): { lines: PredictedLine[]; 
     const { qty, src, reliable } = ruleQty(canon, target);
     const confidence: PredictedLine["confidence"] = sized || src === "drawing" || reliable ? "high" : src === "formula" ? "medium" : "low";
     lines.push({
-      canon, sectionKey: sk, captureType: sec.captureType, particular: sec.label,
+      canon, sectionKey: sk, captureType: sec.captureType === "free" ? "free" : "item", particular: sec.label,
       specs: spec ? [spec] : [], qty, qtySource: src,
       source: src === "drawing" ? "rule + drawing" : "rule", confidence,
     });

@@ -21,15 +21,16 @@ import { generatePartListDraft } from "@/lib/actions/partlist-generate";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 
 const GROUPS = groupsJson as Record<string, string>;
-const GROUP_ORDER = ["PART A", "PART B", "PART C", "PART D", "PART E", "OTHER"];
-const GROUP_LABELS: Record<string, string> = {
-  "PART A": "Part A — Rails & Brackets",
-  "PART B": "Part B — Doors",
-  "PART C": "Part C — Safety & Counterweight",
-  "PART D": "Part D — Machine, Ropes & Electricals",
-  "PART E": "Part E — Cabin & Finishing",
-  OTHER: "Unsorted (from BOM) — please file",
-};
+// Group order = the order groups first appear in the curated section list, plus the
+// BOM "Unsorted" group at the end.
+const GROUP_ORDER = (() => {
+  const seen: string[] = [];
+  for (const g of Object.values(GROUPS)) if (!seen.includes(g)) seen.push(g);
+  if (!seen.includes("OTHER")) seen.push("OTHER");
+  return seen;
+})();
+const GROUP_LABELS: Record<string, string> = { OTHER: "Unsorted (from BOM) — please file" };
+const glabel = (g: string): string => GROUP_LABELS[g] ?? g;
 
 interface Row {
   uid: string;
@@ -53,14 +54,15 @@ interface Row {
 const uid = () => (typeof crypto !== "undefined" && crypto.randomUUID ? crypto.randomUUID() : `r${Math.random().toString(36).slice(2)}`);
 const sectionGroup = (key: string) => GROUPS[key] || "PART E";
 
-// template sections per group, in canonical order
-const TEMPLATE_BY_GROUP: Record<string, PackingSection[]> = (() => {
-  const m: Record<string, PackingSection[]> = {};
-  for (const g of GROUP_ORDER) m[g] = [];
-  for (const s of PACKING_SECTIONS) (m[sectionGroup(s.key)] ||= []).push(s);
-  return m;
-})();
 const SECTION_BY_KEY = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));
+
+// A section applies to the universe view when its DRIVE gate passes for this job
+// (door gates are resolved at generate time from the drawing, so door-gated lines
+// stay visible/greyed here regardless).
+function driveApplies(s: PackingSection, drive: string | null): boolean {
+  if (!s.drives || !s.drives.length) return true;
+  return !!drive && s.drives.includes(drive.toUpperCase());
+}
 
 function rowsFromView(view: PartListView): Record<string, Row[]> {
   const out: Record<string, Row[]> = {};
@@ -79,11 +81,23 @@ interface Props {
   jobId: string;
   jobNumber: string;
   customerName: string | null;
+  driveType: string | null;
   initial: PartListView;
 }
 
-export function PartListClient({ jobId, jobNumber, customerName, initial }: Props) {
+export function PartListClient({ jobId, jobNumber, customerName, driveType, initial }: Props) {
   const toast = useToast();
+  // Curated template sections per group, drive-gated for this job (e.g. R1000-only
+  // lines hidden on a non-R1000 job). Door gates are applied at generate time.
+  const templateByGroup = useMemo<Record<string, PackingSection[]>>(() => {
+    const m: Record<string, PackingSection[]> = {};
+    for (const g of GROUP_ORDER) m[g] = [];
+    for (const s of PACKING_SECTIONS) {
+      if (!driveApplies(s, driveType)) continue;
+      (m[sectionGroup(s.key)] ||= []).push(s);
+    }
+    return m;
+  }, [driveType]);
   const [rows, setRows] = useState<Record<string, Row[]>>(() => rowsFromView(initial));
   const [dispositions, setDispositions] = useState<Record<string, string>>(initial.sectionDispositions || {});
   const [status, setStatus] = useState<"draft" | "ready">(initial.status);
@@ -111,7 +125,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
     }
     return n;
   }, [rows]);
-  const groupsPresent = GROUP_ORDER.filter((g) => (TEMPLATE_BY_GROUP[g]?.length || 0) > 0 || (g === "OTHER" && (rows[OTHER_SECTION_KEY]?.length || 0) > 0));
+  const groupsPresent = GROUP_ORDER.filter((g) => (templateByGroup[g]?.length || 0) > 0 || (g === "OTHER" && (rows[OTHER_SECTION_KEY]?.length || 0) > 0));
   const undisposed = groupsPresent.filter((g) => !dispositions[g]);
   const coverageOk = coverage.total === 0 || coverage.covered >= coverage.total;
   const canMarkReady = uncheckedActive === 0 && undisposed.length === 0 && coverageOk && needsItemCount === 0 && hasAnyRows;
@@ -143,13 +157,13 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
   }, [patchRow, toast]);
 
   const confirmGroup = useCallback((g: string) => {
-    const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (TEMPLATE_BY_GROUP[g] || []).map((s) => s.key);
+    const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (templateByGroup[g] || []).map((s) => s.key);
     const unconfirmed = keys.flatMap((k) => rows[k] || []).filter((r) => !r.not_required && (r.item_id || (r.name && r.name.trim())) && !r.checked);
     if (unconfirmed.length) { toast.error(`${unconfirmed.length} line(s) in this section still need a ✓ before you can confirm it.`); return; }
     const needs = keys.flatMap((k) => rows[k] || []).filter((r) => !r.not_required && !r.item_id && !(r.name && r.name.trim()));
     if (needs.length) { toast.error(`${needs.length} line(s) here still need an item.`); return; }
     setDispositions((d) => ({ ...d, [g]: "confirmed" }));
-    toast.success(`${GROUP_LABELS[g].split(" — ")[0]} confirmed.`);
+    toast.success(`${glabel(g).split(" — ")[0]} confirmed.`);
   }, [rows, toast]);
 
   /* --------------------------- generate / save / ready --------------------------- */
@@ -218,7 +232,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
   }, [doSave, toast]);
 
   const onSaveSection = useCallback(async (g: string) => {
-    const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (TEMPLATE_BY_GROUP[g] || []).map((s) => s.key);
+    const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (templateByGroup[g] || []).map((s) => s.key);
     const lines: SaveLineInput[] = [];
     for (const sk of keys) {
       const isFree = SECTION_BY_KEY.get(sk)?.captureType === "free";
@@ -231,7 +245,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
       const res = await savePartListSection(jobId, keys, lines, dispositions[g] ? { group: g, value: dispositions[g] } : undefined);
       if (!res.ok) { toast.error(res.error); return; }
       const view = await getPartList(jobId); setCoverage(view.coverage);
-      toast.success(`${GROUP_LABELS[g].split(" — ")[0]} saved.`);
+      toast.success(`${glabel(g).split(" — ")[0]} saved.`);
     } finally { setBusy(null); }
   }, [rows, dispositions, jobId, toast]);
 
@@ -323,7 +337,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
 
       {/* groups */}
       {GROUP_ORDER.map((g) => {
-        const tmpl = (TEMPLATE_BY_GROUP[g] || []).filter(matchFilter);
+        const tmpl = (templateByGroup[g] || []).filter(matchFilter);
         const otherRows = g === "OTHER" ? (rows[OTHER_SECTION_KEY] || []) : [];
         if (!tmpl.length && !otherRows.length) return null;
         const isCollapsed = collapsed.has(g);
@@ -337,7 +351,7 @@ export function PartListClient({ jobId, jobNumber, customerName, initial }: Prop
             <div className="flex items-center gap-2 bg-[var(--muted)]/40 px-3 py-2">
               <button onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; })} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--foreground)] cursor-pointer">
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-                {GROUP_LABELS[g]}
+                {glabel(g)}
               </button>
               <span className="text-xs text-[var(--muted-foreground)]">{groupChecked}/{groupActive.length} confirmed{greyCount ? ` · ${greyCount} n/a` : ""}</span>
               <div className="ml-auto flex items-center gap-2">

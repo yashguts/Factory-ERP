@@ -11,7 +11,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { getAllCategories } from "@/lib/actions/categories";
 import { buildCategorySectionMap, OTHER_SECTION_KEY } from "@/lib/packing-list/helpers";
-import { PACKING_SECTIONS, packingSection } from "@/lib/packing-list/packing-list-sections";
+import { PACKING_SECTIONS, packingSection, sectionApplies } from "@/lib/packing-list/packing-list-sections";
 import { predictPartList, type PredictSpec } from "@/lib/partlist/predict";
 import { buildResolver, type ItemLite } from "@/lib/partlist/resolve";
 import sectionGroups from "@/lib/partlist/section-groups.json";
@@ -190,7 +190,12 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
     if (!sec) continue; // unknown key (e.g. "other") — coverage handles it
     const brainLine = brainBySection.get(sk);
     const bomList = bomBySection.get(sk);
-    const captureType = sec.captureType;
+    // Drive/door gating: skip a predicted-only line when it doesn't apply to this
+    // job (e.g. an R1000-only or Collapsible-only line). BOM lines are truth — kept.
+    if (!(bomList && bomList.length) && !sectionApplies(sec, drive, target.doorType ?? null)) continue;
+    // 'fixed' (pinned) lines behave as item lines downstream — the distinction
+    // lives in PackingSection and is resolved below.
+    const captureType: "item" | "free" = sec.captureType === "free" ? "free" : "item";
     const group = GROUPS[sk] || "PART E";
 
     if (bomList && bomList.length) {
@@ -235,6 +240,23 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
         is_conflict: false, conflict_note: null, needs_item, non_inventory, bom_line_id: null,
       });
     }
+  }
+
+  // Pinned ("fixed") sections: pre-fill the exact inventory item by name when the
+  // line applies to this job and isn't already present (e.g. Tension Spring HOME,
+  // Door Closer). No search needed — the item is the line.
+  const present = new Set(lines.map((l) => l.sectionKey));
+  const itemByName = new Map(items.map((it) => [it.name.trim().toLowerCase(), it]));
+  for (const sec of PACKING_SECTIONS) {
+    if (sec.captureType !== "fixed" || !sec.pinnedItem || present.has(sec.key)) continue;
+    if (!sectionApplies(sec, drive, target.doorType ?? null)) continue;
+    const it = itemByName.get(sec.pinnedItem.trim().toLowerCase());
+    lines.push({
+      sectionKey: sec.key, label: sec.label, group: GROUPS[sec.key] || "PART E", captureType: "item",
+      item_id: it?.id ?? null, item_code: it?.code ?? null, item_name: it?.name ?? null,
+      spec: sec.specHint || null, qty: 0, source: "pinned", confidence: it ? "high" : "low",
+      is_conflict: false, conflict_note: null, needs_item: !it, non_inventory: false, bom_line_id: null,
+    });
   }
 
   // Unmapped BOM items → an "Unsorted (from BOM)" group so NO BOM line is ever

@@ -15,6 +15,7 @@ export default async function PartListPage({ params }: Props) {
       jobId={id}
       jobNumber={job.job_number}
       customerName={job.customer_name}
+      driveType={job.drive_type}
       initial={initial}
     />
   );
