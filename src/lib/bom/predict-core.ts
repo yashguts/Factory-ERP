@@ -56,6 +56,8 @@ export const TUNING = {
   SIZE_PENALTY: 0.3,
   SIZE_TOL: 30, // mm tolerance for door opening width (the SKU carries the exact width)
   SIZE_TOL_DBG: 55, // wider for DBG: HOME/BELT frames snap to ~100mm-spaced standard buckets
+  COMPOSE_MIN_FRAC: 0.6, // compose a SKU only when it matches >=60% of available attribute weight
+  COMPOSE_MIN_SCORE: 5, //  ...and at least this much absolute weight (≈2 strong attributes agreeing)
 };
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
@@ -193,6 +195,116 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
   if (ds.length === 0) return 1; // no dimension token in the name — neutral
   if (ds.some((d) => Math.abs(d - tv) <= tol)) return TUNING.SIZE_BOOST;
   return TUNING.SIZE_PENALTY; // a different, conflicting dimension
+}
+
+// ── Multi-attribute SKU composition ──────────────────────────────────────────
+// Reverse-engineered from the corpus (scripts/_sku_rules.json): these SKUs encode
+// several drawing attributes in the name — a door panel is type/material/vision/
+// width/colour, a safety/counter frame is frame-type + DBG. We derive each
+// attribute from the target's drawing fields and pick the corpus SKU whose name
+// matches the most of them (weighted) — composing the SKU the way the engineer
+// does, from the WHOLE corpus pool (not just neighbours).
+function targetMaterial(t: BomTargetSpec): string | null {
+  const s = `${t.door_finish ?? ""}`.toUpperCase();
+  if (/\bM\.?S\b|MILD STEEL|POWDER/.test(s)) return "MS";
+  if (/\bS\.?S\b|STAINLESS|HAIRLINE|MIRROR|ROSE ?GOLD|CHAMPAGNE|LINEN|GOLDEN/.test(s)) return "SS";
+  return null;
+}
+function skuMaterial(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/(^|[^A-Z])MS([^A-Z]|$)/.test(u)) return "MS";
+  if (/(^|[^A-Z])SS([^A-Z]|$)/.test(u)) return "SS";
+  return null;
+}
+function targetVision(t: BomTargetSpec): string | null {
+  const s = `${t.door_finish ?? ""} ${t.door_type ?? ""}`.toUpperCase();
+  if (/LONG VISION|FULL VISION|\bLV\b/.test(s)) return "LV";
+  if (/MEDIUM VISION|\bMV\b/.test(s)) return "MV";
+  if (/NO VISION|\bNV\b|BLIND/.test(s)) return "NV";
+  if (classifyDoorToken(t.door_type) === "MT") return "PV"; // manual telescopic is always partial vision
+  // Otherwise UNKNOWN — do NOT guess (CO/AT vision is ~50/50 when the drawing is
+  // silent). Returning null lets composition match the other attributes and the
+  // frequency tie-break pick the modal vision, rather than forcing a wrong guess.
+  return null;
+}
+function skuVision(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\/LV\b|[^A-Z]LV\//.test(u)) return "LV";
+  if (/\/MV\b|[^A-Z]MV\//.test(u)) return "MV";
+  if (/\/NV\b|[^A-Z]NV\//.test(u)) return "NV";
+  if (/\/PV\b|[^A-Z]PV\//.test(u)) return "PV";
+  return null;
+}
+const COLOR_PHRASES = [
+  "ROSE GOLD LINEN", "ROSE GOLD MIRROR", "ROSE GOLD", "BLACK MIRROR", "SILVER MIRROR",
+  "CHAMPAGNE", "GOLDEN", "TITANIUM", "GRANITE", "COPPER", "BRONZE", "WOOD",
+];
+function targetColor(t: BomTargetSpec): string | null {
+  const s = `${t.door_finish ?? ""}`.toUpperCase();
+  for (const c of COLOR_PHRASES) if (s.includes(c)) return c;
+  return null; // Hairline / plain SS / MS → no colour token (the SKU is plain/STD)
+}
+function skuColor(s: string): string | null {
+  const u = s.toUpperCase();
+  for (const c of COLOR_PHRASES) if (u.includes(c)) return c;
+  return null;
+}
+function targetFrameType(t: BomTargetSpec): string | null {
+  const cap = parseCapacity(t.capacity);
+  if (cap.kind === "kg" && cap.kg >= 1000) return "GOODS";
+  const d = t.drive_type;
+  if (d === "HOME" || d === "BELT") return "HOME";
+  if (d === "HYD") return "HYD";
+  if (d === "MRL" || d === "MR" || d === "MRLBELT" || d === "CANTI") return "R1"; // traction frame family
+  return null;
+}
+function skuFrameType(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\bGOODS\b/.test(u)) return "GOODS";
+  if (/\bHOME\b/.test(u)) return "HOME";
+  if (/HYDRAULIC|\bHYD\b|\bGMV\b/.test(u)) return "HYD";
+  if (/\bR1\b|\bSTD\b/.test(u)) return "R1"; // R1 and Std are both the traction family
+  return null;
+}
+
+type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "frameType" | "dbgCar" | "dbgCtr";
+interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
+const ATTRS: Record<AttrKey, AttrDef> = {
+  doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
+  material: { weight: 2, target: targetMaterial, match: (s, v) => skuMaterial(s) === v },
+  vision: { weight: 2, target: targetVision, match: (s, v) => skuVision(s) === v },
+  width: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
+  color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
+  frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
+  dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+  dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+};
+// Which attributes compose each section's SKU (from the reverse-engineering pass).
+const COMPOSE: Record<string, AttrKey[]> = {
+  "Car Door Panel": ["doorType", "material", "vision", "width", "color"],
+  "Landing Door Panel": ["doorType", "material", "vision", "width", "color"],
+  "Linton Panel": ["doorType", "material", "width", "color"],
+  "Door Sill": ["doorType", "width"],
+  "Door Post / Frame": ["doorType", "width", "color"],
+  "Car Header System": ["doorType", "width"],
+  "Landing Header System": ["doorType", "width"],
+  "Safety": ["frameType", "dbgCar"],
+  "Counter Frame": ["frameType", "dbgCtr"],
+  "Counter Guard Net": ["frameType", "dbgCtr"],
+  "Filler Weight": ["frameType", "dbgCtr"],
+  "Machine Beam": ["frameType", "dbgCtr"],
+};
+function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
+  let score = 0, max = 0, present = 0;
+  for (const k of attrs) {
+    const a = ATTRS[k];
+    const v = a.target(target);
+    if (v == null || v === "") continue;
+    present++;
+    max += a.weight;
+    if (a.match(sku, v)) score += a.weight;
+  }
+  return present ? { score, max, present } : null;
 }
 
 export type DriveSimFn = (a: string | null, b: string | null) => number | null;
@@ -560,31 +672,54 @@ export function aggregateDraft(
     // before ranking/thresholding. A no-op for sections without a SIZE_RULE or when
     // the dimension is absent. (A finish-matching factor was tried and measured
     // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
-    if (SIZE_RULES[section] && sizeTargetFor(section, target)) {
+    if (SIZE_RULES[section] && sizeTargetFor(section, target))
       for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
 
-      // Name-composition: these SKUs literally encode the dimension ("Safety Frame
-      // Home DBG-820", "Car Pannel CO/SS/LV/800"), so the right item is determined by
-      // the drawing even if NO neighbour happened to use it. Surface the matching-
-      // dimension SKU from the WHOLE corpus pool (preferring the target's drive for
-      // frame-type, then frequency) and give it a dominant weight — this breaks the
-      // neighbour-availability ceiling on the size-keyed sections.
-      const pool = sectionPool?.get(section);
-      if (pool) {
-        const matches = pool.filter((e) => sizeFactor(e.line.item_name, section, target) === TUNING.SIZE_BOOST);
-        if (matches.length) {
-          const drive = target.drive_type ?? null;
-          matches.sort((a, b) => {
-            const ad = drive && a.drives.has(drive) ? 1 : 0;
-            const bd = drive && b.drives.has(drive) ? 1 : 0;
-            return bd - ad || b.count - a.count;
-          });
-          const top = matches[0];
-          let g = byItem.get(top.line.item_id);
-          if (!g) { g = { item: top.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(top.line.item_id, g); }
-          g.w = Math.max(g.w, haveW * 1.5);
-          if (g.qtys.length === 0) { g.qtys.push(1); g.qw.push(1); } // frames are 1 per car/counter
+    // Composition: these SKUs encode the drawing's attributes in the name (door panel
+    // = type/material/vision/width/colour; safety/counter frame = frame-type + DBG).
+    // Pick the corpus SKU — from the WHOLE pool, not just neighbours — that matches the
+    // most target attributes, and give it a dominant weight. Composes the SKU the way
+    // the engineer does, even when no neighbour used it. Gated by COMPOSE_MIN_* so it
+    // only fires on a confident match; otherwise retrieval stands.
+    const pool = sectionPool?.get(section);
+    const attrs = COMPOSE[section];
+    if (pool && attrs) {
+      const drive = target.drive_type ?? null;
+      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number } | null = null;
+      for (const e of pool) {
+        const r = composeScore(e.line.item_name, attrs, target);
+        if (!r || r.max === 0) continue;
+        const driveOk = !!(drive && e.drives.has(drive));
+        if (
+          !best ||
+          r.score > best.score ||
+          (r.score === best.score && driveOk && !best.drive) ||
+          (r.score === best.score && driveOk === best.drive && e.count > best.count)
+        ) {
+          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count };
         }
+      }
+      if (best && best.score >= TUNING.COMPOSE_MIN_FRAC * best.max && best.score >= TUNING.COMPOSE_MIN_SCORE) {
+        let g = byItem.get(best.line.item_id);
+        if (!g) { g = { item: best.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(best.line.item_id, g); }
+        g.w = Math.max(g.w, haveW * 2);
+        if (g.qtys.length === 0) { g.qtys.push(best.line.required_quantity || 1); g.qw.push(1); }
+      }
+    } else if (pool && SIZE_RULES[section] && sizeTargetFor(section, target)) {
+      // Single-dimension fallback (size-keyed sections not yet in COMPOSE).
+      const matches = pool.filter((e) => sizeFactor(e.line.item_name, section, target) === TUNING.SIZE_BOOST);
+      if (matches.length) {
+        const drive = target.drive_type ?? null;
+        matches.sort((a, b) => {
+          const ad = drive && a.drives.has(drive) ? 1 : 0;
+          const bd = drive && b.drives.has(drive) ? 1 : 0;
+          return bd - ad || b.count - a.count;
+        });
+        const top = matches[0];
+        let g = byItem.get(top.line.item_id);
+        if (!g) { g = { item: top.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(top.line.item_id, g); }
+        g.w = Math.max(g.w, haveW * 1.5);
+        if (g.qtys.length === 0) { g.qtys.push(1); g.qw.push(1); }
       }
     }
 
@@ -643,7 +778,7 @@ function buildSectionPool(corpus: TrainingJob[]): SectionPool {
   for (const j of corpus) {
     const drive = j.spec.drive_type ?? "";
     for (const [sec, lines] of Object.entries(j.sections)) {
-      if (!SIZE_RULES[sec]) continue; // only needed for size-keyed sections
+      if (!SIZE_RULES[sec] && !COMPOSE[sec]) continue; // only needed for composable / size-keyed sections
       let arr = pool.get(sec);
       if (!arr) { arr = []; pool.set(sec, arr); }
       const seen = new Set<string>();
