@@ -160,22 +160,17 @@ export function JobsClient({
     return Array.from(set).sort();
   }, [jobs]);
 
-  // Drive types actually present in the data, ordered by the canonical list
-  // (legacy codes no longer offered — e.g. old "ROPE" — sink to the end).
-  // `hasBlank` drives a "No drive type" option so jobs missing it are findable.
-  const driveTypes = useMemo(() => {
-    const present = new Set<string>();
-    let hasBlank = false;
-    jobs.forEach((j) => { if (j.drive_type) present.add(j.drive_type); else hasBlank = true; });
-    const order = DRIVE_TYPES.map((d) => d.value);
-    const codes = Array.from(present).sort((a, b) => {
-      const ia = order.indexOf(a), ib = order.indexOf(b);
-      if (ia === -1 && ib === -1) return a.localeCompare(b);
-      if (ia === -1) return 1;
-      if (ib === -1) return -1;
-      return ia - ib;
+  // Filter options = the full canonical drive-type list (so every type is
+  // always selectable, including a new one like R1000 that may have no jobs
+  // yet), plus any legacy code still present in the data so a stray job stays
+  // findable. No "blank" option — every job has a drive type.
+  const driveTypeOptions = useMemo(() => {
+    const canonical = DRIVE_TYPES.map((d) => d.value);
+    const extras = new Set<string>();
+    jobs.forEach((j) => {
+      if (j.drive_type && !canonical.includes(j.drive_type)) extras.add(j.drive_type);
     });
-    return { codes, hasBlank };
+    return [...canonical, ...Array.from(extras).sort()];
   }, [jobs]);
 
   // Multi-token fuzzy search: every word must appear somewhere across
@@ -214,11 +209,7 @@ export function JobsClient({
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
       if (stageFilter !== "all" && job.stage !== stageFilter) return false;
       if (doorTypeFilter !== "all" && job.door_type !== doorTypeFilter) return false;
-      if (driveTypeFilter !== "all") {
-        if (driveTypeFilter === "__none__") {
-          if (job.drive_type) return false;
-        } else if (job.drive_type !== driveTypeFilter) return false;
-      }
+      if (driveTypeFilter !== "all" && job.drive_type !== driveTypeFilter) return false;
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       if (structureFilter !== "all" && (job.structure_included ?? "NA") !== structureFilter) return false;
       return true;
@@ -461,21 +452,18 @@ export function JobsClient({
           </Select>
         )}
 
-        {(driveTypes.codes.length > 0 || driveTypes.hasBlank) && (
-          <Select
-            size="sm"
-            value={driveTypeFilter}
-            onChange={(e) => { setDriveTypeFilter(e.target.value); resetPage(); }}
-            className="w-[160px]"
-            title="Filter by drive type"
-          >
-            <option value="all">All Drive Types</option>
-            {driveTypes.codes.map((dt) => (
-              <option key={dt} value={dt}>{driveTypeLabel(dt)}</option>
-            ))}
-            {driveTypes.hasBlank && <option value="__none__">No drive type</option>}
-          </Select>
-        )}
+        <Select
+          size="sm"
+          value={driveTypeFilter}
+          onChange={(e) => { setDriveTypeFilter(e.target.value); resetPage(); }}
+          className="w-[160px]"
+          title="Filter by drive type"
+        >
+          <option value="all">All Drive Types</option>
+          {driveTypeOptions.map((dt) => (
+            <option key={dt} value={dt}>{driveTypeLabel(dt)}</option>
+          ))}
+        </Select>
 
         {brands.length > 0 && (
           <Select
