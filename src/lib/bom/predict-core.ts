@@ -54,7 +54,8 @@ export const TUNING = {
   // a wrong-width pick of the right family. No-op when width is absent.
   SIZE_BOOST: 4,
   SIZE_PENALTY: 0.3,
-  SIZE_TOL: 30, // mm tolerance when matching a name width to the drawing width
+  SIZE_TOL: 30, // mm tolerance for door opening width (the SKU carries the exact width)
+  SIZE_TOL_DBG: 55, // wider for DBG: HOME/BELT frames snap to ~100mm-spaced standard buckets
 };
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
@@ -113,7 +114,7 @@ const DOOR_SECTIONS = new Set<string>([
 export function classifyDoorToken(text: string | null | undefined): string | null {
   if (!text || typeof text !== "string") return null;
   const n = " " + text.toUpperCase().replace(/[^A-Z0-9]+/g, " ") + " ";
-  if (/\bAFF\b/.test(n) || /FOUR ?FOLD/.test(n)) return "AFF";
+  if (/\bAFF\b/.test(n) || /FOUR ?FOLD/.test(n) || /\b4 ?FOLD/.test(n)) return "AFF";
   if (/COLLAPS/.test(n) || /\bCOLL?\b/.test(n)) return "COL";
   if (/\bMT\b/.test(n) || /MANUAL TELESCOPIC/.test(n)) return "MT";
   if (/\bAT\b/.test(n) || /AUTO ?TELESCOPIC/.test(n) || /\bATD?\b/.test(n)) return "AT";
@@ -157,12 +158,14 @@ const SIZE_RULES: Record<string, SizeDim> = {
   "Car Header System": "door_opening_width", "Landing Header System": "door_opening_width",
   "Door Sill": "door_opening_width", "Door Post / Frame": "door_opening_width",
   "Linton Panel": "door_opening_width", "Gate Lock": "door_opening_width",
+  "Sill Angle": "door_opening_width",
   // DBG (distance between guides) sizes the safety + counterweight frames. Only the
   // sections where the backtest showed a NET GAIN are kept: Safety (+11pt), Counter
   // Frame / Guard Net (+2pt). Filler Weight + Buffer Channels had a weak signal that
   // regressed, so they're deliberately excluded (left to the retrieval median).
   "Safety": "dbg_main",
   "Counter Frame": "dbg_counter", "Counter Guard Net": "dbg_counter",
+  "Machine Beam": "dbg_counter",
 };
 // Numbers in a structural-dimension window (mm); excludes tiny counts and the
 // 2000+ door heights / long sill lengths that would create false matches.
@@ -181,11 +184,14 @@ function sizeTargetFor(section: string, target: BomTargetSpec): number | null | 
     : rule === "dbg_main" ? target.dbg_main_mm : target.dbg_counter_mm;
 }
 function sizeFactor(name: string, section: string, target: BomTargetSpec): number {
+  const rule = SIZE_RULES[section];
+  if (!rule) return 1;
   const tv = sizeTargetFor(section, target);
   if (!tv) return 1;
+  const tol = rule === "door_opening_width" ? TUNING.SIZE_TOL : TUNING.SIZE_TOL_DBG;
   const ds = namedDims(name);
   if (ds.length === 0) return 1; // no dimension token in the name — neutral
-  if (ds.some((d) => Math.abs(d - tv) <= TUNING.SIZE_TOL)) return TUNING.SIZE_BOOST;
+  if (ds.some((d) => Math.abs(d - tv) <= tol)) return TUNING.SIZE_BOOST;
   return TUNING.SIZE_PENALTY; // a different, conflicting dimension
 }
 
@@ -487,9 +493,12 @@ function deterministicQty(itemName: string, section: string, L: number | null): 
   return null;
 }
 
+export type SectionPool = Map<string, { line: TrainingLine; count: number; drives: Set<string> }[]>;
+
 export function aggregateDraft(
   target: BomTargetSpec,
   neighbours: { job: TrainingJob; meta: NeighbourMeta }[],
+  sectionPool?: SectionPool,
 ): { draft: PredictedLine[]; completenessSource: BomPrediction["completenessSource"]; warnings: string[] } {
   const warnings: string[] = [];
   let complete = neighbours.filter((n) => n.meta.isComplete);
@@ -551,8 +560,33 @@ export function aggregateDraft(
     // before ranking/thresholding. A no-op for sections without a SIZE_RULE or when
     // the dimension is absent. (A finish-matching factor was tried and measured
     // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
-    if (SIZE_RULES[section] && sizeTargetFor(section, target))
+    if (SIZE_RULES[section] && sizeTargetFor(section, target)) {
       for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
+
+      // Name-composition: these SKUs literally encode the dimension ("Safety Frame
+      // Home DBG-820", "Car Pannel CO/SS/LV/800"), so the right item is determined by
+      // the drawing even if NO neighbour happened to use it. Surface the matching-
+      // dimension SKU from the WHOLE corpus pool (preferring the target's drive for
+      // frame-type, then frequency) and give it a dominant weight — this breaks the
+      // neighbour-availability ceiling on the size-keyed sections.
+      const pool = sectionPool?.get(section);
+      if (pool) {
+        const matches = pool.filter((e) => sizeFactor(e.line.item_name, section, target) === TUNING.SIZE_BOOST);
+        if (matches.length) {
+          const drive = target.drive_type ?? null;
+          matches.sort((a, b) => {
+            const ad = drive && a.drives.has(drive) ? 1 : 0;
+            const bd = drive && b.drives.has(drive) ? 1 : 0;
+            return bd - ad || b.count - a.count;
+          });
+          const top = matches[0];
+          let g = byItem.get(top.line.item_id);
+          if (!g) { g = { item: top.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(top.line.item_id, g); }
+          g.w = Math.max(g.w, haveW * 1.5);
+          if (g.qtys.length === 0) { g.qtys.push(1); g.qw.push(1); } // frames are 1 per car/counter
+        }
+      }
+    }
 
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
     const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, TUNING.MAX_ITEMS_PER_SECTION);
@@ -602,6 +636,30 @@ export function aggregateDraft(
   return { draft, completenessSource, warnings };
 }
 
+/** Build the section→item pool (every item ever used per section, with how many
+ *  jobs used it and which drive types) — for name-composition on size-keyed sections. */
+function buildSectionPool(corpus: TrainingJob[]): SectionPool {
+  const pool: SectionPool = new Map();
+  for (const j of corpus) {
+    const drive = j.spec.drive_type ?? "";
+    for (const [sec, lines] of Object.entries(j.sections)) {
+      if (!SIZE_RULES[sec]) continue; // only needed for size-keyed sections
+      let arr = pool.get(sec);
+      if (!arr) { arr = []; pool.set(sec, arr); }
+      const seen = new Set<string>();
+      for (const ln of lines) {
+        if (seen.has(ln.item_id)) continue;
+        seen.add(ln.item_id);
+        let e = arr.find((x) => x.line.item_id === ln.item_id);
+        if (!e) { e = { line: ln, count: 0, drives: new Set() }; arr.push(e); }
+        e.count++;
+        if (drive) e.drives.add(drive);
+      }
+    }
+  }
+  return pool;
+}
+
 /** Top-level pure prediction (used by both the server action and the backtest). */
 export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[]): BomPrediction {
   const dsim = buildDriveSim(corpus);
@@ -612,7 +670,8 @@ export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[]):
     warnings.push("Closest past job is only a loose match — review everything.");
   if ((target.drive_type === "HYD" || target.drive_type === "CANTI"))
     warnings.push(`Rare drive type (${target.drive_type}) — very few similar jobs; verify all.`);
-  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours);
+  const sectionPool = buildSectionPool(corpus);
+  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours, sectionPool);
   const overall = draft.length ? draft.reduce((a, l) => a + l.confidence, 0) / draft.length : 0;
   return {
     draft,
