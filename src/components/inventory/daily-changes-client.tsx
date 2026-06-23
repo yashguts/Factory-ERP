@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { Badge as UIBadge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
@@ -40,7 +41,8 @@ import type {
 
 interface Props {
   initialRows: InventoryChangeRow[];
-  date: string;
+  from: string;
+  to: string;
   maxDate: string;
 }
 
@@ -63,7 +65,7 @@ function formatStamp(iso: string, withDate?: boolean): string {
   return `${day} · ${time}`;
 }
 
-export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
+export function DailyChangesClient({ initialRows, from, to, maxDate }: Props) {
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
@@ -85,8 +87,13 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   const [histTo, setHistTo] = useState("");
 
   // Feed filters — apply to whichever list is shown (day feed or item history).
-  const [typeFilter, setTypeFilter] = useState<"all" | "item" | "stock" | "po">("all");
+  const [typeFilter, setTypeFilter] = useState<
+    "all" | "item" | "stock" | "po" | "dispatch"
+  >("all");
   const [textFilter, setTextFilter] = useState("");
+  // Dispatch job filter — a job_id; "" = all jobs. Options are derived from the
+  // dispatch rows currently loaded (see dispatchJobs below).
+  const [jobFilter, setJobFilter] = useState("");
 
   const fetchHistory = (
     item: { id: string; code: string; name: string },
@@ -135,10 +142,13 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
     }
   };
 
-  const changeDate = (newDate: string) => {
-    if (!newDate) return;
+  const changeRange = (nextFrom: string, nextTo: string) => {
+    if (!nextFrom || !nextTo) return;
+    let f = nextFrom;
+    let t = nextTo;
+    if (f > t) [f, t] = [t, f];
     startTransition(() => {
-      router.push(`/inventory/changes?date=${newDate}`);
+      router.push(`/inventory/changes?from=${f}&to=${t}`);
     });
   };
 
@@ -218,10 +228,16 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
     if (typeFilter === "stock" && row.kind !== "stock") return false;
     if (typeFilter === "po" && !(row.kind === "stock" && row.reference_type === "po_receipt"))
       return false;
+    if (
+      typeFilter === "dispatch" &&
+      !(row.kind === "stock" && row.transaction_type === "dispatch_out")
+    )
+      return false;
+    if (activeJob && !(row.kind === "stock" && row.job_id === activeJob)) return false;
     const q = textFilter.trim().toLowerCase();
     if (q) {
       const parts: (string | null)[] = [row.item_code, row.item_name];
-      if (row.kind === "stock") parts.push(row.po_number);
+      if (row.kind === "stock") parts.push(row.po_number, row.job_number);
       if (!parts.filter(Boolean).join(" ").toLowerCase().includes(q)) return false;
     }
     return true;
@@ -231,12 +247,32 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
   // the single-day feed, AFTER the active type/text filter. The export reflects
   // exactly what's shown.
   const sourceRows = historyItem ? historyRows : initialRows;
+  // Distinct jobs among the loaded dispatch rows → the job-filter dropdown.
+  const dispatchJobs: [string, string][] = [
+    ...new Map(
+      sourceRows
+        .filter(
+          (r): r is StockChangeRow =>
+            r.kind === "stock" && r.transaction_type === "dispatch_out" && !!r.job_id,
+        )
+        .map(
+          (r) => [r.job_id as string, r.job_number ?? (r.job_id as string)] as [string, string],
+        ),
+    ),
+  ].sort((a, b) => a[1].localeCompare(b[1]));
+  // Ignore a stale job selection that isn't in the current range's options
+  // (e.g. after narrowing the dates), so it harmlessly falls back to "All jobs".
+  const activeJob =
+    jobFilter && dispatchJobs.some(([id]) => id === jobFilter) ? jobFilter : "";
   const visibleRows = sourceRows.filter(matchesFilter);
-  const filtering = typeFilter !== "all" || textFilter.trim() !== "";
+  const filtering =
+    typeFilter !== "all" || textFilter.trim() !== "" || activeJob !== "";
   const exportRows = visibleRows;
   const exportFilename = historyItem
     ? `inventory-changes-${historyItem.code}`
-    : `inventory-changes-${date}`;
+    : from === to
+      ? `inventory-changes-${from}`
+      : `inventory-changes-${from}_to_${to}`;
 
   return (
     <div>
@@ -251,7 +287,9 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
                   ? ` · ${histFrom || "…"} → ${histTo || "…"}`
                   : ""
               }`
-            : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"} on this day`
+            : `${initialRows.length} change${initialRows.length === 1 ? "" : "s"}${
+                from === to ? " on this day" : ` · ${from} → ${to}`
+              }`
         }${isPending ? " — refreshing..." : ""}`}
         actions={
           <>
@@ -321,15 +359,28 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
                 />
               </>
             ) : (
-              <Input
-                size="sm"
-                type="date"
-                value={date}
-                max={maxDate}
-                onChange={(e) => changeDate(e.target.value)}
-                title="Browse changes by day"
-                className="w-auto cursor-pointer"
-              />
+              <>
+                <Input
+                  size="sm"
+                  type="date"
+                  value={from}
+                  max={to}
+                  onChange={(e) => changeRange(e.target.value, to)}
+                  title="From date"
+                  className="w-auto cursor-pointer"
+                />
+                <span className="text-[var(--muted-foreground)]">→</span>
+                <Input
+                  size="sm"
+                  type="date"
+                  value={to}
+                  min={from}
+                  max={maxDate}
+                  onChange={(e) => changeRange(from, e.target.value)}
+                  title="To date"
+                  className="w-auto cursor-pointer"
+                />
+              </>
             )}
             <Link href="/inventory">
               <Button size="sm" variant="secondary">
@@ -357,6 +408,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
             ["item", "Item edits"],
             ["stock", "Stock"],
             ["po", "PO receipts"],
+            ["dispatch", "Dispatches"],
           ] as const).map(([val, label]) => (
             <button
               key={val}
@@ -378,7 +430,7 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
             size="sm"
             value={textFilter}
             onChange={(e) => setTextFilter(e.target.value)}
-            placeholder="Filter by item code / name or PO number…"
+            placeholder="Filter by item code / name, PO or Job no…"
             className="pl-8 pr-7"
           />
           {textFilter && (
@@ -392,6 +444,22 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
             </button>
           )}
         </div>
+        {dispatchJobs.length > 0 && (
+          <Select
+            size="sm"
+            value={activeJob}
+            onChange={(e) => setJobFilter(e.target.value)}
+            title="Filter dispatches by job"
+            className="w-auto"
+          >
+            <option value="">All jobs</option>
+            {dispatchJobs.map(([id, label]) => (
+              <option key={id} value={id}>
+                Job {label}
+              </option>
+            ))}
+          </Select>
+        )}
         <span className="text-xs text-[var(--muted-foreground)] ml-auto">{visibleRows.length} shown</span>
       </div>
 
@@ -409,7 +477,9 @@ export function DailyChangesClient({ initialRows, date, maxDate }: Props) {
               ? "No changes match this filter."
               : historyItem
                 ? "No recorded changes for this item yet."
-                : "No inventory changes were recorded on this date."
+                : from === to
+                  ? "No inventory changes were recorded on this date."
+                  : "No inventory changes were recorded in this range."
           }
         />
       ) : (

@@ -13,6 +13,7 @@ import {
   type TransactionType,
 } from "@/lib/supabase/types";
 import { appliedDelta } from "@/lib/inventory/transactions";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 /**
  * The business runs in India (IST, UTC+05:30). The date picker hands us a
@@ -90,34 +91,43 @@ function enrichChanges(
  * stock movements. Uncached so edits/undos reflect immediately.
  */
 export async function getInventoryChanges(
-  date: string,
+  from: string,
+  to?: string,
 ): Promise<InventoryChangeRow[]> {
   const supabase = await createClient();
-  const { startIso, endIso } = istDayRange(date);
+  const startIso = istDayRange(from).startIso;
+  const endIso = istDayRange(to ?? from).endIso;
 
-  const [logRes, txnRes, cats, units] = await Promise.all([
-    supabase
-      .from("item_change_log")
-      .select("*")
-      .gte("created_at", startIso)
-      .lt("created_at", endIso)
-      .order("created_at", { ascending: false }),
-    supabase
-      .from("inventory_transactions")
-      .select(
-        `id, created_at, item_id, warehouse_id, transaction_type, quantity, notes, reference_type, reference_id,
-         item:items(code, name),
-         warehouse:warehouses(name)`,
-      )
-      .gte("created_at", startIso)
-      .lt("created_at", endIso)
-      .order("created_at", { ascending: false }),
+  // Page through the full window (fetchAllRanged) so a multi-day range — or a
+  // busy single day — returns every row instead of being silently capped at
+  // Supabase's 1000-row default.
+  const [logData, txnData, cats, units] = await Promise.all([
+    fetchAllRanged<ItemChangeLog>((lo, hi, wc) =>
+      supabase
+        .from("item_change_log")
+        .select("*", wc ? { count: "exact" } : {})
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: false })
+        .range(lo, hi),
+    ),
+    fetchAllRanged<Record<string, unknown>>((lo, hi, wc) =>
+      supabase
+        .from("inventory_transactions")
+        .select(
+          `id, created_at, item_id, warehouse_id, transaction_type, quantity, notes, reference_type, reference_id,
+           item:items(code, name),
+           warehouse:warehouses(name)`,
+          wc ? { count: "exact" } : {},
+        )
+        .gte("created_at", startIso)
+        .lt("created_at", endIso)
+        .order("created_at", { ascending: false })
+        .range(lo, hi),
+    ),
     getCategories(),
     getUnits(),
   ]);
-
-  if (logRes.error) throw logRes.error;
-  if (txnRes.error) throw txnRes.error;
 
   const maps = {
     cat: new Map<string, string>((cats ?? []).map((c) => [c.id, c.name])),
@@ -126,12 +136,7 @@ export async function getInventoryChanges(
     ),
   };
 
-  return assembleRows(
-    supabase,
-    (logRes.data ?? []) as ItemChangeLog[],
-    (txnRes.data ?? []) as Array<Record<string, unknown>>,
-    maps,
-  );
+  return assembleRows(supabase, logData, txnData, maps);
 }
 
 /**
@@ -209,18 +214,27 @@ async function assembleRows(
   maps: { cat: Map<string, string>; uom: Map<string, string> },
 ): Promise<InventoryChangeRow[]> {
   const txnIds = txns.map((t) => t.id as string);
-  let reversedIds = new Set<string>();
+  const reversedIds = new Set<string>();
+  // Look up which of these were reversed. Chunk the id list (batches of 300): a
+  // single .in() with thousands of UUIDs would overflow the request URL on a
+  // wide date range. Batches run in parallel, so this stays one round-trip deep.
   if (txnIds.length > 0) {
-    const { data: reversals } = await supabase
-      .from("inventory_transactions")
-      .select("reference_id")
-      .eq("reference_type", "txn_reversal")
-      .in("reference_id", txnIds);
-    reversedIds = new Set(
-      (reversals ?? [])
-        .map((r) => r.reference_id as string | null)
-        .filter((x): x is string => !!x),
+    const batches: string[][] = [];
+    for (let i = 0; i < txnIds.length; i += 300) batches.push(txnIds.slice(i, i + 300));
+    const results = await Promise.all(
+      batches.map((batch) =>
+        supabase
+          .from("inventory_transactions")
+          .select("reference_id")
+          .eq("reference_type", "txn_reversal")
+          .in("reference_id", batch),
+      ),
     );
+    for (const { data } of results)
+      for (const r of data ?? []) {
+        const ref = r.reference_id as string | null;
+        if (ref) reversedIds.add(ref);
+      }
   }
 
   // Resolve the source PO (number + id) for "po_receipt" movements so the feed
