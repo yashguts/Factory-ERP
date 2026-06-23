@@ -155,7 +155,23 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Door Sill",
     phase: "Door System",
     gate: ALWAYS,
-    defaultItemCategories: ["Door Sill"],
+    description: "The car/landing sill itself (Sill Angle is now its own section).",
+    defaultItemCategories: [
+      "Door Sill > Aluminium Sill",
+      "Door Sill > Auto Door SS Sill",
+      "Door Sill > Collapsible Landing Sill",
+      "Door Sill > Manual Telescopic Sill",
+    ],
+  },
+  {
+    category: "Sill Angle",
+    phase: "Door System",
+    gate: ALWAYS,
+    description: "Door sill angle — split out of Door Sill.",
+    defaultItemCategories: [
+      "Door Sill > Auto Door Sill Angle",
+      "Small Manufactured Items > Manual Telescopic Sill Angle",
+    ],
   },
   {
     category: "Linton Panel",
@@ -281,6 +297,27 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     description:
       "Limit-switch mounting brackets. Same parent category as the switches themselves — pick the bracket items.",
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "LIMIT SWITCH CAM",
+    phase: "Miscellaneous Items",
+    gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
+    description: "Limit-switch cam — Home Rope / Home Belt / Cantilever only.",
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "LIMIT SWITCH CAM BRACKET",
+    phase: "Miscellaneous Items",
+    gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
+    description: "Limit-switch cam bracket — Home Rope / Home Belt / Cantilever only.",
+    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+  },
+  {
+    category: "LIMIT SWITCH CAM CHANNEL",
+    phase: "Miscellaneous Items",
+    gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
+    description: "Limit-switch cam channel — Home Rope / Home Belt / Cantilever only.",
     defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
   },
   {
