@@ -217,6 +217,7 @@ function skuMaterial(s: string): string | null {
   return null;
 }
 function targetVision(t: BomTargetSpec): string | null {
+  if (t.door_vision === "LV" || t.door_vision === "MV" || t.door_vision === "NV") return t.door_vision; // VISUAL read wins
   const s = `${t.door_finish ?? ""} ${t.door_type ?? ""}`.toUpperCase();
   if (/LONG VISION|FULL VISION|\bLV\b/.test(s)) return "LV";
   if (/MEDIUM VISION|\bMV\b/.test(s)) return "MV";
@@ -266,8 +267,14 @@ function skuFrameType(s: string): string | null {
   if (/\bR1\b|\bSTD\b/.test(u)) return "R1"; // R1 and Std are both the traction family
   return null;
 }
+function skuSide(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\bLHS\b|\bLH\b|\bLEFT\b/.test(u)) return "LHS";
+  if (/\bRHS\b|\bRH\b|\bRIGHT\b/.test(u)) return "RHS";
+  return null;
+}
 
-type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "frameType" | "dbgCar" | "dbgCtr";
+type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "side" | "frameType" | "dbgCar" | "dbgCtr";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -275,19 +282,20 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   vision: { weight: 2, target: targetVision, match: (s, v) => skuVision(s) === v },
   width: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
   color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
+  side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
   frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
   dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
   dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
 };
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
-  "Car Door Panel": ["doorType", "material", "vision", "width", "color"],
-  "Landing Door Panel": ["doorType", "material", "vision", "width", "color"],
+  "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side"],
+  "Landing Door Panel": ["doorType", "material", "vision", "width", "color", "side"],
   "Linton Panel": ["doorType", "material", "width", "color"],
   "Door Sill": ["doorType", "width"],
-  "Door Post / Frame": ["doorType", "width", "color"],
-  "Car Header System": ["doorType", "width"],
-  "Landing Header System": ["doorType", "width"],
+  "Door Post / Frame": ["doorType", "width", "color", "side"],
+  "Car Header System": ["doorType", "width", "side"],
+  "Landing Header System": ["doorType", "width", "side"],
   "Safety": ["frameType", "dbgCar"],
   "Counter Frame": ["frameType", "dbgCtr"],
   "Counter Guard Net": ["frameType", "dbgCtr"],
@@ -424,6 +432,15 @@ export interface BomTargetSpec {
    */
   dbg_main_mm?: number | null;
   dbg_counter_mm?: number | null;
+  /**
+   * VISUAL door attributes — read from the drawing PICTURE (door elevation + plan),
+   * not the text. door_vision = LV/MV/NV (extent of the glass drawn on the door);
+   * door_side = LHS/RHS (which side a telescopic door operator parks). These resolve
+   * what the spec text leaves silent. Optional — composition falls back to text when
+   * absent.
+   */
+  door_vision?: string | null;
+  door_side?: string | null;
 }
 export interface PredictedLine {
   section: string;
