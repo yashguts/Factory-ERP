@@ -11,6 +11,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { extractSpecFromPdf } from "@/lib/actions/spec-vision";
 import { predictBomFromSpec, type BomTargetSpec } from "@/lib/actions/bom-predict";
+import { normaliseDoorType } from "@/lib/bom/predict-core";
 import type {
   AutofillResult,
   SpecSuggestion,
@@ -58,12 +59,17 @@ export async function autofillFromDrawing(
     }
 
     // Build the retrieval target: drawing values where read, else the typed spec.
+    // door_type (normalised to a code) is the door-system SKU driver — it's read
+    // from the drawing here and fed to the BOM engine even though it's not a form
+    // field. The vision spec carries it; the form's typedSpec never sets it.
+    const drawingDoorType = vision.ok ? normaliseDoorType(vision.spec.door_type.value) : null;
     const target: BomTargetSpec = {
       floors: (spec?.floors.value as number | null) ?? typedSpec.floors ?? null,
       drive_type: (spec?.drive_type.value as string | null) ?? typedSpec.drive_type ?? null,
       capacity: (spec?.capacity.value as string | null) ?? typedSpec.capacity ?? null,
       door_finish: (spec?.door_finish.value as string | null) ?? typedSpec.door_finish ?? null,
       brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
+      door_type: drawingDoorType ?? typedSpec.door_type ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);

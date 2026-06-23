@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import {
   predictFromCorpus,
+  deriveDoorType,
   type TrainingJob,
   type TrainingLine,
   type BomTargetSpec,
@@ -112,6 +113,7 @@ async function _getTrainingCorpusUncached(): Promise<TrainingJob[]> {
         capacity: j.capacity,
         door_finish: j.door_finish,
         brand: j.brand,
+        door_type: deriveDoorType(sections),
       },
       isComplete: Boolean(sections["RAIL"]),
       sections,

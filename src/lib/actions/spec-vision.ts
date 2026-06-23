@@ -21,11 +21,13 @@ export interface SpecField<T> {
   confidence: FieldConfidence;
   rationale: string;
 }
-/** The 5 fields the autofill form consumes (unchanged contract). */
+/** The fields the autofill form/engine consume. door_type is not a form field but
+ *  is carried so the BOM engine can condition on it (the door-system SKU driver). */
 export interface ExtractedSpec {
   floors: SpecField<number>;
   drive_type: SpecField<string>;
   capacity: SpecField<string>;
+  door_type: SpecField<string>;
   door_finish: SpecField<string>;
   brand: SpecField<string>;
   notes: string;
@@ -111,7 +113,7 @@ const SCHEMA = {
       type: "object",
       additionalProperties: false,
       properties: {
-        value: { type: ["string", "null"], enum: ["MRL", "BELT", "HOME", "MR", "HYD", "CANTI", null] },
+        value: { type: ["string", "null"], enum: ["MR", "MRL", "HOME", "BELT", "MRLBELT", "HYD", "CANTI", "R1000", null] },
         confidence: { type: "string", enum: ["high", "medium", "low"] },
         rationale: { type: "string" },
       },
@@ -164,10 +166,10 @@ const SYSTEM_PROMPT = `You are an expert elevator engineer reading General Arran
 Capture the core spec AND every other labelled value you can find (sizes, weights, speeds, counts, finishes, makes, clauses) — put anything that doesn't fit a named field into additional_details as {label, value}. Be exhaustive: this drawing's details are what makes the job different from past jobs.
 
 Normalisation rules:
-- drive_type -> exactly one of MRL, BELT, HOME, MR, HYD, CANTI. Synonyms: "Machine Room Less"/"roomless"/"gearless MRL"->MRL; "Belt"->BELT; "Home lift"/"villa"/"domestic"->HOME; "Machine Room"/"geared"/"traction MR"->MR; "Hydraulic"->HYD; "Cantilever"->CANTI. Unknown -> null/low.
+- drive_type -> exactly one of MR, MRL, HOME, BELT, MRLBELT, HYD, CANTI, R1000. Two axes: machine location (machine-room MR / machine-room-less MRL / home-pit) and suspension (rope vs belt). Map: "Machine Room Less"/"roomless"/"gearless MRL" (rope) -> MRL; "Machine Room"/"geared"/"traction MR" -> MR; "Home lift"/"villa"/"domestic" (rope) -> HOME; HOME lift driven by a BELT -> BELT; MRL driven by a BELT -> MRLBELT; "Hydraulic" -> HYD; "Cantilever" -> CANTI; car-parking / "R1000" / "R-1000" -> R1000. Decide belt-vs-rope from the suspension labelled on the drawing; if a home/MRL lift shows a belt, pick the BELT/MRLBELT variant. Unknown -> null/low.
 - floors -> total stops (integer). "G+N"=N+1, "B+G+N"=N+2. Only a travel dimension and no stop count -> null.
 - capacity -> as labelled: persons -> "4PASS"/"6PASS"; kilograms -> "1000KG". Prefer persons for passenger, KG for goods.
-- door_type -> e.g. "Centre Opening (CO)", "2-Panel Telescopic", "Collapsible", "Swing", "Auto". door_finish -> "SS Hairline", "SS Mirror", "MS Powder Coated", "Rose Gold", "Glass".
+- door_type -> the door OPERATOR type; prefer one of and include the code: "Centre Opening (CO)", "Auto Telescopic (AT)", "Manual Telescopic (MT)", "Collapsible (COL)", "Auto Four-Fold (AFF)", "Swing (SWS)". door_finish -> "SS Hairline", "SS Mirror", "MS Powder Coated", "Rose Gold", "Glass".
 - dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
 - confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
@@ -264,6 +266,7 @@ export async function extractDrawingData(jobId: string): Promise<RichResult> {
       floors: rich.floors,
       drive_type: rich.drive_type,
       capacity: rich.capacity,
+      door_type: rich.door_type,
       door_finish: rich.door_finish,
       brand: rich.brand,
     };
@@ -328,6 +331,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       floors: rich.floors,
       drive_type: rich.drive_type,
       capacity: rich.capacity,
+      door_type: rich.door_type,
       door_finish: rich.door_finish,
       brand: rich.brand,
       notes: rich.notes ?? "",
