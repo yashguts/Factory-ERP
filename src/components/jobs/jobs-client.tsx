@@ -28,6 +28,7 @@ import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
 import { gadAlert } from "@/lib/jobs/gad-alert";
+import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -115,6 +116,7 @@ export function JobsClient({
     () => readParam(sp, "stage", "all", ["all", "new", "first_phase", "full_material"]) as JobStage | "all",
   );
   const [doorTypeFilter, setDoorTypeFilter] = useState<string>(() => readParam(sp, "door", "all"));
+  const [driveTypeFilter, setDriveTypeFilter] = useState<string>(() => readParam(sp, "drive", "all"));
   const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
   const [structureFilter, setStructureFilter] = useState<string>(
     () => readParam(sp, "structure", "all", ["all", "Factory-made", "Site-fabricated", "NA"]),
@@ -128,8 +130,8 @@ export function JobsClient({
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, brand: brandFilter, structure: structureFilter, sort: sortKey, dir: sortDir, page },
-    { view: "active", q: "", status: "all", stage: "all", door: "all", brand: "all", structure: "all", sort: "req_dispatch", dir: "asc", page: 1 },
+    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, drive: driveTypeFilter, brand: brandFilter, structure: structureFilter, sort: sortKey, dir: sortDir, page },
+    { view: "active", q: "", status: "all", stage: "all", door: "all", drive: "all", brand: "all", structure: "all", sort: "req_dispatch", dir: "asc", page: 1 },
   );
 
   // Tab buckets (computed across ALL jobs, independent of the other filters, so
@@ -156,6 +158,24 @@ export function JobsClient({
     const set = new Set<string>();
     jobs.forEach((j) => { if (j.brand) set.add(j.brand); });
     return Array.from(set).sort();
+  }, [jobs]);
+
+  // Drive types actually present in the data, ordered by the canonical list
+  // (legacy codes no longer offered — e.g. old "ROPE" — sink to the end).
+  // `hasBlank` drives a "No drive type" option so jobs missing it are findable.
+  const driveTypes = useMemo(() => {
+    const present = new Set<string>();
+    let hasBlank = false;
+    jobs.forEach((j) => { if (j.drive_type) present.add(j.drive_type); else hasBlank = true; });
+    const order = DRIVE_TYPES.map((d) => d.value);
+    const codes = Array.from(present).sort((a, b) => {
+      const ia = order.indexOf(a), ib = order.indexOf(b);
+      if (ia === -1 && ib === -1) return a.localeCompare(b);
+      if (ia === -1) return 1;
+      if (ib === -1) return -1;
+      return ia - ib;
+    });
+    return { codes, hasBlank };
   }, [jobs]);
 
   // Multi-token fuzzy search: every word must appear somewhere across
@@ -194,11 +214,16 @@ export function JobsClient({
       if (statusFilter !== "all" && job.status !== statusFilter) return false;
       if (stageFilter !== "all" && job.stage !== stageFilter) return false;
       if (doorTypeFilter !== "all" && job.door_type !== doorTypeFilter) return false;
+      if (driveTypeFilter !== "all") {
+        if (driveTypeFilter === "__none__") {
+          if (job.drive_type) return false;
+        } else if (job.drive_type !== driveTypeFilter) return false;
+      }
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       if (structureFilter !== "all" && (job.structure_included ?? "NA") !== structureFilter) return false;
       return true;
     });
-  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, brandFilter, structureFilter]);
+  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, driveTypeFilter, brandFilter, structureFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -433,6 +458,22 @@ export function JobsClient({
             {doorTypes.map((dt) => (
               <option key={dt} value={dt}>{dt}</option>
             ))}
+          </Select>
+        )}
+
+        {(driveTypes.codes.length > 0 || driveTypes.hasBlank) && (
+          <Select
+            size="sm"
+            value={driveTypeFilter}
+            onChange={(e) => { setDriveTypeFilter(e.target.value); resetPage(); }}
+            className="w-[160px]"
+            title="Filter by drive type"
+          >
+            <option value="all">All Drive Types</option>
+            {driveTypes.codes.map((dt) => (
+              <option key={dt} value={dt}>{driveTypeLabel(dt)}</option>
+            ))}
+            {driveTypes.hasBlank && <option value="__none__">No drive type</option>}
           </Select>
         )}
 

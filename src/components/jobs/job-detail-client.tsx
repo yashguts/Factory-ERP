@@ -16,7 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
-import { shouldRenderSection } from "@/lib/bom/section-gating";
+import { shouldRenderSection, driveTypeLabel } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
@@ -579,7 +579,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4 p-3 card-surface">
         <MetaItem label="Spec" value={job.spec_string} />
         <MetaItem label="Stops" value={job.floors?.toString()} />
-        <MetaItem label="Drive Type" value={job.drive_type} />
+        <MetaItem label="Drive Type" value={driveTypeLabel(job.drive_type)} />
         <MetaItem label="Capacity" value={job.capacity} />
         <MetaItem label="Structure" value={job.structure_included} />
         <MetaItem label="Location" value={job.location} />

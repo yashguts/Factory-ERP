@@ -36,17 +36,27 @@ export const DOOR_TYPES: ReadonlyArray<{ value: string; label: string }> = [
   { value: "DUMB", label: "Dumbwaiter" },
 ];
 
+// The drive types offered on the job form. The `value` is the stored code
+// (BOM section gating + spec_string key off it — never rename a value without
+// migrating jobs); the `label` is what the engineer sees. MR/MRL/Home are all
+// rope drives, now labelled as such.
 export const DRIVE_TYPES: ReadonlyArray<{ value: string; label: string }> = [
-  { value: "MR", label: "MR" },
-  { value: "MRL", label: "MRL" },
-  { value: "HOME", label: "Home" },
-  { value: "V3F", label: "V3F" },
-  { value: "MV3F", label: "MV3F" },
+  { value: "MR", label: "MR Rope" },
+  { value: "MRL", label: "MRL Rope" },
+  { value: "HOME", label: "Home Rope" },
   { value: "BELT", label: "Belt" },
   { value: "HYD", label: "Hydraulic" },
-  { value: "ROPE", label: "Rope" },
-  { value: "CANTI", label: "Cantilever" },
+  { value: "CANTI", label: "Cantilever 3-phase" },
+  { value: "R1000", label: "R1000" },
 ];
+
+// Friendly label for a stored drive_type code. Falls back to the raw value for
+// any legacy code no longer offered (e.g. old "ROPE" / "V3F" jobs) so existing
+// data still reads sensibly.
+export function driveTypeLabel(value: string | null | undefined): string {
+  if (!value) return "";
+  return DRIVE_TYPES.find((d) => d.value === value)?.label ?? value;
+}
 
 export const STOPS_OPTIONS = Array.from({ length: 30 }, (_, i) => i + 1);
 
