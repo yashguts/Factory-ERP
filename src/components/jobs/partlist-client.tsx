@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   Check, Search, X, Loader2, AlertTriangle, Sparkles, ChevronDown, ChevronRight,
-  Plus, CircleCheck, ShieldCheck, PackageCheck, Pencil, FileText,
+  Plus, CircleCheck, ShieldCheck, PackageCheck, Pencil, FileText, FileSpreadsheet,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -19,6 +19,8 @@ import {
   type PartListView, type SaveLineInput,
 } from "@/lib/actions/partlist";
 import { generatePartListDraft } from "@/lib/actions/partlist-generate";
+import { exportRowsToXlsx } from "@/lib/export/xlsx";
+import { downloadPartlistPdf, type PartlistExportRow } from "@/lib/export/partlist-pdf";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 
 const GROUPS = groupsJson as Record<string, string>;
@@ -287,6 +289,50 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
     finally { setBusy(null); }
   }, [jobId, toast]);
 
+  /* --------------------------- export --------------------------- */
+  // Flatten the applicable lines (skip not-applicable / dismissed), grouped by
+  // section, into export rows for the PDF + Excel downloads.
+  const buildExportData = (): PartlistExportRow[] => {
+    const out: PartlistExportRow[] = [];
+    for (const g of GROUP_ORDER) {
+      const keys = g === "OTHER" ? [OTHER_SECTION_KEY] : (templateByGroup[g] || []).map((s) => s.key);
+      for (const sk of keys) {
+        const sec = SECTION_BY_KEY.get(sk);
+        const active = (rows[sk] || []).filter((r) => !r.not_required && (r.item_id || (r.name && r.name.trim())));
+        for (const r of active) {
+          out.push({
+            group: glabel(g).split(" — ")[0],
+            particular: sec?.label ?? r.name ?? "",
+            item: r.name ?? "",
+            spec: r.spec ?? "",
+            qty: r.qty ?? 0,
+            packed: r.checked ? "Yes" : "",
+          });
+        }
+      }
+    }
+    return out;
+  };
+
+  const onDownloadPdf = async () => {
+    await downloadPartlistPdf({ jobNumber, customerName, status }, buildExportData());
+  };
+  const onDownloadExcel = () => {
+    exportRowsToXlsx({
+      rows: buildExportData(),
+      columns: [
+        { header: "Section", field: "group" },
+        { header: "Particular", field: "particular" },
+        { header: "Item", field: "item" },
+        { header: "Spec", field: "spec" },
+        { header: "Qty", field: "qty" },
+        { header: "Packed", field: "packed" },
+      ],
+      filename: `PartList_${jobNumber}`,
+      sheetName: "Part List",
+    });
+  };
+
   /* --------------------------- render --------------------------- */
   const matchFilter = (s: PackingSection) => !filter || s.label.toLowerCase().includes(filter.toLowerCase());
 
@@ -314,6 +360,12 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
             </Button>
             <Button variant="secondary" size="sm" onClick={onSave} disabled={!!busy || !hasAnyRows}>
               {busy === "save" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : "Save"}
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onDownloadPdf} disabled={!hasAnyRows} title="Download the part list as PDF">
+              <FileText className="h-3.5 w-3.5" /> PDF
+            </Button>
+            <Button variant="secondary" size="sm" onClick={onDownloadExcel} disabled={!hasAnyRows} title="Download the part list as Excel">
+              <FileSpreadsheet className="h-3.5 w-3.5" /> Excel
             </Button>
             {status === "ready" ? (
               <Button variant="secondary" size="sm" onClick={onReopen} disabled={!!busy}><Pencil className="h-3.5 w-3.5" /> Re-open</Button>
