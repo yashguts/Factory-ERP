@@ -39,6 +39,9 @@ export interface ExtractedSpec {
   travel_mm: number | null;
   /** Counterweight position (side/rear) — gates the combination main-bracket compose. */
   counterweight_position: string | null;
+  /** Rail-to-wall gaps (mm) — the rail-bracket projection (car gap -> class, counter gap -> combo). */
+  car_rail_to_wall_mm: number | null;
+  counter_rail_to_wall_mm: number | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -378,6 +381,8 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
       travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
       counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
+      car_rail_to_wall_mm: parseWidthMm(rich.dimensions?.car_rail_to_wall_mm?.value),
+      counter_rail_to_wall_mm: parseWidthMm(rich.dimensions?.counter_rail_to_wall_mm?.value),
       notes: rich.notes ?? "",
     },
   };

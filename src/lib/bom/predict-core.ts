@@ -218,6 +218,27 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
   return TUNING.SIZE_PENALTY; // a different, conflicting dimension
 }
 
+/**
+ * Rail-bracket projection match. The bracket's projection is encoded in its name; the rail-to-
+ * wall gap read off the plan tells us which one. A standard "Main X (LO-HI)mm" bracket matches
+ * when the CAR rail gap falls in [LO,HI]; a "Combination …Xppp" bracket matches when the COUNTER
+ * rail gap ≈ ppp. Returns a boost/penalty so the matching projection outranks the default "B".
+ * Neutral (1) when the relevant gap is unknown or the name carries no projection token.
+ */
+function bracketProjFactor(name: string, target: BomTargetSpec): number {
+  if (/combination/i.test(name)) {
+    const gap = target.counter_rail_to_wall_mm;
+    const m = /DBG-\d+X\d+X(\d+)/i.exec(name);
+    if (gap == null || !m) return 1;
+    return Math.abs(Number(m[1]) - gap) <= TUNING.SIZE_TOL_DBG ? TUNING.SIZE_BOOST : TUNING.SIZE_PENALTY;
+  }
+  const gap = target.car_rail_to_wall_mm;
+  const r = /\((\d+)\s*-\s*(\d+)\)\s*mm/.exec(name);
+  if (gap == null || !r) return 1;
+  const lo = Number(r[1]), hi = Number(r[2]);
+  return gap >= lo - 12 && gap <= hi + 12 ? TUNING.SIZE_BOOST : TUNING.SIZE_PENALTY;
+}
+
 // ── Multi-attribute SKU composition ──────────────────────────────────────────
 // Reverse-engineered from the corpus (scripts/_sku_rules.json): these SKUs encode
 // several drawing attributes in the name — a door panel is type/material/vision/
@@ -586,6 +607,13 @@ export interface BomTargetSpec {
    * counterweight DBG); at the rear they're separate. Gates the combination-bracket compose.
    */
   counterweight_position?: string | null;
+  /**
+   * Rail-to-wall gaps (mm) from the hoistway plan — the rail-bracket PROJECTION. car_rail_to_wall
+   * sets the standard bracket class (50-100=B, 100-160=C, 160-210=D, 210-310=E, 310-360=F,
+   * 360-410=G); counter_rail_to_wall sets the combination bracket's projection (the X### token).
+   */
+  car_rail_to_wall_mm?: number | null;
+  counter_rail_to_wall_mm?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -863,6 +891,13 @@ export function aggregateDraft(
     // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
     if (SIZE_RULES[section] && sizeTargetFor(section, target))
       for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
+
+    // Rail-bracket projection match: when the plan gives the rail-to-wall gaps, re-weight the
+    // retrieved brackets toward the one whose projection matches — the car gap picks the standard
+    // class (B/C/D/F/G), the counter gap picks the combination projection. This is the fix for
+    // the predictor defaulting every bracket to "B (50-100)".
+    if (section === "MAIN BRACKET" && (target.car_rail_to_wall_mm != null || target.counter_rail_to_wall_mm != null))
+      for (const g of byItem.values()) g.w *= bracketProjFactor(g.item.item_name, target);
 
     // Composition: these SKUs encode the drawing's attributes in the name (door panel
     // = type/material/vision/width/colour; safety/counter frame = frame-type + DBG).

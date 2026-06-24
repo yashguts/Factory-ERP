@@ -85,6 +85,9 @@ export async function autofillFromDrawing(
       travel_mm: (vision.ok ? vision.spec.travel_mm : null) ?? typedSpec.travel_mm ?? null,
       // Counterweight side/rear — gates the combination main-bracket compose.
       counterweight_position: (vision.ok ? vision.spec.counterweight_position : null) ?? typedSpec.counterweight_position ?? null,
+      // Rail-to-wall gaps — the rail-bracket projection (car gap -> standard class, counter gap -> combo).
+      car_rail_to_wall_mm: (vision.ok ? vision.spec.car_rail_to_wall_mm : null) ?? typedSpec.car_rail_to_wall_mm ?? null,
+      counter_rail_to_wall_mm: (vision.ok ? vision.spec.counter_rail_to_wall_mm : null) ?? typedSpec.counter_rail_to_wall_mm ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);

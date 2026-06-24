@@ -176,6 +176,8 @@ const widthOf = (name: string): number | null => {
         if (ex.door_side) spec.door_side = ex.door_side;
         if (ex.travel_mm != null) spec.travel_mm = ex.travel_mm;
         if (ex.counterweight_position) spec.counterweight_position = ex.counterweight_position;
+        if (ex.car_rail_to_wall_mm != null) spec.car_rail_to_wall_mm = ex.car_rail_to_wall_mm;
+        if (ex.counter_rail_to_wall_mm != null) spec.counter_rail_to_wall_mm = ex.counter_rail_to_wall_mm;
       }
       // Landing-door finish (drives Door Post / Linton colour) — from the LANDING door row.
       // Approximated here by the landing panel's own finish; in production this is the
