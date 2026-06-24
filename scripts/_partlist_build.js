@@ -366,7 +366,13 @@ for (const s of SRC) {
 }
 for (const s of tail) {
   out.push({ key: s.key, label: s.label, captureType: s.captureType, categoryPaths: s.categoryPaths, specHint: s.specHint });
-  groups[s.key] = TAIL_FLAGS.includes(s.key) ? "Doors" : (s.captureType === "free" ? "Fasteners (parked)" : "Other (parked)");
+  // Free-text fasteners are filed into two owner-decided sections (Nut-Bolts /
+  // Screws) instead of a "parked" tail; anything else stays parked.
+  groups[s.key] = TAIL_FLAGS.includes(s.key)
+    ? "Doors"
+    : s.captureType === "free"
+      ? (/screw/i.test(s.label) ? "Screws" : "Nut-Bolts")
+      : "Other (parked)";
 }
 
 // ---- emit ----
