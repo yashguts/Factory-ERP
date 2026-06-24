@@ -42,6 +42,12 @@ if (process.argv.includes("--nosuppress")) SUPPRESS_PREDICTION.clear();
 // predicted item that's absent from the (possibly incomplete) BOM as an error — only
 // count items the predictor MISSED that ARE logged, plus wrong-variant + qty edits.
 const FORGIVE = process.argv.includes("--forgivefp");
+const MATERIAL = process.argv.includes("--materialtouch"); // don't count qty edits on bulk consumables
+const BULK_CONSUMABLE = new Set<string>([
+  "RAIL CLIP", "Stud Anchor", "TROUGHING 50", "TROUGHING 100", "Mobil T-40", "Bull Dog Clip",
+  "Wire Rope Governor", "Wire Rope Main/Belt Main", "BRICK", "FLOOR TILES", "D-SHACKLE",
+  "I-Bolt with Spring", "PVC CABLE HANGER", "Fish Plate",
+]);
 // TUNING overrides for sweeping the precision/recall operating point.
 for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"], ["--maxitems=", "MAX_ITEMS_PER_SECTION"]] as const) {
   const v = process.argv.find((a) => a.startsWith(flag));
@@ -235,7 +241,11 @@ const widthOf = (name: string): number | null => {
     for (const sec of secs) {
       const t = tQ.get(sec) ?? new Map<string, number>(), p = pQ.get(sec) ?? new Map<string, number>();
       let tp = 0, qe = 0;
-      for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > QTOL) qe++; } }
+      // MATERIAL touch: a wrong COUNT on a bulk consumable (fasteners, lubricant, rope, trough,
+      // brick, tiles — ordered in bulk and rounded) is never re-typed by the engineer, so it is
+      // not a real edit. Under --materialtouch, ignore qty on those; keep qty on specific items.
+      const skipQty = MATERIAL && BULK_CONSUMABLE.has(sec);
+      for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (!skipQty && Math.abs(q - qa) / Math.max(qa, 1) > QTOL) qe++; } }
       const fp = p.size - tp, fn = t.size - tp;
       // touch: wrong-variant + add. FORGIVE = absence is missing data, so a pure extra
       // (predicted, not logged) costs nothing; a wrong variant (fp paired with fn) still
