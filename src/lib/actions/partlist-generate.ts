@@ -295,13 +295,25 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
       const sorted = (cl ?? []).slice().sort((a, b) =>
         ((order.get(a.cabin_type as string) ?? 99) - (order.get(b.cabin_type as string) ?? 99)) ||
         (Number(a.sort_order ?? 0) - Number(b.sort_order ?? 0)));
+      // False Ceiling sizes off the cabin's Platform: (W-50) x (D-50). The platform
+      // item name carries W x D (e.g. "CO 700x1000" -> 700x1000); blank if unparseable.
+      const platName =
+        (flat(sorted.find((l) => String(l.cabin_type).toLowerCase() === "platform")?.item) as
+          | { name: string | null }
+          | null)?.name ?? "";
+      const pm = platName.match(/(\d{3,4})\s*[xX*]\s*(\d{3,4})/);
+      const falseCeilingSize = pm ? `${Number(pm[1]) - 50}x${Number(pm[2]) - 50}` : null;
       for (const l of sorted) {
         const it = flat(l.item) as { id: string; code: string | null; name: string | null } | null;
+        const isFalseCeiling = String(l.cabin_type).toLowerCase() === "false ceiling";
         lines.push({
           sectionKey: "p-cabin-from-job", label: it?.name ?? "(cabin item)",
           group: GROUPS["p-cabin-from-job"] || "Cabin Items", captureType: "item",
           item_id: it?.id ?? null, item_code: it?.code ?? null, item_name: it?.name ?? null,
-          spec: (l.cabin_type as string) ?? null, qty: Number(l.qty ?? 0) || 1, source: "Cabin Job",
+          spec: isFalseCeiling
+            ? (falseCeilingSize ?? (l.cabin_type as string))
+            : ((l.cabin_type as string) ?? null),
+          qty: Number(l.qty ?? 0) || 1, source: "Cabin Job",
           confidence: it ? "high" : "low", is_conflict: false, conflict_note: null,
           needs_item: !it, non_inventory: false, bom_line_id: null,
         });

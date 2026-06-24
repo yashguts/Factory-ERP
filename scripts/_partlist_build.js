@@ -164,7 +164,6 @@ const CURATED = [
   C("__new_cabin_from_job", "Cabin Panels (from Cabin Job)", { group: "Cabin Items", cats: ["Cabin"] }),
   C("p-cabin-handrail-with-cover", "Cabin Handrail", { group: "Cabin Items", cats: ["Cabin"] }),
   C("p-cabin-glass-10mm", "Cabin Glass", { group: "Cabin Items", cats: ["Glass > Cabin Glass"] }),
-  C("p-false-ceiling", "False Ceiling", { group: "Cabin Items" }),
   C("p-flooring", "Flooring", { group: "Cabin Items" }),
   C("p-floor-tiles", "Floor Tiles", { group: "Cabin Items" }),
   C("p-chequered-plate", "Chequered Plate", { group: "Cabin Items" }),
@@ -297,6 +296,10 @@ for (const c of CURATED) {
   out.push(entry);
   groups[finalKey] = c.group;
 }
+
+// Retired sections — now sourced elsewhere (False Ceiling comes from the Cabin Job's
+// finish-fanned item). Mark used so they are neither curated nor parked.
+for (const k of ["p-false-ceiling"]) usedKeys.add(k);
 
 // TAIL: everything not used, split into (decided→dropped) vs (tail→kept at end).
 const dropped = [];

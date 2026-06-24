@@ -792,13 +792,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "Size-",
   },
   {
-    key: "p-false-ceiling",
-    label: "False Ceiling",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "SS / Size-",
-  },
-  {
     key: "p-flooring",
     label: "Flooring",
     captureType: "item",

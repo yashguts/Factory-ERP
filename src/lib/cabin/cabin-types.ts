@@ -20,6 +20,7 @@ export const CABIN_TYPES = [
   "Car Linton",
   "Cabin Support",
   "Canopy",
+  "False Ceiling",
   "Corner Wall Cover",
 ] as const;
 
@@ -42,6 +43,7 @@ export const CABIN_INVENTORY_TYPES = [
   "Car Linton",
   "Cabin Support",
   "Canopy",
+  "False Ceiling",
   "Corner Wall Cover",
 ] as const;
 
@@ -60,6 +62,7 @@ export const CABIN_TYPE_CODE: Record<string, string> = {
   "Car Linton": "LINTON",
   "Cabin Support": "CSUP",
   Canopy: "CANOPY",
+  "False Ceiling": "FCEIL",
   "Corner Wall Cover": "CWCOV",
 };
 
@@ -82,7 +85,7 @@ export function cabinInventoryType(jobType: string): string {
  * Cabin Job picker is two-step (base item -> finish) instead of one long list.
  * Everything else (Platform, Canopy, Supports, Covers, ...) stays single-select.
  */
-export const FINISH_SPLIT_INVENTORY_TYPES = ["Side Panel", "Front Wall", "Car Linton", "Front Cover"] as const;
+export const FINISH_SPLIT_INVENTORY_TYPES = ["Side Panel", "Front Wall", "Car Linton", "Front Cover", "False Ceiling"] as const;
 
 export function isFinishSplitType(jobType: string): boolean {
   return (FINISH_SPLIT_INVENTORY_TYPES as readonly string[]).includes(
