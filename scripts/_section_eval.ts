@@ -32,6 +32,7 @@ const FINISH = process.argv.includes("--finish"); // also feed door material + d
 // drawing->BOM test. Falls back to nothing for jobs with no extraction.
 const REAL = process.argv.includes("--real");
 const QTOL = Number(process.argv.find((a) => a.startsWith("--qtol="))?.split("=")[1] ?? 0.1); // qty "correct" tolerance
+const DRIVE = process.argv.find((a) => a.startsWith("--drive="))?.split("=")[1]?.split(",") ?? null; // restrict to these drive types
 // TUNING overrides for sweeping the precision/recall operating point.
 for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"]] as const) {
   const v = process.argv.find((a) => a.startsWith(flag));
@@ -138,9 +139,11 @@ const widthOf = (name: string): number | null => {
   // gTouch = realistic engineer clicks (slot model: a wrong-variant pick is ONE edit).
   let nJobs = 0, gTrue = 0, gPred = 0, gTP = 0, gFP = 0, gKeep = 0, gTouch = 0;
   const secStat = new Map<string, { tp: number; fp: number; fn: number; qe: number; truth: number }>();
+  const perDrive = new Map<string, { tru: number; keep: number; touch: number; jobs: number }>();
 
   for (const held of evalSet) {
     if (REAL && !realById.has(held.id)) continue; // honest metric: only jobs we actually read
+    if (DRIVE && !DRIVE.includes(held.spec.drive_type ?? "")) continue;
     nJobs++;
     const train = corpus.filter((j) => j.id !== held.id);
     const spec = { ...held.spec } as any;
@@ -190,6 +193,11 @@ const widthOf = (name: string): number | null => {
       }
     }
     const pred = predictFromCorpus(spec, train, pool);
+    // Bucket this job by drive type, with heavy kg-rated jobs split out as GOODS.
+    const capM = /(\d+)\s*KG/i.exec(held.spec.capacity || "");
+    const dk = capM && +capM[1] >= 1500 ? "GOODS" : (held.spec.drive_type || "?");
+    const bkt = perDrive.get(dk) ?? { tru: 0, keep: 0, touch: 0, jobs: 0 };
+    bkt.jobs++; perDrive.set(dk, bkt);
     // Upload tally, PER SECTION (slot model). A wrong-variant pick pairs an extra (FP)
     // with a missing (FN) as ONE edit; only the |extra - missing| imbalance is a real
     // add/delete. touches = qty-edits + max(extra, missing) per section.
@@ -205,6 +213,7 @@ const widthOf = (name: string): number | null => {
       for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > QTOL) qe++; } }
       const fp = p.size - tp, fn = t.size - tp;
       gTrue += t.size; gPred += p.size; gTP += tp; gKeep += tp - qe; gFP += fp; gTouch += qe + Math.max(fp, fn);
+      bkt.tru += t.size; bkt.keep += tp - qe; bkt.touch += qe + Math.max(fp, fn);
       const ss = secStat.get(sec) ?? { tp: 0, fp: 0, fn: 0, qe: 0, truth: 0 };
       ss.tp += tp; ss.fp += fp; ss.fn += fn; ss.qe += qe; ss.truth += t.size; secStat.set(sec, ss);
     }
@@ -242,4 +251,8 @@ const widthOf = (name: string): number | null => {
   const ss = [...secStat.entries()].map(([s, v]) => ({ s, touch: v.qe + Math.max(v.fp, v.fn), truth: v.truth, fp: v.fp, fn: v.fn, qe: v.qe }));
   ss.sort((a, b) => b.touch - a.touch);
   for (const r of ss.slice(0, 14)) console.log(`    ${r.s.padEnd(24)} ${String(r.touch).padStart(3)} clicks  (extra ${r.fp}, missing ${r.fn}, qty ${r.qe}) on ${r.truth} lines`);
+
+  console.log("\n  by DRIVE TYPE (Goods = kg-rated split out):  accept-as-is | touch-rate  (jobs)");
+  for (const [d, v] of [...perDrive.entries()].sort((a, b) => b[1].tru - a[1].tru))
+    console.log(`    ${d.padEnd(8)} accept ${pct(v.keep, v.tru).padStart(4)}  touch ${pct(v.touch, v.tru).padStart(4)}   (${v.jobs} jobs, ${v.tru} lines)`);
 })();
