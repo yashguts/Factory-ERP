@@ -21,7 +21,11 @@ export const TUNING = {
   SECTION_THRESHOLD: 0.4,
   ITEM_THRESHOLD: 0.3,
   MAX_ITEMS_PER_SECTION: 4,
-  CAP_PCTILE: 0.8, // per-section item cap = this percentile of distinct-items-per-job (swept: 0.8 min-touch)
+  CAP_PCTILE: 0.95, // per-section item cap = this percentile of distinct-items-per-job. Loosened
+  // from 0.8 once the honest metric (absence=missing data, false-positives forgiven) showed the
+  // tight cap was cutting real COVERAGE to prevent "deletes" that don't actually count. A light
+  // cap still keeps the draft readable (no 4-variant pile-ups) while recovering pre-filled items.
+
 
   // Weight neighbours by sim^SIM_SHARPEN. With door type in the similarity the
   // closest neighbours are genuinely the right build, so trusting them harder pays

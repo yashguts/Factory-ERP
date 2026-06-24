@@ -36,6 +36,7 @@ const DRIVE = process.argv.find((a) => a.startsWith("--drive="))?.split("=")[1]?
 const EXCLUDE = new Set(process.argv.find((a) => a.startsWith("--exclude="))?.split("=")[1]?.split(",") ?? []); // drop these sections from the metric (handled out-of-band)
 const SKIPDRIVE = new Set(process.argv.find((a) => a.startsWith("--skipdrive="))?.split("=")[1]?.split(",") ?? []); // don't eval these drive types (we won't predict them)
 const MINSEC = Number(process.argv.find((a) => a.startsWith("--minsec="))?.split("=")[1] ?? 0); // only fully-entered BOMs (>= this many sections) — avoids the dispatch-truncation confound
+const TRAINMINSEC = Number(process.argv.find((a) => a.startsWith("--traincomplete="))?.split("=")[1] ?? 0); // train ONLY on complete jobs (absence is trustworthy there)
 if (process.argv.includes("--nosuppress")) SUPPRESS_PREDICTION.clear();
 // --forgivefp: absence of an item is MISSING DATA, not a negative. Don't count a
 // predicted item that's absent from the (possibly incomplete) BOM as an error — only
@@ -155,7 +156,8 @@ const widthOf = (name: string): number | null => {
     if (SKIPDRIVE.has(held.spec.drive_type ?? "")) continue;
     if (Object.keys(held.sections).length < MINSEC) continue; // skip truncated/partial BOMs
     nJobs++;
-    const train = corpus.filter((j) => j.id !== held.id);
+    let train = corpus.filter((j) => j.id !== held.id);
+    if (TRAINMINSEC) train = train.filter((j) => Object.keys(j.sections).length >= TRAINMINSEC);
     const spec = { ...held.spec } as any;
     if (REAL) {
       // Honest end-to-end: dims + finish from the INDEPENDENT drawing extraction.
@@ -262,9 +264,9 @@ const widthOf = (name: string): number | null => {
   console.log(`  TOUCH RATE:         ${pct(gTouch, gTrue)}  of BOM lines need a click (slot model: wrong pick = 1 edit)`);
   console.log(`    of which ~${pct(gTP - gKeep, gTouch)} are qty tweaks, ~${pct(gTrue - gTP, gTouch)} are item picks/adds, ~${pct(Math.max(0, gPred - gTrue), gTouch)} are deletes`);
   console.log("\n  worst sections by clicks (qe + max(extra,missing)) per 100 BOM lines:");
-  const ss = [...secStat.entries()].map(([s, v]) => ({ s, touch: v.qe + Math.max(v.fp, v.fn), truth: v.truth, fp: v.fp, fn: v.fn, qe: v.qe }));
+  const ss = [...secStat.entries()].map(([s, v]) => ({ s, touch: v.qe + (FORGIVE ? v.fn : Math.max(v.fp, v.fn)), truth: v.truth, fp: v.fp, fn: v.fn, qe: v.qe, rate: (v.qe + (FORGIVE ? v.fn : Math.max(v.fp, v.fn))) / (v.truth || 1) }));
   ss.sort((a, b) => b.touch - a.touch);
-  for (const r of ss.slice(0, 14)) console.log(`    ${r.s.padEnd(24)} ${String(r.touch).padStart(3)} clicks  (extra ${r.fp}, missing ${r.fn}, qty ${r.qe}) on ${r.truth} lines`);
+  for (const r of ss.slice(0, 18)) console.log(`    ${r.s.padEnd(24)} ${String(r.touch).padStart(3)} clicks /${String(r.truth).padStart(3)} lines = ${(100 * r.rate).toFixed(0).padStart(3)}%  (qty ${r.qe}, wrong/miss ${r.fn}${FORGIVE ? "" : ", extra " + r.fp})`);
 
   console.log("\n  by DRIVE TYPE (Goods = kg-rated split out):  accept-as-is | touch-rate  (jobs)");
   for (const [d, v] of [...perDrive.entries()].sort((a, b) => b[1].tru - a[1].tru))
