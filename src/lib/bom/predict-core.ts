@@ -231,6 +231,16 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
  * from a wide-frame neighbour (10 of 18 Filler misses were AHM-vs-CI). Bigger cars / wider
  * frames fit AHM (the default), with CI only as a top-up. Boost the type the model expects.
  */
+/** Bracket LEVEL count = how many bracket rows up the shaft: floor(travel/spacing)+1, plus a
+ *  joint bracket per ~5 m rail stock. On a counterweight-at-side job the combination bracket
+ *  count equals this (one shared bracket per level); the standard B bracket count is ~2x it
+ *  (the two single rails). Verified on 4944: 15250/1800+1+3 = 12 = its combination count. */
+function bracketLevels(target: BomTargetSpec): number | null {
+  const t = target.travel_mm, s = target.bracket_spacing_mm;
+  if (t == null || s == null || s <= 0) return null;
+  return Math.floor(t / s) + 1 + Math.floor(t / 5000);
+}
+
 function fillerTypeFactor(name: string, target: BomTargetSpec): number {
   const dbg = target.dbg_counter_mm;
   if (dbg == null) return 1;
@@ -661,6 +671,9 @@ export interface BomTargetSpec {
    */
   car_rail_to_wall_mm?: number | null;
   counter_rail_to_wall_mm?: number | null;
+  /** Rail-bracket vertical pitch (mm) from the page-2 section ("BRACKET SPACE ####"). With
+   *  travel it gives the bracket LEVEL count = floor(travel/spacing)+1 + joint brackets. */
+  bracket_spacing_mm?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -992,7 +1005,13 @@ export function aggregateDraft(
         let g = byItem.get(best.line.item_id);
         if (!g) { g = { item: best.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(best.line.item_id, g); }
         g.w = Math.max(g.w, haveW * 2);
-        if (g.qtys.length === 0) { g.qtys.push(best.line.required_quantity || 1); g.qw.push(1); }
+        if (g.qtys.length === 0) {
+          // A freshly-composed item has no neighbour qty. Most composed SKUs are singletons
+          // (one door panel) -> 1. But the MAIN BRACKET combination repeats once per shaft
+          // LEVEL, so seed it with the computed level count when travel + spacing are known.
+          const lv = section === "MAIN BRACKET" ? bracketLevels(target) : null;
+          g.qtys.push(lv ?? best.line.required_quantity ?? 1); g.qw.push(1);
+        }
       }
     } else if (pool && SIZE_RULES[section] && sizeTargetFor(section, target)) {
       // Single-dimension fallback (size-keyed sections not yet in COMPOSE).

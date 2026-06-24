@@ -88,6 +88,8 @@ export async function autofillFromDrawing(
       // Rail-to-wall gaps — the rail-bracket projection (car gap -> standard class, counter gap -> combo).
       car_rail_to_wall_mm: (vision.ok ? vision.spec.car_rail_to_wall_mm : null) ?? typedSpec.car_rail_to_wall_mm ?? null,
       counter_rail_to_wall_mm: (vision.ok ? vision.spec.counter_rail_to_wall_mm : null) ?? typedSpec.counter_rail_to_wall_mm ?? null,
+      // Bracket vertical pitch — with travel gives the bracket level count (combination qty).
+      bracket_spacing_mm: (vision.ok ? vision.spec.bracket_spacing_mm : null) ?? typedSpec.bracket_spacing_mm ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);

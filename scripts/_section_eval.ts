@@ -184,6 +184,7 @@ const widthOf = (name: string): number | null => {
         if (ex.counterweight_position) spec.counterweight_position = ex.counterweight_position;
         if (ex.car_rail_to_wall_mm != null) spec.car_rail_to_wall_mm = ex.car_rail_to_wall_mm;
         if (ex.counter_rail_to_wall_mm != null) spec.counter_rail_to_wall_mm = ex.counter_rail_to_wall_mm;
+        if (ex.bracket_spacing_mm != null) spec.bracket_spacing_mm = ex.bracket_spacing_mm;
       }
       // Landing-door finish (drives Door Post / Linton colour) — the drawing's "L. DOOR"
       // spec-table row. Prefer the re-extracted read (ex.landing_door_finish, the real drawing

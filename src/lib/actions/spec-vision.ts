@@ -42,6 +42,8 @@ export interface ExtractedSpec {
   /** Rail-to-wall gaps (mm) — the rail-bracket projection (car gap -> class, counter gap -> combo). */
   car_rail_to_wall_mm: number | null;
   counter_rail_to_wall_mm: number | null;
+  /** Rail-bracket vertical pitch (mm) — with travel gives the bracket level count. */
+  bracket_spacing_mm: number | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -69,6 +71,7 @@ export interface RichDrawing {
     speed_mps: SpecField<string>;
     car_rail_to_wall_mm: SpecField<string>; // car guide rail -> wall gap (sets the standard bracket projection class)
     counter_rail_to_wall_mm: SpecField<string>; // counterweight guide rail -> wall gap (sets the combination bracket projection)
+    bracket_spacing_mm: SpecField<string>; // vertical rail-bracket pitch ("BRACKET SPACE") -> bracket level count
   };
   machine_room: SpecField<string>;
   counterweight_position: SpecField<string>;
@@ -151,12 +154,12 @@ const SCHEMA = {
         shaft_width_mm: DIM(), shaft_depth_mm: DIM(), car_width_mm: DIM(), car_depth_mm: DIM(),
         car_height_mm: DIM(), door_opening_width_mm: DIM(), door_opening_height_mm: DIM(),
         pit_depth_mm: DIM(), overhead_mm: DIM(), travel_mm: DIM(), speed_mps: DIM(),
-        car_rail_to_wall_mm: DIM(), counter_rail_to_wall_mm: DIM(),
+        car_rail_to_wall_mm: DIM(), counter_rail_to_wall_mm: DIM(), bracket_spacing_mm: DIM(),
       },
       required: [
         "shaft_width_mm", "shaft_depth_mm", "car_width_mm", "car_depth_mm", "car_height_mm",
         "door_opening_width_mm", "door_opening_height_mm", "pit_depth_mm", "overhead_mm",
-        "travel_mm", "speed_mps", "car_rail_to_wall_mm", "counter_rail_to_wall_mm",
+        "travel_mm", "speed_mps", "car_rail_to_wall_mm", "counter_rail_to_wall_mm", "bracket_spacing_mm",
       ],
     },
     machine_room: CONF("string"),
@@ -198,6 +201,7 @@ Normalisation rules:
 - dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
 - car_rail_to_wall_mm -> on the HOISTWAY PLAN (top view), the small clearance dimension from the BACK of a CAR guide rail to the adjacent shaft WALL face — i.e. how far the rail-bracket arm projects from the wall to the rail. It is the SMALL gap dimension (typically 50-400mm) right at the rail, NOT the big shaft/DBG dimensions. This sets the rail-bracket projection CLASS (50-100=B, 100-160=C, 160-210=D, 210-310=E, 310-360=F, 360-410=G). Read the typical/larger of the two car rails. null if not dimensioned.
 - counter_rail_to_wall_mm -> same idea for a COUNTERWEIGHT guide rail -> wall gap (the counterweight is the hatched block at the side/rear of the plan, near a "D.B.G" label). This sets the COMBINATION bracket's projection (e.g. 180 in "DBG-850X50X180"). null if the counterweight rails aren't dimensioned.
+- bracket_spacing_mm -> on PAGE 2 (the vertical hoistway SECTION), the labelled "BRACKET SPACE ####" or the vertical pitch between rail brackets up the shaft (typically 1200-2000mm). With travel it gives the number of bracket rows. null if not shown.
 - confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
 const USER_PROMPT =
@@ -383,6 +387,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
       car_rail_to_wall_mm: parseWidthMm(rich.dimensions?.car_rail_to_wall_mm?.value),
       counter_rail_to_wall_mm: parseWidthMm(rich.dimensions?.counter_rail_to_wall_mm?.value),
+      bracket_spacing_mm: parseWidthMm(rich.dimensions?.bracket_spacing_mm?.value),
       notes: rich.notes ?? "",
     },
   };
