@@ -249,6 +249,13 @@ const CURATED = [
   C("p-stiffner", "Stiffener", { group: "Misc Fitted", capture: "fixed", pin: "Stiffner 25X6/400mm Flat" }),
   // batch 5 — merge 6 Sensor Angle variants -> 1; all drives except R1000, door type AT
   C("p-sensor-angle-2700mm-with-bkt-2nos", "Sensor Angle (2700mm) With Bkt-2nos", { group: "Doors", capture: "free", drives: ["MR", "MRL", "HOME", "BELT", "MRLBELT", "HYD", "CANTI"], doors: ["AT"], merge: ["p-sensor-angle", "p-sensor-angle-2700mm", "p-sensor-angle-with-bkt-2nos", "p-sensor-angle-with-bracket-2nos", "p-sensor-angle-2700mm-with-bkt-4nos"] }),
+  // batch 6 — Reed/Magnet door-sensor system (owner: open to all, Make, manual qty)
+  C("p-read-channel", "Read Channel", { group: "Doors", cats: ["Small Manufactured Items > Read Channel/Switch Items"] }),
+  C("p-read-bracket", "Read Bracket", { group: "Doors", capture: "free" }),
+  C("p-read-switch-bracket-spl", "Read Switch Bracket (SPL)", { group: "Doors", cats: ["Small Manufactured Items > Read Channel/Switch Items"] }),
+  C("p-magnet", "Magnet", { group: "Doors", capture: "free" }),
+  C("p-magnet-bracket", "Magnet Bracket", { group: "Doors", cats: ["Small Manufactured Items > Magnet Bracket"] }),
+  C("p-magnet-trey", "Magnet trey", { group: "Doors", cats: ["Small Manufactured Items > Magnet Trey"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
@@ -333,7 +340,7 @@ for (const c of CURATED) {
 
 // Retired sections — now sourced elsewhere (False Ceiling comes from the Cabin Job's
 // finish-fanned item). Mark used so they are neither curated nor parked.
-for (const k of ["p-false-ceiling"]) usedKeys.add(k);
+for (const k of ["p-false-ceiling", "p-read-bracket-nice", "p-magnet-bracket-nice", "p-magnet-bracket-spl", "p-magnet-trey-fixing-plate", "p-pvc-magnet-holder-magnet-40mm"]) usedKeys.add(k);
 
 // TAIL: everything not used, split into (decided→dropped) vs (tail→kept at end).
 const dropped = [];
