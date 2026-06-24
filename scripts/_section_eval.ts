@@ -129,7 +129,9 @@ const widthOf = (name: string): number | null => {
   const bump = (s: string) => per.get(s) ?? (per.set(s, { hit: 0, tot: 0, miss: [] }), per.get(s)!);
   // Upload-experience tally: gTrue = lines a correct BOM needs; gPred = lines produced;
   // gTP = produced lines that are the right SKU; gKeep = those ALSO with right qty (no edit).
-  let nJobs = 0, gTrue = 0, gPred = 0, gTP = 0, gFP = 0, gKeep = 0;
+  // gTouch = realistic engineer clicks (slot model: a wrong-variant pick is ONE edit).
+  let nJobs = 0, gTrue = 0, gPred = 0, gTP = 0, gFP = 0, gKeep = 0, gTouch = 0;
+  const secStat = new Map<string, { tp: number; fp: number; fn: number; qe: number; truth: number }>();
 
   for (const held of evalSet) {
     if (REAL && !realById.has(held.id)) continue; // honest metric: only jobs we actually read
@@ -181,18 +183,23 @@ const widthOf = (name: string): number | null => {
       }
     }
     const pred = predictFromCorpus(spec, train, pool);
-    // Upload tally: compare every produced line against the true BOM.
+    // Upload tally, PER SECTION (slot model). A wrong-variant pick pairs an extra (FP)
+    // with a missing (FN) as ONE edit; only the |extra - missing| imbalance is a real
+    // add/delete. touches = qty-edits + max(extra, missing) per section.
     const gateEl = (s: string) => gateEligible(s, held.spec.drive_type);
-    const truthQty = new Map<string, number>();
-    for (const [sec, lines] of Object.entries(held.sections))
-      if (gateEl(sec)) for (const l of lines) truthQty.set(sec + "|" + l.item_id, (truthQty.get(sec + "|" + l.item_id) ?? 0) + l.required_quantity);
-    const predQty = new Map<string, number>();
-    for (const l of pred.draft) if (gateEl(l.section) && !predQty.has(l.section + "|" + l.item_id)) predQty.set(l.section + "|" + l.item_id, l.suggestedQty);
-    gTrue += truthQty.size; gPred += predQty.size;
-    for (const [k, q] of predQty) {
-      const qa = truthQty.get(k);
-      if (qa === undefined) gFP++;
-      else { gTP++; if (Math.abs(q - qa) / Math.max(qa, 1) <= 0.1) gKeep++; }
+    const secs = new Set<string>();
+    const tQ = new Map<string, Map<string, number>>();
+    for (const [sec, lines] of Object.entries(held.sections)) if (gateEl(sec)) { secs.add(sec); const m = tQ.get(sec) ?? new Map<string, number>(); for (const l of lines) m.set(l.item_id, (m.get(l.item_id) ?? 0) + l.required_quantity); tQ.set(sec, m); }
+    const pQ = new Map<string, Map<string, number>>();
+    for (const l of pred.draft) if (gateEl(l.section)) { secs.add(l.section); const m = pQ.get(l.section) ?? new Map<string, number>(); if (!m.has(l.item_id)) m.set(l.item_id, l.suggestedQty); pQ.set(l.section, m); }
+    for (const sec of secs) {
+      const t = tQ.get(sec) ?? new Map<string, number>(), p = pQ.get(sec) ?? new Map<string, number>();
+      let tp = 0, qe = 0;
+      for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > 0.1) qe++; } }
+      const fp = p.size - tp, fn = t.size - tp;
+      gTrue += t.size; gPred += p.size; gTP += tp; gKeep += tp - qe; gFP += fp; gTouch += qe + Math.max(fp, fn);
+      const ss = secStat.get(sec) ?? { tp: 0, fp: 0, fn: 0, qe: 0, truth: 0 };
+      ss.tp += tp; ss.fp += fp; ss.fn += fn; ss.qe += qe; ss.truth += t.size; secStat.set(sec, ss);
     }
     for (const [sec, lines] of Object.entries(held.sections)) {
       if (!gateEligible(sec, held.spec.drive_type)) continue;
@@ -220,10 +227,12 @@ const widthOf = (name: string): number | null => {
   // ── What a NEW drawing upload looks like ───────────────────────────────────
   console.log(`\n==== NEW-UPLOAD experience (${nJobs} jobs, ${REAL ? "REAL extracted dims" : NODIMS ? "no dims" : "truth-proxy dims"}) ====`);
   console.log(`  avg per job: BOM needs ${(gTrue / nJobs).toFixed(0)} lines, predictor produces ${(gPred / nJobs).toFixed(0)}`);
-  console.log(`  FILL (coverage):  ${pct(gTP, gTrue)}  of the lines you need are pre-filled with the right item`);
-  console.log(`  of the lines it FILLS (${gPred}):`);
-  console.log(`    accept as-is (right item + qty):  ${pct(gKeep, gPred)}`);
-  console.log(`    edit qty (right item, wrong qty): ${pct(gTP - gKeep, gPred)}`);
-  console.log(`    delete (extra / wrong item):      ${pct(gFP, gPred)}`);
-  console.log(`  => engineer touches ~${pct(gPred - gKeep, gPred)} of filled lines, and adds the ~${pct(gTrue - gTP, gTrue)} missing.`);
+  console.log(`  FILL (coverage):    ${pct(gTP, gTrue)}  of needed lines pre-filled with the right item`);
+  console.log(`  ACCEPT AS-IS:       ${pct(gKeep, gTrue)}  of the BOM auto-fills perfectly (right item + qty)`);
+  console.log(`  TOUCH RATE:         ${pct(gTouch, gTrue)}  of BOM lines need a click (slot model: wrong pick = 1 edit)`);
+  console.log(`    of which ~${pct(gTP - gKeep, gTouch)} are qty tweaks, ~${pct(gTrue - gTP, gTouch)} are item picks/adds, ~${pct(Math.max(0, gPred - gTrue), gTouch)} are deletes`);
+  console.log("\n  worst sections by clicks (qe + max(extra,missing)) per 100 BOM lines:");
+  const ss = [...secStat.entries()].map(([s, v]) => ({ s, touch: v.qe + Math.max(v.fp, v.fn), truth: v.truth, fp: v.fp, fn: v.fn, qe: v.qe }));
+  ss.sort((a, b) => b.touch - a.touch);
+  for (const r of ss.slice(0, 14)) console.log(`    ${r.s.padEnd(24)} ${String(r.touch).padStart(3)} clicks  (extra ${r.fp}, missing ${r.fn}, qty ${r.qe}) on ${r.truth} lines`);
 })();

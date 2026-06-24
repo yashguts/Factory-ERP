@@ -709,6 +709,7 @@ export function aggregateDraft(
   target: BomTargetSpec,
   neighbours: { job: TrainingJob; meta: NeighbourMeta }[],
   sectionPool?: SectionPool,
+  caps?: Map<string, number>,
 ): { draft: PredictedLine[]; completenessSource: BomPrediction["completenessSource"]; warnings: string[] } {
   const warnings: string[] = [];
   let complete = neighbours.filter((n) => n.meta.isComplete);
@@ -822,7 +823,8 @@ export function aggregateDraft(
     }
 
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
-    const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, TUNING.MAX_ITEMS_PER_SECTION);
+    const sectionCap = caps?.get(section) ?? TUNING.MAX_ITEMS_PER_SECTION;
+    const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, sectionCap);
     if (kept.length === 0 && ranked.length) kept.push(ranked[0]); // always at least the modal item
 
     for (const g of kept) {
@@ -909,6 +911,28 @@ function buildSectionPool(corpus: TrainingJob[], inventory?: InventoryPool): Sec
   return pool;
 }
 
+/** Per-section item cap = how many DISTINCT items a job actually has in that section
+ *  (90th percentile across the corpus, ≤ MAX_ITEMS_PER_SECTION). Singleton sections
+ *  (one machine, one car panel) get cap 1, fastener sections (3 stud sizes) get 3.
+ *  This kills the retrieval's over-production — the biggest source of lines to DELETE. */
+function buildSectionCaps(corpus: TrainingJob[]): Map<string, number> {
+  const counts = new Map<string, number[]>();
+  for (const j of corpus)
+    for (const [sec, lines] of Object.entries(j.sections)) {
+      const n = new Set(lines.map((l) => l.item_id)).size;
+      const arr = counts.get(sec) ?? [];
+      arr.push(n);
+      counts.set(sec, arr);
+    }
+  const caps = new Map<string, number>();
+  for (const [sec, arr] of counts) {
+    arr.sort((a, b) => a - b);
+    const p90 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.9))];
+    caps.set(sec, Math.max(1, Math.min(p90, TUNING.MAX_ITEMS_PER_SECTION)));
+  }
+  return caps;
+}
+
 /** Top-level pure prediction (used by both the server action and the backtest). */
 export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[], inventory?: InventoryPool): BomPrediction {
   const dsim = buildDriveSim(corpus);
@@ -920,7 +944,8 @@ export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[], 
   if ((target.drive_type === "HYD" || target.drive_type === "CANTI"))
     warnings.push(`Rare drive type (${target.drive_type}) — very few similar jobs; verify all.`);
   const sectionPool = buildSectionPool(corpus, inventory);
-  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours, sectionPool);
+  const caps = buildSectionCaps(corpus);
+  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours, sectionPool, caps);
   const overall = draft.length ? draft.reduce((a, l) => a + l.confidence, 0) / draft.length : 0;
   return {
     draft,
