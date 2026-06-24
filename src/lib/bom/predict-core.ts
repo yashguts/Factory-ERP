@@ -168,6 +168,10 @@ const SIZE_RULES: Record<string, SizeDim> = {
   "Safety": "dbg_main",
   "Counter Frame": "dbg_counter", "Counter Guard Net": "dbg_counter",
   "Machine Beam": "dbg_counter",
+  // Buffer channels: re-tested 2026-06-24 now that car/counter DBG is fed at
+  // runtime (was excluded when only stops proxied it). The SKU bakes the DBG
+  // ("...Main STD DBG-1442-1542", "...Combination 820", "...Counter STD DBG-1050").
+  "Buffer Channel Main": "dbg_main", "Buffer Channel Counter": "dbg_counter",
 };
 // Numbers in a structural-dimension window (mm); excludes tiny counts and the
 // 2000+ door heights / long sill lengths that would create false matches.
@@ -321,6 +325,7 @@ const COMPOSE: Record<string, AttrKey[]> = {
   "Landing Door Panel": ["doorType", "material", "landingVision", "width", "color", "side", "channels"],
   "Linton Panel": ["doorType", "material", "width", "color"],
   "Door Sill": ["doorType", "width"],
+  "Sill Angle": ["doorType", "width"], // "Auto Door Sill Angle CO 700mm" — door type + opening width
   "Door Post / Frame": ["doorType", "material", "color", "side"], // door post SKU carries no width
   "Car Header System": ["doorType", "width", "side"],
   "Landing Header System": ["doorType", "width", "side"],
