@@ -33,6 +33,7 @@ const FINISH = process.argv.includes("--finish"); // also feed door material + d
 const REAL = process.argv.includes("--real");
 const QTOL = Number(process.argv.find((a) => a.startsWith("--qtol="))?.split("=")[1] ?? 0.1); // qty "correct" tolerance
 const DRIVE = process.argv.find((a) => a.startsWith("--drive="))?.split("=")[1]?.split(",") ?? null; // restrict to these drive types
+const EXCLUDE = new Set(process.argv.find((a) => a.startsWith("--exclude="))?.split("=")[1]?.split(",") ?? []); // drop these sections from the metric (handled out-of-band)
 // TUNING overrides for sweeping the precision/recall operating point.
 for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"]] as const) {
   const v = process.argv.find((a) => a.startsWith(flag));
@@ -201,7 +202,7 @@ const widthOf = (name: string): number | null => {
     // Upload tally, PER SECTION (slot model). A wrong-variant pick pairs an extra (FP)
     // with a missing (FN) as ONE edit; only the |extra - missing| imbalance is a real
     // add/delete. touches = qty-edits + max(extra, missing) per section.
-    const gateEl = (s: string) => gateEligible(s, held.spec.drive_type);
+    const gateEl = (s: string) => gateEligible(s, held.spec.drive_type) && !EXCLUDE.has(s);
     const secs = new Set<string>();
     const tQ = new Map<string, Map<string, number>>();
     for (const [sec, lines] of Object.entries(held.sections)) if (gateEl(sec)) { secs.add(sec); const m = tQ.get(sec) ?? new Map<string, number>(); for (const l of lines) m.set(l.item_id, (m.get(l.item_id) ?? 0) + l.required_quantity); tQ.set(sec, m); }
