@@ -122,7 +122,7 @@ async function buildPool(): Promise<InventoryPool> {
     if (/^COUNTER WEIGHT FRAME/.test(n)) add("Counter Frame", it);
     if (/^COUNTER GUARD/.test(n)) add("Counter Guard Net", it);
     if (/^MACHINE BEAM/.test(n)) add("Machine Beam", it);
-    if (/DOOR POST/.test(n)) add("Door Post / Frame", it);
+    if (/DOOR POST|TOP BOTTOM/.test(n)) add("Door Post / Frame", it);
     if (/LINTON/.test(n)) add("Linton Panel", it);
     if (/^CAR HEADER/.test(n)) add("Car Header System", it);
     if (/^LANDING HEADER/.test(n)) add("Landing Header System", it);

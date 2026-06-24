@@ -359,7 +359,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "openWidth" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -368,6 +368,9 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   landingVision: { weight: 2, target: (t) => ((t.landing_door_vision === "LV" || t.landing_door_vision === "MV" || t.landing_door_vision === "NV") ? t.landing_door_vision : targetVision(t)), match: (s, v) => skuVision(s) === v },
   // Width drives non-collapsible door SKUs; a collapsible gate carries channels, not width.
   width: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" || t.door_opening_width == null ? null : t.door_opening_width), match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
+  // Opening width regardless of door type — for FRAME parts (door post, sill) whose
+  // collapsible variant IS keyed by real width ("Top Bottom set OPP-930") not channels.
+  openWidth: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
   color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
   landingColor: { weight: 2, target: targetLandingColor, match: (s, v) => skuColor(s) === v },
   side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
@@ -400,9 +403,11 @@ const COMPOSE: Record<string, AttrKey[]> = {
   // Landing-side parts take the LANDING door's colour, not the car's.
   "Landing Door Panel": ["doorType", "material", "landingVision", "width", "landingColor", "side", "channels"],
   "Linton Panel": ["doorType", "material", "width", "landingColor"],
-  "Door Sill": ["doorType", "width"],
+  "Door Sill": ["doorType", "openWidth"],
   "Sill Angle": ["doorType", "width"], // "Auto Door Sill Angle CO 700mm" — door type + opening width
-  "Door Post / Frame": ["doorType", "material", "landingColor", "side"], // door post = landing colour; no width
+  // Auto door post carries no width; the COLLAPSIBLE door post is "Top Bottom set OPP-930"
+  // (opening width). width is neutral for auto (no dim in the name), discriminates collapsible.
+  "Door Post / Frame": ["doorType", "material", "landingColor", "side", "openWidth"],
   "Car Header System": ["doorType", "width", "side"],
   "Landing Header System": ["doorType", "width", "side"],
   "Safety": ["frameType", "dbgCar"],
