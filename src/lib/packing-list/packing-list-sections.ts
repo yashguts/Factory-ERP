@@ -1499,13 +1499,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "80X5X3500mm",
   },
   {
-    key: "p-car-frame-assembly-instruction-t-509-2-1",
-    label: "Car Frame Assembly Instruction (T 509/2:1)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "DBG-700",
-  },
-  {
     key: "p-bolt-s-w",
     label: "Bolt+S.W.",
     captureType: "free",
