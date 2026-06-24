@@ -2087,13 +2087,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "0",
   },
   {
-    key: "p-g-i-wire-no-24",
-    label: "G.I Wire NO-24",
-    captureType: "item",
-    categoryPaths: ["Small Purchased Items > G.I Wire"],
-    specHint: "",
-  },
-  {
     key: "p-cotton-wire",
     label: "Cotton Wire",
     captureType: "free",
@@ -2166,13 +2159,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
   {
     key: "p-joint-pipe",
     label: "Joint Pipe",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
-    key: "p-stud-anchar-12x100",
-    label: "Stud Anchar 12x100",
     captureType: "item",
     categoryPaths: [],
     specHint: "",
