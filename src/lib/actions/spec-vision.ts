@@ -365,18 +365,27 @@ function parseWidthMm(v: string | null | undefined): number | null {
   return n >= 300 && n <= 4000 ? Math.round(n) : null;
 }
 
-/** Map a RichDrawing (fresh OR stored) to the 5+rich-field ExtractedSpec the autofill consumes. */
+/** Coerce a possibly-missing SpecField (older stored extractions predate some fields)
+ *  into a valid one, so downstream `.value` access never throws. */
+function asField<T>(f: unknown): SpecField<T> {
+  return f && typeof f === "object" && "value" in (f as object)
+    ? (f as SpecField<T>)
+    : { value: null, confidence: "low", rationale: "" };
+}
+
+/** Map a RichDrawing (fresh OR stored) to the 5+rich-field ExtractedSpec the autofill
+ *  consumes. Defensive: a stored extraction may predate some rich fields. */
 function richToExtractedSpec(rich: RichDrawing): ExtractedSpec {
   return {
-    floors: rich.floors,
-    drive_type: rich.drive_type,
-    capacity: rich.capacity,
-    door_type: rich.door_type,
-    door_finish: rich.door_finish,
-    landing_door_finish: rich.landing_door_finish,
-    door_vision: rich.door_vision,
-    door_side: rich.door_side,
-    brand: rich.brand,
+    floors: asField<number>(rich.floors),
+    drive_type: asField<string>(rich.drive_type),
+    capacity: asField<string>(rich.capacity),
+    door_type: asField<string>(rich.door_type),
+    door_finish: asField<string>(rich.door_finish),
+    landing_door_finish: asField<string>(rich.landing_door_finish),
+    door_vision: asField<string>(rich.door_vision),
+    door_side: asField<string>(rich.door_side),
+    brand: asField<string>(rich.brand),
     door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
     travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
     counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
