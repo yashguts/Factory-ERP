@@ -340,7 +340,7 @@ for (const c of CURATED) {
 
 // Retired sections — now sourced elsewhere (False Ceiling comes from the Cabin Job's
 // finish-fanned item). Mark used so they are neither curated nor parked.
-for (const k of ["p-false-ceiling", "p-read-bracket-nice", "p-magnet-bracket-nice", "p-magnet-bracket-spl", "p-magnet-trey-fixing-plate", "p-pvc-magnet-holder-magnet-40mm", "p-car-frame-assembly-instruction-t-509-2-1"]) usedKeys.add(k);
+for (const k of ["p-false-ceiling", "p-read-bracket-nice", "p-magnet-bracket-nice", "p-magnet-bracket-spl", "p-magnet-trey-fixing-plate", "p-pvc-magnet-holder-magnet-40mm", "p-car-frame-assembly-instruction-t-509-2-1", "p-kick-angel"]) usedKeys.add(k);
 
 // TAIL: everything not used, split into (decided→dropped) vs (tail→kept at end).
 const dropped = [];

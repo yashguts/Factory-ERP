@@ -1702,13 +1702,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "8x35",
   },
   {
-    key: "p-kick-angel",
-    label: "Kick Angel",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Kick Angel"],
-    specHint: "150x200x10mm",
-  },
-  {
     key: "p-screw-c-s-k",
     label: "Screw C.S.K",
     captureType: "free",
