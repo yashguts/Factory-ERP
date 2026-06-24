@@ -943,10 +943,10 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "12mm (150mm)",
   },
   {
-    key: "p-fastner",
-    label: "Fastner (Supporting Bracket)",
+    key: "p-fastner-for-supporting-bracket",
+    label: "Fastner For Supporting Bracket",
     captureType: "item",
-    categoryPaths: ["Brick Dasfastner","Stud Anchor"],
+    categoryPaths: ["Hardware > Brick Dasfastner","Hardware > Stud Anchor"],
     specHint: "Stud Anchar 8x75",
   },
   {
@@ -1304,13 +1304,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "8x20",
   },
   {
-    key: "p-fastner-for-supporting-bracket",
-    label: "Fastner For Supporting  Bracket",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Supporting Bracket"],
-    specHint: "Stud Anchar 8x75",
-  },
-  {
     key: "p-ch-hd-screw-nut-f-w",
     label: "CH.HD Screw +Nut+F.W",
     captureType: "free",
@@ -1400,6 +1393,13 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "free",
     categoryPaths: [],
     specHint: "8x20",
+  },
+  {
+    key: "p-fastner",
+    label: "Fastner",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "Stud Anchar 8x75",
   },
   {
     key: "p-self-tap-screw",

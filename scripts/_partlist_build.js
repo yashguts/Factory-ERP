@@ -191,7 +191,7 @@ const CURATED = [
   C("p-g-i-wire", "G.I Wire", { group: "Rope", cats: ["Small Purchased Items > G.I Wire"] }),
   C("p-i-bolt", "I-Bolt", { group: "Rope", cats: ["Hardware > I-Bolt Rod"] }),
   // Brackets / header & sill
-  C("p-fastner", "Fastner (Supporting Bracket)", { group: "Brackets", cats: ["Brick Dasfastner", "Stud Anchor"] }),
+  C("p-fastner-for-supporting-bracket", "Fastner For Supporting Bracket", { group: "Brackets", cats: ["Hardware > Brick Dasfastner", "Hardware > Stud Anchor"] }),
   C("p-supporting-bracket-mt", "Supporting Bracket MT", { group: "Header & Sill", cats: ["Miscallaneous > Supporting Bracket"] }),
   // Doors / electricals
   C("p-lock-latch-with-m-f-contact", "Lock Latch With M/F Contact", { group: "Doors", capture: "free" }),
