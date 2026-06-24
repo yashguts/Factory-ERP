@@ -54,5 +54,14 @@ CAVEAT: the backtest feeds the carefully re-read corpus extractions. A LIVE uplo
 - Background-vision Workflows STALL — use parallel Agent-tool readers in ~15-job slices (`scripts/_bracket_slice0..5.json`); merge via `_merge_doorfinish.js` / `_merge_brk2.js`.
 
 ## Highest-value next work (NOT more prediction)
-- Surface these reads in the live `/jobs/new` autofill UI (let the engineer see + accept).
+- ~~Surface these reads in the live `/jobs/new` autofill UI~~ — DONE (commit on this
+  branch). The AI Auto-fill review modal now has two read-only blocks: **"Read from
+  the drawing"** (every rich vision read + confidence, so a misread is caught before it
+  flips a prediction) and **"Left for you to fill"** (the 6 suppressed sections with the
+  reason they're blank + drawing-derived hints — counterweight→combination, rail gap→
+  class, travel/pitch→row count). Built in `job-autofill.ts` (`buildDrawingReads` /
+  `buildManualSections`); `bracketLevels` + `standardBracketClass` exported from
+  `predict-core.ts` for the hint math. Additive/read-only — save flow untouched.
+  Caveat: the drawing-reads block only populates when `ANTHROPIC_API_KEY` is set (the
+  rich read); the manual-fill block shows regardless.
 - POs / work-orders downstream of the predicted BOM.
