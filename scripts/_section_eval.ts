@@ -43,7 +43,7 @@ if (process.argv.includes("--nosuppress")) SUPPRESS_PREDICTION.clear();
 // count items the predictor MISSED that ARE logged, plus wrong-variant + qty edits.
 const FORGIVE = process.argv.includes("--forgivefp");
 // TUNING overrides for sweeping the precision/recall operating point.
-for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"]] as const) {
+for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"], ["--maxitems=", "MAX_ITEMS_PER_SECTION"]] as const) {
   const v = process.argv.find((a) => a.startsWith(flag));
   if (v) (TUNING as any)[key] = Number(v.split("=")[1]);
 }

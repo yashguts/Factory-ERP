@@ -20,13 +20,12 @@ export const TUNING = {
   HARD_FLOOR_K: 3,
   SECTION_THRESHOLD: 0.4,
   ITEM_THRESHOLD: 0.3,
-  MAX_ITEMS_PER_SECTION: 4,
-  CAP_PCTILE: 0.95, // per-section item cap = this percentile of distinct-items-per-job. Loosened
-  // from 0.8 once the honest metric (absence=missing data, false-positives forgiven) showed the
-  // tight cap was cutting real COVERAGE to prevent "deletes" that don't actually count. A light
-  // cap still keeps the draft readable (no 4-variant pile-ups) while recovering pre-filled items.
-
-
+  MAX_ITEMS_PER_SECTION: 8, // safety ceiling only; the real limit is the per-section cap below
+  // Per-section item cap = the MAX distinct-items-per-job any past job had in that section
+  // (singletons -> 1; MAIN BRACKET, which uses B+C+H, -> 5). Set to the data max because the
+  // owner's absence=missing-data rule means over-production isn't an error (a forgiven false-
+  // positive), so truncating a multi-item section like MAIN BRACKET only LOSES real coverage.
+  CAP_PCTILE: 1.0,
   // Weight neighbours by sim^SIM_SHARPEN. With door type in the similarity the
   // closest neighbours are genuinely the right build, so trusting them harder pays
   // (4 ≫ 2 in the backtest); kept at 4 (not higher) to stay a top-few blend rather
