@@ -337,7 +337,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -362,6 +362,14 @@ const ATTRS: Record<AttrKey, AttrDef> = {
     target: (t) => { const c = parseCapacity(t.capacity); if (!Number.isFinite(c.kg)) return null; return c.kind === "pass" ? Math.round(c.kg / TUNING.KG_PER_PASS) : c.kg; },
     match: (s, v) => new RegExp(`\\b${v}\\s*(?:pass|kg)`, "i").test(s),
   },
+  // Machine sheave diameter encodes the DRIVE FAMILY: belt 100, home-rope 200, MRL 320,
+  // MR-geared 530. This is what tells a Home-BELT machine (100mm/2g) from a Home-rope one
+  // (200mm/4g) — grooves alone picked the wrong family for belt jobs.
+  machineSheave: {
+    weight: 4,
+    target: (t) => { const d = t.drive_type; return d === "BELT" || d === "MRLBELT" ? 100 : d === "HOME" ? 200 : d === "MR" ? 530 : d === "MRL" ? 320 : null; },
+    match: (s, v) => skuPulleySize(s) === v,
+  },
 };
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
@@ -381,7 +389,7 @@ const COMPOSE: Record<string, AttrKey[]> = {
   "Machine Beam": ["frameType", "dbgCtr"],
   "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
   "Pulley Counter": ["pulleySize", "grooves"],
-  "Machine": ["machineCap", "grooves"], // "Machine Unit 8 pass/320mm/4g/8mm" — capacity + grooves
+  "Machine": ["machineCap", "machineSheave"], // capacity (in name) + sheave (drive family)
 };
 function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
   let score = 0, max = 0, present = 0;
