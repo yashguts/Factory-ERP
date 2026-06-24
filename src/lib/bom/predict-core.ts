@@ -916,7 +916,12 @@ export function aggregateDraft(
     // before ranking/thresholding. A no-op for sections without a SIZE_RULE or when
     // the dimension is absent. (A finish-matching factor was tried and measured
     // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
-    if (SIZE_RULES[section] && sizeTargetFor(section, target))
+    // …but NOT for COMPOSED sections — the compose handles size via its own width/DBG attr,
+    // and the standalone ×SIZE_BOOST here would lift a width-matched-but-otherwise-wrong SKU
+    // (e.g. the plain "AT/SS/LV/700" panel) ABOVE the composed exact match ("…700(Rose Gold
+    // Linen)"), dropping the designer colour the drawing actually specifies. Size-rule only the
+    // sections that aren't composed (Filler Weight, Buffer Channels).
+    if (SIZE_RULES[section] && sizeTargetFor(section, target) && !COMPOSE[section])
       for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
 
     // Rail-bracket projection match: when the plan gives the rail-to-wall gaps, re-weight the

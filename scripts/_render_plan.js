@@ -2,7 +2,10 @@
 // Usage: node scripts/_render_plan.js <url> <jobnum>
 // Writes /tmp/plan_<jobnum>_p1.png and _p2.png (scale 6). Use scripts/_crop.js to zoom.
 const fs = require("fs");
-const { createCanvas } = require("@napi-rs/canvas");
+const napi = require("@napi-rs/canvas");
+const { createCanvas } = napi;
+if (napi.Path2D && !global.Path2D) global.Path2D = napi.Path2D;
+if (napi.DOMMatrix && !global.DOMMatrix) global.DOMMatrix = napi.DOMMatrix;
 class F { create(w, h) { const c = createCanvas(w, h); return { canvas: c, context: c.getContext("2d") }; } reset(cc, w, h) { cc.canvas.width = w; cc.canvas.height = h; } destroy(cc) { cc.canvas.width = 0; cc.canvas.height = 0; } }
 (async () => {
   const url = process.argv[2], job = process.argv[3];
