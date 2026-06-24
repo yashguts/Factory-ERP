@@ -823,7 +823,7 @@ export const PACKING_SECTIONS: PackingSection[] = [
     key: "p-toe-guard",
     label: "Toe Guard",
     captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Toe Guard"],
+    categoryPaths: ["Small Manufactured Items > Facia Plate/Bracket"],
     specHint: "M.S / 750mm",
   },
   {

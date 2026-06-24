@@ -168,7 +168,7 @@ const CURATED = [
   C("p-floor-tiles", "Floor Tiles", { group: "Cabin Items" }),
   C("p-chequered-plate", "Chequered Plate", { group: "Cabin Items" }),
   C("p-skirting", "Skirting", { group: "Cabin Items" }),
-  C("p-toe-guard", "Toe Guard", { group: "Cabin Items" }),
+  C("p-toe-guard", "Toe Guard", { group: "Cabin Items", cats: ["Small Manufactured Items > Facia Plate/Bracket"] }),
   C("p-toe-guard-bracket", "Toe Guard Bracket", { group: "Cabin Items" }),
   C("p-kick-angle", "Kick Angle", { group: "Cabin Items" }),
   C("p-rubber-pad", "Cabin Rubber Pad", { group: "Cabin Items" }),
