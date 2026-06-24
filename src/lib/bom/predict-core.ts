@@ -951,7 +951,12 @@ export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[], 
   const warnings: string[] = [];
   if (neighbours.length && neighbours[0].meta.sim < 0.6)
     warnings.push("Closest past job is only a loose match — review everything.");
-  if ((target.drive_type === "HYD" || target.drive_type === "CANTI"))
+  // Drives with no/near-zero training data — the predictor has no real basis. R1000
+  // (car-parking) has ZERO past jobs; HYD/CANTI are one-offs. Flag hard so the engineer
+  // builds these by hand rather than trusting a draft extrapolated from unlike jobs.
+  if (target.drive_type === "R1000")
+    warnings.push("R1000 has no comparable past jobs — the draft is a guess; build this BOM by hand.");
+  else if (target.drive_type === "HYD" || target.drive_type === "CANTI")
     warnings.push(`Rare drive type (${target.drive_type}) — very few similar jobs; verify all.`);
   const sectionPool = buildSectionPool(corpus, inventory);
   const caps = buildSectionCaps(corpus);
