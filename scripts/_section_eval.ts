@@ -185,11 +185,12 @@ const widthOf = (name: string): number | null => {
         if (ex.car_rail_to_wall_mm != null) spec.car_rail_to_wall_mm = ex.car_rail_to_wall_mm;
         if (ex.counter_rail_to_wall_mm != null) spec.counter_rail_to_wall_mm = ex.counter_rail_to_wall_mm;
       }
-      // Landing-door finish (drives Door Post / Linton colour) — from the LANDING door row.
-      // Approximated here by the landing panel's own finish; in production this is the
-      // drawing's "L. DOOR" spec-table row (independent of the car door).
-      const lp = held.sections["Landing Door Panel"]?.[0]?.item_name;
-      if (lp) spec.landing_door_finish = lp;
+      // Landing-door finish (drives Door Post / Linton colour) — the drawing's "L. DOOR"
+      // spec-table row. Prefer the re-extracted read (ex.landing_door_finish, the real drawing
+      // value); fall back to the landing panel's own finish only when the read is absent.
+      const ex2 = realById.get(held.id);
+      if (ex2?.landing_door_finish) spec.landing_door_finish = ex2.landing_door_finish;
+      else { const lp = held.sections["Landing Door Panel"]?.[0]?.item_name; if (lp) spec.landing_door_finish = lp; }
     } else if (!NODIMS) {
       const sfDbg = held.sections["Safety"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
       const cfDbg = held.sections["Counter Frame"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
