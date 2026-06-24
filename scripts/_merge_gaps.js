@@ -6,8 +6,9 @@ const EXT = path.join(__dirname, "partlist-brain/data/drawing-extractions.json")
 const ext = JSON.parse(fs.readFileSync(EXT, "utf8"));
 const byNum = new Map(ext.map((e) => [String(e.job_number), e]));
 let merged = 0, car = 0, ctr = 0, missing = [];
-for (let i = 0; i < 6; i++) {
-  const f = `/tmp/_bracketgaps_${i}.json`;
+const files = ["/tmp/_bracketgaps_0.json", "/tmp/_bracketgaps_1.json", "/tmp/_bracketgaps_2.json", "/tmp/_bracketgaps_3.json", "/tmp/_bracketgaps_4.json", "/tmp/_bracketgaps_5.json", "/tmp/_bracketgaps_manual.json"];
+for (let i = 0; i < files.length; i++) {
+  const f = files[i];
   if (!fs.existsSync(f)) { missing.push(i); continue; }
   let arr;
   try { arr = JSON.parse(fs.readFileSync(f, "utf8")); } catch (e) { console.log("bad json", f, e.message); continue; }
