@@ -1667,13 +1667,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "8x20",
   },
   {
-    key: "p-fastner",
-    label: "Fastner",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "Stud Anchar 8x75",
-  },
-  {
     key: "p-self-tap-screw",
     label: "Self Tap Screw",
     captureType: "free",
