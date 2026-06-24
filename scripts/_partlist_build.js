@@ -247,6 +247,8 @@ const CURATED = [
   C("p-m-s-packing", "M.S Packing", { group: "Misc Fitted", cats: [] }),
   C("p-m-s-bush", "M.S Bush", { group: "Misc Fitted", capture: "fixed", pin: "M.S Bush Tele & Auto Shoe" }),
   C("p-stiffner", "Stiffener", { group: "Misc Fitted", capture: "fixed", pin: "Stiffner 25X6/400mm Flat" }),
+  // batch 5 — merge 6 Sensor Angle variants -> 1; all drives except R1000, door type AT
+  C("p-sensor-angle-2700mm-with-bkt-2nos", "Sensor Angle (2700mm) With Bkt-2nos", { group: "Doors", capture: "free", drives: ["MR", "MRL", "HOME", "BELT", "MRLBELT", "HYD", "CANTI"], doors: ["AT"], merge: ["p-sensor-angle", "p-sensor-angle-2700mm", "p-sensor-angle-with-bkt-2nos", "p-sensor-angle-with-bracket-2nos", "p-sensor-angle-2700mm-with-bkt-4nos"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),

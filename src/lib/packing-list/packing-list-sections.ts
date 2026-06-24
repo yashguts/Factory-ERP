@@ -1321,6 +1321,15 @@ export const PACKING_SECTIONS: PackingSection[] = [
     pinnedItem: "Stiffner 25X6/400mm Flat",
   },
   {
+    key: "p-sensor-angle-2700mm-with-bkt-2nos",
+    label: "Sensor Angle (2700mm) With Bkt-2nos",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "2700mm",
+    drives: ["MR","MRL","HOME","BELT","MRLBELT","HYD","CANTI"],
+    doors: ["AT"],
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
@@ -1994,13 +2003,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "750mm",
   },
   {
-    key: "p-sensor-angle-with-bkt-2nos",
-    label: "Sensor Angle (With Bkt-2nos)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "2700mm",
-  },
-  {
     key: "p-screw-ch-hd-nut",
     label: "Screw Ch.Hd.+Nut",
     captureType: "free",
@@ -2050,13 +2052,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "0",
   },
   {
-    key: "p-sensor-angle-with-bracket-2nos",
-    label: "Sensor Angle With Bracket-2nos",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "2700mm",
-  },
-  {
     key: "p-rubber-buffer-10mm",
     label: "Rubber Buffer 10mm",
     captureType: "item",
@@ -2069,13 +2064,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: [],
     specHint: "0",
-  },
-  {
-    key: "p-sensor-angle-2700mm-with-bkt-4nos",
-    label: "Sensor Angle (2700mm) With Bkt-4nos",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
   },
   {
     key: "p-bolt-nut-s-w-f-w-tw",
@@ -2120,32 +2108,11 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "5x20",
   },
   {
-    key: "p-sensor-angle-2700mm-with-bkt-2nos",
-    label: "Sensor Angle (2700mm) With Bkt-2nos",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "2700mm",
-  },
-  {
     key: "p-rubber-buffer",
     label: "Rubber Buffer",
     captureType: "item",
     categoryPaths: ["Miscallaneous > Rubber Buffer"],
     specHint: "10mm",
-  },
-  {
-    key: "p-sensor-angle",
-    label: "Sensor Angle",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "2700mm (With Bkt-2)",
-  },
-  {
-    key: "p-sensor-angle-2700mm",
-    label: "Sensor Angle (2700mm)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
   },
   {
     key: "p-jali-wooden",
