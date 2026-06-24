@@ -9,7 +9,7 @@
  * jobs / job_bom_* (the locked save flow).
  */
 import { createClient } from "@/lib/supabase/server";
-import { extractSpecFromPdf, type ExtractedSpec } from "@/lib/actions/spec-vision";
+import { extractSpecCached, type ExtractedSpec } from "@/lib/actions/spec-vision";
 import { predictBomFromSpec, type BomTargetSpec } from "@/lib/actions/bom-predict";
 import {
   normaliseDoorType,
@@ -142,7 +142,7 @@ export async function autofillFromDrawing(
     let drawingRead = false;
     let drawingNote: string | null = null;
 
-    const vision = await extractSpecFromPdf(jobId);
+    const vision = await extractSpecCached(jobId);
     if (vision.ok) {
       drawingRead = true;
       const s = vision.spec;

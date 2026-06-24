@@ -206,7 +206,10 @@ export async function predictBomFromSpec(
     const inventory = await getComposeInventory().catch(() => undefined);
     const prediction = predictFromCorpus(target, corpus, inventory);
     return { ok: true, prediction };
-  } catch {
+  } catch (e) {
+    // Was a silent swallow — log the real cause so a recurrence is diagnosable in the
+    // Netlify function logs (the error message is still kept generic for the user).
+    console.error("predictBomFromSpec failed:", e);
     return { ok: false, error: "Could not build a suggestion right now." };
   }
 }

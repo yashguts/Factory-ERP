@@ -365,30 +365,71 @@ function parseWidthMm(v: string | null | undefined): number | null {
   return n >= 300 && n <= 4000 ? Math.round(n) : null;
 }
 
-/** Backwards-compatible 5-field spec for the autofill form (now rich-backed + stored). */
+/** Map a RichDrawing (fresh OR stored) to the 5+rich-field ExtractedSpec the autofill consumes. */
+function richToExtractedSpec(rich: RichDrawing): ExtractedSpec {
+  return {
+    floors: rich.floors,
+    drive_type: rich.drive_type,
+    capacity: rich.capacity,
+    door_type: rich.door_type,
+    door_finish: rich.door_finish,
+    landing_door_finish: rich.landing_door_finish,
+    door_vision: rich.door_vision,
+    door_side: rich.door_side,
+    brand: rich.brand,
+    door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
+    travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
+    counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
+    car_rail_to_wall_mm: parseWidthMm(rich.dimensions?.car_rail_to_wall_mm?.value),
+    counter_rail_to_wall_mm: parseWidthMm(rich.dimensions?.counter_rail_to_wall_mm?.value),
+    bracket_spacing_mm: parseWidthMm(rich.dimensions?.bracket_spacing_mm?.value),
+    notes: rich.notes ?? "",
+  };
+}
+
+/** Backwards-compatible 5+rich-field spec via a FRESH (~22s) vision read. */
 export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResult> {
   const r = await extractDrawingData(jobId);
   if (!r.ok) return r;
-  const rich = r.rich;
-  return {
-    ok: true,
-    spec: {
-      floors: rich.floors,
-      drive_type: rich.drive_type,
-      capacity: rich.capacity,
-      door_type: rich.door_type,
-      door_finish: rich.door_finish,
-      landing_door_finish: rich.landing_door_finish,
-      door_vision: rich.door_vision,
-      door_side: rich.door_side,
-      brand: rich.brand,
-      door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
-      travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
-      counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
-      car_rail_to_wall_mm: parseWidthMm(rich.dimensions?.car_rail_to_wall_mm?.value),
-      counter_rail_to_wall_mm: parseWidthMm(rich.dimensions?.counter_rail_to_wall_mm?.value),
-      bracket_spacing_mm: parseWidthMm(rich.dimensions?.bracket_spacing_mm?.value),
-      notes: rich.notes ?? "",
-    },
-  };
+  return { ok: true, spec: richToExtractedSpec(r.rich) };
+}
+
+/**
+ * Cache-FIRST spec read for the autofill. Reuse the latest stored extraction of the
+ * job's CURRENT drawing (instant — no ~22s vision call, no API key needed); only fall
+ * back to a fresh read when nothing is on file. The fresh read was previously run on
+ * EVERY autofill — re-reading a drawing already extracted — and that ~22s synchronous
+ * call is what starved the downstream corpus fetch and tipped the serverless function
+ * over its time limit (surfacing as "Could not build a suggestion right now."). The
+ * stored extraction is wiped on re-upload, so a hit is always for the current drawing;
+ * we also match on drawing_url as a belt-and-suspenders guard.
+ */
+export async function extractSpecCached(jobId: string): Promise<ExtractSpecResult> {
+  if (!jobId) return { ok: false, error: "Missing jobId" };
+  try {
+    const supabase = createCacheClient();
+    const { data: job } = await supabase
+      .from("jobs")
+      .select("gad_drawing_url")
+      .eq("id", jobId)
+      .maybeSingle();
+    const url = (job?.gad_drawing_url as string | null) ?? null;
+    if (url) {
+      const { data: cached } = await supabase
+        .from("job_drawing_extractions")
+        .select("extracted, drawing_url")
+        .eq("job_id", jobId)
+        .eq("drawing_url", url)
+        .order("extracted_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      const rich = cached?.extracted as RichDrawing | undefined;
+      if (rich && rich.drive_type && rich.dimensions) {
+        return { ok: true, spec: richToExtractedSpec(rich) };
+      }
+    }
+  } catch {
+    // Any cache-read hiccup → just do the fresh read below.
+  }
+  return extractSpecFromPdf(jobId);
 }
