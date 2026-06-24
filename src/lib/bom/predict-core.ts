@@ -416,6 +416,10 @@ const COMPOSE: Record<string, AttrKey[]> = {
   // Filler Weight removed — its SKU carries no frame-type token, so composition
   // could never fire; it's size-ruled on counter DBG instead (see SIZE_RULES).
   "Machine Beam": ["frameType", "dbgCtr"],
+  // NOTE: a MAIN BRACKET compose on dbgCar was tried (the "Combination DBG-NNNN" bracket is
+  // DBG-keyed) and REVERTED — it added 78 spurious brackets and fixed 0 misses, because the
+  // exact projection (X180 vs X260) and the per-position DBG vary more finely than dbgCar +
+  // count can resolve. MAIN BRACKET needs the explicit rail-to-wall gap read per bracket.
   "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
   "Pulley Counter": ["pulleySize", "grooves"],
   "Machine": ["machineCap", "machineSheave"], // capacity (in name) + sheave (drive family)
