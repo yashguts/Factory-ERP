@@ -294,6 +294,37 @@ function skuSide(s: string): string | null {
   return null;
 }
 
+// Pulley SKUs ("C.I. Pulley 300mm/4Grove/8mm", "Belt Pully 100mmx2Grovex30mm",
+// "PVC Pulley 200mm/4Grove/6mm") encode sheave diameter + GROOVE count (≈ number of
+// suspension ropes, which scales with load) + rope dia. Sheave size tracks the drive
+// (belt 100, home 200, MRL 300, heavy goods 400); grooves track capacity.
+function targetGrooves(t: BomTargetSpec): number | null {
+  const c = parseCapacity(t.capacity);
+  if (!Number.isFinite(c.kg)) return null;
+  if (c.kind === "pass") {
+    const p = Math.round(c.kg / TUNING.KG_PER_PASS);
+    return p <= 8 ? 4 : p <= 13 ? 6 : p <= 16 ? 7 : 8;
+  }
+  if (c.kind === "kg") return c.kg <= 1000 ? 4 : c.kg <= 1500 ? 6 : c.kg <= 2000 ? 7 : c.kg <= 3000 ? 10 : 12;
+  return null;
+}
+function skuGrooves(s: string): number | null {
+  const m = /(\d+)\s*(?:grove|g)\b/i.exec(s);
+  return m ? Number(m[1]) : null;
+}
+function targetPulleySize(t: BomTargetSpec): number | null {
+  const d = t.drive_type;
+  if (d === "BELT" || d === "MRLBELT") return 100;
+  if (d === "HOME") return 200;
+  const c = parseCapacity(t.capacity);
+  if ((c.kind === "kg" && c.kg >= 2500) || (c.kind === "pass" && c.kg / TUNING.KG_PER_PASS >= 20)) return 400;
+  return 300; // MRL / MR passenger standard sheave
+}
+function skuPulleySize(s: string): number | null {
+  const m = /(\d{3})\s*mm/i.exec(s);
+  return m ? Number(m[1]) : null;
+}
+
 // Collapsible gate SKUs are named by their CHANNEL count, not width:
 // "Collapsible Gate 7+1Channel". Channels ≈ opening width / 100 (mined per the rule
 // pass): 700→6, 760→7, 800→8, 900→9, 1000→10, 1500→15, 2000→20.
@@ -306,7 +337,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -321,6 +352,9 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
   dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
   dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+  // grooves ≈ rope count (capacity); ±1 absorbs the pulley/machine convention drift.
+  grooves: { weight: 4, target: targetGrooves, match: (s, v) => { const g = skuGrooves(s); return g != null && Math.abs(g - (v as number)) <= 1; } },
+  pulleySize: { weight: 3, target: targetPulleySize, match: (s, v) => skuPulleySize(s) === v },
 };
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
@@ -338,6 +372,8 @@ const COMPOSE: Record<string, AttrKey[]> = {
   // Filler Weight removed — its SKU carries no frame-type token, so composition
   // could never fire; it's size-ruled on counter DBG instead (see SIZE_RULES).
   "Machine Beam": ["frameType", "dbgCtr"],
+  "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
+  "Pulley Counter": ["pulleySize", "grooves"],
 };
 function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
   let score = 0, max = 0, present = 0;
