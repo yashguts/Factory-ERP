@@ -177,6 +177,61 @@ const CURATED = [
   C("p-danger-plate", "Danger Plate", { group: "Cabin Items" }),
   C("p-car-location-plate", "Car Location Plate", { group: "Cabin Items" }),
   C("p-safety-tips-plate", "Safety Tips Plate", { group: "Cabin Items" }),
+
+  // ===== "Other items" un-parked per OTHER ITEMS I.xlsx (owner disposition) =====
+  // REQUIRED IN blank → open (no drives gate). New-to-create items → free (fillable).
+  // Machine
+  C("p-brack-releser-stand", "Break Releaser Stand", { group: "Machine", capture: "free", drives: ["MRL", "HOME", "BELT", "MRLBELT", "CANTI"] }),
+  C("p-hydraulic-stand", "Hydraulic Stand", { group: "Machine", capture: "free", drives: ["MRL", "MRLBELT"] }),
+  C("p-islution-rubber-pad", "Islution Rubber Pad", { group: "Machine", cats: ["Small Purchased Items > Machine Rubber Pad"] }),
+  C("p-machine-rubber-pad", "Machine Rubber Pad", { group: "Machine", cats: ["Small Purchased Items > Machine Rubber Pad"] }),
+  C("p-m-s-plate-10mm", "M.S Plate (10mm)", { group: "Machine", capture: "free", drives: ["MR"] }),
+  C("p-m-s-flat-50x6mm", "M.S Flat (50x6mm)", { group: "Machine", capture: "free", drives: ["MR"] }),
+  // Rope hardware
+  C("p-g-i-wire", "G.I Wire", { group: "Rope", cats: ["Small Purchased Items > G.I Wire"] }),
+  C("p-i-bolt", "I-Bolt", { group: "Rope", cats: ["Hardware > I-Bolt Rod"] }),
+  // Brackets / header & sill
+  C("p-fastner", "Fastner (Supporting Bracket)", { group: "Brackets", cats: ["Brick Dasfastner", "Stud Anchor"] }),
+  C("p-supporting-bracket-mt", "Supporting Bracket MT", { group: "Header & Sill", cats: ["Miscallaneous > Supporting Bracket"] }),
+  // Doors / electricals
+  C("p-lock-latch-with-m-f-contact", "Lock Latch With M/F Contact", { group: "Doors", capture: "free" }),
+  C("p-firemans-switch-box-red", "Fireman's Switch Box (RED)", { group: "Misc Fitted", cats: ["Small Purchased Items > Fireman's Switch Box"], doors: ["AT", "AFF", "CO"] }),
+  // Counter / buffer (gated to non-HOME drives per sheet)
+  C("p-buffer-spring", "Buffer Spring", { group: "Counter", cats: ["Hardware > Buffer Spring"] }),
+  C("p-hitch-plate", "Hitch Plate", { group: "Counter", cats: ["Miscallaneous > Hitch Plate"] }),
+  C("p-buffer-mounting-channel-main", "Buffer Mounting Channel Main", { group: "Counter", cats: ["Small Manufactured Items > Buffer Channel"], drives: ["MR", "MRL", "MRLBELT", "CANTI"] }),
+  C("p-buffer-mounting-channel-counter", "Buffer Mounting Channel Counter", { group: "Counter", cats: ["Small Manufactured Items > Buffer Channel"], drives: ["MR", "MRL", "MRLBELT", "CANTI"] }),
+  C("p-buffer-stand-main-std", "Buffer Stand Main (STD)", { group: "Counter", cats: ["Small Manufactured Items > Buffer Stand"], drives: ["MR", "MRL", "MRLBELT", "CANTI"] }),
+  C("p-buffer-stand-counter-std", "Buffer Stand Counter (STD)", { group: "Counter", cats: ["Small Manufactured Items > Buffer Stand"], drives: ["MR", "MRL", "MRLBELT", "CANTI"] }),
+  // Misc fitted
+  C("p-pit-ladder", "Pit Ladder", { group: "Misc Fitted", cats: ["Miscallaneous > Pit Ladder"] }),
+  C("p-pit-ladder-handle", "Pit Ladder Handle", { group: "Misc Fitted", cats: ["Miscallaneous > Pit Ladder"] }),
+  C("p-cotton-tape", "Cotton Tape", { group: "Misc Fitted", cats: ["Miscallaneous > Cotton Tape"] }),
+  C("p-addisive-tape", "Adhesive Tape", { group: "Misc Fitted", capture: "free" }),
+  // Cabin / finishing
+  C("p-floor-mat-tape", "Floor Mat Tape", { group: "Cabin Items", cats: ["Packaging Materials > Tape"] }),
+  C("p-top-channel", "Top Channel", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-top-channel-corner-support", "Top Channel Corner Support", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-top-channel-with-shaft-and-plate", "Top Channel With Shaft and Plate", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-scareing-with-cover", "Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-top-scarating-with-cover", "Top Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+
+  // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
+  C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
+  C("p-structure-vartical-post", "Structure Vertical Post", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "2450mm / variable" }),
+  C("p-structure-horizontanal-part", "Structure Horizontal Part", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_horiz_front", "Structure Horizontal Front Side", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_swing_linten", "Structure Swing Door Linten", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "714x135mm" }),
+  C("__new_eco_swing_sill", "Structure Swing Door Sill", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "714x85mm" }),
+  C("__new_eco_top_front", "Structure Horizontal Top Front Side", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_machine_cover", "Structure Machine Side Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_horiz_glass", "Horizontal Glass Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_vert_glass", "Vertical Glass Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_pit_plate", "Pit Plate", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_net", "Structure Net (Small Jali)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_magnet_bkt", "Magnet Bracket (Eco Space)", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "800x70mm" }),
+  C("__new_eco_glass_pc", "Glass (Poly Carbonet) 6mm", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("__new_eco_fasteners", "Eco Space Fasteners (Bolts/Screws/Rivets)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
 ];
 
 // New lines that don't reuse an existing key get a fresh slug.
@@ -194,6 +249,18 @@ const NEW = {
   "__new_door_post": "p-door-post",
   "__new_door_panel": "p-door-panel",
   "__new_cabin_from_job": "p-cabin-from-job",
+  "__new_eco_horiz_front": "p-eco-horiz-front",
+  "__new_eco_swing_linten": "p-eco-swing-linten",
+  "__new_eco_swing_sill": "p-eco-swing-sill",
+  "__new_eco_top_front": "p-eco-top-front",
+  "__new_eco_machine_cover": "p-eco-machine-cover",
+  "__new_eco_horiz_glass": "p-eco-horiz-glass",
+  "__new_eco_vert_glass": "p-eco-vert-glass",
+  "__new_eco_pit_plate": "p-eco-pit-plate",
+  "__new_eco_net": "p-eco-net",
+  "__new_eco_magnet_bkt": "p-eco-magnet-bkt",
+  "__new_eco_glass_pc": "p-eco-glass-pc",
+  "__new_eco_fasteners": "p-eco-fasteners",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
