@@ -72,6 +72,12 @@ export async function autofillFromDrawing(
       door_type: drawingDoorType ?? typedSpec.door_type ?? null,
       // Door opening width drives the door-system SKU size; from the drawing read.
       door_opening_width: (vision.ok ? vision.spec.door_opening_width_mm : null) ?? typedSpec.door_opening_width ?? null,
+      // Visual door attributes read off the page-1 spec table / door elevation —
+      // vision glass (LV/MV/NV) and hinge side (LHS/RHS) drive the door-panel +
+      // door-post SKU. The composer reads these; nothing populated them before.
+      door_vision: (vision.ok ? (vision.spec.door_vision.value as string | null) : null) ?? typedSpec.door_vision ?? null,
+      landing_door_vision: (vision.ok ? (vision.spec.door_vision.value as string | null) : null) ?? typedSpec.landing_door_vision ?? null,
+      door_side: (vision.ok ? (vision.spec.door_side.value as string | null) : null) ?? typedSpec.door_side ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);

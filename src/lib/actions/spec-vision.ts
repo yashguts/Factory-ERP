@@ -29,6 +29,8 @@ export interface ExtractedSpec {
   capacity: SpecField<string>;
   door_type: SpecField<string>;
   door_finish: SpecField<string>;
+  door_vision: SpecField<string>;
+  door_side: SpecField<string>;
   brand: SpecField<string>;
   /** Door opening width in mm parsed from the drawing — the door SKU size driver. */
   door_opening_width_mm: number | null;
@@ -41,6 +43,8 @@ export interface RichDrawing {
   capacity: SpecField<string>;
   door_type: SpecField<string>;
   door_finish: SpecField<string>;
+  door_vision: SpecField<string>;
+  door_side: SpecField<string>;
   brand: SpecField<string>;
   dimensions: {
     shaft_width_mm: SpecField<string>;
@@ -125,6 +129,8 @@ const SCHEMA = {
     capacity: CONF("string"),
     door_type: CONF("string"),
     door_finish: CONF("string"),
+    door_vision: CONF("string"),
+    door_side: CONF("string"),
     brand: CONF("string"),
     dimensions: {
       type: "object",
@@ -158,7 +164,7 @@ const SCHEMA = {
     notes: { type: "string" },
   },
   required: [
-    "drive_type", "floors", "capacity", "door_type", "door_finish", "brand",
+    "drive_type", "floors", "capacity", "door_type", "door_finish", "door_vision", "door_side", "brand",
     "dimensions", "machine_room", "counterweight_position", "additional_details", "notes",
   ],
 };
@@ -171,7 +177,10 @@ Normalisation rules:
 - drive_type -> exactly one of MR, MRL, HOME, BELT, MRLBELT, HYD, CANTI, R1000. Two axes: machine location (machine-room MR / machine-room-less MRL / home-pit) and suspension (rope vs belt). Map: "Machine Room Less"/"roomless"/"gearless MRL" (rope) -> MRL; "Machine Room"/"geared"/"traction MR" -> MR; "Home lift"/"villa"/"domestic" (rope) -> HOME; HOME lift driven by a BELT -> BELT; MRL driven by a BELT -> MRLBELT; "Hydraulic" -> HYD; "Cantilever" -> CANTI; car-parking / "R1000" / "R-1000" -> R1000. Decide belt-vs-rope from the suspension labelled on the drawing; if a home/MRL lift shows a belt, pick the BELT/MRLBELT variant. Unknown -> null/low.
 - floors -> total stops (integer). "G+N"=N+1, "B+G+N"=N+2. Only a travel dimension and no stop count -> null.
 - capacity -> as labelled: persons -> "4PASS"/"6PASS"; kilograms -> "1000KG". Prefer persons for passenger, KG for goods.
-- door_type -> the door OPERATOR type; prefer one of and include the code: "Centre Opening (CO)", "Auto Telescopic (AT)", "Manual Telescopic (MT)", "Collapsible (COL)", "Auto Four-Fold (AFF)", "Swing (SWS)". door_finish -> "SS Hairline", "SS Mirror", "MS Powder Coated", "Rose Gold", "Glass".
+- door_type -> the door OPERATOR type; prefer one of and include the code: "Centre Opening (CO)", "Auto Telescopic (AT)", "Manual Telescopic (MT)", "Collapsible (COL)", "Auto Four-Fold (AFF)", "Swing (SWS)".
+- door_finish -> the CAR door leaf material + designer finish, read from the door row of the page-1 specification table (e.g. "SS HAIRLINE FINISH AUTO TELESCOPIC DOOR..."). Material is "SS" or "MS"; KEEP any designer colour after it — it is the panel SKU's key discriminator. Examples: "SS Hairline", "SS Mirror", "MS Powder Coated", "SS Rose Gold", "Rose Gold Linen", "Rose Gold Mirror", "Golden", "Champagne", "Titanium"/"TI Black", "Silver Mirror", "Black Mirror", "Glass".
+- door_vision -> extent of vision glass on the door leaf, from the door-row text ("...WITH LONG VISION GLASS") or the door elevation: "LV" (long/full vision), "MV" (medium/half vision), "NV" (no vision/blind). null if not shown.
+- door_side -> for a telescopic or swing door, the side it parks/hinges: "LHS" or "RHS" (read the door elevation or the opening-direction arrow). null for centre-opening doors or if not shown.
 - dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
 - confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
@@ -270,6 +279,8 @@ export async function extractDrawingData(jobId: string): Promise<RichResult> {
       capacity: rich.capacity,
       door_type: rich.door_type,
       door_finish: rich.door_finish,
+      door_vision: rich.door_vision,
+      door_side: rich.door_side,
       brand: rich.brand,
     };
 
@@ -346,6 +357,8 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       capacity: rich.capacity,
       door_type: rich.door_type,
       door_finish: rich.door_finish,
+      door_vision: rich.door_vision,
+      door_side: rich.door_side,
       brand: rich.brand,
       door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
       notes: rich.notes ?? "",

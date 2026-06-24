@@ -25,6 +25,8 @@ const KEY = env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 const H = { apikey: KEY, Authorization: `Bearer ${KEY}` };
 const NOPOOL = process.argv.includes("--nopool");
 const NODIMS = process.argv.includes("--nodims");
+const VISION = process.argv.includes("--vision"); // also feed door vision-glass + side (ceiling test)
+const FINISH = process.argv.includes("--finish"); // also feed door material + designer colour (page-1 spec-table read)
 
 async function fetchAll(table: string, select: string): Promise<any[]> {
   const out: any[] = [];
@@ -126,6 +128,30 @@ const widthOf = (name: string): number | null => {
       if (sfDbg != null) spec.dbg_main_mm = sfDbg;
       if (cfDbg != null) spec.dbg_counter_mm = cfDbg;
       if (w != null) spec.door_opening_width = w;
+    }
+    if (VISION) {
+      // Feed the visual door attributes a drawing read would supply (vision glass +
+      // hinge side), to measure the ceiling those reads would unlock.
+      const visOf = (n: string) => (/\/LV\b|[^A-Z]LV\//.test(n.toUpperCase()) ? "LV" : /\/MV\b|[^A-Z]MV\//.test(n.toUpperCase()) ? "MV" : /\/NV\b|[^A-Z]NV\//.test(n.toUpperCase()) ? "NV" : null);
+      const sideOf = (n: string) => (/\bLHS\b|\bLH\b/.test(n.toUpperCase()) ? "LHS" : /\bRHS\b|\bRH\b/.test(n.toUpperCase()) ? "RHS" : null);
+      const cv = held.sections["Car Door Panel"]?.map((l) => visOf(l.item_name)).find(Boolean);
+      const lv = held.sections["Landing Door Panel"]?.map((l) => visOf(l.item_name)).find(Boolean);
+      const sd = held.sections["Car Door Panel"]?.map((l) => sideOf(l.item_name)).find(Boolean)
+        ?? held.sections["Door Post / Frame"]?.map((l) => sideOf(l.item_name)).find(Boolean);
+      if (cv) spec.door_vision = cv;
+      if (lv) spec.landing_door_vision = lv;
+      if (sd) spec.door_side = sd;
+    }
+    if (FINISH) {
+      // Feed door material + designer colour a page-1 spec-table read would supply.
+      const matOf = (n: string) => (/\/MS[\/(]/i.test(n) ? "MS" : /\/SS[\/(]/i.test(n) ? "SS" : null);
+      const colOf = (n: string) => { const ms = [...n.matchAll(/\(([^)]+)\)/g)].map((m) => m[1]).filter((c) => !/^(STD|BIG|SMALL)$/i.test(c)); return ms.length ? ms[ms.length - 1] : null; };
+      const src = held.sections["Car Door Panel"]?.[0]?.item_name ?? held.sections["Landing Door Panel"]?.[0]?.item_name;
+      if (src) {
+        const mat = matOf(src), col = colOf(src);
+        const f = [mat, col].filter(Boolean).join(" ");
+        if (f) spec.door_finish = f;
+      }
     }
     const pred = predictFromCorpus(spec, train, pool);
     for (const [sec, lines] of Object.entries(held.sections)) {
