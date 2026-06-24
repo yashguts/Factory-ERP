@@ -176,6 +176,28 @@ export function AutofillReviewModal({
           </div>
         )}
 
+        {/* Read from the drawing — read-only facts the predictor used */}
+        {result.drawingReads && result.drawingReads.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-1.5">
+              Read from the drawing
+            </h3>
+            <p className="text-[10px] text-[var(--muted-foreground)] mb-1.5">
+              What the AI read straight off the GA — these aren&apos;t applied, they feed the BOM + the manual sections below. Check anything that looks off.
+            </p>
+            <div className="space-y-1">
+              {result.drawingReads.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm py-0.5">
+                  <span className="w-40 shrink-0 text-[var(--muted-foreground)]">{r.label}</span>
+                  <span className="font-medium">{r.value}</span>
+                  {r.confidence && <ConfidenceBadge level={r.confidence} />}
+                  {r.note && <span className="text-[10px] text-[var(--muted-foreground)] truncate">{r.note}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* BOM block */}
         <div>
           <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-1.5">
@@ -228,6 +250,32 @@ export function AutofillReviewModal({
             </div>
           )}
         </div>
+
+        {/* Left for you to fill — suppressed sections + drawing-derived hints */}
+        {result.manualSections && result.manualSections.length > 0 && (
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[var(--muted-foreground)] mb-1.5">
+              Left for you to fill · {result.manualSections.length} section{result.manualSections.length === 1 ? "" : "s"}
+            </h3>
+            <p className="text-[10px] text-[var(--muted-foreground)] mb-1.5">
+              These aren&apos;t auto-filled on purpose — the drawing doesn&apos;t reliably carry them. Here&apos;s what it did show, to speed your manual entry.
+            </p>
+            <div className="space-y-2">
+              {result.manualSections.map((m) => (
+                <div key={m.section} className="rounded-md border border-[var(--border)] px-3 py-2">
+                  <div className="text-[11px] font-semibold text-[var(--foreground)]">{m.section}</div>
+                  <div className="text-[11px] text-[var(--muted-foreground)] mb-1">{m.reason}</div>
+                  {m.hints.map((h, i) => (
+                    <div key={i} className="flex gap-2 text-xs py-0.5">
+                      <span className="w-24 shrink-0 text-[var(--muted-foreground)]">{h.label}</span>
+                      <span className="font-medium">{h.value}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex items-center justify-between mt-5 pt-4 border-t border-[var(--border)]">

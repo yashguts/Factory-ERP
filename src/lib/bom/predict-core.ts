@@ -10,20 +10,82 @@
  */
 import { BOM_SECTIONS, PHASE_ORDER, FIRST_PHASE_SECTIONS } from "./bom-sections";
 import { shouldRenderSection } from "./section-gating";
+import { QTY_FITS } from "./quantity-fits";
 
 // ── Tunables (one block — re-run the backtest after changing) ──────────
 export const TUNING = {
-  TARGET_K: 8,
+  // Neighbours: fewer, tighter is better now that similarity (drive + DOOR TYPE +
+  // capacity) separates jobs cleanly — K=6 + sharper weighting beats K=8/flat.
+  TARGET_K: 6,
   MIN_SIM: 0.45,
   HARD_FLOOR_K: 3,
   SECTION_THRESHOLD: 0.4,
   ITEM_THRESHOLD: 0.3,
-  MAX_ITEMS_PER_SECTION: 4,
-  SIM_SHARPEN: 2,
+  MAX_ITEMS_PER_SECTION: 8, // safety ceiling only; the real limit is the per-section cap below
+  // Per-section item cap = the MAX distinct-items-per-job any past job had in that section
+  // (singletons -> 1; MAIN BRACKET, which uses B+C+H, -> 5). Set to the data max because the
+  // owner's absence=missing-data rule means over-production isn't an error (a forgiven false-
+  // positive), so truncating a multi-item section like MAIN BRACKET only LOSES real coverage.
+  CAP_PCTILE: 1.0,
+  // Weight neighbours by sim^SIM_SHARPEN. With door type in the similarity the
+  // closest neighbours are genuinely the right build, so trusting them harder pays
+  // (4 ≫ 2 in the backtest); kept at 4 (not higher) to stay a top-few blend rather
+  // than degenerate to single-neighbour copy.
+  SIM_SHARPEN: 4,
   CAP_SOFTNESS_KG: 220,
   FLOOR_SOFTNESS: 2.0,
   KG_PER_PASS: 68,
+  // Similarity term weights (sum need not be 1 — normalised over present terms).
+  // The two STRUCTURAL axes lead: drive type (which sections/topology) and door
+  // type (which door-system SKUs). They're orthogonal — one drive spans many door
+  // types — so both are needed. Capacity/floors size within that; finish/brand
+  // only break ties. Calibrated by leave-one-out backtest (scripts/_bom_sweep.ts).
+  W_DRIVE: 0.42,
+  W_DOOR: 0.18,
+  W_CAP: 0.22,
+  W_FLOOR: 0.14,
+  W_FINISH: 0.04,
+  W_BRAND: 0.02,
+  // Drive-adjacency shrinkage: a drive pair's learned soft-Jaccard is trusted in
+  // proportion support/(support+K); below that it leans on the structural prior.
+  DRIVE_SHRINK_K: 6,
+  // Drive adjacency from the static structural prior only. Learning it from the
+  // corpus (DRIVE_USE_LEARNED=true) was measured NET-NEUTRAL — the prior already
+  // encodes the topology — and added cost + rare-drive dilution, so it's off. The
+  // hook stays so the flywheel can revisit it once each drive has more jobs.
+  DRIVE_USE_LEARNED: false,
+  // Door-opening-width size matching (door-system sections only). When the drawing
+  // gives the opening width, boost the same-width SKU variant and push down a
+  // different-width one — the drawing→BOM eval showed 91% of door item-misses were
+  // a wrong-width pick of the right family. No-op when width is absent.
+  SIZE_BOOST: 4,
+  SIZE_PENALTY: 0.3,
+  SIZE_TOL: 30, // mm tolerance for door opening width (the SKU carries the exact width)
+  SIZE_TOL_DBG: 55, // wider for DBG: HOME/BELT frames snap to ~100mm-spaced standard buckets
+  COMPOSE_MIN_FRAC: 0.6, // compose a SKU only when it matches >=60% of available attribute weight
+  COMPOSE_MIN_SCORE: 5, //  ...and at least this much absolute weight (≈2 strong attributes agreeing)
 };
+
+// Sections the predictor does NOT pre-fill — the genuinely-undrawable ones, by the owner's
+// call (a clean blank the engineer fills beats a confident-but-wrong prefill they might not
+// catch). Cabin Glass (not in the drawing), Pulley material (C.I./PVC coin-flip), Filler
+// Weight (exact count needs the undrawn counter-frame height). Everything else is pre-filled
+// (absence in a past BOM = missing data, not a true zero — the backtest forgives it).
+export const SUPPRESS_PREDICTION = new Set<string>([
+  "CABIN GLASS", "Pulley Main", "Pulley Counter", "Filler Weight",
+  // Rail brackets left for manual fill (owner): the standard B/C/F class is the per-rail
+  // projection (45% — read off one ambiguous gap among many) and the combination's exact
+  // X-projection isn't a drawn dimension. The DBG/spacing/optical-combination machinery stays
+  // (it feeds nothing else) but the section isn't pre-filled — the engineer enters brackets.
+  "MAIN BRACKET", "COUNTER BRACKET",
+]);
+
+// Item-level suppression WITHIN a predicted section. (Empty: tried suppressing the MAIN BRACKET
+// combination per the owner's idea, but measured the OPPOSITE of the intuition — the combination
+// is the part we predict WELL now (optical cwt-at-side + counter-DBG compose nails the family);
+// the standard B/C/F class is the harder per-rail residual. So we keep predicting the whole
+// bracket — the combination prefill is a right-family, fix-the-projection edit, not a blank.)
+const SUPPRESS_ITEM: Record<string, RegExp> = {};
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
 const FLOOR_SCALED = new Set<string>([
@@ -33,16 +95,532 @@ const FLOOR_SCALED = new Set<string>([
   "TROUGHING 50", "TROUGHING 100",
 ]);
 
-// Drive-type adjacency (symmetric). Encodes that a rare HYD target shouldn't be
-// flooded by MRL neighbours whose section topology is wrong for it.
-const DRIVE_SIM: Record<string, Record<string, number>> = {
-  MRL: { MR: 0.55, BELT: 0.45, HOME: 0.3 },
-  MR: { MRL: 0.55, BELT: 0.35 },
-  BELT: { MRL: 0.45, MR: 0.35, HOME: 0.3 },
-  HOME: { MRL: 0.3, BELT: 0.3 },
-  HYD: {},
-  CANTI: {},
+// Drive-type STRUCTURAL PRIOR (symmetric; only the upper triangle is listed —
+// lookup tries both orders). Encodes the two real axes of an elevator —
+// machine location (MR / MRL / Home-pit) and suspension (rope / belt / hydraulic)
+// — plus the special builds: CANTI (cantilever frame ≈ MRL topology), HYD
+// (hydraulic, no counterweight/pulleys → genuinely different), R1000 (car-parking
+// product, its own world). Calibrated against the live corpus' section-Jaccard
+// (scripts/_bom_analysis.ts). KEY CORRECTION from the owner's drive-type split:
+// HOME↔BELT (Home Belt) is the STRONGEST cross-drive pair (0.85) because a Home
+// Belt lift is structurally a home lift — the old map wrongly had it at 0.30.
+// This prior is only the FLOOR: buildDriveSim() overrides it with adjacency
+// learned from the actual corpus wherever a drive pair has enough examples.
+const DRIVE_PRIOR: Record<string, Record<string, number>> = {
+  MR:      { MRL: 0.75, HOME: 0.6, BELT: 0.55, MRLBELT: 0.7, CANTI: 0.7, HYD: 0.45, R1000: 0.3 },
+  MRL:     { HOME: 0.65, BELT: 0.6, MRLBELT: 0.8, CANTI: 0.75, HYD: 0.5, R1000: 0.35 },
+  HOME:    { BELT: 0.85, MRLBELT: 0.65, CANTI: 0.6, HYD: 0.55, R1000: 0.3 },
+  BELT:    { MRLBELT: 0.75, CANTI: 0.55, HYD: 0.6, R1000: 0.3 },
+  MRLBELT: { CANTI: 0.65, HYD: 0.55, R1000: 0.3 },
+  CANTI:   { HYD: 0.45, R1000: 0.3 },
+  HYD:     { R1000: 0.3 },
+  R1000:   {},
 };
+// Any pair not in the prior (e.g. a brand-new drive code). Deliberately not 0:
+// even the most dissimilar drives in the corpus share ~half their sections, so a
+// hard 0.05 (the old value) needlessly stranded rare/new drives.
+const DRIVE_PRIOR_FALLBACK = 0.3;
+
+function drivePrior(a: string, b: string): number {
+  if (a === b) return 1;
+  return DRIVE_PRIOR[a]?.[b] ?? DRIVE_PRIOR[b]?.[a] ?? DRIVE_PRIOR_FALLBACK;
+}
+
+// ── Door type ────────────────────────────────────────────────────────────────
+// Sections whose SKU FAMILY is set by the door type (not by drive/capacity).
+const DOOR_SECTIONS = new Set<string>([
+  "Car Door Panel", "Landing Door Panel", "Car Header System",
+  "Landing Header System", "Door Sill", "Door Post / Frame",
+  "Linton Panel", "Gate Lock",
+]);
+
+/**
+ * Normalise a door descriptor — an item name, a vision door_type string, or a
+ * form value — to a door-type CODE. Order matters: AFF before AT (four-fold is
+ * auto), Collapsible before CO, Manual-Telescopic before bare CO. Returns null
+ * when no token is recognised (a non-door item, or an unlabelled header).
+ */
+export function classifyDoorToken(text: string | null | undefined): string | null {
+  if (!text || typeof text !== "string") return null;
+  const n = " " + text.toUpperCase().replace(/[^A-Z0-9]+/g, " ") + " ";
+  if (/\bAFF\b/.test(n) || /FOUR ?FOLD/.test(n) || /\b4 ?FOLD/.test(n)) return "AFF";
+  if (/COLLAPS/.test(n) || /\bCOLL?\b/.test(n)) return "COL";
+  if (/\bMT\b/.test(n) || /MANUAL TELESCOPIC/.test(n)) return "MT";
+  if (/\bAT\b/.test(n) || /AUTO ?TELESCOPIC/.test(n) || /\bATD?\b/.test(n)) return "AT";
+  if (/\bCO\b/.test(n) || /CENT(RE|ER) ?OPENING/.test(n)) return "CO";
+  if (/SWING/.test(n) || /\bSWS\b/.test(n)) return "SWS";
+  if (/DUMB/.test(n)) return "DUMB";
+  if (/BIPART/.test(n) || /BYPART/.test(n) || /BY ?PARTING/.test(n)) return "BYPART";
+  return null;
+}
+export const normaliseDoorType = classifyDoorToken;
+
+/**
+ * Vote a job's door type from its own door-section item names (majority across
+ * the door sections). Used to label corpus jobs so the engine can condition on
+ * door type; the live target's door type instead comes from the drawing read.
+ */
+export function deriveDoorType(sections: Record<string, TrainingLine[]>): string | null {
+  const votes = new Map<string, number>();
+  for (const sec of DOOR_SECTIONS) {
+    for (const ln of sections[sec] ?? []) {
+      const t = classifyDoorToken(ln.item_name);
+      if (t) votes.set(t, (votes.get(t) ?? 0) + 1);
+    }
+  }
+  let best: string | null = null, bv = 0;
+  for (const [t, v] of votes) if (v > bv) { best = t; bv = v; }
+  return best;
+}
+
+// Which DRAWING DIMENSION sets each section's SKU size — mined from the corpus
+// (scripts/_mine_signals.ts): the dimension value appears baked into the SKU name.
+//  • door-system SKUs  -> door OPENING WIDTH ("Car Pannel CO/SS/LV/800", "...Sill
+//    CO 800mm/LT/1660", "Linton ... 800mm").
+//  • Safety frame + main buffer channel -> car DBG (distance between car guides).
+//  • counterweight frame/guard/filler/counter buffer -> counter DBG.
+// When the drawing gives that dimension we boost the matching variant and demote a
+// conflicting one. A no-op when the dimension is absent.
+type SizeDim = "door_opening_width" | "dbg_main" | "dbg_counter";
+const SIZE_RULES: Record<string, SizeDim> = {
+  "Car Door Panel": "door_opening_width", "Landing Door Panel": "door_opening_width",
+  "Car Header System": "door_opening_width", "Landing Header System": "door_opening_width",
+  "Door Sill": "door_opening_width", "Door Post / Frame": "door_opening_width",
+  "Linton Panel": "door_opening_width", "Gate Lock": "door_opening_width",
+  "Sill Angle": "door_opening_width",
+  // DBG (distance between guides) sizes the safety + counterweight frames. Only the
+  // sections where the backtest showed a NET GAIN are kept: Safety (+11pt), Counter
+  // Frame / Guard Net (+2pt). Filler Weight + Buffer Channels had a weak signal that
+  // regressed, so they're deliberately excluded (left to the retrieval median).
+  "Safety": "dbg_main",
+  "Counter Frame": "dbg_counter", "Counter Guard Net": "dbg_counter",
+  "Machine Beam": "dbg_counter",
+  // Buffer channels: re-tested 2026-06-24 now that car/counter DBG is fed at
+  // runtime (was excluded when only stops proxied it). The SKU bakes the DBG
+  // ("...Main STD DBG-1442-1542", "...Combination 820", "...Counter STD DBG-1050").
+  "Buffer Channel Main": "dbg_main", "Buffer Channel Counter": "dbg_counter",
+  // Filler weight: SKU is keyed by counter DBG ("Filler Weight A.H.M DBG-850/150mm").
+  // Its COMPOSE entry was dead (no frame-type token in the name), so size-rule it.
+  "Filler Weight": "dbg_counter",
+};
+// Numbers in a structural-dimension window (mm); excludes tiny counts and the
+// 2000+ door heights / long sill lengths that would create false matches.
+function namedDims(name: string): number[] {
+  const out: number[] = [];
+  for (const m of name.matchAll(/\d{3,4}/g)) {
+    const v = Number(m[0]);
+    if (v >= 320 && v <= 1800) out.push(v);
+  }
+  return out;
+}
+function sizeTargetFor(section: string, target: BomTargetSpec): number | null | undefined {
+  const rule = SIZE_RULES[section];
+  if (!rule) return null;
+  return rule === "door_opening_width" ? target.door_opening_width
+    : rule === "dbg_main" ? target.dbg_main_mm : target.dbg_counter_mm;
+}
+function sizeFactor(name: string, section: string, target: BomTargetSpec): number {
+  const rule = SIZE_RULES[section];
+  if (!rule) return 1;
+  const tv = sizeTargetFor(section, target);
+  if (!tv) return 1;
+  const tol = rule === "door_opening_width" ? TUNING.SIZE_TOL : TUNING.SIZE_TOL_DBG;
+  const ds = namedDims(name);
+  if (ds.length === 0) return 1; // no dimension token in the name — neutral
+  const dist = Math.min(...ds.map((d) => Math.abs(d - tv)));
+  // GRADED boost: an EXACT dimension match outranks a merely within-tolerance one, so e.g.
+  // Filler Weight DBG-850 wins over DBG-750 when the drawing says 850 (both are inside ±55,
+  // but 850 is the right one). Full boost at dist 0, half boost at the tolerance edge.
+  if (dist <= tol) return TUNING.SIZE_BOOST * (1 - 0.5 * dist / tol);
+  return TUNING.SIZE_PENALTY; // a different, conflicting dimension
+}
+
+/**
+ * Filler-weight TYPE bias (owner's domain model). The counterweight needs a total mass set by
+ * capacity; it's filled with AHM plates (cheap, LOW density, bulky) up to what the counter
+ * FRAME can hold, then topped up with CI/Plate (expensive, HIGH density, compact). A small car
+ * (~272 kg / 4-pass) on a NARROW frame (counter DBG < 800) can't fit the bulky AHM plates at
+ * all, so its whole counterweight is dense CI — which is where the predictor wrongly copied AHM
+ * from a wide-frame neighbour (10 of 18 Filler misses were AHM-vs-CI). Bigger cars / wider
+ * frames fit AHM (the default), with CI only as a top-up. Boost the type the model expects.
+ */
+/** Bracket LEVEL count = how many bracket rows up the shaft: floor(travel/spacing)+1, plus a
+ *  joint bracket per ~5 m rail stock. On a counterweight-at-side job the combination bracket
+ *  count equals this (one shared bracket per level); the standard B bracket count is ~2x it
+ *  (the two single rails). Verified on 4944: 15250/1800+1+3 = 12 = its combination count. */
+export function bracketLevels(target: BomTargetSpec): number | null {
+  const t = target.travel_mm, s = target.bracket_spacing_mm;
+  if (t == null || s == null || s <= 0) return null;
+  return Math.floor(t / s) + 1 + Math.floor(t / 5000);
+}
+
+/**
+ * Map a rail-to-wall gap (mm) to its standard rail-bracket projection class — the
+ * same bands the vision read uses. SURFACING ONLY: this is a hint shown to the
+ * engineer for the (manually-filled) bracket sections, never a prediction input.
+ * The car/main and counter bands differ. Returns null when no band matches.
+ */
+export function standardBracketClass(gapMm: number | null | undefined, kind: "car" | "counter"): string | null {
+  if (gapMm == null) return null;
+  const bands: ReadonlyArray<readonly [string, number, number]> =
+    kind === "counter"
+      ? [["C", 100, 145], ["D", 145, 190], ["E", 190, 235]]
+      : [["B", 50, 100], ["C", 100, 160], ["D", 160, 210], ["E", 210, 310], ["F", 310, 360], ["G", 360, 410]];
+  for (const [cls, lo, hi] of bands) if (gapMm >= lo && gapMm <= hi) return cls;
+  return null;
+}
+
+function fillerTypeFactor(name: string, target: BomTargetSpec): number {
+  const dbg = target.dbg_counter_mm;
+  if (dbg == null) return 1;
+  const kg = parseCapacity(target.capacity).kg;
+  if (!Number.isFinite(kg)) return 1;
+  const ciOnly = kg <= 300 && dbg < 800;
+  const isAHM = /A\.?H\.?M/i.test(name);
+  if (ciOnly) return isAHM ? TUNING.SIZE_PENALTY : TUNING.SIZE_BOOST; // narrow small frame -> all CI
+  return isAHM ? TUNING.SIZE_BOOST : 1; // AHM fits -> prefer the cheap plate; CI still tops up
+}
+
+/**
+ * Rail-bracket projection match. The bracket's projection is encoded in its name; the rail-to-
+ * wall gap read off the plan tells us which one. A standard "Main X (LO-HI)mm" bracket matches
+ * when the CAR rail gap falls in [LO,HI]; a "Combination …Xppp" bracket matches when the COUNTER
+ * rail gap ≈ ppp. Returns a boost/penalty so the matching projection outranks the default "B".
+ * Neutral (1) when the relevant gap is unknown or the name carries no projection token.
+ */
+function bracketProjFactor(name: string, section: string, target: BomTargetSpec): number {
+  if (/combination/i.test(name)) {
+    const gap = target.counter_rail_to_wall_mm;
+    const m = /DBG-\d+X\d+X(\d+)/i.exec(name);
+    if (gap == null || !m) return 1;
+    return Math.abs(Number(m[1]) - gap) <= TUNING.SIZE_TOL_DBG ? TUNING.SIZE_BOOST : TUNING.SIZE_PENALTY;
+  }
+  // A standard "X (LO-HI)mm" projection-class bracket: the CAR rail gap classes the main
+  // bracket, the COUNTER rail gap classes the counter bracket (different range bands —
+  // counter C=100-145/D=145-190/E=190-235 vs main B=50-100/C=100-160/…). BOOST-ONLY (no
+  // penalty): a job's two car rails can have DIFFERENT gaps (e.g. RNLPRO-0025 = B + C), so a
+  // non-matching class is NOT wrong — it may be the other rail's bracket. We only lift the
+  // class the read gap confirms; the rest stand on their retrieval weight.
+  const gap = section === "COUNTER BRACKET" ? target.counter_rail_to_wall_mm : target.car_rail_to_wall_mm;
+  const r = /\((\d+)\s*-\s*(\d+)\)\s*mm/.exec(name);
+  if (gap == null || !r) return 1;
+  const lo = Number(r[1]), hi = Number(r[2]);
+  return gap >= lo - 12 && gap <= hi + 12 ? TUNING.SIZE_BOOST : 1;
+}
+
+// ── Multi-attribute SKU composition ──────────────────────────────────────────
+// Reverse-engineered from the corpus (scripts/_sku_rules.json): these SKUs encode
+// several drawing attributes in the name — a door panel is type/material/vision/
+// width/colour, a safety/counter frame is frame-type + DBG. We derive each
+// attribute from the target's drawing fields and pick the corpus SKU whose name
+// matches the most of them (weighted) — composing the SKU the way the engineer
+// does, from the WHOLE corpus pool (not just neighbours).
+function targetMaterial(t: BomTargetSpec): string | null {
+  const s = `${t.door_finish ?? ""}`.toUpperCase();
+  if (/\bM\.?S\b|MILD STEEL|POWDER/.test(s)) return "MS";
+  if (/\bS\.?S\b|STAINLESS|HAIRLINE|MIRROR|ROSE ?GOLD|CHAMPAGNE|LINEN|GOLDEN/.test(s)) return "SS";
+  return null;
+}
+function skuMaterial(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/(^|[^A-Z])MS([^A-Z]|$)/.test(u)) return "MS";
+  if (/(^|[^A-Z])SS([^A-Z]|$)/.test(u)) return "SS";
+  return null;
+}
+function targetVision(t: BomTargetSpec): string | null {
+  if (t.door_vision === "LV" || t.door_vision === "MV" || t.door_vision === "NV") return t.door_vision; // VISUAL read wins
+  const s = `${t.door_finish ?? ""} ${t.door_type ?? ""}`.toUpperCase();
+  if (/LONG VISION|FULL VISION|\bLV\b/.test(s)) return "LV";
+  if (/MEDIUM VISION|\bMV\b/.test(s)) return "MV";
+  if (/NO VISION|\bNV\b|BLIND/.test(s)) return "NV";
+  if (classifyDoorToken(t.door_type) === "MT") return "PV"; // manual telescopic is always partial vision
+  // Otherwise UNKNOWN — do NOT guess (CO/AT vision is ~50/50 when the drawing is
+  // silent). Returning null lets composition match the other attributes and the
+  // frequency tie-break pick the modal vision, rather than forcing a wrong guess.
+  return null;
+}
+function skuVision(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\/LV\b|[^A-Z]LV\//.test(u)) return "LV";
+  if (/\/MV\b|[^A-Z]MV\//.test(u)) return "MV";
+  if (/\/NV\b|[^A-Z]NV\//.test(u)) return "NV";
+  if (/\/PV\b|[^A-Z]PV\//.test(u)) return "PV";
+  return null;
+}
+const COLOR_PHRASES = [
+  "ROSE GOLD LINEN", "ROSE GOLD MIRROR", "ROSE GOLD", "BLACK MIRROR", "SILVER MIRROR",
+  "CHAMPAGNE", "GOLDEN", "TITANIUM", "GRANITE", "COPPER", "BRONZE", "WOOD",
+];
+function targetColor(t: BomTargetSpec): string | null {
+  const s = `${t.door_finish ?? ""}`.toUpperCase();
+  for (const c of COLOR_PHRASES) if (s.includes(c)) return c;
+  return null; // Hairline / plain SS / MS → no colour token (the SKU is plain/STD)
+}
+// The LANDING-side door frame (Door Post, Linton, landing panel/header) takes the
+// LANDING door's finish, which can differ from the car door's (owner: door-post colour
+// = landing-door colour). Falls back to the car finish when the landing read is absent.
+function targetLandingColor(t: BomTargetSpec): string | null {
+  const s = `${t.landing_door_finish ?? t.door_finish ?? ""}`.toUpperCase();
+  for (const c of COLOR_PHRASES) if (s.includes(c)) return c;
+  return null;
+}
+function skuColor(s: string): string | null {
+  const u = s.toUpperCase();
+  for (const c of COLOR_PHRASES) if (u.includes(c)) return c;
+  return null;
+}
+// The car safety frame (sling) comes in four live families — Home, R1, Std, Goods
+// (+ Hydraulic) — keyed off the machine topology, which the drive_type proxies:
+//   • Home/Belt/Cantilever  -> Home sling (pit-mounted / cantilever)
+//   • MR  (machine room traction)      -> Std sling
+//   • MRL (machine-room-less)          -> R1 sling
+//   • heavy kg-rated goods lift        -> Goods sling  (overrides the drive)
+// drive_type is only a PROXY for the real determinant — the roping / pulley
+// arrangement drawn on the GA section. When that read is available it should win;
+// see frameTypeFromRoping (TODO) and the `roping` field on BomTargetSpec.
+function targetFrameType(t: BomTargetSpec): string | null {
+  const cap = parseCapacity(t.capacity);
+  // Goods is the heavy kg-rated build; passenger-rated people lifts never reach it.
+  // Live split: Goods ≥1500kg, traction slings top out at 1000kg — gate at 1200.
+  if (cap.kind === "kg" && cap.kg >= 1200) return "GOODS";
+  const d = t.drive_type;
+  if (d === "HOME" || d === "BELT" || d === "CANTI") return "HOME";
+  if (d === "HYD") return "HYD";
+  if (d === "MR") return "STD";
+  if (d === "MRL" || d === "MRLBELT" || d === "R1000") return "R1";
+  return null;
+}
+function skuFrameType(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\bGOODS\b/.test(u)) return "GOODS";
+  if (/\bHOME\b/.test(u) || /CANTIL/.test(u)) return "HOME";
+  if (/HYDRAULIC|\bHYD\b|\bGMV\b/.test(u)) return "HYD";
+  if (/\bSTD\b/.test(u)) return "STD"; // machine-room standard sling — kept DISTINCT from R1
+  if (/\bR1\b|\bMRL\b/.test(u)) return "R1"; // counter-frame SKUs spell the traction family "MRL"
+  return null;
+}
+function skuSide(s: string): string | null {
+  const u = s.toUpperCase();
+  if (/\bLHS\b|\bLH\b|\bLEFT\b/.test(u)) return "LHS";
+  if (/\bRHS\b|\bRH\b|\bRIGHT\b/.test(u)) return "RHS";
+  return null;
+}
+
+// Pulley SKUs ("C.I. Pulley 300mm/4Grove/8mm", "Belt Pully 100mmx2Grovex30mm",
+// "PVC Pulley 200mm/4Grove/6mm") encode sheave diameter + GROOVE count (≈ number of
+// suspension ropes, which scales with load) + rope dia. Sheave size tracks the drive
+// (belt 100, home 200, MRL 300, heavy goods 400); grooves track capacity.
+function targetGrooves(t: BomTargetSpec): number | null {
+  const c = parseCapacity(t.capacity);
+  if (!Number.isFinite(c.kg)) return null;
+  if (c.kind === "pass") {
+    const p = Math.round(c.kg / TUNING.KG_PER_PASS);
+    return p <= 8 ? 4 : p <= 13 ? 6 : p <= 16 ? 7 : 8;
+  }
+  if (c.kind === "kg") return c.kg <= 1000 ? 4 : c.kg <= 1500 ? 6 : c.kg <= 2000 ? 7 : c.kg <= 3000 ? 10 : 12;
+  return null;
+}
+function skuGrooves(s: string): number | null {
+  const m = /(\d+)\s*(?:grove|g)\b/i.exec(s);
+  return m ? Number(m[1]) : null;
+}
+function targetPulleySize(t: BomTargetSpec): number | null {
+  const d = t.drive_type;
+  if (d === "BELT" || d === "MRLBELT") return 100;
+  if (d === "HOME") return 200;
+  const c = parseCapacity(t.capacity);
+  if ((c.kind === "kg" && c.kg >= 2500) || (c.kind === "pass" && c.kg / TUNING.KG_PER_PASS >= 20)) return 400;
+  return 300; // MRL / MR passenger standard sheave
+}
+function skuPulleySize(s: string): number | null {
+  const m = /(\d{3})\s*mm/i.exec(s);
+  return m ? Number(m[1]) : null;
+}
+
+// Collapsible gate SKUs are named by their CHANNEL count, not width:
+// "Collapsible Gate 7+1Channel". Channels ≈ opening width / 100 (mined per the rule
+// pass): 700→6, 760→7, 800→8, 900→9, 1000→10, 1500→15, 2000→20.
+function channelsFromWidth(w: number): number {
+  if (w <= 730) return 6;
+  if (w <= 780) return 7;
+  if (w <= 850) return 8;
+  if (w <= 950) return 9;
+  if (w <= 1200) return 10;
+  if (w <= 1700) return 15;
+  return 20;
+}
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "openWidth" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "cwtSide" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
+interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
+const ATTRS: Record<AttrKey, AttrDef> = {
+  doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
+  material: { weight: 2, target: targetMaterial, match: (s, v) => skuMaterial(s) === v },
+  vision: { weight: 2, target: targetVision, match: (s, v) => skuVision(s) === v },
+  landingVision: { weight: 2, target: (t) => ((t.landing_door_vision === "LV" || t.landing_door_vision === "MV" || t.landing_door_vision === "NV") ? t.landing_door_vision : targetVision(t)), match: (s, v) => skuVision(s) === v },
+  // Width drives non-collapsible door SKUs; a collapsible gate carries channels, not width.
+  width: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" || t.door_opening_width == null ? null : t.door_opening_width), match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
+  // Opening width regardless of door type — for FRAME parts (door post, sill) whose
+  // collapsible variant IS keyed by real width ("Top Bottom set OPP-930") not channels.
+  openWidth: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
+  // CAR colour: ALWAYS scored ("PLAIN" when the drawing finish has no designer colour), so a
+  // plain car door prefers the plain panel instead of inheriting a designer colour from a
+  // neighbour (owner: car-door finish must match the drawing). Landing colour stays lenient
+  // (target null -> skipped) because a designer drawing built plain on the landing is the
+  // engineer's judgement, not an error.
+  color: { weight: 2, target: (t) => targetColor(t) ?? "PLAIN", match: (s, v) => (skuColor(s) ?? "PLAIN") === v },
+  landingColor: { weight: 2, target: targetLandingColor, match: (s, v) => skuColor(s) === v },
+  side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
+  channels: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" && t.door_opening_width ? channelsFromWidth(t.door_opening_width) : null), match: (s, v) => new RegExp(`\\b${v}\\s*\\+?\\s*1?\\s*CHANNEL`).test(s.toUpperCase()) },
+  frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
+  dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+  dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+  // Combination main bracket marker: it exists because the counterweight is at the SIDE (so
+  // the car + CWT rails share one bracket — 87% of side-CWT jobs use it). Pairs with dbgCtr so
+  // a confident "side + matching counter DBG" reaches COMPOSE_MIN_SCORE without firing on the
+  // standard projection brackets. Target null (skipped) when the CWT is at the rear/unknown.
+  cwtSide: { weight: 2, target: (t) => (/side/i.test(t.counterweight_position ?? "") ? 1 : null), match: (s) => /combination/i.test(s) },
+  // grooves ≈ rope count (capacity); ±1 absorbs the pulley/machine convention drift.
+  grooves: { weight: 4, target: targetGrooves, match: (s, v) => { const g = skuGrooves(s); return g != null && Math.abs(g - (v as number)) <= 1; } },
+  pulleySize: { weight: 3, target: targetPulleySize, match: (s, v) => skuPulleySize(s) === v },
+  // Machine SKUs name the capacity outright ("Machine Unit 8 pass/...", "...2500kg/...").
+  // target = the persons/kg count; match the same number followed by pass/kg.
+  machineCap: {
+    weight: 4,
+    target: (t) => { const c = parseCapacity(t.capacity); if (!Number.isFinite(c.kg)) return null; return c.kind === "pass" ? Math.round(c.kg / TUNING.KG_PER_PASS) : c.kg; },
+    match: (s, v) => new RegExp(`\\b${v}\\s*(?:pass|kg)`, "i").test(s),
+  },
+  // Machine sheave diameter encodes the DRIVE FAMILY: belt 100, home-rope 200, MRL 320,
+  // MR-geared 530. This is what tells a Home-BELT machine (100mm/2g) from a Home-rope one
+  // (200mm/4g) — grooves alone picked the wrong family for belt jobs.
+  machineSheave: {
+    weight: 4,
+    target: (t) => { const d = t.drive_type; return d === "BELT" || d === "MRLBELT" ? 100 : d === "HOME" ? 200 : d === "MR" ? 530 : d === "MRL" ? 320 : null; },
+    match: (s, v) => skuPulleySize(s) === v,
+  },
+};
+// Which attributes compose each section's SKU (from the reverse-engineering pass).
+const COMPOSE: Record<string, AttrKey[]> = {
+  "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
+  // Landing-side parts take the LANDING door's colour, not the car's.
+  "Landing Door Panel": ["doorType", "material", "landingVision", "width", "landingColor", "side", "channels"],
+  "Linton Panel": ["doorType", "material", "width", "landingColor"],
+  "Door Sill": ["doorType", "openWidth"],
+  "Sill Angle": ["doorType", "width"], // "Auto Door Sill Angle CO 700mm" — door type + opening width
+  // Auto door post carries no width; the COLLAPSIBLE door post is "Top Bottom set OPP-930"
+  // (opening width). width is neutral for auto (no dim in the name), discriminates collapsible.
+  "Door Post / Frame": ["doorType", "material", "landingColor", "side", "openWidth"],
+  "Car Header System": ["doorType", "width", "side"],
+  "Landing Header System": ["doorType", "width", "side"],
+  "Safety": ["frameType", "dbgCar"],
+  "Counter Frame": ["frameType", "dbgCtr"],
+  "Counter Guard Net": ["frameType", "dbgCtr"],
+  // Filler Weight removed — its SKU carries no frame-type token, so composition
+  // could never fire; it's size-ruled on counter DBG instead (see SIZE_RULES).
+  "Machine Beam": ["frameType", "dbgCtr"],
+  // The "Combination DBG-NNNN" main bracket (used when the counterweight is at the SIDE, so the
+  // car + CWT rails share one bracket) is keyed by the COUNTERWEIGHT guide distance — its NNNN
+  // matches dbg_counter (28/31 in the corpus), NOT the car DBG (0/31). An earlier attempt on
+  // dbgCar failed for exactly this reason. Standard B/C/F projection brackets still come from
+  // retrieval; this only composes the DBG-keyed combination bracket, additively.
+  "MAIN BRACKET": ["dbgCtr", "cwtSide"],
+  "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
+  "Pulley Counter": ["pulleySize", "grooves"],
+  "Machine": ["machineCap", "machineSheave"], // capacity (in name) + sheave (drive family)
+};
+function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
+  let score = 0, max = 0, present = 0;
+  for (const k of attrs) {
+    const a = ATTRS[k];
+    const v = a.target(target);
+    if (v == null || v === "") continue;
+    present++;
+    max += a.weight;
+    if (a.match(sku, v)) score += a.weight;
+  }
+  return present ? { score, max, present } : null;
+}
+
+/**
+ * Closest-DBG distance for a candidate SKU. When several catalogue SKUs tie on the composed
+ * attributes (e.g. Safety Frame R1 DBG-912 vs DBG-942 both inside the ±55 DBG tolerance), the
+ * one whose name carries the DBG NEAREST the drawing's value should win, not the globally more
+ * common one. Returns the smallest |namedDim − targetDBG| over the dbg attrs present, or
+ * Infinity when the section has no DBG attribute (so it's a no-op for door/pulley sections).
+ */
+function dbgDistance(name: string, attrs: AttrKey[], target: BomTargetSpec): number {
+  let best = Infinity;
+  for (const k of attrs) {
+    const v = k === "dbgCar" ? target.dbg_main_mm : k === "dbgCtr" ? target.dbg_counter_mm : null;
+    if (v == null) continue;
+    for (const d of namedDims(name)) best = Math.min(best, Math.abs(d - v));
+  }
+  return best;
+}
+
+export type DriveSimFn = (a: string | null, b: string | null) => number | null;
+
+/**
+ * Learn drive-type adjacency FROM THE CORPUS: two drive types are "close" when
+ * their complete jobs use the same BOM sections. We build a per-drive section-
+ * presence vector (fraction of that drive's jobs carrying each section) and take
+ * the soft-Jaccard between vectors, then shrink toward DRIVE_PRIOR by how much
+ * evidence the pair has. Result: well-populated pairs (MRL↔Home, 45×15 jobs)
+ * trust the data; sparse pairs (MRL Belt, HYD, R1000) lean on the structural
+ * prior. Self-updating — as the team audits more jobs the adjacency sharpens with
+ * no retrain, which is exactly the flywheel the owner wants. Returns null when
+ * either side has no drive_type (so the term is dropped, not penalised).
+ */
+export function buildDriveSim(corpus: TrainingJob[]): DriveSimFn {
+  // Default path: the static structural prior (the learned blend was net-neutral).
+  if (!TUNING.DRIVE_USE_LEARNED)
+    return (a, b) => (!a || !b ? null : drivePrior(a, b));
+
+  const agg = new Map<string, { n: number; secs: Map<string, number> }>();
+  for (const j of corpus) {
+    if (!j.isComplete || !j.spec.drive_type) continue;
+    const d = j.spec.drive_type;
+    let e = agg.get(d);
+    if (!e) { e = { n: 0, secs: new Map() }; agg.set(d, e); }
+    e.n++;
+    for (const sec of Object.keys(j.sections)) e.secs.set(sec, (e.secs.get(sec) ?? 0) + 1);
+  }
+  const vec = new Map<string, Map<string, number>>();
+  const nByDrive = new Map<string, number>();
+  for (const [d, e] of agg) {
+    nByDrive.set(d, e.n);
+    const v = new Map<string, number>();
+    for (const [sec, c] of e.secs) v.set(sec, c / e.n);
+    vec.set(d, v);
+  }
+  const softJaccard = (a: Map<string, number>, b: Map<string, number>): number => {
+    let mn = 0, mx = 0;
+    const keys = new Set([...a.keys(), ...b.keys()]);
+    for (const k of keys) {
+      const x = a.get(k) ?? 0, y = b.get(k) ?? 0;
+      mn += Math.min(x, y);
+      mx += Math.max(x, y);
+    }
+    return mx > 0 ? mn / mx : 0;
+  };
+  const cache = new Map<string, number>();
+  return (a, b) => {
+    if (!a || !b) return null; // field dropped on one side
+    if (a === b) return 1;
+    const key = a < b ? `${a}|${b}` : `${b}|${a}`;
+    const hit = cache.get(key);
+    if (hit !== undefined) return hit;
+    const prior = drivePrior(a, b);
+    const va = vec.get(a), vb = vec.get(b);
+    let sim = prior;
+    if (TUNING.DRIVE_USE_LEARNED && va && vb) {
+      const support = Math.min(nByDrive.get(a) ?? 0, nByDrive.get(b) ?? 0);
+      const learned = softJaccard(va, vb);
+      const wData = support / (support + TUNING.DRIVE_SHRINK_K);
+      sim = wData * learned + (1 - wData) * prior;
+    }
+    cache.set(key, sim);
+    return sim;
+  };
+}
 
 export interface TrainingLine {
   item_id: string;
@@ -60,6 +638,7 @@ export interface TrainingJob {
     capacity: string | null;
     door_finish: string | null;
     brand: string | null;
+    door_type?: string | null; // derived from this job's own door-section items
   };
   isComplete: boolean; // has a RAIL section line
   sections: Record<string, TrainingLine[]>;
@@ -70,6 +649,65 @@ export interface BomTargetSpec {
   capacity: string | null;
   door_finish?: string | null;
   brand?: string | null;
+  /**
+   * Door type CODE (CO/AT/COL/AFF/MT/SWS/…). The single biggest determinant of
+   * the door-system SKUs (door panels, headers, sill, frame, linton) — a CO and a
+   * Collapsible job share a drive/capacity but use completely different door
+   * families. Optional: for a live target it comes from the drawing read
+   * (normaliseDoorType on the vision door_type); when absent the door term is
+   * simply dropped, so behaviour is unchanged until it's wired through.
+   */
+  door_type?: string | null;
+  /**
+   * Door OPENING WIDTH in mm (the "700"/"800"/… that distinguishes door-system
+   * SKU variants of the same family). From the drawing's door_opening_width_mm.
+   * When known, item selection prefers the matching-width variant. Optional.
+   */
+  door_opening_width?: number | null;
+  /**
+   * DBG — distance between guide rails (mm). dbg_main = car guides (sets the
+   * SAFETY frame + main buffer channel size); dbg_counter = counterweight guides
+   * (sets the COUNTER frame / guard net / filler weight / counter buffer size).
+   * Mined from the corpus: these dimensions appear in those SKUs' names. From the
+   * drawing. Optional — size-matching for those sections is a no-op when absent.
+   */
+  dbg_main_mm?: number | null;
+  dbg_counter_mm?: number | null;
+  /**
+   * VISUAL door attributes — read from the drawing PICTURE (door elevation + plan),
+   * not the text. door_vision = LV/MV/NV (extent of the glass drawn on the door);
+   * door_side = LHS/RHS (which side a telescopic door operator parks). These resolve
+   * what the spec text leaves silent. Optional — composition falls back to text when
+   * absent.
+   */
+  door_vision?: string | null;
+  landing_door_vision?: string | null; // landing door can differ from the car door
+  landing_door_finish?: string | null; // landing door finish/colour — drives Door Post / Linton / landing panel colour
+  door_side?: string | null;
+  /**
+   * Total travel / shaft height (mm) from the drawing's section (page 2). The owner's
+   * insight: per-shaft-height consumable QUANTITIES — rail clips, governor rope, some
+   * rails & sills — track the shaft height, NOT the floor count (floors is a poor proxy
+   * when floor heights vary). QTY_FITS carries the per-item travel regressions; this feeds
+   * them. Optional — falls back to floor-scaling / retrieval when absent.
+   */
+  travel_mm?: number | null;
+  /**
+   * Counterweight position — "side" | "rear" (from the plan). When the CWT is at the side, the
+   * car and counterweight guide rails share a single "Combination" main bracket (keyed by the
+   * counterweight DBG); at the rear they're separate. Gates the combination-bracket compose.
+   */
+  counterweight_position?: string | null;
+  /**
+   * Rail-to-wall gaps (mm) from the hoistway plan — the rail-bracket PROJECTION. car_rail_to_wall
+   * sets the standard bracket class (50-100=B, 100-160=C, 160-210=D, 210-310=E, 310-360=F,
+   * 360-410=G); counter_rail_to_wall sets the combination bracket's projection (the X### token).
+   */
+  car_rail_to_wall_mm?: number | null;
+  counter_rail_to_wall_mm?: number | null;
+  /** Rail-bracket vertical pitch (mm) from the page-2 section ("BRACKET SPACE ####"). With
+   *  travel it gives the bracket LEVEL count = floor(travel/spacing)+1 + joint brackets. */
+  bracket_spacing_mm?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -79,7 +717,7 @@ export interface PredictedLine {
   item_name: string;
   uom: string;
   suggestedQty: number;
-  qtyMethod: "floor-scaled" | "as-is" | "rule";
+  qtyMethod: "floor-scaled" | "as-is" | "rule" | "fitted";
   confidence: number; // 0..1
   confidenceBand: "high" | "medium" | "low";
   supportingJobs: string[];
@@ -111,16 +749,16 @@ export function parseCapacity(cap: string | null | undefined): { kind: CapKind; 
   return { kind: "unknown", kg: NaN };
 }
 
-function driveSim(a: string | null, b: string | null): number | null {
-  if (!a || !b) return null; // field dropped
-  if (a === b) return 1;
-  return DRIVE_SIM[a]?.[b] ?? DRIVE_SIM[b]?.[a] ?? 0.05;
-}
-
-export function similarity(t: BomTargetSpec, p: TrainingJob["spec"]): number {
+export function similarity(t: BomTargetSpec, p: TrainingJob["spec"], dsim: DriveSimFn): number {
   const terms: { w: number; s: number }[] = [];
-  const ds = driveSim(t.drive_type, p.drive_type);
-  if (ds !== null) terms.push({ w: 0.45, s: ds });
+  const ds = dsim(t.drive_type, p.drive_type);
+  if (ds !== null) terms.push({ w: TUNING.W_DRIVE, s: ds });
+
+  // Door type: exact-match the door FAMILY. Decisive for the door-system SKUs and
+  // orthogonal to drive type (one drive spans many door types), so it's the key
+  // signal for the worst sections (car/landing door panel, header, sill, frame).
+  if (t.door_type && p.door_type)
+    terms.push({ w: TUNING.W_DOOR, s: t.door_type === p.door_type ? 1 : 0 });
 
   const tc = parseCapacity(t.capacity);
   const pc = parseCapacity(p.capacity);
@@ -130,16 +768,16 @@ export function similarity(t: BomTargetSpec, p: TrainingJob["spec"]): number {
       tc.kind !== pc.kind
         ? 0.12
         : Math.exp(-Math.pow((tc.kg - pc.kg) / TUNING.CAP_SOFTNESS_KG, 2));
-    terms.push({ w: 0.25, s });
+    terms.push({ w: TUNING.W_CAP, s });
   }
 
   if (t.floors != null && p.floors != null) {
     const s = Math.exp(-Math.pow((t.floors - p.floors) / TUNING.FLOOR_SOFTNESS, 2));
-    terms.push({ w: 0.2, s });
+    terms.push({ w: TUNING.W_FLOOR, s });
   }
   if (t.door_finish && p.door_finish)
-    terms.push({ w: 0.06, s: t.door_finish === p.door_finish ? 1 : 0 });
-  if (t.brand && p.brand) terms.push({ w: 0.04, s: t.brand === p.brand ? 1 : 0 });
+    terms.push({ w: TUNING.W_FINISH, s: t.door_finish === p.door_finish ? 1 : 0 });
+  if (t.brand && p.brand) terms.push({ w: TUNING.W_BRAND, s: t.brand === p.brand ? 1 : 0 });
 
   if (terms.length === 0) return 0;
   const wSum = terms.reduce((a, x) => a + x.w, 0);
@@ -238,10 +876,9 @@ function deterministicQty(itemName: string, section: string, L: number | null): 
   // across every angle SKU). Distinct from the finished aluminium sill.
   if (/sill angle/.test(n)) return L;
 
-  // NOTE: a hard `Alluminium Sill = L + 1` (rulebook §6.1 #2) was TESTED and
-  // REJECTED — it regressed keep-rate 72.0%→71.9%. The stored aluminium sill is
-  // too noisy (off-by-one floors, per-opening entry, goods multi-leaf) for the
-  // +1 to beat retrieval. Left to the retrieval median. Revisit if the data cleans up.
+  // Re-test (2026-06-24): aluminium sill qty = stops+1 (= L+1), the modal across
+  // every door type (CO 32/54, AT 33/58, COL 6/12 per the by-door-type breakdown).
+  if (/all?uminium sill/.test(n) && L) return L + 1;
 
   // Rule B (§6.1 #1, the strongest rule) — every landing-side door part counts
   // once per served landing L. Measured qty−floors ≈ 0 (sd 0.28–0.77) across all
@@ -251,9 +888,34 @@ function deterministicQty(itemName: string, section: string, L: number | null): 
   return null;
 }
 
+// Per-(section, item) quantity models mined from the corpus (scripts/_qty_mine.js).
+// const = stable count; floors/travel = qty ≈ a + b·X. Keyed exact on section :: name.
+const QTY_FIT_BY_KEY = new Map(QTY_FITS.map((f) => [`${f.section} :: ${f.name}`, f]));
+
+/**
+ * A fitted quantity for this exact SKU, when one was mined and its driver is known.
+ * The owner's shaft-height insight: per-shaft consumables (rail clip, governor rope,
+ * some rails/sills) regress on TRAVEL far better than on floors. Returns null when no
+ * model exists or the model's driver (travel) is absent — caller falls back to the
+ * floor-scaled retrieval median. `const` models are unconditional.
+ */
+function qtyFitFor(itemName: string, section: string, target: BomTargetSpec): number | null {
+  const f = QTY_FIT_BY_KEY.get(`${section} :: ${itemName}`);
+  if (!f) return null;
+  if (f.kind === "const") return f.v ?? null;
+  const x = f.kind === "travel" ? target.travel_mm ?? null : target.floors ?? null;
+  if (x == null || x <= 0) return null;
+  const y = (f.a ?? 0) + (f.b ?? 0) * x;
+  return y > 0 ? Math.round(y) : null;
+}
+
+export type SectionPool = Map<string, { line: TrainingLine; count: number; drives: Set<string> }[]>;
+
 export function aggregateDraft(
   target: BomTargetSpec,
   neighbours: { job: TrainingJob; meta: NeighbourMeta }[],
+  sectionPool?: SectionPool,
+  caps?: Map<string, number>,
 ): { draft: PredictedLine[]; completenessSource: BomPrediction["completenessSource"]; warnings: string[] } {
   const warnings: string[] = [];
   let complete = neighbours.filter((n) => n.meta.isComplete);
@@ -273,6 +935,12 @@ export function aggregateDraft(
 
   const draft: PredictedLine[] = [];
   for (const section of candidate) {
+    // Never PRE-FILL the standard-kit sections — bulk consumables logged in only a third
+    // of jobs (Brick/Cabin Glass/Stud Anchor), so the predictor guessed them wrong ~half
+    // the time (net-negative). They still show on the form for the engineer / kit; this
+    // only stops the draft from guessing. Measured: overall touch rate 32%->27%, and the
+    // home-lift gap closes (HOME 39->30%, BELT 36->28%). Edit this list to taste.
+    if (SUPPRESS_PREDICTION.has(section)) continue;
     const meta = SECTION_META.get(section);
     // Respect the gate: never suggest a section the target's drive type excludes.
     if (meta && !shouldRenderSection(meta, null, target.drive_type ?? null)) continue;
@@ -309,12 +977,117 @@ export function aggregateDraft(
       }
     }
 
+    // Size match: when the drawing gives the dimension that sets this section's SKU
+    // size (door opening width for the door system; car/counter DBG for the safety
+    // & counterweight frames), re-weight candidates toward the matching-size variant
+    // before ranking/thresholding. A no-op for sections without a SIZE_RULE or when
+    // the dimension is absent. (A finish-matching factor was tried and measured
+    // net-zero — door SKU finish tokens don't align with the spec finish — so cut.)
+    // …but NOT for COMPOSED sections — the compose handles size via its own width/DBG attr,
+    // and the standalone ×SIZE_BOOST here would lift a width-matched-but-otherwise-wrong SKU
+    // (e.g. the plain "AT/SS/LV/700" panel) ABOVE the composed exact match ("…700(Rose Gold
+    // Linen)"), dropping the designer colour the drawing actually specifies. Size-rule only the
+    // sections that aren't composed (Filler Weight, Buffer Channels).
+    if (SIZE_RULES[section] && sizeTargetFor(section, target) && !COMPOSE[section])
+      for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
+
+    // Filler weight: bias the AHM-vs-CI plate TYPE by the owner's counterweight model.
+    if (section === "Filler Weight" && target.dbg_counter_mm != null)
+      for (const g of byItem.values()) g.w *= fillerTypeFactor(g.item.item_name, target);
+
+    // Rail-bracket projection match: when the plan gives the rail-to-wall gaps, re-weight the
+    // retrieved brackets toward the one whose projection matches — the car gap picks the standard
+    // class (B/C/D/F/G), the counter gap picks the combination projection. This is the fix for
+    // the predictor defaulting every bracket to "B (50-100)".
+    if ((section === "MAIN BRACKET" || section === "COUNTER BRACKET") && (target.car_rail_to_wall_mm != null || target.counter_rail_to_wall_mm != null))
+      for (const g of byItem.values()) g.w *= bracketProjFactor(g.item.item_name, section, target);
+
+    // Composition: these SKUs encode the drawing's attributes in the name (door panel
+    // = type/material/vision/width/colour; safety/counter frame = frame-type + DBG).
+    // Pick the corpus SKU — from the WHOLE pool, not just neighbours — that matches the
+    // most target attributes, and give it a dominant weight. Composes the SKU the way
+    // the engineer does, even when no neighbour used it. Gated by COMPOSE_MIN_* so it
+    // only fires on a confident match; otherwise retrieval stands.
+    const pool = sectionPool?.get(section);
+    const attrs = COMPOSE[section];
+    if (pool && attrs) {
+      const drive = target.drive_type ?? null;
+      // Among catalogue SKUs that tie on the COMPOSED attributes (e.g. pulley size + grooves),
+      // prefer the exact variant the SIMILAR JOBS actually used — its retrieval weight in
+      // byItem — over the globally-common catalogue item. This is how an attribute the spec
+      // does NOT carry (pulley C.I. vs PVC: 15 of 18 misses were material-only) gets decided:
+      // by the neighbourhood, not by a blind catalogue majority. Falls back to drive + count.
+      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number; nw: number; dbgD: number } | null = null;
+      for (const e of pool) {
+        const r = composeScore(e.line.item_name, attrs, target);
+        if (!r || r.max === 0) continue;
+        const driveOk = !!(drive && e.drives.has(drive));
+        const nw = byItem.get(e.line.item_id)?.w ?? 0; // weight this SKU carried among neighbours
+        const dbgD = dbgDistance(e.line.item_name, attrs, target); // smaller = DBG closer to the drawing
+        if (
+          !best ||
+          r.score > best.score ||
+          (r.score === best.score && driveOk && !best.drive) ||
+          (r.score === best.score && driveOk === best.drive && dbgD < best.dbgD) ||
+          (r.score === best.score && driveOk === best.drive && dbgD === best.dbgD && nw > best.nw) ||
+          (r.score === best.score && driveOk === best.drive && dbgD === best.dbgD && nw === best.nw && e.count > best.count)
+        ) {
+          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count, nw, dbgD };
+        }
+      }
+      if (best && best.score >= TUNING.COMPOSE_MIN_FRAC * best.max && best.score >= TUNING.COMPOSE_MIN_SCORE) {
+        let g = byItem.get(best.line.item_id);
+        if (!g) { g = { item: best.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(best.line.item_id, g); }
+        g.w = Math.max(g.w, haveW * 2);
+        if (g.qtys.length === 0) {
+          // A freshly-composed item has no neighbour qty. Most composed SKUs are singletons
+          // (one door panel) -> 1. But the MAIN BRACKET combination repeats once per shaft
+          // LEVEL, so seed it with the computed level count when travel + spacing are known.
+          const lv = section === "MAIN BRACKET" ? bracketLevels(target) : null;
+          g.qtys.push(lv ?? best.line.required_quantity ?? 1); g.qw.push(1);
+        }
+      }
+      // Standard PROJECTION bracket: the combination compose above keys the DBG bracket, but the
+      // standard B/C/F class comes from the rail-to-wall gap. Ensure the gap-matched class is in
+      // the draft even when no neighbour used it — add it from the pool. (boost-only elsewhere
+      // can't help if the class isn't retrieved at all.) qty ~ 2 levels (the two single rails).
+      const projGap = section === "MAIN BRACKET" ? target.car_rail_to_wall_mm : section === "COUNTER BRACKET" ? target.counter_rail_to_wall_mm : null;
+      if (projGap != null) {
+        const m = pool.find((e) => { const r = /\((\d+)\s*-\s*(\d+)\)\s*mm/.exec(e.line.item_name); return r && projGap >= +r[1] - 12 && projGap <= +r[2] + 12; });
+        if (m) {
+          let g = byItem.get(m.line.item_id);
+          if (!g) { g = { item: m.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(m.line.item_id, g); }
+          g.w = Math.max(g.w, haveW * 1.5);
+          if (g.qtys.length === 0) { const lv = bracketLevels(target); g.qtys.push(lv ? 2 * lv : (g.item.required_quantity || 1)); g.qw.push(1); }
+        }
+      }
+    } else if (pool && SIZE_RULES[section] && sizeTargetFor(section, target)) {
+      // Single-dimension fallback (size-keyed sections not yet in COMPOSE).
+      const matches = pool.filter((e) => sizeFactor(e.line.item_name, section, target) === TUNING.SIZE_BOOST);
+      if (matches.length) {
+        const drive = target.drive_type ?? null;
+        matches.sort((a, b) => {
+          const ad = drive && a.drives.has(drive) ? 1 : 0;
+          const bd = drive && b.drives.has(drive) ? 1 : 0;
+          return bd - ad || b.count - a.count;
+        });
+        const top = matches[0];
+        let g = byItem.get(top.line.item_id);
+        if (!g) { g = { item: top.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(top.line.item_id, g); }
+        g.w = Math.max(g.w, haveW * 1.5);
+        if (g.qtys.length === 0) { g.qtys.push(1); g.qw.push(1); }
+      }
+    }
+
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
-    const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, TUNING.MAX_ITEMS_PER_SECTION);
-    if (kept.length === 0 && ranked.length) kept.push(ranked[0]); // always at least the modal item
+    const sectionCap = caps?.get(section) ?? TUNING.MAX_ITEMS_PER_SECTION;
+    const supp = SUPPRESS_ITEM[section]; // e.g. drop the combination bracket, keep standard B/C/F
+    const eligible = supp ? ranked.filter((g) => !supp.test(g.item.item_name)) : ranked;
+    const kept = eligible.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, sectionCap);
+    if (kept.length === 0 && eligible.length) kept.push(eligible[0]); // always at least the modal item
 
     for (const g of kept) {
-      const cItem = g.w / haveW;
+      const cItem = Math.min(1, g.w / haveW); // a size boost can exceed haveW — cap the confidence
       const m = weightedMedian(g.qtys, g.qw);
       const floorScaled = FLOOR_SCALED.has(section);
       // C_qty: 1 - normalized weighted dispersion (floored at 0.3).
@@ -328,10 +1101,13 @@ export function aggregateDraft(
       let conf = cSection * cItem * cQty * cSupport;
       if (completenessSource === "gate-fallback") conf *= 0.7;
       const medianQty = Number.isInteger(g.item.required_quantity) ? Math.round(m) : Math.round(m * 10) / 10;
-      // A deterministic rule, when it fires, replaces the retrieved median.
+      // Quantity precedence: a deterministic hard rule first, then a mined regression
+      // (travel/floors/const — the shaft-height consumables), else the retrieved median.
       const det = deterministicQty(g.item.item_name, section, target.floors ?? null);
-      const qty = det ?? medianQty;
+      const fit = det == null ? qtyFitFor(g.item.item_name, section, target) : null;
+      const qty = det ?? fit ?? medianQty;
       if (det != null) conf = Math.max(conf, 0.85); // hard rule fired — trust it
+      else if (fit != null) conf = Math.max(conf, 0.7); // fitted regression — fairly trusted
       draft.push({
         section,
         phase: (meta?.phase as string) ?? "Additional Items",
@@ -340,7 +1116,7 @@ export function aggregateDraft(
         item_name: g.item.item_name,
         uom: g.item.uom,
         suggestedQty: qty > 0 ? qty : g.item.required_quantity,
-        qtyMethod: det != null ? "rule" : floorScaled ? "floor-scaled" : "as-is",
+        qtyMethod: det != null ? "rule" : fit != null ? "fitted" : floorScaled ? "floor-scaled" : "as-is",
         confidence: conf,
         confidenceBand: band(conf),
         supportingJobs: [...new Set(g.jobs)],
@@ -357,16 +1133,86 @@ export function aggregateDraft(
   return { draft, completenessSource, warnings };
 }
 
+/** Build the section→item pool (every item ever used per section, with how many
+ *  jobs used it and which drive types) — for name-composition on size-keyed sections. */
+/** A section's full inventory pool: every catalogued SKU for that section, so
+ *  composition can resolve the exact attribute combo even if no past job used it. */
+export type InventoryPool = Map<string, TrainingLine[]>;
+
+function buildSectionPool(corpus: TrainingJob[], inventory?: InventoryPool): SectionPool {
+  const pool: SectionPool = new Map();
+  for (const j of corpus) {
+    const drive = j.spec.drive_type ?? "";
+    for (const [sec, lines] of Object.entries(j.sections)) {
+      if (!SIZE_RULES[sec] && !COMPOSE[sec]) continue; // only needed for composable / size-keyed sections
+      let arr = pool.get(sec);
+      if (!arr) { arr = []; pool.set(sec, arr); }
+      const seen = new Set<string>();
+      for (const ln of lines) {
+        if (seen.has(ln.item_id)) continue;
+        seen.add(ln.item_id);
+        let e = arr.find((x) => x.line.item_id === ln.item_id);
+        if (!e) { e = { line: ln, count: 0, drives: new Set() }; arr.push(e); }
+        e.count++;
+        if (drive) e.drives.add(drive);
+      }
+    }
+  }
+  // Fold in the full catalogue for composable sections — items not used by any past
+  // job become available to compose (count 0 so a past-used SKU still wins ties).
+  if (inventory) {
+    for (const [sec, lines] of inventory) {
+      if (!COMPOSE[sec]) continue;
+      let arr = pool.get(sec);
+      if (!arr) { arr = []; pool.set(sec, arr); }
+      for (const ln of lines) {
+        if (!arr.some((x) => x.line.item_id === ln.item_id)) arr.push({ line: ln, count: 0, drives: new Set() });
+      }
+    }
+  }
+  return pool;
+}
+
+/** Per-section item cap = how many DISTINCT items a job actually has in that section
+ *  (90th percentile across the corpus, ≤ MAX_ITEMS_PER_SECTION). Singleton sections
+ *  (one machine, one car panel) get cap 1, fastener sections (3 stud sizes) get 3.
+ *  This kills the retrieval's over-production — the biggest source of lines to DELETE. */
+function buildSectionCaps(corpus: TrainingJob[]): Map<string, number> {
+  const counts = new Map<string, number[]>();
+  for (const j of corpus)
+    for (const [sec, lines] of Object.entries(j.sections)) {
+      const n = new Set(lines.map((l) => l.item_id)).size;
+      const arr = counts.get(sec) ?? [];
+      arr.push(n);
+      counts.set(sec, arr);
+    }
+  const caps = new Map<string, number>();
+  for (const [sec, arr] of counts) {
+    arr.sort((a, b) => a - b);
+    const p = arr[Math.min(arr.length - 1, Math.floor(arr.length * TUNING.CAP_PCTILE))];
+    caps.set(sec, Math.max(1, Math.min(p, TUNING.MAX_ITEMS_PER_SECTION)));
+  }
+  return caps;
+}
+
 /** Top-level pure prediction (used by both the server action and the backtest). */
-export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[]): BomPrediction {
-  const scored = corpus.map((job) => ({ job, sim: similarity(target, job.spec) }));
+export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[], inventory?: InventoryPool): BomPrediction {
+  const dsim = buildDriveSim(corpus);
+  const scored = corpus.map((job) => ({ job, sim: similarity(target, job.spec, dsim) }));
   const neighbours = selectNeighbours(scored, target);
   const warnings: string[] = [];
   if (neighbours.length && neighbours[0].meta.sim < 0.6)
     warnings.push("Closest past job is only a loose match — review everything.");
-  if ((target.drive_type === "HYD" || target.drive_type === "CANTI"))
+  // Drives with no/near-zero training data — the predictor has no real basis. R1000
+  // (car-parking) has ZERO past jobs; HYD/CANTI are one-offs. Flag hard so the engineer
+  // builds these by hand rather than trusting a draft extrapolated from unlike jobs.
+  if (target.drive_type === "R1000")
+    warnings.push("R1000 has no comparable past jobs — the draft is a guess; build this BOM by hand.");
+  else if (target.drive_type === "HYD" || target.drive_type === "CANTI")
     warnings.push(`Rare drive type (${target.drive_type}) — very few similar jobs; verify all.`);
-  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours);
+  const sectionPool = buildSectionPool(corpus, inventory);
+  const caps = buildSectionCaps(corpus);
+  const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours, sectionPool, caps);
   const overall = draft.length ? draft.reduce((a, l) => a + l.confidence, 0) / draft.length : 0;
   return {
     draft,

@@ -25,6 +25,30 @@ export interface SuggestedLine {
   confidenceBand: Confidence;
   supportingJobs: string[];
 }
+/**
+ * A raw fact read straight off the drawing (door type, rail gap, travel, …) that the
+ * predictor consumed internally. Surfaced read-only so the engineer can verify the
+ * vision read and catch a misread before it silently flips a prediction.
+ */
+export interface DrawingRead {
+  label: string;
+  value: string;
+  confidence?: Confidence;
+  /** Short "what this drives" note, e.g. "sets the main-bracket projection class". */
+  note?: string;
+}
+
+/**
+ * A section deliberately left for MANUAL fill (the drawing doesn't reliably carry it),
+ * with the reason + any drawing-derived hints to speed the manual entry. Read-only —
+ * never applied as a BOM line (these sections are suppressed by design).
+ */
+export interface ManualSectionHint {
+  section: string;
+  reason: string;
+  hints: { label: string; value: string }[];
+}
+
 export interface AutofillResult {
   /** true = the drawing was read by AI; false = used the spec already in the form. */
   drawingRead: boolean;
@@ -33,6 +57,10 @@ export interface AutofillResult {
   /** null when drawing-reading isn't configured (no key). */
   spec: SpecSuggestion | null;
   bom: SuggestedLine[];
+  /** Raw drawing reads beyond the 5 spec fields — only populated when the drawing was read. */
+  drawingReads?: DrawingRead[];
+  /** Suppressed sections left for manual fill, with drawing-derived hints. */
+  manualSections?: ManualSectionHint[];
   neighbours: { job_number: string; sim: number }[];
   warnings: string[];
   overallConfidence: number;

@@ -5,10 +5,12 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import {
   predictFromCorpus,
+  deriveDoorType,
   type TrainingJob,
   type TrainingLine,
   type BomTargetSpec,
   type BomPrediction,
+  type InventoryPool,
 } from "@/lib/bom/predict-core";
 
 export type { BomPrediction, BomTargetSpec } from "@/lib/bom/predict-core";
@@ -112,6 +114,7 @@ async function _getTrainingCorpusUncached(): Promise<TrainingJob[]> {
         capacity: j.capacity,
         door_finish: j.door_finish,
         brand: j.brand,
+        door_type: deriveDoorType(sections),
       },
       isComplete: Boolean(sections["RAIL"]),
       sections,
@@ -124,6 +127,63 @@ export async function getTrainingCorpus(): Promise<TrainingJob[]> {
   return unstable_cache(_getTrainingCorpusUncached, ["bom-predict-corpus"], {
     revalidate: 1800,
     tags: ["jobs", "bom-lines"],
+  })();
+}
+
+/**
+ * The full catalogue for every COMPOSED section, keyed by BOM section — so the
+ * composer can resolve the exact attribute combo (door = colour×width; safety /
+ * counter frame = frame-type×DBG) even when no past job used that exact SKU. Items
+ * are mapped to a section by name prefix; the loaded prefixes mirror the COMPOSE
+ * map in predict-core. A catalogue SKU enters the pool with count 0, so a past-used
+ * SKU still wins any tie — the catalogue only fills gaps a never-used size leaves.
+ */
+async function _getComposeInventoryUncached(): Promise<InventoryPool> {
+  const supabase = createCacheClient();
+  const items = await fetchAllRanged<{ id: string; name: string }>((from, to, withCount) =>
+    supabase
+      .from("items")
+      .select("id, name", withCount ? { count: "exact" } : {})
+      .eq("is_active", true)
+      .or(
+        "name.ilike.Car Pannel%,name.ilike.Landing Pannel%,name.ilike.Collapsible Gate%," +
+          "name.ilike.Safety Frame%,name.ilike.Counter Weight Frame%,name.ilike.Counter Guard%," +
+          "name.ilike.Machine Beam%,name.ilike.%Door Post%,name.ilike.%Top Bottom%,name.ilike.%Linton%," +
+          "name.ilike.Car Header%,name.ilike.Landing Header%,name.ilike.Rail Bracket Main%",
+      )
+      .range(from, to),
+  );
+  const pool: InventoryPool = new Map();
+  const add = (sec: string, it: { id: string; name: string }) => {
+    const arr = pool.get(sec) ?? [];
+    arr.push({ item_id: it.id, item_code: "", item_name: it.name, uom: "", required_quantity: 1 });
+    pool.set(sec, arr);
+  };
+  for (const it of items) {
+    const n = (it.name || "").toUpperCase();
+    if (/^CAR PANNEL|COLLAPSIBLE GATE/.test(n)) add("Car Door Panel", it);
+    if (/^LANDING PANNEL|COLLAPSIBLE GATE/.test(n)) add("Landing Door Panel", it);
+    if (/^SAFETY FRAME/.test(n)) add("Safety", it);
+    if (/^COUNTER WEIGHT FRAME/.test(n)) add("Counter Frame", it);
+    if (/^COUNTER GUARD/.test(n)) add("Counter Guard Net", it);
+    // Filler Weight deliberately NOT pooled — its catalogue misleads a weak DBG
+    // signal (measured -4pt); needs its own composition fix first (see eval).
+    if (/^MACHINE BEAM/.test(n)) add("Machine Beam", it);
+    // Door-system frame parts — pooling them lets the composer reach catalogued finish/
+    // colour variants the engineer hasn't used on a past job (Door Post 61->73% in eval).
+    if (/RAIL BRACKET MAIN/.test(n)) add("MAIN BRACKET", it); // combination (DBG) + standard B/C/F (gap)
+    if (/DOOR POST|TOP BOTTOM/.test(n)) add("Door Post / Frame", it);
+    if (/LINTON/.test(n)) add("Linton Panel", it);
+    if (/^CAR HEADER/.test(n)) add("Car Header System", it);
+    if (/^LANDING HEADER/.test(n)) add("Landing Header System", it);
+  }
+  return pool;
+}
+
+export async function getComposeInventory(): Promise<InventoryPool> {
+  return unstable_cache(_getComposeInventoryUncached, ["bom-predict-compose-inventory"], {
+    revalidate: 3600,
+    tags: ["items"],
   })();
 }
 
@@ -143,7 +203,8 @@ export async function predictBomFromSpec(
     let corpus = await getTrainingCorpus();
     if (excludeJobId) corpus = corpus.filter((j) => j.id !== excludeJobId);
     if (corpus.length === 0) return { ok: false, error: "No past jobs to learn from yet." };
-    const prediction = predictFromCorpus(target, corpus);
+    const inventory = await getComposeInventory().catch(() => undefined);
+    const prediction = predictFromCorpus(target, corpus, inventory);
     return { ok: true, prediction };
   } catch {
     return { ok: false, error: "Could not build a suggestion right now." };

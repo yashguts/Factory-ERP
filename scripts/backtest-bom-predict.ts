@@ -8,6 +8,7 @@ import * as path from "path";
 import {
   predictFromCorpus,
   parseCapacity,
+  deriveDoorType,
   type TrainingJob,
   type TrainingLine,
 } from "../src/lib/bom/predict-core";
@@ -75,7 +76,7 @@ async function buildCorpus(): Promise<TrainingJob[]> {
     corpus.push({
       id: j.id,
       job_number: j.job_number,
-      spec: { floors: j.floors, drive_type: j.drive_type, capacity: j.capacity, door_finish: j.door_finish, brand: j.brand },
+      spec: { floors: j.floors, drive_type: j.drive_type, capacity: j.capacity, door_finish: j.door_finish, brand: j.brand, door_type: deriveDoorType(sections) },
       isComplete: Boolean(sections["RAIL"]),
       sections,
     });
