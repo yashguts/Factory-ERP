@@ -223,6 +223,26 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
 }
 
 /**
+ * Filler-weight TYPE bias (owner's domain model). The counterweight needs a total mass set by
+ * capacity; it's filled with AHM plates (cheap, LOW density, bulky) up to what the counter
+ * FRAME can hold, then topped up with CI/Plate (expensive, HIGH density, compact). A small car
+ * (~272 kg / 4-pass) on a NARROW frame (counter DBG < 800) can't fit the bulky AHM plates at
+ * all, so its whole counterweight is dense CI — which is where the predictor wrongly copied AHM
+ * from a wide-frame neighbour (10 of 18 Filler misses were AHM-vs-CI). Bigger cars / wider
+ * frames fit AHM (the default), with CI only as a top-up. Boost the type the model expects.
+ */
+function fillerTypeFactor(name: string, target: BomTargetSpec): number {
+  const dbg = target.dbg_counter_mm;
+  if (dbg == null) return 1;
+  const kg = parseCapacity(target.capacity).kg;
+  if (!Number.isFinite(kg)) return 1;
+  const ciOnly = kg <= 300 && dbg < 800;
+  const isAHM = /A\.?H\.?M/i.test(name);
+  if (ciOnly) return isAHM ? TUNING.SIZE_PENALTY : TUNING.SIZE_BOOST; // narrow small frame -> all CI
+  return isAHM ? TUNING.SIZE_BOOST : 1; // AHM fits -> prefer the cheap plate; CI still tops up
+}
+
+/**
  * Rail-bracket projection match. The bracket's projection is encoded in its name; the rail-to-
  * wall gap read off the plan tells us which one. A standard "Main X (LO-HI)mm" bracket matches
  * when the CAR rail gap falls in [LO,HI]; a "Combination …Xppp" bracket matches when the COUNTER
@@ -923,6 +943,10 @@ export function aggregateDraft(
     // sections that aren't composed (Filler Weight, Buffer Channels).
     if (SIZE_RULES[section] && sizeTargetFor(section, target) && !COMPOSE[section])
       for (const g of byItem.values()) g.w *= sizeFactor(g.item.item_name, section, target);
+
+    // Filler weight: bias the AHM-vs-CI plate TYPE by the owner's counterweight model.
+    if (section === "Filler Weight" && target.dbg_counter_mm != null)
+      for (const g of byItem.values()) g.w *= fillerTypeFactor(g.item.item_name, target);
 
     // Rail-bracket projection match: when the plan gives the rail-to-wall gaps, re-weight the
     // retrieved brackets toward the one whose projection matches — the car gap picks the standard
