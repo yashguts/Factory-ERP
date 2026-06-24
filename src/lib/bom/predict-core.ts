@@ -73,6 +73,11 @@ export const TUNING = {
 // (absence in a past BOM = missing data, not a true zero — the backtest forgives it).
 export const SUPPRESS_PREDICTION = new Set<string>([
   "CABIN GLASS", "Pulley Main", "Pulley Counter", "Filler Weight",
+  // Rail brackets left for manual fill (owner): the standard B/C/F class is the per-rail
+  // projection (45% — read off one ambiguous gap among many) and the combination's exact
+  // X-projection isn't a drawn dimension. The DBG/spacing/optical-combination machinery stays
+  // (it feeds nothing else) but the section isn't pre-filled — the engineer enters brackets.
+  "MAIN BRACKET", "COUNTER BRACKET",
 ]);
 
 // Item-level suppression WITHIN a predicted section. (Empty: tried suppressing the MAIN BRACKET
