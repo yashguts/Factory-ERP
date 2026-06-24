@@ -62,12 +62,13 @@ export const TUNING = {
   COMPOSE_MIN_SCORE: 5, //  ...and at least this much absolute weight (≈2 strong attributes agreeing)
 };
 
-// Standard-kit sections the predictor does NOT pre-fill — bulk consumables logged so
-// inconsistently across jobs (Brick 26% / Cabin Glass 18% / Stud Anchor) that guessing
-// them costs more edits than it saves. The factory adds them as a standard kit; they
-// still appear on the form. (Gate Lock looks rare too at 15% but is spec-driven —
-// collapsible doors — so it stays predicted.)
-export const SUPPRESS_PREDICTION = new Set<string>(["BRICK", "CABIN GLASS", "Stud Anchor"]);
+// Sections the predictor does NOT pre-fill. Kept DELIBERATELY small: the owner's rule
+// is that an item ABSENT from a past job is missing data (often dispatched before the
+// job was entered), NOT evidence the job lacks it — so we do NOT suppress structural
+// items like Stud Anchor / Brick just because they're absent from truncated BOMs
+// (that's data absence, and the honest backtest forgives it). Only Cabin Glass stays
+// out, by the owner's explicit call that it isn't predictable from the drawing/spec.
+export const SUPPRESS_PREDICTION = new Set<string>(["CABIN GLASS"]);
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
 const FLOOR_SCALED = new Set<string>([

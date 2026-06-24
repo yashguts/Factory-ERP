@@ -11,7 +11,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { predictFromCorpus, deriveDoorType, TUNING, type TrainingJob, type TrainingLine, type InventoryPool } from "../src/lib/bom/predict-core";
+import { predictFromCorpus, deriveDoorType, TUNING, SUPPRESS_PREDICTION, type TrainingJob, type TrainingLine, type InventoryPool } from "../src/lib/bom/predict-core";
 import { BOM_SECTIONS } from "../src/lib/bom/bom-sections";
 import { shouldRenderSection } from "../src/lib/bom/section-gating";
 
@@ -34,6 +34,13 @@ const REAL = process.argv.includes("--real");
 const QTOL = Number(process.argv.find((a) => a.startsWith("--qtol="))?.split("=")[1] ?? 0.1); // qty "correct" tolerance
 const DRIVE = process.argv.find((a) => a.startsWith("--drive="))?.split("=")[1]?.split(",") ?? null; // restrict to these drive types
 const EXCLUDE = new Set(process.argv.find((a) => a.startsWith("--exclude="))?.split("=")[1]?.split(",") ?? []); // drop these sections from the metric (handled out-of-band)
+const SKIPDRIVE = new Set(process.argv.find((a) => a.startsWith("--skipdrive="))?.split("=")[1]?.split(",") ?? []); // don't eval these drive types (we won't predict them)
+const MINSEC = Number(process.argv.find((a) => a.startsWith("--minsec="))?.split("=")[1] ?? 0); // only fully-entered BOMs (>= this many sections) — avoids the dispatch-truncation confound
+if (process.argv.includes("--nosuppress")) SUPPRESS_PREDICTION.clear();
+// --forgivefp: absence of an item is MISSING DATA, not a negative. Don't count a
+// predicted item that's absent from the (possibly incomplete) BOM as an error — only
+// count items the predictor MISSED that ARE logged, plus wrong-variant + qty edits.
+const FORGIVE = process.argv.includes("--forgivefp");
 // TUNING overrides for sweeping the precision/recall operating point.
 for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"]] as const) {
   const v = process.argv.find((a) => a.startsWith(flag));
@@ -145,6 +152,8 @@ const widthOf = (name: string): number | null => {
   for (const held of evalSet) {
     if (REAL && !realById.has(held.id)) continue; // honest metric: only jobs we actually read
     if (DRIVE && !DRIVE.includes(held.spec.drive_type ?? "")) continue;
+    if (SKIPDRIVE.has(held.spec.drive_type ?? "")) continue;
+    if (Object.keys(held.sections).length < MINSEC) continue; // skip truncated/partial BOMs
     nJobs++;
     const train = corpus.filter((j) => j.id !== held.id);
     const spec = { ...held.spec } as any;
@@ -213,8 +222,12 @@ const widthOf = (name: string): number | null => {
       let tp = 0, qe = 0;
       for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > QTOL) qe++; } }
       const fp = p.size - tp, fn = t.size - tp;
-      gTrue += t.size; gPred += p.size; gTP += tp; gKeep += tp - qe; gFP += fp; gTouch += qe + Math.max(fp, fn);
-      bkt.tru += t.size; bkt.keep += tp - qe; bkt.touch += qe + Math.max(fp, fn);
+      // touch: wrong-variant + add. FORGIVE = absence is missing data, so a pure extra
+      // (predicted, not logged) costs nothing; a wrong variant (fp paired with fn) still
+      // costs the one edit via fn, and a logged-but-missed item still costs the add.
+      const touch = qe + (FORGIVE ? fn : Math.max(fp, fn));
+      gTrue += t.size; gPred += p.size; gTP += tp; gKeep += tp - qe; gFP += fp; gTouch += touch;
+      bkt.tru += t.size; bkt.keep += tp - qe; bkt.touch += touch;
       const ss = secStat.get(sec) ?? { tp: 0, fp: 0, fn: 0, qe: 0, truth: 0 };
       ss.tp += tp; ss.fp += fp; ss.fn += fn; ss.qe += qe; ss.truth += t.size; secStat.set(sec, ss);
     }
