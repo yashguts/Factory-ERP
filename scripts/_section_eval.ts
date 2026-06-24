@@ -122,6 +122,10 @@ async function buildPool(): Promise<InventoryPool> {
     if (/^COUNTER WEIGHT FRAME/.test(n)) add("Counter Frame", it);
     if (/^COUNTER GUARD/.test(n)) add("Counter Guard Net", it);
     if (/^MACHINE BEAM/.test(n)) add("Machine Beam", it);
+    if (/DOOR POST/.test(n)) add("Door Post / Frame", it);
+    if (/LINTON/.test(n)) add("Linton Panel", it);
+    if (/^CAR HEADER/.test(n)) add("Car Header System", it);
+    if (/^LANDING HEADER/.test(n)) add("Landing Header System", it);
   }
   return pool;
 }
@@ -171,6 +175,11 @@ const widthOf = (name: string): number | null => {
         if (ex.door_side) spec.door_side = ex.door_side;
         if (ex.travel_mm != null) spec.travel_mm = ex.travel_mm;
       }
+      // Landing-door finish (drives Door Post / Linton colour) — from the LANDING door row.
+      // Approximated here by the landing panel's own finish; in production this is the
+      // drawing's "L. DOOR" spec-table row (independent of the car door).
+      const lp = held.sections["Landing Door Panel"]?.[0]?.item_name;
+      if (lp) spec.landing_door_finish = lp;
     } else if (!NODIMS) {
       const sfDbg = held.sections["Safety"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
       const cfDbg = held.sections["Counter Frame"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
@@ -242,7 +251,7 @@ const widthOf = (name: string): number | null => {
       for (const it of new Set(lines.map((l) => l.item_id))) {
         p.tot++;
         if (predIds.has(it)) p.hit++;
-        else p.miss.push({ drive: held.spec.drive_type, cap: held.spec.capacity, want: lines.find((l) => l.item_id === it)!.item_name, got });
+        else p.miss.push({ drive: held.spec.drive_type, cap: held.spec.capacity, want: lines.find((l) => l.item_id === it)!.item_name, got, job: (held as any).job_number } as any);
       }
     }
   }

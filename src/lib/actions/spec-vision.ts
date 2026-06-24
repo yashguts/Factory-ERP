@@ -29,6 +29,7 @@ export interface ExtractedSpec {
   capacity: SpecField<string>;
   door_type: SpecField<string>;
   door_finish: SpecField<string>;
+  landing_door_finish: SpecField<string>;
   door_vision: SpecField<string>;
   door_side: SpecField<string>;
   brand: SpecField<string>;
@@ -43,6 +44,7 @@ export interface RichDrawing {
   capacity: SpecField<string>;
   door_type: SpecField<string>;
   door_finish: SpecField<string>;
+  landing_door_finish: SpecField<string>;
   door_vision: SpecField<string>;
   door_side: SpecField<string>;
   brand: SpecField<string>;
@@ -129,6 +131,7 @@ const SCHEMA = {
     capacity: CONF("string"),
     door_type: CONF("string"),
     door_finish: CONF("string"),
+    landing_door_finish: CONF("string"),
     door_vision: CONF("string"),
     door_side: CONF("string"),
     brand: CONF("string"),
@@ -164,7 +167,7 @@ const SCHEMA = {
     notes: { type: "string" },
   },
   required: [
-    "drive_type", "floors", "capacity", "door_type", "door_finish", "door_vision", "door_side", "brand",
+    "drive_type", "floors", "capacity", "door_type", "door_finish", "landing_door_finish", "door_vision", "door_side", "brand",
     "dimensions", "machine_room", "counterweight_position", "additional_details", "notes",
   ],
 };
@@ -178,7 +181,8 @@ Normalisation rules:
 - floors -> total stops (integer). "G+N"=N+1, "B+G+N"=N+2. Only a travel dimension and no stop count -> null.
 - capacity -> as labelled: persons -> "4PASS"/"6PASS"; kilograms -> "1000KG". Prefer persons for passenger, KG for goods.
 - door_type -> the door OPERATOR type; prefer one of and include the code: "Centre Opening (CO)", "Auto Telescopic (AT)", "Manual Telescopic (MT)", "Collapsible (COL)", "Auto Four-Fold (AFF)", "Swing (SWS)".
-- door_finish -> the CAR door leaf material + designer finish, read from the door row of the page-1 specification table (e.g. "SS HAIRLINE FINISH AUTO TELESCOPIC DOOR..."). Material is "SS" or "MS"; KEEP any designer colour after it — it is the panel SKU's key discriminator. Examples: "SS Hairline", "SS Mirror", "MS Powder Coated", "SS Rose Gold", "Rose Gold Linen", "Rose Gold Mirror", "Golden", "Champagne", "Titanium"/"TI Black", "Silver Mirror", "Black Mirror", "Glass".
+- door_finish -> the CAR door leaf material + designer finish, read from the CAR DOOR row of the page-1 specification table (e.g. "SS HAIRLINE FINISH AUTO TELESCOPIC DOOR..."). Material is "SS" or "MS"; KEEP any designer colour after it — it is the panel SKU's key discriminator. Examples: "SS Hairline", "SS Mirror", "MS Powder Coated", "SS Rose Gold", "Rose Gold Linen", "Rose Gold Mirror", "Golden", "Champagne", "Titanium"/"TI Black", "Silver Mirror", "Black Mirror", "Glass".
+- landing_door_finish -> the LANDING door (L. DOOR) row finish, SAME format as door_finish. It can DIFFER from the car door (e.g. designer car door + plain SS landing) and it drives the door-frame / door-post / linton colour. If the L. DOOR row is not separately stated, copy door_finish.
 - door_vision -> extent of vision glass on the door leaf, from the door-row text ("...WITH LONG VISION GLASS") or the door elevation: "LV" (long/full vision), "MV" (medium/half vision), "NV" (no vision/blind). null if not shown.
 - door_side -> for a telescopic or swing door, the side it parks/hinges: "LHS" or "RHS" (read the door elevation or the opening-direction arrow). null for centre-opening doors or if not shown.
 - dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
@@ -279,6 +283,7 @@ export async function extractDrawingData(jobId: string): Promise<RichResult> {
       capacity: rich.capacity,
       door_type: rich.door_type,
       door_finish: rich.door_finish,
+      landing_door_finish: rich.landing_door_finish,
       door_vision: rich.door_vision,
       door_side: rich.door_side,
       brand: rich.brand,
@@ -357,6 +362,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       capacity: rich.capacity,
       door_type: rich.door_type,
       door_finish: rich.door_finish,
+      landing_door_finish: rich.landing_door_finish,
       door_vision: rich.door_vision,
       door_side: rich.door_side,
       brand: rich.brand,

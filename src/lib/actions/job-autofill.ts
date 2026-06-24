@@ -68,6 +68,9 @@ export async function autofillFromDrawing(
       drive_type: (spec?.drive_type.value as string | null) ?? typedSpec.drive_type ?? null,
       capacity: (spec?.capacity.value as string | null) ?? typedSpec.capacity ?? null,
       door_finish: (spec?.door_finish.value as string | null) ?? typedSpec.door_finish ?? null,
+      // Landing door finish drives the landing-side frame colour (Door Post / Linton);
+      // it can differ from the car door. Falls back to the car finish when not read.
+      landing_door_finish: (vision.ok ? (vision.spec.landing_door_finish.value as string | null) : null) ?? (spec?.door_finish.value as string | null) ?? typedSpec.landing_door_finish ?? null,
       brand: (spec?.brand.value as string | null) ?? typedSpec.brand ?? null,
       door_type: drawingDoorType ?? typedSpec.door_type ?? null,
       // Door opening width drives the door-system SKU size; from the drawing read.

@@ -266,6 +266,14 @@ function targetColor(t: BomTargetSpec): string | null {
   for (const c of COLOR_PHRASES) if (s.includes(c)) return c;
   return null; // Hairline / plain SS / MS → no colour token (the SKU is plain/STD)
 }
+// The LANDING-side door frame (Door Post, Linton, landing panel/header) takes the
+// LANDING door's finish, which can differ from the car door's (owner: door-post colour
+// = landing-door colour). Falls back to the car finish when the landing read is absent.
+function targetLandingColor(t: BomTargetSpec): string | null {
+  const s = `${t.landing_door_finish ?? t.door_finish ?? ""}`.toUpperCase();
+  for (const c of COLOR_PHRASES) if (s.includes(c)) return c;
+  return null;
+}
 function skuColor(s: string): string | null {
   const u = s.toUpperCase();
   for (const c of COLOR_PHRASES) if (u.includes(c)) return c;
@@ -351,7 +359,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -361,6 +369,7 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   // Width drives non-collapsible door SKUs; a collapsible gate carries channels, not width.
   width: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" || t.door_opening_width == null ? null : t.door_opening_width), match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
   color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
+  landingColor: { weight: 2, target: targetLandingColor, match: (s, v) => skuColor(s) === v },
   side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
   channels: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" && t.door_opening_width ? channelsFromWidth(t.door_opening_width) : null), match: (s, v) => new RegExp(`\\b${v}\\s*\\+?\\s*1?\\s*CHANNEL`).test(s.toUpperCase()) },
   frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
@@ -388,11 +397,12 @@ const ATTRS: Record<AttrKey, AttrDef> = {
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
   "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
-  "Landing Door Panel": ["doorType", "material", "landingVision", "width", "color", "side", "channels"],
-  "Linton Panel": ["doorType", "material", "width", "color"],
+  // Landing-side parts take the LANDING door's colour, not the car's.
+  "Landing Door Panel": ["doorType", "material", "landingVision", "width", "landingColor", "side", "channels"],
+  "Linton Panel": ["doorType", "material", "width", "landingColor"],
   "Door Sill": ["doorType", "width"],
   "Sill Angle": ["doorType", "width"], // "Auto Door Sill Angle CO 700mm" — door type + opening width
-  "Door Post / Frame": ["doorType", "material", "color", "side"], // door post SKU carries no width
+  "Door Post / Frame": ["doorType", "material", "landingColor", "side"], // door post = landing colour; no width
   "Car Header System": ["doorType", "width", "side"],
   "Landing Header System": ["doorType", "width", "side"],
   "Safety": ["frameType", "dbgCar"],
@@ -544,6 +554,7 @@ export interface BomTargetSpec {
    */
   door_vision?: string | null;
   landing_door_vision?: string | null; // landing door can differ from the car door
+  landing_door_finish?: string | null; // landing door finish/colour — drives Door Post / Linton / landing panel colour
   door_side?: string | null;
 }
 export interface PredictedLine {
