@@ -172,6 +172,9 @@ const SIZE_RULES: Record<string, SizeDim> = {
   // runtime (was excluded when only stops proxied it). The SKU bakes the DBG
   // ("...Main STD DBG-1442-1542", "...Combination 820", "...Counter STD DBG-1050").
   "Buffer Channel Main": "dbg_main", "Buffer Channel Counter": "dbg_counter",
+  // Filler weight: SKU is keyed by counter DBG ("Filler Weight A.H.M DBG-850/150mm").
+  // Its COMPOSE entry was dead (no frame-type token in the name), so size-rule it.
+  "Filler Weight": "dbg_counter",
 };
 // Numbers in a structural-dimension window (mm); excludes tiny counts and the
 // 2000+ door heights / long sill lengths that would create false matches.
@@ -332,7 +335,8 @@ const COMPOSE: Record<string, AttrKey[]> = {
   "Safety": ["frameType", "dbgCar"],
   "Counter Frame": ["frameType", "dbgCtr"],
   "Counter Guard Net": ["frameType", "dbgCtr"],
-  "Filler Weight": ["frameType", "dbgCtr"],
+  // Filler Weight removed — its SKU carries no frame-type token, so composition
+  // could never fire; it's size-ruled on counter DBG instead (see SIZE_RULES).
   "Machine Beam": ["frameType", "dbgCtr"],
 };
 function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
