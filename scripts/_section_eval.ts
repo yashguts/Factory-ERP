@@ -127,9 +127,13 @@ const widthOf = (name: string): number | null => {
   const evalSet = corpus.filter((j) => j.isComplete);
   const per = new Map<string, { hit: number; tot: number; miss: { drive: string | null; cap: string | null; want: string; got: string }[] }>();
   const bump = (s: string) => per.get(s) ?? (per.set(s, { hit: 0, tot: 0, miss: [] }), per.get(s)!);
+  // Upload-experience tally: gTrue = lines a correct BOM needs; gPred = lines produced;
+  // gTP = produced lines that are the right SKU; gKeep = those ALSO with right qty (no edit).
+  let nJobs = 0, gTrue = 0, gPred = 0, gTP = 0, gFP = 0, gKeep = 0;
 
   for (const held of evalSet) {
     if (REAL && !realById.has(held.id)) continue; // honest metric: only jobs we actually read
+    nJobs++;
     const train = corpus.filter((j) => j.id !== held.id);
     const spec = { ...held.spec } as any;
     if (REAL) {
@@ -177,6 +181,19 @@ const widthOf = (name: string): number | null => {
       }
     }
     const pred = predictFromCorpus(spec, train, pool);
+    // Upload tally: compare every produced line against the true BOM.
+    const gateEl = (s: string) => gateEligible(s, held.spec.drive_type);
+    const truthQty = new Map<string, number>();
+    for (const [sec, lines] of Object.entries(held.sections))
+      if (gateEl(sec)) for (const l of lines) truthQty.set(sec + "|" + l.item_id, (truthQty.get(sec + "|" + l.item_id) ?? 0) + l.required_quantity);
+    const predQty = new Map<string, number>();
+    for (const l of pred.draft) if (gateEl(l.section) && !predQty.has(l.section + "|" + l.item_id)) predQty.set(l.section + "|" + l.item_id, l.suggestedQty);
+    gTrue += truthQty.size; gPred += predQty.size;
+    for (const [k, q] of predQty) {
+      const qa = truthQty.get(k);
+      if (qa === undefined) gFP++;
+      else { gTP++; if (Math.abs(q - qa) / Math.max(qa, 1) <= 0.1) gKeep++; }
+    }
     for (const [sec, lines] of Object.entries(held.sections)) {
       if (!gateEligible(sec, held.spec.drive_type)) continue;
       const p = bump(sec);
@@ -199,4 +216,14 @@ const widthOf = (name: string): number | null => {
   for (const r of rows) if (r.missN > 0) console.log(`  ${r.sec.padEnd(26)} ${pct(r.hit, r.tot).padStart(4)}  ${String(r.missN).padStart(4)}  (${r.tot})`);
   fs.writeFileSync(path.join(__dirname, "_section_misses.json"), JSON.stringify(Object.fromEntries(rows.map((r) => [r.sec, { rate: r.rate, tot: r.tot, miss: r.miss }])), null, 2));
   console.log("\nwrote scripts/_section_misses.json");
+
+  // ── What a NEW drawing upload looks like ───────────────────────────────────
+  console.log(`\n==== NEW-UPLOAD experience (${nJobs} jobs, ${REAL ? "REAL extracted dims" : NODIMS ? "no dims" : "truth-proxy dims"}) ====`);
+  console.log(`  avg per job: BOM needs ${(gTrue / nJobs).toFixed(0)} lines, predictor produces ${(gPred / nJobs).toFixed(0)}`);
+  console.log(`  FILL (coverage):  ${pct(gTP, gTrue)}  of the lines you need are pre-filled with the right item`);
+  console.log(`  of the lines it FILLS (${gPred}):`);
+  console.log(`    accept as-is (right item + qty):  ${pct(gKeep, gPred)}`);
+  console.log(`    edit qty (right item, wrong qty): ${pct(gTP - gKeep, gPred)}`);
+  console.log(`    delete (extra / wrong item):      ${pct(gFP, gPred)}`);
+  console.log(`  => engineer touches ~${pct(gPred - gKeep, gPred)} of filled lines, and adds the ~${pct(gTrue - gTP, gTrue)} missing.`);
 })();
