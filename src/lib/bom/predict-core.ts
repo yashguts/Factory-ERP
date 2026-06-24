@@ -62,6 +62,13 @@ export const TUNING = {
   COMPOSE_MIN_SCORE: 5, //  ...and at least this much absolute weight (≈2 strong attributes agreeing)
 };
 
+// Standard-kit sections the predictor does NOT pre-fill — bulk consumables logged so
+// inconsistently across jobs (Brick 26% / Cabin Glass 18% / Stud Anchor) that guessing
+// them costs more edits than it saves. The factory adds them as a standard kit; they
+// still appear on the form. (Gate Lock looks rare too at 15% but is spec-driven —
+// collapsible doors — so it stays predicted.)
+export const SUPPRESS_PREDICTION = new Set<string>(["BRICK", "CABIN GLASS", "Stud Anchor"]);
+
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
 const FLOOR_SCALED = new Set<string>([
   "RAIL", "Landing Door Panel", "Landing Header System", "Door Post / Frame",
@@ -739,6 +746,12 @@ export function aggregateDraft(
 
   const draft: PredictedLine[] = [];
   for (const section of candidate) {
+    // Never PRE-FILL the standard-kit sections — bulk consumables logged in only a third
+    // of jobs (Brick/Cabin Glass/Stud Anchor), so the predictor guessed them wrong ~half
+    // the time (net-negative). They still show on the form for the engineer / kit; this
+    // only stops the draft from guessing. Measured: overall touch rate 32%->27%, and the
+    // home-lift gap closes (HOME 39->30%, BELT 36->28%). Edit this list to taste.
+    if (SUPPRESS_PREDICTION.has(section)) continue;
     const meta = SECTION_META.get(section);
     // Respect the gate: never suggest a section the target's drive type excludes.
     if (meta && !shouldRenderSection(meta, null, target.drive_type ?? null)) continue;
