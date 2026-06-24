@@ -214,7 +214,11 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
   const tol = rule === "door_opening_width" ? TUNING.SIZE_TOL : TUNING.SIZE_TOL_DBG;
   const ds = namedDims(name);
   if (ds.length === 0) return 1; // no dimension token in the name — neutral
-  if (ds.some((d) => Math.abs(d - tv) <= tol)) return TUNING.SIZE_BOOST;
+  const dist = Math.min(...ds.map((d) => Math.abs(d - tv)));
+  // GRADED boost: an EXACT dimension match outranks a merely within-tolerance one, so e.g.
+  // Filler Weight DBG-850 wins over DBG-750 when the drawing says 850 (both are inside ±55,
+  // but 850 is the right one). Full boost at dist 0, half boost at the tolerance edge.
+  if (dist <= tol) return TUNING.SIZE_BOOST * (1 - 0.5 * dist / tol);
   return TUNING.SIZE_PENALTY; // a different, conflicting dimension
 }
 
@@ -469,6 +473,23 @@ function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { s
     if (a.match(sku, v)) score += a.weight;
   }
   return present ? { score, max, present } : null;
+}
+
+/**
+ * Closest-DBG distance for a candidate SKU. When several catalogue SKUs tie on the composed
+ * attributes (e.g. Safety Frame R1 DBG-912 vs DBG-942 both inside the ±55 DBG tolerance), the
+ * one whose name carries the DBG NEAREST the drawing's value should win, not the globally more
+ * common one. Returns the smallest |namedDim − targetDBG| over the dbg attrs present, or
+ * Infinity when the section has no DBG attribute (so it's a no-op for door/pulley sections).
+ */
+function dbgDistance(name: string, attrs: AttrKey[], target: BomTargetSpec): number {
+  let best = Infinity;
+  for (const k of attrs) {
+    const v = k === "dbgCar" ? target.dbg_main_mm : k === "dbgCtr" ? target.dbg_counter_mm : null;
+    if (v == null) continue;
+    for (const d of namedDims(name)) best = Math.min(best, Math.abs(d - v));
+  }
+  return best;
 }
 
 export type DriveSimFn = (a: string | null, b: string | null) => number | null;
@@ -920,20 +941,22 @@ export function aggregateDraft(
       // byItem — over the globally-common catalogue item. This is how an attribute the spec
       // does NOT carry (pulley C.I. vs PVC: 15 of 18 misses were material-only) gets decided:
       // by the neighbourhood, not by a blind catalogue majority. Falls back to drive + count.
-      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number; nw: number } | null = null;
+      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number; nw: number; dbgD: number } | null = null;
       for (const e of pool) {
         const r = composeScore(e.line.item_name, attrs, target);
         if (!r || r.max === 0) continue;
         const driveOk = !!(drive && e.drives.has(drive));
         const nw = byItem.get(e.line.item_id)?.w ?? 0; // weight this SKU carried among neighbours
+        const dbgD = dbgDistance(e.line.item_name, attrs, target); // smaller = DBG closer to the drawing
         if (
           !best ||
           r.score > best.score ||
           (r.score === best.score && driveOk && !best.drive) ||
-          (r.score === best.score && driveOk === best.drive && nw > best.nw) ||
-          (r.score === best.score && driveOk === best.drive && nw === best.nw && e.count > best.count)
+          (r.score === best.score && driveOk === best.drive && dbgD < best.dbgD) ||
+          (r.score === best.score && driveOk === best.drive && dbgD === best.dbgD && nw > best.nw) ||
+          (r.score === best.score && driveOk === best.drive && dbgD === best.dbgD && nw === best.nw && e.count > best.count)
         ) {
-          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count, nw };
+          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count, nw, dbgD };
         }
       }
       if (best && best.score >= TUNING.COMPOSE_MIN_FRAC * best.max && best.score >= TUNING.COMPOSE_MIN_SCORE) {
