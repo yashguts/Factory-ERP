@@ -284,7 +284,7 @@ function skuFrameType(s: string): string | null {
   if (/\bHOME\b/.test(u) || /CANTIL/.test(u)) return "HOME";
   if (/HYDRAULIC|\bHYD\b|\bGMV\b/.test(u)) return "HYD";
   if (/\bSTD\b/.test(u)) return "STD"; // machine-room standard sling — kept DISTINCT from R1
-  if (/\bR1\b/.test(u)) return "R1";
+  if (/\bR1\b|\bMRL\b/.test(u)) return "R1"; // counter-frame SKUs spell the traction family "MRL"
   return null;
 }
 function skuSide(s: string): string | null {
@@ -337,7 +337,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -355,6 +355,13 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   // grooves ≈ rope count (capacity); ±1 absorbs the pulley/machine convention drift.
   grooves: { weight: 4, target: targetGrooves, match: (s, v) => { const g = skuGrooves(s); return g != null && Math.abs(g - (v as number)) <= 1; } },
   pulleySize: { weight: 3, target: targetPulleySize, match: (s, v) => skuPulleySize(s) === v },
+  // Machine SKUs name the capacity outright ("Machine Unit 8 pass/...", "...2500kg/...").
+  // target = the persons/kg count; match the same number followed by pass/kg.
+  machineCap: {
+    weight: 4,
+    target: (t) => { const c = parseCapacity(t.capacity); if (!Number.isFinite(c.kg)) return null; return c.kind === "pass" ? Math.round(c.kg / TUNING.KG_PER_PASS) : c.kg; },
+    match: (s, v) => new RegExp(`\\b${v}\\s*(?:pass|kg)`, "i").test(s),
+  },
 };
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
@@ -374,6 +381,7 @@ const COMPOSE: Record<string, AttrKey[]> = {
   "Machine Beam": ["frameType", "dbgCtr"],
   "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
   "Pulley Counter": ["pulleySize", "grooves"],
+  "Machine": ["machineCap", "grooves"], // "Machine Unit 8 pass/320mm/4g/8mm" — capacity + grooves
 };
 function composeScore(sku: string, attrs: AttrKey[], target: BomTargetSpec): { score: number; max: number; present: number } | null {
   let score = 0, max = 0, present = 0;
