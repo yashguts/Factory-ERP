@@ -1277,6 +1277,48 @@ export const PACKING_SECTIONS: PackingSection[] = [
     drives: ["R1000"],
   },
   {
+    key: "p-m-s-plate-3mm",
+    label: "M.S Plate 3mm (100x100)",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "100X100",
+  },
+  {
+    key: "p-ms-flat-40x6",
+    label: "MS Flat 40x6",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "200mm",
+  },
+  {
+    key: "p-m-s-packing-for-rubber-pad",
+    label: "M.S Packing For Rubber Pad",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "70x70x25x3mm",
+  },
+  {
+    key: "p-m-s-packing",
+    label: "M.S Packing",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "100x100mm",
+  },
+  {
+    key: "p-m-s-bush",
+    label: "M.S Bush",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "0",
+  },
+  {
+    key: "p-stiffner",
+    label: "Stiffener",
+    captureType: "item",
+    categoryPaths: [],
+    specHint: "25X6/550mm Flat",
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
@@ -1642,13 +1684,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "12X75",
   },
   {
-    key: "p-m-s-packing-for-rubber-pad",
-    label: "M.S Packing For Rubber Pad",
-    captureType: "item",
-    categoryPaths: ["Spares > Rubber Pad"],
-    specHint: "70x70x25x3mm",
-  },
-  {
     key: "p-bolt-nut-s-w-f-wd-2",
     label: "Bolt+Nut+S.W.+F.WD",
     captureType: "free",
@@ -1824,13 +1859,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "1200mm",
   },
   {
-    key: "p-stiffner",
-    label: "Stiffner",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Stiffner"],
-    specHint: "25X6/550mm Flat",
-  },
-  {
     key: "p-toci-fixing-kit",
     label: "TOCI Fixing Kit",
     captureType: "free",
@@ -1899,13 +1927,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Manufactured Items > Magnet Trey"],
     specHint: "ARKEL / 350mm",
-  },
-  {
-    key: "p-m-s-plate",
-    label: "M.S Plate",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "100x100x3mm",
   },
   {
     key: "p-magnet-trey-fixing-plate",
@@ -1999,13 +2020,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "300mm/G.I",
   },
   {
-    key: "p-m-s-bush",
-    label: "M.S Bush",
-    captureType: "item",
-    categoryPaths: ["Hardware > M.S Bush"],
-    specHint: "0",
-  },
-  {
     key: "p-gate-lock-keeper",
     label: "Gate Lock Keeper",
     captureType: "item",
@@ -2088,13 +2102,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "free",
     categoryPaths: [],
     specHint: "6x50",
-  },
-  {
-    key: "p-m-s-packing",
-    label: "M.S Packing",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "100x100mm",
   },
   {
     key: "p-rivet-gun",
@@ -2230,13 +2237,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "200x150mm (3mm Sheet)",
   },
   {
-    key: "p-ms-flat-40x6",
-    label: "MS Flat 40x6",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "200mm",
-  },
-  {
     key: "p-bolt-nut",
     label: "Bolt+Nut",
     captureType: "free",
@@ -2279,25 +2279,11 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "",
   },
   {
-    key: "p-ms-plat-100x100",
-    label: "MS Plat (100x100)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
     key: "p-small-jali",
     label: "Small Jali",
     captureType: "item",
     categoryPaths: [],
     specHint: "(Returnable)",
-  },
-  {
-    key: "p-m-s-plate-3mm",
-    label: "M.S Plate 3mm",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "100X100",
   },
 ];
 

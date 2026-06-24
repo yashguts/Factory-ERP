@@ -240,6 +240,13 @@ const CURATED = [
   C("p-plat-from-support-channel-3mm", "Plat From Support Channel 3mm", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-plat-from-support-channel-belt", "Plat From Support Channel (Belt)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-structure-glass-6mm", "Structure Glass 6mm", { group: "Cabin Items", cats: ["Glass > Structure Glass"], drives: ["R1000"] }),
+  // batch 4 — M.S misc plates/packing (owner: Make, Miscellaneous, open to all, manual qty)
+  C("p-m-s-plate-3mm", "M.S Plate 3mm (100x100)", { group: "Misc Fitted", cats: [], merge: ["p-m-s-plate", "p-ms-plat-100x100"] }),
+  C("p-ms-flat-40x6", "MS Flat 40x6", { group: "Misc Fitted", cats: [] }),
+  C("p-m-s-packing-for-rubber-pad", "M.S Packing For Rubber Pad", { group: "Misc Fitted", cats: [] }),
+  C("p-m-s-packing", "M.S Packing", { group: "Misc Fitted", cats: [] }),
+  C("p-m-s-bush", "M.S Bush", { group: "Misc Fitted", cats: [] }),
+  C("p-stiffner", "Stiffener", { group: "Misc Fitted", cats: [] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
