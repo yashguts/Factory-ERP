@@ -131,17 +131,25 @@ export async function getTrainingCorpus(): Promise<TrainingJob[]> {
 }
 
 /**
- * The full door-panel catalogue, keyed by BOM section — so the composer can resolve
- * the exact attribute combo (e.g. a colour×width SKU) even when no past job used it.
+ * The full catalogue for every COMPOSED section, keyed by BOM section — so the
+ * composer can resolve the exact attribute combo (door = colour×width; safety /
+ * counter frame = frame-type×DBG) even when no past job used that exact SKU. Items
+ * are mapped to a section by name prefix; the loaded prefixes mirror the COMPOSE
+ * map in predict-core. A catalogue SKU enters the pool with count 0, so a past-used
+ * SKU still wins any tie — the catalogue only fills gaps a never-used size leaves.
  */
-async function _getDoorInventoryUncached(): Promise<InventoryPool> {
+async function _getComposeInventoryUncached(): Promise<InventoryPool> {
   const supabase = createCacheClient();
   const items = await fetchAllRanged<{ id: string; name: string }>((from, to, withCount) =>
     supabase
       .from("items")
       .select("id, name", withCount ? { count: "exact" } : {})
       .eq("is_active", true)
-      .or("name.ilike.Car Pannel%,name.ilike.Landing Pannel%,name.ilike.Collapsible Gate%")
+      .or(
+        "name.ilike.Car Pannel%,name.ilike.Landing Pannel%,name.ilike.Collapsible Gate%," +
+          "name.ilike.Safety Frame%,name.ilike.Counter Weight Frame%,name.ilike.Counter Guard%," +
+          "name.ilike.Machine Beam%",
+      )
       .range(from, to),
   );
   const pool: InventoryPool = new Map();
@@ -154,12 +162,18 @@ async function _getDoorInventoryUncached(): Promise<InventoryPool> {
     const n = (it.name || "").toUpperCase();
     if (/^CAR PANNEL|COLLAPSIBLE GATE/.test(n)) add("Car Door Panel", it);
     if (/^LANDING PANNEL|COLLAPSIBLE GATE/.test(n)) add("Landing Door Panel", it);
+    if (/^SAFETY FRAME/.test(n)) add("Safety", it);
+    if (/^COUNTER WEIGHT FRAME/.test(n)) add("Counter Frame", it);
+    if (/^COUNTER GUARD/.test(n)) add("Counter Guard Net", it);
+    // Filler Weight deliberately NOT pooled — its catalogue misleads a weak DBG
+    // signal (measured -4pt); needs its own composition fix first (see eval).
+    if (/^MACHINE BEAM/.test(n)) add("Machine Beam", it);
   }
   return pool;
 }
 
-export async function getDoorInventory(): Promise<InventoryPool> {
-  return unstable_cache(_getDoorInventoryUncached, ["bom-predict-door-inventory"], {
+export async function getComposeInventory(): Promise<InventoryPool> {
+  return unstable_cache(_getComposeInventoryUncached, ["bom-predict-compose-inventory"], {
     revalidate: 3600,
     tags: ["items"],
   })();
@@ -181,7 +195,7 @@ export async function predictBomFromSpec(
     let corpus = await getTrainingCorpus();
     if (excludeJobId) corpus = corpus.filter((j) => j.id !== excludeJobId);
     if (corpus.length === 0) return { ok: false, error: "No past jobs to learn from yet." };
-    const inventory = await getDoorInventory().catch(() => undefined);
+    const inventory = await getComposeInventory().catch(() => undefined);
     const prediction = predictFromCorpus(target, corpus, inventory);
     return { ok: true, prediction };
   } catch {
