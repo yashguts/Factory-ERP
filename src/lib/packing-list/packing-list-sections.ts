@@ -1744,32 +1744,11 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "8x20",
   },
   {
-    key: "p-i-bolt-rod",
-    label: "I-Bolt Rod",
-    captureType: "item",
-    categoryPaths: ["Hardware > I-Bolt Rod"],
-    specHint: "12mm (Big / O-Type)",
-  },
-  {
     key: "p-bolt-3nut-s-w-f-w-t-w",
     label: "Bolt+3Nut+S.W+F.W+T.W",
     captureType: "free",
     categoryPaths: [],
     specHint: "16x100",
-  },
-  {
-    key: "p-i-bolt-spring",
-    label: "I-Bolt Spring",
-    captureType: "item",
-    categoryPaths: ["Hardware > I-Bolt Spring"],
-    specHint: "16mm",
-  },
-  {
-    key: "p-i-bolt-rod-home",
-    label: "I-Bolt Rod (Home)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "8mm",
   },
   {
     key: "p-buffer-stand-main-goods",
@@ -1784,13 +1763,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Manufactured Items > Buffer Stand"],
     specHint: "200mm",
-  },
-  {
-    key: "p-i-bolt-rod-belt",
-    label: "I-Bolt Rod (Belt)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "Belt I-Bolt Rod 13mm",
   },
   {
     key: "p-screw-c-s-k-nut-s-w-f-w",
@@ -2115,13 +2087,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "Round",
   },
   {
-    key: "p-car-location-plate-spl",
-    label: "Car Location Plate (SPL)",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Car Location"],
-    specHint: "0",
-  },
-  {
     key: "p-scaffolding-pipe",
     label: "Scaffolding Pipe",
     captureType: "item",
@@ -2129,22 +2094,8 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "3000mm",
   },
   {
-    key: "p-car-location-plate-goods",
-    label: "Car Location Plate (GOODS)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "0",
-  },
-  {
     key: "p-gomet-20mm",
     label: "Gomet 20mm",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
-    key: "p-car-location-plate-std",
-    label: "Car Location Plate (STD)",
     captureType: "item",
     categoryPaths: [],
     specHint: "",
