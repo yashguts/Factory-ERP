@@ -248,10 +248,26 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
  *  joint bracket per ~5 m rail stock. On a counterweight-at-side job the combination bracket
  *  count equals this (one shared bracket per level); the standard B bracket count is ~2x it
  *  (the two single rails). Verified on 4944: 15250/1800+1+3 = 12 = its combination count. */
-function bracketLevels(target: BomTargetSpec): number | null {
+export function bracketLevels(target: BomTargetSpec): number | null {
   const t = target.travel_mm, s = target.bracket_spacing_mm;
   if (t == null || s == null || s <= 0) return null;
   return Math.floor(t / s) + 1 + Math.floor(t / 5000);
+}
+
+/**
+ * Map a rail-to-wall gap (mm) to its standard rail-bracket projection class — the
+ * same bands the vision read uses. SURFACING ONLY: this is a hint shown to the
+ * engineer for the (manually-filled) bracket sections, never a prediction input.
+ * The car/main and counter bands differ. Returns null when no band matches.
+ */
+export function standardBracketClass(gapMm: number | null | undefined, kind: "car" | "counter"): string | null {
+  if (gapMm == null) return null;
+  const bands: ReadonlyArray<readonly [string, number, number]> =
+    kind === "counter"
+      ? [["C", 100, 145], ["D", 145, 190], ["E", 190, 235]]
+      : [["B", 50, 100], ["C", 100, 160], ["D", 160, 210], ["E", 210, 310], ["F", 310, 360], ["G", 360, 410]];
+  for (const [cls, lo, hi] of bands) if (gapMm >= lo && gapMm <= hi) return cls;
+  return null;
 }
 
 function fillerTypeFactor(name: string, target: BomTargetSpec): number {
