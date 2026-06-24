@@ -625,10 +625,9 @@ function deterministicQty(itemName: string, section: string, L: number | null): 
   // across every angle SKU). Distinct from the finished aluminium sill.
   if (/sill angle/.test(n)) return L;
 
-  // NOTE: a hard `Alluminium Sill = L + 1` (rulebook §6.1 #2) was TESTED and
-  // REJECTED — it regressed keep-rate 72.0%→71.9%. The stored aluminium sill is
-  // too noisy (off-by-one floors, per-opening entry, goods multi-leaf) for the
-  // +1 to beat retrieval. Left to the retrieval median. Revisit if the data cleans up.
+  // Re-test (2026-06-24): aluminium sill qty = stops+1 (= L+1), the modal across
+  // every door type (CO 32/54, AT 33/58, COL 6/12 per the by-door-type breakdown).
+  if (/all?uminium sill/.test(n) && L) return L + 1;
 
   // Rule B (§6.1 #1, the strongest rule) — every landing-side door part counts
   // once per served landing L. Measured qty−floors ≈ 0 (sd 0.28–0.77) across all
