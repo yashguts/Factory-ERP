@@ -6,17 +6,24 @@ Branch: `feature/bom-predict-drive-aware` (local, 40+ commits, not yet merged/pu
 Upload a GA drawing → vision reads the spec → predictor drafts the full job BOM (inventory-linked).
 k-NN over past jobs + section-wise consensus + multi-attribute SKU composition + engineering rules.
 
-## Accuracy (leave-one-out backtest, `scripts/_section_eval.ts`)
-| Metric | Realistic* | Strict** |
+## Accuracy (leave-one-out backtest, `scripts/_section_eval.ts`; realistic metric:
+## `--real --forgivefp --qtol=0.2 --materialtouch`)
+SHIPPED behaviour — these sections are in `SUPPRESS_PREDICTION` = left for MANUAL fill (the
+genuinely-undrawable ones; a clean blank beats a confident-wrong prefill): **Cabin Glass,
+Pulley Main, Pulley Counter, Filler Weight, MAIN BRACKET, COUNTER BRACKET**. The eval excludes
+them from the score (they're manual).
+
+| On the AUTO-FILLED BOM | Realistic | Strict (qtol=0.1) |
 |---|---|---|
-| Coverage (right item pre-filled) | 91% | 91% |
-| **Auto-fills perfectly (item + qty)** | **88%** | **79%** |
-| Need an edit | 12% | 21% |
+| Coverage (right item pre-filled) | 93% | 93% |
+| **Auto-fills perfectly (item + qty)** | **91%** | ~83% |
+| Need an edit | **9%** | ~17% |
 
-\* `--qtol=0.2 --materialtouch --forgivefp`: 20% qty tolerance, bulk-fastener counts not treated as edits, absence forgiven (item absent from a past BOM = "not on the ERP", not a true zero).
-\*\* `--qtol=0.1 --forgivefp`: every quantity must be within 10%.
-
-**Carve the 5 hardest** (MAIN BRACKET, Pulley Main, Pulley Counter, Filler Weight, Cabin Glass) → perfect rises to **91%**, edits drop to **9%**. These 5 are the genuinely-undrawable ones.
+Why each suppressed section can't be nailed: Pulley C.I./PVC = coin-flip (not drawn); Filler
+exact COUNT = needs undrawn counter-frame height (TYPE is solved); Cabin Glass = unpredictable;
+rail brackets = standard B/C/F is a per-rail projection read off one ambiguous gap (~45%) and
+the combination's X-projection isn't a drawn dim (the family/class ARE right — re-enable by
+removing them from SUPPRESS_PREDICTION if you'd rather a fix-one-token prefill, ~89%).
 
 CAVEAT: the backtest feeds the carefully re-read corpus extractions. A LIVE upload uses a single-pass vision read (`spec-vision.ts`), which is coarser — expect a few points below the backtest on a real drawing. Unusual drives (R1000, hydraulic) are far weaker (the predictor warns to build by hand).
 
