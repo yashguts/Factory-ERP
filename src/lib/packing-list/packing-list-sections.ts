@@ -1307,16 +1307,18 @@ export const PACKING_SECTIONS: PackingSection[] = [
   {
     key: "p-m-s-bush",
     label: "M.S Bush",
-    captureType: "item",
-    categoryPaths: [],
+    captureType: "fixed",
+    categoryPaths: ["Hardware > M.S Bush"],
     specHint: "0",
+    pinnedItem: "M.S Bush Tele & Auto Shoe",
   },
   {
     key: "p-stiffner",
     label: "Stiffener",
-    captureType: "item",
-    categoryPaths: [],
+    captureType: "fixed",
+    categoryPaths: ["Small Manufactured Items > Stiffner"],
     specHint: "25X6/550mm Flat",
+    pinnedItem: "Stiffner 25X6/400mm Flat",
   },
   {
     key: "p-eco-space-structure-kit",

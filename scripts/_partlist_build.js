@@ -245,8 +245,8 @@ const CURATED = [
   C("p-ms-flat-40x6", "MS Flat 40x6", { group: "Misc Fitted", cats: [] }),
   C("p-m-s-packing-for-rubber-pad", "M.S Packing For Rubber Pad", { group: "Misc Fitted", cats: [] }),
   C("p-m-s-packing", "M.S Packing", { group: "Misc Fitted", cats: [] }),
-  C("p-m-s-bush", "M.S Bush", { group: "Misc Fitted", cats: [] }),
-  C("p-stiffner", "Stiffener", { group: "Misc Fitted", cats: [] }),
+  C("p-m-s-bush", "M.S Bush", { group: "Misc Fitted", capture: "fixed", pin: "M.S Bush Tele & Auto Shoe" }),
+  C("p-stiffner", "Stiffener", { group: "Misc Fitted", capture: "fixed", pin: "Stiffner 25X6/400mm Flat" }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
