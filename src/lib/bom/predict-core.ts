@@ -21,6 +21,8 @@ export const TUNING = {
   SECTION_THRESHOLD: 0.4,
   ITEM_THRESHOLD: 0.3,
   MAX_ITEMS_PER_SECTION: 4,
+  CAP_PCTILE: 0.8, // per-section item cap = this percentile of distinct-items-per-job (swept: 0.8 min-touch)
+
   // Weight neighbours by sim^SIM_SHARPEN. With door type in the similarity the
   // closest neighbours are genuinely the right build, so trusting them harder pays
   // (4 ≫ 2 in the backtest); kept at 4 (not higher) to stay a top-few blend rather
@@ -935,8 +937,8 @@ function buildSectionCaps(corpus: TrainingJob[]): Map<string, number> {
   const caps = new Map<string, number>();
   for (const [sec, arr] of counts) {
     arr.sort((a, b) => a - b);
-    const p90 = arr[Math.min(arr.length - 1, Math.floor(arr.length * 0.9))];
-    caps.set(sec, Math.max(1, Math.min(p90, TUNING.MAX_ITEMS_PER_SECTION)));
+    const p = arr[Math.min(arr.length - 1, Math.floor(arr.length * TUNING.CAP_PCTILE))];
+    caps.set(sec, Math.max(1, Math.min(p, TUNING.MAX_ITEMS_PER_SECTION)));
   }
   return caps;
 }

@@ -11,7 +11,7 @@
  */
 import * as fs from "fs";
 import * as path from "path";
-import { predictFromCorpus, deriveDoorType, type TrainingJob, type TrainingLine, type InventoryPool } from "../src/lib/bom/predict-core";
+import { predictFromCorpus, deriveDoorType, TUNING, type TrainingJob, type TrainingLine, type InventoryPool } from "../src/lib/bom/predict-core";
 import { BOM_SECTIONS } from "../src/lib/bom/bom-sections";
 import { shouldRenderSection } from "../src/lib/bom/section-gating";
 
@@ -31,6 +31,12 @@ const FINISH = process.argv.includes("--finish"); // also feed door material + d
 // data/drawing-extractions.json) instead of the truth SKUs — the honest end-to-end
 // drawing->BOM test. Falls back to nothing for jobs with no extraction.
 const REAL = process.argv.includes("--real");
+const QTOL = Number(process.argv.find((a) => a.startsWith("--qtol="))?.split("=")[1] ?? 0.1); // qty "correct" tolerance
+// TUNING overrides for sweeping the precision/recall operating point.
+for (const [flag, key] of [["--sec=", "SECTION_THRESHOLD"], ["--item=", "ITEM_THRESHOLD"], ["--cap=", "CAP_PCTILE"]] as const) {
+  const v = process.argv.find((a) => a.startsWith(flag));
+  if (v) (TUNING as any)[key] = Number(v.split("=")[1]);
+}
 const realById = new Map<string, any>();
 if (REAL) {
   const p = path.join(__dirname, "partlist-brain", "data", "drawing-extractions.json");
@@ -148,6 +154,7 @@ const widthOf = (name: string): number | null => {
         if (ex.door_finish) spec.door_finish = ex.door_finish;
         if (ex.door_vision) { spec.door_vision = ex.door_vision; spec.landing_door_vision = ex.door_vision; }
         if (ex.door_side) spec.door_side = ex.door_side;
+        if (ex.travel_mm != null) spec.travel_mm = ex.travel_mm;
       }
     } else if (!NODIMS) {
       const sfDbg = held.sections["Safety"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
@@ -195,7 +202,7 @@ const widthOf = (name: string): number | null => {
     for (const sec of secs) {
       const t = tQ.get(sec) ?? new Map<string, number>(), p = pQ.get(sec) ?? new Map<string, number>();
       let tp = 0, qe = 0;
-      for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > 0.1) qe++; } }
+      for (const [id, q] of p) { const qa = t.get(id); if (qa !== undefined) { tp++; if (Math.abs(q - qa) / Math.max(qa, 1) > QTOL) qe++; } }
       const fp = p.size - tp, fn = t.size - tp;
       gTrue += t.size; gPred += p.size; gTP += tp; gKeep += tp - qe; gFP += fp; gTouch += qe + Math.max(fp, fn);
       const ss = secStat.get(sec) ?? { tp: 0, fp: 0, fn: 0, qe: 0, truth: 0 };
