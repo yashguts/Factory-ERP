@@ -37,6 +37,8 @@ export interface ExtractedSpec {
   door_opening_width_mm: number | null;
   /** Total travel / shaft height in mm — drives shaft-height consumable quantities. */
   travel_mm: number | null;
+  /** Counterweight position (side/rear) — gates the combination main-bracket compose. */
+  counterweight_position: string | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -370,6 +372,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       brand: rich.brand,
       door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
       travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
+      counterweight_position: (rich.counterweight_position?.value as string | null) ?? null,
       notes: rich.notes ?? "",
     },
   };

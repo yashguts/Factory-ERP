@@ -359,7 +359,7 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "openWidth" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "openWidth" | "color" | "landingColor" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr" | "cwtSide" | "grooves" | "pulleySize" | "machineCap" | "machineSheave";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
@@ -378,6 +378,11 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
   dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
   dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
+  // Combination main bracket marker: it exists because the counterweight is at the SIDE (so
+  // the car + CWT rails share one bracket — 87% of side-CWT jobs use it). Pairs with dbgCtr so
+  // a confident "side + matching counter DBG" reaches COMPOSE_MIN_SCORE without firing on the
+  // standard projection brackets. Target null (skipped) when the CWT is at the rear/unknown.
+  cwtSide: { weight: 2, target: (t) => (/side/i.test(t.counterweight_position ?? "") ? 1 : null), match: (s) => /combination/i.test(s) },
   // grooves ≈ rope count (capacity); ±1 absorbs the pulley/machine convention drift.
   grooves: { weight: 4, target: targetGrooves, match: (s, v) => { const g = skuGrooves(s); return g != null && Math.abs(g - (v as number)) <= 1; } },
   pulleySize: { weight: 3, target: targetPulleySize, match: (s, v) => skuPulleySize(s) === v },
@@ -416,10 +421,12 @@ const COMPOSE: Record<string, AttrKey[]> = {
   // Filler Weight removed — its SKU carries no frame-type token, so composition
   // could never fire; it's size-ruled on counter DBG instead (see SIZE_RULES).
   "Machine Beam": ["frameType", "dbgCtr"],
-  // NOTE: a MAIN BRACKET compose on dbgCar was tried (the "Combination DBG-NNNN" bracket is
-  // DBG-keyed) and REVERTED — it added 78 spurious brackets and fixed 0 misses, because the
-  // exact projection (X180 vs X260) and the per-position DBG vary more finely than dbgCar +
-  // count can resolve. MAIN BRACKET needs the explicit rail-to-wall gap read per bracket.
+  // The "Combination DBG-NNNN" main bracket (used when the counterweight is at the SIDE, so the
+  // car + CWT rails share one bracket) is keyed by the COUNTERWEIGHT guide distance — its NNNN
+  // matches dbg_counter (28/31 in the corpus), NOT the car DBG (0/31). An earlier attempt on
+  // dbgCar failed for exactly this reason. Standard B/C/F projection brackets still come from
+  // retrieval; this only composes the DBG-keyed combination bracket, additively.
+  "MAIN BRACKET": ["dbgCtr", "cwtSide"],
   "Pulley Main": ["pulleySize", "grooves"], // "C.I. Pulley 300mm/4Grove/8mm" — sheave + grooves(capacity)
   "Pulley Counter": ["pulleySize", "grooves"],
   "Machine": ["machineCap", "machineSheave"], // capacity (in name) + sheave (drive family)
@@ -573,6 +580,12 @@ export interface BomTargetSpec {
    * them. Optional — falls back to floor-scaling / retrieval when absent.
    */
   travel_mm?: number | null;
+  /**
+   * Counterweight position — "side" | "rear" (from the plan). When the CWT is at the side, the
+   * car and counterweight guide rails share a single "Combination" main bracket (keyed by the
+   * counterweight DBG); at the rear they're separate. Gates the combination-bracket compose.
+   */
+  counterweight_position?: string | null;
 }
 export interface PredictedLine {
   section: string;

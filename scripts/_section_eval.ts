@@ -126,6 +126,7 @@ async function buildPool(): Promise<InventoryPool> {
     if (/LINTON/.test(n)) add("Linton Panel", it);
     if (/^CAR HEADER/.test(n)) add("Car Header System", it);
     if (/^LANDING HEADER/.test(n)) add("Landing Header System", it);
+    if (/RAIL BRACKET MAIN COMBINATION/.test(n)) add("MAIN BRACKET", it);
   }
   return pool;
 }
@@ -174,6 +175,7 @@ const widthOf = (name: string): number | null => {
         if (ex.door_vision) { spec.door_vision = ex.door_vision; spec.landing_door_vision = ex.door_vision; }
         if (ex.door_side) spec.door_side = ex.door_side;
         if (ex.travel_mm != null) spec.travel_mm = ex.travel_mm;
+        if (ex.counterweight_position) spec.counterweight_position = ex.counterweight_position;
       }
       // Landing-door finish (drives Door Post / Linton colour) — from the LANDING door row.
       // Approximated here by the landing panel's own finish; in production this is the

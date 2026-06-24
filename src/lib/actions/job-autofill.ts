@@ -83,6 +83,8 @@ export async function autofillFromDrawing(
       door_side: (vision.ok ? (vision.spec.door_side.value as string | null) : null) ?? typedSpec.door_side ?? null,
       // Total travel / shaft height — feeds the shaft-height consumable qty regressions.
       travel_mm: (vision.ok ? vision.spec.travel_mm : null) ?? typedSpec.travel_mm ?? null,
+      // Counterweight side/rear — gates the combination main-bracket compose.
+      counterweight_position: (vision.ok ? vision.spec.counterweight_position : null) ?? typedSpec.counterweight_position ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);
