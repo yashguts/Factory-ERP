@@ -286,12 +286,13 @@ function channelsFromWidth(w: number): number {
   if (w <= 1700) return 15;
   return 20;
 }
-type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr";
+type AttrKey = "doorType" | "material" | "vision" | "landingVision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
   material: { weight: 2, target: targetMaterial, match: (s, v) => skuMaterial(s) === v },
   vision: { weight: 2, target: targetVision, match: (s, v) => skuVision(s) === v },
+  landingVision: { weight: 2, target: (t) => ((t.landing_door_vision === "LV" || t.landing_door_vision === "MV" || t.landing_door_vision === "NV") ? t.landing_door_vision : targetVision(t)), match: (s, v) => skuVision(s) === v },
   // Width drives non-collapsible door SKUs; a collapsible gate carries channels, not width.
   width: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" || t.door_opening_width == null ? null : t.door_opening_width), match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
   color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
@@ -304,7 +305,7 @@ const ATTRS: Record<AttrKey, AttrDef> = {
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
   "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
-  "Landing Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
+  "Landing Door Panel": ["doorType", "material", "landingVision", "width", "color", "side", "channels"],
   "Linton Panel": ["doorType", "material", "width", "color"],
   "Door Sill": ["doorType", "width"],
   "Door Post / Frame": ["doorType", "material", "color", "side"], // door post SKU carries no width
@@ -454,6 +455,7 @@ export interface BomTargetSpec {
    * absent.
    */
   door_vision?: string | null;
+  landing_door_vision?: string | null; // landing door can differ from the car door
   door_side?: string | null;
 }
 export interface PredictedLine {
