@@ -250,21 +250,34 @@ function skuColor(s: string): string | null {
   for (const c of COLOR_PHRASES) if (u.includes(c)) return c;
   return null;
 }
+// The car safety frame (sling) comes in four live families — Home, R1, Std, Goods
+// (+ Hydraulic) — keyed off the machine topology, which the drive_type proxies:
+//   • Home/Belt/Cantilever  -> Home sling (pit-mounted / cantilever)
+//   • MR  (machine room traction)      -> Std sling
+//   • MRL (machine-room-less)          -> R1 sling
+//   • heavy kg-rated goods lift        -> Goods sling  (overrides the drive)
+// drive_type is only a PROXY for the real determinant — the roping / pulley
+// arrangement drawn on the GA section. When that read is available it should win;
+// see frameTypeFromRoping (TODO) and the `roping` field on BomTargetSpec.
 function targetFrameType(t: BomTargetSpec): string | null {
   const cap = parseCapacity(t.capacity);
-  if (cap.kind === "kg" && cap.kg >= 1000) return "GOODS";
+  // Goods is the heavy kg-rated build; passenger-rated people lifts never reach it.
+  // Live split: Goods ≥1500kg, traction slings top out at 1000kg — gate at 1200.
+  if (cap.kind === "kg" && cap.kg >= 1200) return "GOODS";
   const d = t.drive_type;
-  if (d === "HOME" || d === "BELT") return "HOME";
+  if (d === "HOME" || d === "BELT" || d === "CANTI") return "HOME";
   if (d === "HYD") return "HYD";
-  if (d === "MRL" || d === "MR" || d === "MRLBELT" || d === "CANTI") return "R1"; // traction frame family
+  if (d === "MR") return "STD";
+  if (d === "MRL" || d === "MRLBELT" || d === "R1000") return "R1";
   return null;
 }
 function skuFrameType(s: string): string | null {
   const u = s.toUpperCase();
   if (/\bGOODS\b/.test(u)) return "GOODS";
-  if (/\bHOME\b/.test(u)) return "HOME";
+  if (/\bHOME\b/.test(u) || /CANTIL/.test(u)) return "HOME";
   if (/HYDRAULIC|\bHYD\b|\bGMV\b/.test(u)) return "HYD";
-  if (/\bR1\b|\bSTD\b/.test(u)) return "R1"; // R1 and Std are both the traction family
+  if (/\bSTD\b/.test(u)) return "STD"; // machine-room standard sling — kept DISTINCT from R1
+  if (/\bR1\b/.test(u)) return "R1";
   return null;
 }
 function skuSide(s: string): string | null {
