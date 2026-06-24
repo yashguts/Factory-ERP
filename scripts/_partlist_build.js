@@ -215,6 +215,11 @@ const CURATED = [
   C("p-scareing-with-cover", "Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-top-scarating-with-cover", "Top Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-slide-brassing", "Slide Brassing", { group: "Cabin Items", cats: ["Small Manufactured Items > Slide Brassing"], drives: ["MR", "MRL"] }),
+  // batch 2 (M/C Beam, Car Location, Glass Angle, D-Locking Key) per owner disposition
+  C("p-m-c-beam-with-cover", "Machine Beam with Cover", { group: "Machine", capture: "free", drives: ["R1000"] }),
+  C("p-car-location", "Car Location", { group: "Cabin Items", cats: ["Miscallaneous > Car Location"], drives: ["MR"] }),
+  C("p-glass-angle", "Glass Angle", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-d-locking-key", "D-Locking Key", { group: "Doors", capture: "free" }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
