@@ -1856,13 +1856,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "5X12mm (4x3nos)",
   },
   {
-    key: "p-50x6-angle",
-    label: "50X6 Angle",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "1200mm",
-  },
-  {
     key: "p-toci-fixing-kit",
     label: "TOCI Fixing Kit",
     captureType: "free",
@@ -2045,13 +2038,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "10mm",
   },
   {
-    key: "p-jali-wooden",
-    label: "Jali (Wooden)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
     key: "p-keeper-angle",
     label: "Keeper Angle",
     captureType: "item",
@@ -2120,20 +2106,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "free",
     categoryPaths: [],
     specHint: "5x20",
-  },
-  {
-    key: "p-big-jali",
-    label: "Big Jali",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
-    key: "p-small-jali",
-    label: "Small Jali",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "(Returnable)",
   },
 ];
 
