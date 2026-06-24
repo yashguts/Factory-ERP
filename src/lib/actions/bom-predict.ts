@@ -149,7 +149,7 @@ async function _getComposeInventoryUncached(): Promise<InventoryPool> {
         "name.ilike.Car Pannel%,name.ilike.Landing Pannel%,name.ilike.Collapsible Gate%," +
           "name.ilike.Safety Frame%,name.ilike.Counter Weight Frame%,name.ilike.Counter Guard%," +
           "name.ilike.Machine Beam%,name.ilike.%Door Post%,name.ilike.%Top Bottom%,name.ilike.%Linton%," +
-          "name.ilike.Car Header%,name.ilike.Landing Header%",
+          "name.ilike.Car Header%,name.ilike.Landing Header%,name.ilike.Rail Bracket Main%",
       )
       .range(from, to),
   );
@@ -171,6 +171,7 @@ async function _getComposeInventoryUncached(): Promise<InventoryPool> {
     if (/^MACHINE BEAM/.test(n)) add("Machine Beam", it);
     // Door-system frame parts — pooling them lets the composer reach catalogued finish/
     // colour variants the engineer hasn't used on a past job (Door Post 61->73% in eval).
+    if (/RAIL BRACKET MAIN/.test(n)) add("MAIN BRACKET", it); // combination (DBG) + standard B/C/F (gap)
     if (/DOOR POST|TOP BOTTOM/.test(n)) add("Door Post / Frame", it);
     if (/LINTON/.test(n)) add("Linton Panel", it);
     if (/^CAR HEADER/.test(n)) add("Car Header System", it);

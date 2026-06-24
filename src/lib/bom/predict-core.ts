@@ -1013,6 +1013,20 @@ export function aggregateDraft(
           g.qtys.push(lv ?? best.line.required_quantity ?? 1); g.qw.push(1);
         }
       }
+      // Standard PROJECTION bracket: the combination compose above keys the DBG bracket, but the
+      // standard B/C/F class comes from the rail-to-wall gap. Ensure the gap-matched class is in
+      // the draft even when no neighbour used it — add it from the pool. (boost-only elsewhere
+      // can't help if the class isn't retrieved at all.) qty ~ 2 levels (the two single rails).
+      const projGap = section === "MAIN BRACKET" ? target.car_rail_to_wall_mm : section === "COUNTER BRACKET" ? target.counter_rail_to_wall_mm : null;
+      if (projGap != null) {
+        const m = pool.find((e) => { const r = /\((\d+)\s*-\s*(\d+)\)\s*mm/.exec(e.line.item_name); return r && projGap >= +r[1] - 12 && projGap <= +r[2] + 12; });
+        if (m) {
+          let g = byItem.get(m.line.item_id);
+          if (!g) { g = { item: m.line, w: 0, jobs: [], qtys: [], qw: [] }; byItem.set(m.line.item_id, g); }
+          g.w = Math.max(g.w, haveW * 1.5);
+          if (g.qtys.length === 0) { const lv = bracketLevels(target); g.qtys.push(lv ? 2 * lv : (g.item.required_quantity || 1)); g.qw.push(1); }
+        }
+      }
     } else if (pool && SIZE_RULES[section] && sizeTargetFor(section, target)) {
       // Single-dimension fallback (size-keyed sections not yet in COMPOSE).
       const matches = pool.filter((e) => sizeFactor(e.line.item_name, section, target) === TUNING.SIZE_BOOST);

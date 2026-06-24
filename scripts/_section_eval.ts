@@ -132,7 +132,8 @@ async function buildPool(): Promise<InventoryPool> {
     if (/LINTON/.test(n)) add("Linton Panel", it);
     if (/^CAR HEADER/.test(n)) add("Car Header System", it);
     if (/^LANDING HEADER/.test(n)) add("Landing Header System", it);
-    if (/RAIL BRACKET MAIN COMBINATION/.test(n)) add("MAIN BRACKET", it);
+    if (/RAIL BRACKET MAIN/.test(n)) add("MAIN BRACKET", it); // combination (DBG) + standard B/C/F (projection)
+    if (/RAIL BRACKET COUNTER/.test(n)) add("COUNTER BRACKET", it);
   }
   return pool;
 }
