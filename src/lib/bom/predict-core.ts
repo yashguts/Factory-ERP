@@ -225,18 +225,24 @@ function sizeFactor(name: string, section: string, target: BomTargetSpec): numbe
  * rail gap ≈ ppp. Returns a boost/penalty so the matching projection outranks the default "B".
  * Neutral (1) when the relevant gap is unknown or the name carries no projection token.
  */
-function bracketProjFactor(name: string, target: BomTargetSpec): number {
+function bracketProjFactor(name: string, section: string, target: BomTargetSpec): number {
   if (/combination/i.test(name)) {
     const gap = target.counter_rail_to_wall_mm;
     const m = /DBG-\d+X\d+X(\d+)/i.exec(name);
     if (gap == null || !m) return 1;
     return Math.abs(Number(m[1]) - gap) <= TUNING.SIZE_TOL_DBG ? TUNING.SIZE_BOOST : TUNING.SIZE_PENALTY;
   }
-  const gap = target.car_rail_to_wall_mm;
+  // A standard "X (LO-HI)mm" projection-class bracket: the CAR rail gap classes the main
+  // bracket, the COUNTER rail gap classes the counter bracket (different range bands —
+  // counter C=100-145/D=145-190/E=190-235 vs main B=50-100/C=100-160/…). BOOST-ONLY (no
+  // penalty): a job's two car rails can have DIFFERENT gaps (e.g. RNLPRO-0025 = B + C), so a
+  // non-matching class is NOT wrong — it may be the other rail's bracket. We only lift the
+  // class the read gap confirms; the rest stand on their retrieval weight.
+  const gap = section === "COUNTER BRACKET" ? target.counter_rail_to_wall_mm : target.car_rail_to_wall_mm;
   const r = /\((\d+)\s*-\s*(\d+)\)\s*mm/.exec(name);
   if (gap == null || !r) return 1;
   const lo = Number(r[1]), hi = Number(r[2]);
-  return gap >= lo - 12 && gap <= hi + 12 ? TUNING.SIZE_BOOST : TUNING.SIZE_PENALTY;
+  return gap >= lo - 12 && gap <= hi + 12 ? TUNING.SIZE_BOOST : 1;
 }
 
 // ── Multi-attribute SKU composition ──────────────────────────────────────────
@@ -896,8 +902,8 @@ export function aggregateDraft(
     // retrieved brackets toward the one whose projection matches — the car gap picks the standard
     // class (B/C/D/F/G), the counter gap picks the combination projection. This is the fix for
     // the predictor defaulting every bracket to "B (50-100)".
-    if (section === "MAIN BRACKET" && (target.car_rail_to_wall_mm != null || target.counter_rail_to_wall_mm != null))
-      for (const g of byItem.values()) g.w *= bracketProjFactor(g.item.item_name, target);
+    if ((section === "MAIN BRACKET" || section === "COUNTER BRACKET") && (target.car_rail_to_wall_mm != null || target.counter_rail_to_wall_mm != null))
+      for (const g of byItem.values()) g.w *= bracketProjFactor(g.item.item_name, section, target);
 
     // Composition: these SKUs encode the drawing's attributes in the name (door panel
     // = type/material/vision/width/colour; safety/counter frame = frame-type + DBG).
