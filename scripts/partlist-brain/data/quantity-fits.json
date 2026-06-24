@@ -1,0 +1,704 @@
+[
+ {
+  "section": "Safety Tips Plate",
+  "name": "Safety Tips Plate",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Danger Plate",
+  "name": "Danger Plate",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "LIMIT SWITCH",
+  "name": "Final Limit Switch N/C",
+  "kind": "const",
+  "v": 6
+ },
+ {
+  "section": "PIT SWITCH",
+  "name": "Pit Switch Box",
+  "kind": "const",
+  "v": 2
+ },
+ {
+  "section": "PVC CABLE HANGER",
+  "name": "PVC Cable Hanger",
+  "kind": "const",
+  "v": 4
+ },
+ {
+  "section": "LIMIT SWITCH BRACKET",
+  "name": "Limit Switch Bkt STD",
+  "kind": "const",
+  "v": 6
+ },
+ {
+  "section": "TROUGHING 50",
+  "name": "PVC Troughing 50",
+  "kind": "floors",
+  "a": 5.102,
+  "b": 1.597236,
+  "r2": 0.4,
+  "w10": 0.51,
+  "w20": 0.77,
+  "n": 110
+ },
+ {
+  "section": "FIREMAN SWITCH",
+  "name": "Fireman's Switch Box",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "STA. CAM",
+  "name": "Stationary Cam STD",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "RAIL",
+  "name": "Guide Rail 5X45X45",
+  "kind": "travel",
+  "a": 1.564,
+  "b": 0.000468,
+  "r2": 0.9,
+  "w10": 0.77,
+  "w20": 0.89,
+  "n": 62
+ },
+ {
+  "section": "CONT. STAND",
+  "name": "Controller Bracket MRL",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Stud Anchor",
+  "name": "Stud Anchor+Nut+S.W+F.W 10X90",
+  "kind": "floors",
+  "a": -3.045,
+  "b": 7.170352,
+  "r2": 0.32,
+  "w10": 0.61,
+  "w20": 0.77,
+  "n": 75
+ },
+ {
+  "section": "MAGNET WITH BRACKET",
+  "name": "Magnet Bracket STD",
+  "kind": "floors",
+  "a": 0.631,
+  "b": 0.838369,
+  "r2": 0.78,
+  "w10": 0.71,
+  "w20": 0.91,
+  "n": 58
+ },
+ {
+  "section": "STA. CAM",
+  "name": "Stationary Cam Home",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Governor",
+  "name": "Speed Governor HOME",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine",
+  "name": "Machine Unit 6 pass/320mm/4g/8mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard G.I Home DBG-850",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard Net DBG-850",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Filler Weight",
+  "name": "Filler Weight A.H.M DBG-850/100mm(M.S) Home",
+  "kind": "const",
+  "v": 3
+ },
+ {
+  "section": "Filler Weight",
+  "name": "Filler Weight DBG-850/100mm(C.I) 27.545 kg",
+  "kind": "const",
+  "v": 4
+ },
+ {
+  "section": "Landing Header System",
+  "name": "Landing Header System CO 700mm",
+  "kind": "floors",
+  "a": 0.011,
+  "b": 1.004808,
+  "r2": 0.99,
+  "w10": 0.97,
+  "w20": 1,
+  "n": 30
+ },
+ {
+  "section": "Door Post / Frame",
+  "name": "Auto Door Post CO/SS(STD)",
+  "kind": "floors",
+  "a": -0.014,
+  "b": 1.013047,
+  "r2": 0.99,
+  "w10": 0.97,
+  "w20": 1,
+  "n": 29
+ },
+ {
+  "section": "I-Bolt with Spring",
+  "name": "I-Bolt Rod 8mm (Home)",
+  "kind": "const",
+  "v": 8
+ },
+ {
+  "section": "Pulley Main",
+  "name": "Belt Pully 100mmx2Grovex30mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Pulley Counter",
+  "name": "Belt Pully 100mmx2Grovex30mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Frame",
+  "name": "Counter Weight Frame MRL DBG-850mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine Beam",
+  "name": "Machine Beam R1 DBG-850x50/MRL",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine",
+  "name": "Machine Unit 4 pass/100mm/2g/30mm/Home BELT",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Buffer Channel Counter",
+  "name": "Buffer Mounting Channel Counter STD DBG-1050",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Buffer Channel Main",
+  "name": "Buffer Mounting Channel Combination 820",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine",
+  "name": "Machine Unit 4 pass/200mm/4g/6mm/Home",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Thimble",
+  "name": "Thimbel 6mm",
+  "kind": "const",
+  "v": 8
+ },
+ {
+  "section": "Bull Dog Clip",
+  "name": "Bull Dog Clip 6mm",
+  "kind": "const",
+  "v": 24
+ },
+ {
+  "section": "Pulley Main",
+  "name": "C.I. Pulley 300mm/4Grove/8mm",
+  "kind": "const",
+  "v": 2
+ },
+ {
+  "section": "Pulley Counter",
+  "name": "C.I. Pulley 300mm/4Grove/8mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Pulley Main",
+  "name": "PVC Pulley 200mm/4Grove/6mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Pulley Counter",
+  "name": "PVC Pulley 200mm/4Grove/6mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Buffer Channel Counter",
+  "name": "Buffer Mounting Channel Counter STD DBG-850",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Wire Rope Main/Belt Main",
+  "name": "Wire Rope 6mm",
+  "kind": "floors",
+  "a": 25.141,
+  "b": 26.983221,
+  "r2": 0.77,
+  "w10": 0.7,
+  "w20": 0.96,
+  "n": 23
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard Net DBG-1050x65",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine Beam",
+  "name": "Machine Beam DBG-820/Home",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Frame",
+  "name": "Counter Weight Frame Home DBG-850mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Frame",
+  "name": "Counter Weight Frame MRL DBG-1050mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Sill Angle",
+  "name": "Auto Door Sill Angle CO 700mm",
+  "kind": "floors",
+  "a": 0.043,
+  "b": 1.001957,
+  "r2": 0.98,
+  "w10": 0.95,
+  "w20": 1,
+  "n": 19
+ },
+ {
+  "section": "Car Header System",
+  "name": "Car Header System AT RHS/700mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Landing Header System",
+  "name": "Landing Header System AT RHS/700mm",
+  "kind": "floors",
+  "a": -1.556,
+  "b": 1.333333,
+  "r2": 0.78,
+  "w10": 0.61,
+  "w20": 0.83,
+  "n": 18
+ },
+ {
+  "section": "Filler Weight",
+  "name": "Filler Weight DBG-750/100mm(C.I) 23.645",
+  "kind": "const",
+  "v": 26
+ },
+ {
+  "section": "Linton Panel",
+  "name": "Auto Door Linton Pannel CO SS/700mm",
+  "kind": "floors",
+  "a": 0.002,
+  "b": 1.012536,
+  "r2": 0.98,
+  "w10": 0.94,
+  "w20": 1,
+  "n": 18
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame Home DBG-820",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Buffer Channel Main",
+  "name": "Buffer Mounting Channel Main STD DBG-1192-1292",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard G.I Home DBG-750",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Gate Lock",
+  "name": "Gate Lock \"B\" Type",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 16
+ },
+ {
+  "section": "Door Sill",
+  "name": "Alluminium Sill AT 800/1345",
+  "kind": "floors",
+  "a": 1,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 15
+ },
+ {
+  "section": "Pulley Counter",
+  "name": "PVC Pulley 300mm/4Grove/8mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Governor",
+  "name": "Speed Governor 0.7mts R1",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "I-Bolt with Spring",
+  "name": "I-Bolt Rod 16mm",
+  "kind": "const",
+  "v": 6
+ },
+ {
+  "section": "Landing Header System",
+  "name": "Landing Header System CO 800mm",
+  "kind": "floors",
+  "a": 0.134,
+  "b": 0.928401,
+  "r2": 0.88,
+  "w10": 0.93,
+  "w20": 0.93,
+  "n": 14
+ },
+ {
+  "section": "MAIN BRACKET",
+  "name": "Rail Bracket Main Combination DBG-850X50X180 R1",
+  "kind": "floors",
+  "a": 3.141,
+  "b": 1.42233,
+  "r2": 0.91,
+  "w10": 0.86,
+  "w20": 1,
+  "n": 14
+ },
+ {
+  "section": "Buffer Channel Main",
+  "name": "Buffer Mounting Channel Main STD DBG-942-1042",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "CONT. STAND",
+  "name": "Controller Bracket STD",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "REED CHANNEL",
+  "name": "Read Channel S.S/2300mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Landing Door Panel",
+  "name": "Landing Pannel AT/SS/LV/700",
+  "kind": "floors",
+  "a": -0.333,
+  "b": 1.075758,
+  "r2": 0.87,
+  "w10": 0.92,
+  "w20": 0.92,
+  "n": 13
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame Home DBG-820 BELT Pitless",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Frame",
+  "name": "Counter Weight Frame Home DBG-850mm Belt",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine Beam",
+  "name": "Machine Beam DBG-820/Home Belt",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Car Header System",
+  "name": "Car Header System AT LHS/700mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Landing Header System",
+  "name": "Landing Header System AT LHS/700mm",
+  "kind": "floors",
+  "a": -0.258,
+  "b": 1.032258,
+  "r2": 0.9,
+  "w10": 0.85,
+  "w20": 0.85,
+  "n": 13
+ },
+ {
+  "section": "Landing Door Panel",
+  "name": "Landing Pannel CO/SS/LV/700(STD)",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 13
+ },
+ {
+  "section": "Car Door Panel",
+  "name": "Car Pannel AT/SS/LV/700",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "MAGNET WITH BRACKET",
+  "name": "Magnet Bracket MRL GOODS",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 0.89,
+  "w10": 0.83,
+  "w20": 0.92,
+  "n": 12
+ },
+ {
+  "section": "Wire Rope Main/Belt Main",
+  "name": "Wire Rope 10mm",
+  "kind": "travel",
+  "a": 30.194,
+  "b": 0.002268,
+  "r2": 0.83,
+  "w10": 1,
+  "w20": 1,
+  "n": 6
+ },
+ {
+  "section": "Door Post / Frame",
+  "name": "Auto Door Post SO/SS/RHS",
+  "kind": "floors",
+  "a": -0.8,
+  "b": 1.2,
+  "r2": 0.83,
+  "w10": 0.91,
+  "w20": 0.91,
+  "n": 11
+ },
+ {
+  "section": "Machine Beam",
+  "name": "Machine Beam R1 DBG-1050x65/MRL",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Filler Weight",
+  "name": "Filler Weight A.H.M DBG-1050/200mm(M.S)",
+  "kind": "const",
+  "v": 17
+ },
+ {
+  "section": "Buffer Channel Main",
+  "name": "Buffer Mounting Channel Combination 720",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard Net DBG-1050x50",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Frame",
+  "name": "Counter Weight Frame Home DBG-750mm Belt",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame R1 DBG-1242",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame Std DBG-1242",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine",
+  "name": "Machine Unit 5 HP/530mm/3g/10mm/940rpm/0.65 m/s (STELLAR)",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Thimble",
+  "name": "Thimbel 10mm",
+  "kind": "const",
+  "v": 6
+ },
+ {
+  "section": "Bull Dog Clip",
+  "name": "Bull Dog Clip 10mm",
+  "kind": "const",
+  "v": 18
+ },
+ {
+  "section": "Buffer Channel Main",
+  "name": "Buffer Mounting Channel Main STD DBG-1442- 1542",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Sill Angle",
+  "name": "Auto Door Sill Angle CO 800mm",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 9
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame Home DBG-720 BELT Pitless",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Machine Beam",
+  "name": "Machine Beam DBG-720/Home Belt",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Counter Guard Net",
+  "name": "Counter Guard Net DBG-710",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame R1 DBG-1142",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame R1 DBG-1642/150mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "FLOOR TILES",
+  "name": "ALLUMINUIM CHEQUERED PLATE 2MM",
+  "kind": "const",
+  "v": 1.5
+ },
+ {
+  "section": "Car Door Panel",
+  "name": "Car Pannel AT/SS/LV/800",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Landing Door Panel",
+  "name": "Landing Pannel AT/SS/LV/800",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 8
+ },
+ {
+  "section": "Car Header System",
+  "name": "Car Header System AT RHS/800mm",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Landing Header System",
+  "name": "Landing Header System AT RHS/800mm",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 8
+ },
+ {
+  "section": "Linton Panel",
+  "name": "Auto Door Linton Pannel LANDING AT SS/800mm",
+  "kind": "floors",
+  "a": 0,
+  "b": 1,
+  "r2": 1,
+  "w10": 1,
+  "w20": 1,
+  "n": 8
+ },
+ {
+  "section": "Safety",
+  "name": "Safety Frame R1 DBG-1042",
+  "kind": "const",
+  "v": 1
+ },
+ {
+  "section": "Filler Weight",
+  "name": "Filler Weight A.H.M DBG-710/150mm(M.S)",
+  "kind": "const",
+  "v": 14
+ }
+]

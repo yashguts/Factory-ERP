@@ -19,9 +19,9 @@ function fit(pts) {
   const sxx = pts.reduce((s, p) => s + p.x * p.x, 0), sxy = pts.reduce((s, p) => s + p.x * p.y, 0);
   const d = n * sxx - sx * sx; if (Math.abs(d) < 1e-9) return null;
   const b = (n * sxy - sx * sy) / d, a = (sy - b * sx) / n;
-  const my = sy / n; let ssr = 0, sst = 0, ae = 0;
-  for (const p of pts) { const yh = a + b * p.x; ssr += (p.y - yh) ** 2; sst += (p.y - my) ** 2; ae += Math.abs(p.y - yh); }
-  return { a, b, r2: sst > 0 ? 1 - ssr / sst : 0, mae: ae / n, n };
+  const my = sy / n; let ssr = 0, sst = 0, ae = 0, w20 = 0, w10 = 0;
+  for (const p of pts) { const yh = a + b * p.x; ssr += (p.y - yh) ** 2; sst += (p.y - my) ** 2; ae += Math.abs(p.y - yh); const e = Math.abs(yh - p.y) / Math.max(p.y, 1); if (e <= 0.2) w20++; if (e <= 0.1) w10++; }
+  return { a, b, r2: sst > 0 ? 1 - ssr / sst : 0, mae: ae / n, within20: w20 / n, within10: w10 / n, n };
 }
 
 (async () => {
@@ -49,6 +49,17 @@ function fit(pts) {
     if (!data.has(key)) data.set(key, []);
     data.get(key).push({ q, travel, floors, kg });
   }
+  // TRAVEL is only physically valid where qty scales with SHAFT HEIGHT — parts repeated
+  // up the hoistway (rail clips/brackets every ~1.7m, guide rails cut to travel, governor/
+  // hoist rope length, cable troughing, rail grease). Per-LANDING parts (sills, headers,
+  // doors, linton, gate lock) are one-per-stop: they only correlate with travel because a
+  // taller shaft has more stops. Forcing travel there would over-count a tall 2-stop job.
+  // So outside this whitelist we never emit a travel model — floors/const/retrieval only.
+  const SHAFT_DRIVEN = new Set([
+    "RAIL CLIP", "RAIL", "Stud Anchor", "MAIN BRACKET", "COUNTER BRACKET",
+    "Wire Rope Governor", "Wire Rope Main/Belt Main", "TROUGHING 50", "TROUGHING 100",
+    "Mobil T-40", "Bull Dog Clip", "I-Bolt with Spring", "D-SHACKLE", "Fish Plate", "PVC CABLE HANGER",
+  ]);
   // Select a model per item: const (stable), else floors/travel regression (r2 ≥ 0.55).
   const models = [];
   const rows = [...data.entries()].filter(([, v]) => v.length >= 8).sort((a, b) => b[1].length - a[1].length);
@@ -62,15 +73,24 @@ function fit(pts) {
     const ft = fit(pts.filter((p) => p.travel != null).map((p) => ({ x: p.travel, y: p.q })));
     const ff = fit(pts.filter((p) => p.floors != null).map((p) => ({ x: p.floors, y: p.q })));
     let model = null;
-    // Only keep models that beat the retrieval median: a very stable count, or a
-    // NEAR-PERFECT regression (r2>=0.85). Coarser fits (r2~0.6) lose to retrieval on
-    // the strict 10% qty tolerance — measured net-negative, so excluded.
+    // Select by USABLE tolerance (within-20%), not r2. The owner's insight: consumable
+    // quantities (rail clip, wire rope, rail) track the SHAFT HEIGHT (travel), and the
+    // exact count is immaterial — within 20% never gets re-typed. A travel regression hits
+    // 75-85% within-20% where floor-scaling (the old default) manages ~28%. Keep a model
+    // only if it clears 70% within-20% AND beats the const-mode baseline on the same metric.
+    const modeW20 = qs.filter((x) => Math.abs(x - mode) / Math.max(x, 1) <= 0.2).length / qs.length;
     if (cv < 0.08) model = { section, name, kind: "const", v: mode };
     else {
-      const best = [ft && { ...ft, predictor: "travel" }, ff && { ...ff, predictor: "floors" }].filter(Boolean).sort((a, b) => b.r2 - a.r2)[0];
-      if (best && best.r2 >= 0.85) model = { section, name, kind: best.predictor, a: +best.a.toFixed(3), b: +best.b.toFixed(6), r2: +best.r2.toFixed(2), n: best.n };
+      // Keep a regression only if it's good at BOTH tolerances: within-20% >= 70% (usable)
+      // AND within-10% >= 50% (precise enough to beat exact-neighbour retrieval). A loose
+      // fit that only clears 20% (e.g. Wire Rope Governor, within-10% = 33%) loses to
+      // retrieval whenever a close neighbour exists — measured net-negative, so excluded.
+      const allowTravel = SHAFT_DRIVEN.has(section);
+      const best = [allowTravel && ft && { ...ft, predictor: "travel" }, ff && { ...ff, predictor: "floors" }].filter(Boolean).sort((a, b) => b.within10 - a.within10)[0];
+      if (best && best.within20 >= 0.70 && best.within10 >= 0.50 && best.within20 > modeW20 + 0.1)
+        model = { section, name, kind: best.predictor, a: +best.a.toFixed(3), b: +best.b.toFixed(6), r2: +best.r2.toFixed(2), w10: +best.within10.toFixed(2), w20: +best.within20.toFixed(2), n: best.n };
     }
-    const fmt = (f, lbl) => f ? `${lbl} r2=${f.r2.toFixed(2)}` : `${lbl} -`;
+    const fmt = (f, lbl) => f ? `${lbl} w10=${(100 * f.within10).toFixed(0)}/w20=${(100 * f.within20).toFixed(0)}` : `${lbl} -`;
     console.log(`${key.slice(0, 44).padEnd(45)} ${String(pts.length).padStart(3)} cv=${cv.toFixed(2)} | ${fmt(ft, "trav")} ${fmt(ff, "flr")} mode=${mode} | -> ${model ? model.kind : "RETRIEVAL"}`);
     if (model) models.push(model);
   }

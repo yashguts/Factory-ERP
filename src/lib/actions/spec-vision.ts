@@ -35,6 +35,8 @@ export interface ExtractedSpec {
   brand: SpecField<string>;
   /** Door opening width in mm parsed from the drawing — the door SKU size driver. */
   door_opening_width_mm: number | null;
+  /** Total travel / shaft height in mm — drives shaft-height consumable quantities. */
+  travel_mm: number | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -367,6 +369,7 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
       door_side: rich.door_side,
       brand: rich.brand,
       door_opening_width_mm: parseWidthMm(rich.dimensions?.door_opening_width_mm?.value),
+      travel_mm: parseWidthMm(rich.dimensions?.travel_mm?.value),
       notes: rich.notes ?? "",
     },
   };

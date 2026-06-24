@@ -10,6 +10,7 @@
  */
 import { BOM_SECTIONS, PHASE_ORDER, FIRST_PHASE_SECTIONS } from "./bom-sections";
 import { shouldRenderSection } from "./section-gating";
+import { QTY_FITS } from "./quantity-fits";
 
 // ── Tunables (one block — re-run the backtest after changing) ──────────
 export const TUNING = {
@@ -560,6 +561,14 @@ export interface BomTargetSpec {
   landing_door_vision?: string | null; // landing door can differ from the car door
   landing_door_finish?: string | null; // landing door finish/colour — drives Door Post / Linton / landing panel colour
   door_side?: string | null;
+  /**
+   * Total travel / shaft height (mm) from the drawing's section (page 2). The owner's
+   * insight: per-shaft-height consumable QUANTITIES — rail clips, governor rope, some
+   * rails & sills — track the shaft height, NOT the floor count (floors is a poor proxy
+   * when floor heights vary). QTY_FITS carries the per-item travel regressions; this feeds
+   * them. Optional — falls back to floor-scaling / retrieval when absent.
+   */
+  travel_mm?: number | null;
 }
 export interface PredictedLine {
   section: string;
@@ -569,7 +578,7 @@ export interface PredictedLine {
   item_name: string;
   uom: string;
   suggestedQty: number;
-  qtyMethod: "floor-scaled" | "as-is" | "rule";
+  qtyMethod: "floor-scaled" | "as-is" | "rule" | "fitted";
   confidence: number; // 0..1
   confidenceBand: "high" | "medium" | "low";
   supportingJobs: string[];
@@ -740,6 +749,27 @@ function deterministicQty(itemName: string, section: string, L: number | null): 
   return null;
 }
 
+// Per-(section, item) quantity models mined from the corpus (scripts/_qty_mine.js).
+// const = stable count; floors/travel = qty ≈ a + b·X. Keyed exact on section :: name.
+const QTY_FIT_BY_KEY = new Map(QTY_FITS.map((f) => [`${f.section} :: ${f.name}`, f]));
+
+/**
+ * A fitted quantity for this exact SKU, when one was mined and its driver is known.
+ * The owner's shaft-height insight: per-shaft consumables (rail clip, governor rope,
+ * some rails/sills) regress on TRAVEL far better than on floors. Returns null when no
+ * model exists or the model's driver (travel) is absent — caller falls back to the
+ * floor-scaled retrieval median. `const` models are unconditional.
+ */
+function qtyFitFor(itemName: string, section: string, target: BomTargetSpec): number | null {
+  const f = QTY_FIT_BY_KEY.get(`${section} :: ${itemName}`);
+  if (!f) return null;
+  if (f.kind === "const") return f.v ?? null;
+  const x = f.kind === "travel" ? target.travel_mm ?? null : target.floors ?? null;
+  if (x == null || x <= 0) return null;
+  const y = (f.a ?? 0) + (f.b ?? 0) * x;
+  return y > 0 ? Math.round(y) : null;
+}
+
 export type SectionPool = Map<string, { line: TrainingLine; count: number; drives: Set<string> }[]>;
 
 export function aggregateDraft(
@@ -827,18 +857,25 @@ export function aggregateDraft(
     const attrs = COMPOSE[section];
     if (pool && attrs) {
       const drive = target.drive_type ?? null;
-      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number } | null = null;
+      // Among catalogue SKUs that tie on the COMPOSED attributes (e.g. pulley size + grooves),
+      // prefer the exact variant the SIMILAR JOBS actually used — its retrieval weight in
+      // byItem — over the globally-common catalogue item. This is how an attribute the spec
+      // does NOT carry (pulley C.I. vs PVC: 15 of 18 misses were material-only) gets decided:
+      // by the neighbourhood, not by a blind catalogue majority. Falls back to drive + count.
+      let best: { line: TrainingLine; score: number; max: number; drive: boolean; count: number; nw: number } | null = null;
       for (const e of pool) {
         const r = composeScore(e.line.item_name, attrs, target);
         if (!r || r.max === 0) continue;
         const driveOk = !!(drive && e.drives.has(drive));
+        const nw = byItem.get(e.line.item_id)?.w ?? 0; // weight this SKU carried among neighbours
         if (
           !best ||
           r.score > best.score ||
           (r.score === best.score && driveOk && !best.drive) ||
-          (r.score === best.score && driveOk === best.drive && e.count > best.count)
+          (r.score === best.score && driveOk === best.drive && nw > best.nw) ||
+          (r.score === best.score && driveOk === best.drive && nw === best.nw && e.count > best.count)
         ) {
-          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count };
+          best = { line: e.line, score: r.score, max: r.max, drive: driveOk, count: e.count, nw };
         }
       }
       if (best && best.score >= TUNING.COMPOSE_MIN_FRAC * best.max && best.score >= TUNING.COMPOSE_MIN_SCORE) {
@@ -885,10 +922,13 @@ export function aggregateDraft(
       let conf = cSection * cItem * cQty * cSupport;
       if (completenessSource === "gate-fallback") conf *= 0.7;
       const medianQty = Number.isInteger(g.item.required_quantity) ? Math.round(m) : Math.round(m * 10) / 10;
-      // A deterministic rule, when it fires, replaces the retrieved median.
+      // Quantity precedence: a deterministic hard rule first, then a mined regression
+      // (travel/floors/const — the shaft-height consumables), else the retrieved median.
       const det = deterministicQty(g.item.item_name, section, target.floors ?? null);
-      const qty = det ?? medianQty;
+      const fit = det == null ? qtyFitFor(g.item.item_name, section, target) : null;
+      const qty = det ?? fit ?? medianQty;
       if (det != null) conf = Math.max(conf, 0.85); // hard rule fired — trust it
+      else if (fit != null) conf = Math.max(conf, 0.7); // fitted regression — fairly trusted
       draft.push({
         section,
         phase: (meta?.phase as string) ?? "Additional Items",
@@ -897,7 +937,7 @@ export function aggregateDraft(
         item_name: g.item.item_name,
         uom: g.item.uom,
         suggestedQty: qty > 0 ? qty : g.item.required_quantity,
-        qtyMethod: det != null ? "rule" : floorScaled ? "floor-scaled" : "as-is",
+        qtyMethod: det != null ? "rule" : fit != null ? "fitted" : floorScaled ? "floor-scaled" : "as-is",
         confidence: conf,
         confidenceBand: band(conf),
         supportingJobs: [...new Set(g.jobs)],

@@ -81,6 +81,8 @@ export async function autofillFromDrawing(
       door_vision: (vision.ok ? (vision.spec.door_vision.value as string | null) : null) ?? typedSpec.door_vision ?? null,
       landing_door_vision: (vision.ok ? (vision.spec.door_vision.value as string | null) : null) ?? typedSpec.landing_door_vision ?? null,
       door_side: (vision.ok ? (vision.spec.door_side.value as string | null) : null) ?? typedSpec.door_side ?? null,
+      // Total travel / shaft height — feeds the shaft-height consumable qty regressions.
+      travel_mm: (vision.ok ? vision.spec.travel_mm : null) ?? typedSpec.travel_mm ?? null,
     };
 
     const pred = await predictBomFromSpec(target, jobId);
