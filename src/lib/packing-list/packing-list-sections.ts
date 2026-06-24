@@ -1093,6 +1093,14 @@ export const PACKING_SECTIONS: PackingSection[] = [
     drives: ["R1000"],
   },
   {
+    key: "p-slide-brassing",
+    label: "Slide Brassing",
+    captureType: "item",
+    categoryPaths: ["Small Manufactured Items > Slide Brassing"],
+    specHint: "Flat...(1200X2 / 1400X2)",
+    drives: ["MR","MRL"],
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
@@ -1561,13 +1569,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: [],
     specHint: "",
-  },
-  {
-    key: "p-slide-brassing",
-    label: "Slide Brassing",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Slide Brassing"],
-    specHint: "Flat...(1200X2 / 1400X2)",
   },
   {
     key: "p-m-c-beam-with-cover",

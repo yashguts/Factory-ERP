@@ -215,6 +215,7 @@ const CURATED = [
   C("p-top-channel-with-shaft-and-plate", "Top Channel With Shaft and Plate", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-scareing-with-cover", "Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("p-top-scarating-with-cover", "Top Scarating With Cover", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+  C("p-slide-brassing", "Slide Brassing", { group: "Cabin Items", cats: ["Small Manufactured Items > Slide Brassing"], drives: ["MR", "MRL"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
