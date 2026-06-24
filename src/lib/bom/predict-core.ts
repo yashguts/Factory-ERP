@@ -66,13 +66,21 @@ export const TUNING = {
   COMPOSE_MIN_SCORE: 5, //  ...and at least this much absolute weight (≈2 strong attributes agreeing)
 };
 
-// Sections the predictor does NOT pre-fill. Kept DELIBERATELY small: the owner's rule
-// is that an item ABSENT from a past job is missing data (often dispatched before the
-// job was entered), NOT evidence the job lacks it — so we do NOT suppress structural
-// items like Stud Anchor / Brick just because they're absent from truncated BOMs
-// (that's data absence, and the honest backtest forgives it). Only Cabin Glass stays
-// out, by the owner's explicit call that it isn't predictable from the drawing/spec.
-export const SUPPRESS_PREDICTION = new Set<string>(["CABIN GLASS"]);
+// Sections the predictor does NOT pre-fill — the genuinely-undrawable ones, by the owner's
+// call (a clean blank the engineer fills beats a confident-but-wrong prefill they might not
+// catch). Cabin Glass (not in the drawing), Pulley material (C.I./PVC coin-flip), Filler
+// Weight (exact count needs the undrawn counter-frame height). Everything else is pre-filled
+// (absence in a past BOM = missing data, not a true zero — the backtest forgives it).
+export const SUPPRESS_PREDICTION = new Set<string>([
+  "CABIN GLASS", "Pulley Main", "Pulley Counter", "Filler Weight",
+]);
+
+// Item-level suppression WITHIN a predicted section. (Empty: tried suppressing the MAIN BRACKET
+// combination per the owner's idea, but measured the OPPOSITE of the intuition — the combination
+// is the part we predict WELL now (optical cwt-at-side + counter-DBG compose nails the family);
+// the standard B/C/F class is the harder per-rail residual. So we keep predicting the whole
+// bracket — the combination prefill is a right-family, fix-the-projection edit, not a blank.)
+const SUPPRESS_ITEM: Record<string, RegExp> = {};
 
 // Sections whose quantity scales ~per-floor; everything else is a fixed count.
 const FLOOR_SCALED = new Set<string>([
@@ -1052,8 +1060,10 @@ export function aggregateDraft(
 
     const ranked = [...byItem.values()].sort((a, b) => b.w - a.w);
     const sectionCap = caps?.get(section) ?? TUNING.MAX_ITEMS_PER_SECTION;
-    const kept = ranked.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, sectionCap);
-    if (kept.length === 0 && ranked.length) kept.push(ranked[0]); // always at least the modal item
+    const supp = SUPPRESS_ITEM[section]; // e.g. drop the combination bracket, keep standard B/C/F
+    const eligible = supp ? ranked.filter((g) => !supp.test(g.item.item_name)) : ranked;
+    const kept = eligible.filter((g) => g.w / haveW >= TUNING.ITEM_THRESHOLD).slice(0, sectionCap);
+    if (kept.length === 0 && eligible.length) kept.push(eligible[0]); // always at least the modal item
 
     for (const g of kept) {
       const cItem = Math.min(1, g.w / haveW); // a size boost can exceed haveW — cap the confidence

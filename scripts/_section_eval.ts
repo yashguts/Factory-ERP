@@ -235,10 +235,15 @@ const widthOf = (name: string): number | null => {
     // Upload tally, PER SECTION (slot model). A wrong-variant pick pairs an extra (FP)
     // with a missing (FN) as ONE edit; only the |extra - missing| imbalance is a real
     // add/delete. touches = qty-edits + max(extra, missing) per section.
-    const gateEl = (s: string) => gateEligible(s, held.spec.drive_type) && !EXCLUDE.has(s);
+    // Suppressed sections are MANUAL fill — outside the auto-fill score (don't count them as misses).
+    const gateEl = (s: string) => gateEligible(s, held.spec.drive_type) && !EXCLUDE.has(s) && !SUPPRESS_PREDICTION.has(s);
+    // Items the predictor deliberately leaves for MANUAL fill are outside the auto-fill score —
+    // drop them from the TRUTH too (the predictor already omits them) so they aren't counted as
+    // misses. Mirrors SUPPRESS_ITEM in predict-core (currently none).
+    const manualItem = (_sec: string, _name: string) => false;
     const secs = new Set<string>();
     const tQ = new Map<string, Map<string, number>>();
-    for (const [sec, lines] of Object.entries(held.sections)) if (gateEl(sec)) { secs.add(sec); const m = tQ.get(sec) ?? new Map<string, number>(); for (const l of lines) m.set(l.item_id, (m.get(l.item_id) ?? 0) + l.required_quantity); tQ.set(sec, m); }
+    for (const [sec, lines] of Object.entries(held.sections)) if (gateEl(sec)) { secs.add(sec); const m = tQ.get(sec) ?? new Map<string, number>(); for (const l of lines) { if (manualItem(sec, l.item_name)) continue; m.set(l.item_id, (m.get(l.item_id) ?? 0) + l.required_quantity); } tQ.set(sec, m); }
     const pQ = new Map<string, Map<string, number>>();
     for (const l of pred.draft) if (gateEl(l.section)) { secs.add(l.section); const m = pQ.get(l.section) ?? new Map<string, number>(); if (!m.has(l.item_id)) m.set(l.item_id, l.suggestedQty); pQ.set(l.section, m); }
     for (const sec of secs) {
