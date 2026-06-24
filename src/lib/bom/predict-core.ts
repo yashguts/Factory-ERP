@@ -432,7 +432,12 @@ const ATTRS: Record<AttrKey, AttrDef> = {
   // Opening width regardless of door type — for FRAME parts (door post, sill) whose
   // collapsible variant IS keyed by real width ("Top Bottom set OPP-930") not channels.
   openWidth: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
-  color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
+  // CAR colour: ALWAYS scored ("PLAIN" when the drawing finish has no designer colour), so a
+  // plain car door prefers the plain panel instead of inheriting a designer colour from a
+  // neighbour (owner: car-door finish must match the drawing). Landing colour stays lenient
+  // (target null -> skipped) because a designer drawing built plain on the landing is the
+  // engineer's judgement, not an error.
+  color: { weight: 2, target: (t) => targetColor(t) ?? "PLAIN", match: (s, v) => (skuColor(s) ?? "PLAIN") === v },
   landingColor: { weight: 2, target: targetLandingColor, match: (s, v) => skuColor(s) === v },
   side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
   channels: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" && t.door_opening_width ? channelsFromWidth(t.door_opening_width) : null), match: (s, v) => new RegExp(`\\b${v}\\s*\\+?\\s*1?\\s*CHANNEL`).test(s.toUpperCase()) },
