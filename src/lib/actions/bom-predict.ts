@@ -10,6 +10,7 @@ import {
   type TrainingLine,
   type BomTargetSpec,
   type BomPrediction,
+  type InventoryPool,
 } from "@/lib/bom/predict-core";
 
 export type { BomPrediction, BomTargetSpec } from "@/lib/bom/predict-core";
@@ -130,6 +131,41 @@ export async function getTrainingCorpus(): Promise<TrainingJob[]> {
 }
 
 /**
+ * The full door-panel catalogue, keyed by BOM section — so the composer can resolve
+ * the exact attribute combo (e.g. a colour×width SKU) even when no past job used it.
+ */
+async function _getDoorInventoryUncached(): Promise<InventoryPool> {
+  const supabase = createCacheClient();
+  const items = await fetchAllRanged<{ id: string; name: string }>((from, to, withCount) =>
+    supabase
+      .from("items")
+      .select("id, name", withCount ? { count: "exact" } : {})
+      .eq("is_active", true)
+      .or("name.ilike.Car Pannel%,name.ilike.Landing Pannel%,name.ilike.Collapsible Gate%")
+      .range(from, to),
+  );
+  const pool: InventoryPool = new Map();
+  const add = (sec: string, it: { id: string; name: string }) => {
+    const arr = pool.get(sec) ?? [];
+    arr.push({ item_id: it.id, item_code: "", item_name: it.name, uom: "", required_quantity: 1 });
+    pool.set(sec, arr);
+  };
+  for (const it of items) {
+    const n = (it.name || "").toUpperCase();
+    if (/^CAR PANNEL|COLLAPSIBLE GATE/.test(n)) add("Car Door Panel", it);
+    if (/^LANDING PANNEL|COLLAPSIBLE GATE/.test(n)) add("Landing Door Panel", it);
+  }
+  return pool;
+}
+
+export async function getDoorInventory(): Promise<InventoryPool> {
+  return unstable_cache(_getDoorInventoryUncached, ["bom-predict-door-inventory"], {
+    revalidate: 3600,
+    tags: ["items"],
+  })();
+}
+
+/**
  * Predict a draft BOM for a target spec. Read-only; the engineer applies + saves.
  * `excludeJobId` drops the job being edited from the corpus so it never matches
  * itself (matches the leave-one-out backtest; keeps confidence honest).
@@ -145,7 +181,8 @@ export async function predictBomFromSpec(
     let corpus = await getTrainingCorpus();
     if (excludeJobId) corpus = corpus.filter((j) => j.id !== excludeJobId);
     if (corpus.length === 0) return { ok: false, error: "No past jobs to learn from yet." };
-    const prediction = predictFromCorpus(target, corpus);
+    const inventory = await getDoorInventory().catch(() => undefined);
+    const prediction = predictFromCorpus(target, corpus, inventory);
     return { ok: true, prediction };
   } catch {
     return { ok: false, error: "Could not build a suggestion right now." };
