@@ -1751,20 +1751,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "16x100",
   },
   {
-    key: "p-buffer-stand-main-goods",
-    label: "Buffer Stand Main (Goods)",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Buffer Stand"],
-    specHint: "775mm",
-  },
-  {
-    key: "p-buffer-stand-counter-goods",
-    label: "Buffer Stand Counter (Goods)",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Buffer Stand"],
-    specHint: "200mm",
-  },
-  {
     key: "p-screw-c-s-k-nut-s-w-f-w",
     label: "Screw C.S.K+Nut+S.W+F.W",
     captureType: "free",
@@ -1891,25 +1877,11 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "5x20",
   },
   {
-    key: "p-pit-switch",
-    label: "Pit Switch",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Pit Switch Box"],
-    specHint: "",
-  },
-  {
     key: "p-screw-ch-hd-nut-s-w-f-w",
     label: "Screw Ch.Hd.+Nut+S.W+F.W",
     captureType: "free",
     categoryPaths: [],
     specHint: "5x15",
-  },
-  {
-    key: "p-pit-switch-box",
-    label: "Pit Switch Box",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Pit Switch Box"],
-    specHint: "(With 2pin Jack)",
   },
   {
     key: "p-facia-plate-fixing-kit",
@@ -1926,13 +1898,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "MS",
   },
   {
-    key: "p-facia-plate",
-    label: "Facia Plate",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Facia Plate/Bracket"],
-    specHint: "750mm",
-  },
-  {
     key: "p-screw-ch-hd-nut",
     label: "Screw Ch.Hd.+Nut",
     captureType: "free",
@@ -1945,13 +1910,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Imperforated Door"],
     specHint: "0",
-  },
-  {
-    key: "p-facia-bkt",
-    label: "Facia Bkt",
-    captureType: "item",
-    categoryPaths: ["Small Manufactured Items > Facia Plate/Bracket"],
-    specHint: "300mm/G.I",
   },
   {
     key: "p-gate-lock-keeper",
@@ -1972,13 +1930,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     label: "PVC Excution",
     captureType: "item",
     categoryPaths: ["Miscallaneous > PVC Excussion"],
-    specHint: "0",
-  },
-  {
-    key: "p-rubber-buffer-10mm",
-    label: "Rubber Buffer 10mm",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Rubber Buffer"],
     specHint: "0",
   },
   {
@@ -2029,13 +1980,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "free",
     categoryPaths: [],
     specHint: "5x20",
-  },
-  {
-    key: "p-rubber-buffer",
-    label: "Rubber Buffer",
-    captureType: "item",
-    categoryPaths: ["Miscallaneous > Rubber Buffer"],
-    specHint: "10mm",
   },
   {
     key: "p-keeper-angle",
