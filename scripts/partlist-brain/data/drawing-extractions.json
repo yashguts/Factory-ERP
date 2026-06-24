@@ -24,7 +24,8 @@
   "drive_type": "MRL",
   "machine_room": "no",
   "counterweight_position": "rear",
-  "notes": "Model ALPHA 200; Controller V3F at top floor 300x250x1500; Operation FULL COLLECTIVE CONTROL; Power AC 415V 3PH 50Hz; Cabin SS Hairline; Car flooring Vinyl; Traction media ROPE; Clear height 2000, under lintel 2200; Floor heights Ground 3100 / 1st 3150 / 2nd 3160; Total travel height 9410; Hoisting hook capacity 1500 KG; Forces on rail F=1700 KG, R1=250 KG, R2=30 KG; Car buffer 3000 KG, CWT buffer 2400 KG, safety vertical 3100 KG; landing & car door identical (SS Hairline CO auto with long vision glass)"
+  "notes": "Model ALPHA 200; Controller V3F at top floor 300x250x1500; Operation FULL COLLECTIVE CONTROL; Power AC 415V 3PH 50Hz; Cabin SS Hairline; Car flooring Vinyl; Traction media ROPE; Clear height 2000, under lintel 2200; Floor heights Ground 3100 / 1st 3150 / 2nd 3160; Total travel height 9410; Hoisting hook capacity 1500 KG; Forces on rail F=1700 KG, R1=250 KG, R2=30 KG; Car buffer 3000 KG, CWT buffer 2400 KG, safety vertical 3100 KG; landing & car door identical (SS Hairline CO auto with long vision glass)",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "4d87f68a-2160-465c-8b43-335917f95d87",
@@ -51,7 +52,8 @@
   "speed_mps": 1,
   "drive_type": "MRL",
   "machine_room": "no",
-  "notes": "Model ALPHA 200, M.R.L. LIFT; Capacity 6 persons / 408 KG; Traction media ROPE; Operation FULL COLLECTIVE CONTROL; Controller V3F; Cabin SS Hairline Finish; Car flooring Vinyl; Location Amritsar, Punjab; Contract RNLCHA0057; Date 26.02.2026. Hoisting hook capacity 1500 KG. Forces on rail F=1700KG, R1=250KG, R2=30KG. Pit reaction: car buffer 3000KG, CWT buffer 2400KG, vertical forces on guide rails on safety 3100KG. Existing overhead 4880, under machine base 4280; bracket space 1800. Floor heights: Ground 3300, 1st 3200, 2nd 3260. Total fin. hoistway 1510. Platform 1195 deep / 1100 wide; car inside 1100 deep. Under lintel 2200. Controller at top floor 300x250x1500. ARD system, emergency light, floor announcer, overload indicator, infra red door screen, touch COP & LOP (black), blower fan, auto light & fan."
+  "notes": "Model ALPHA 200, M.R.L. LIFT; Capacity 6 persons / 408 KG; Traction media ROPE; Operation FULL COLLECTIVE CONTROL; Controller V3F; Cabin SS Hairline Finish; Car flooring Vinyl; Location Amritsar, Punjab; Contract RNLCHA0057; Date 26.02.2026. Hoisting hook capacity 1500 KG. Forces on rail F=1700KG, R1=250KG, R2=30KG. Pit reaction: car buffer 3000KG, CWT buffer 2400KG, vertical forces on guide rails on safety 3100KG. Existing overhead 4880, under machine base 4280; bracket space 1800. Floor heights: Ground 3300, 1st 3200, 2nd 3260. Total fin. hoistway 1510. Platform 1195 deep / 1100 wide; car inside 1100 deep. Under lintel 2200. Controller at top floor 300x250x1500. ARD system, emergency light, floor announcer, overload indicator, infra red door screen, touch COP & LOP (black), blower fan, auto light & fan.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "2b0de82d-abcd-4ab1-941d-280180708223",
@@ -77,8 +79,9 @@
   "drive_type": "MR",
   "machine_room": "yes",
   "counterweight_position": "rear",
-  "door_side": null,
-  "notes": "Capacity 6 persons (408 KG). Operation DOWN COLL. Controller V3F & DPI. Cabin M.S powder coated. Car door + landing door both M.S. Collapsible. Collapsible gate clear opening 860 (overall gate 1080), gate height 2000. Travel G+3 (existing, no numeric travel). Clear BM 2000 / under MC BTEL 2205. Hoisting hook cap 1500 KG. Forces on rail F=2500, R1=200 KG, R2=20 KG. Buffer: car buffer 3000 KG, CWT buffer 2400 KG, vertical force on safety 3100 KG. Vertical bracket spacing 2000 for car, 1800 for CWT rails. Contract LTNP-15263 / LTNL-4814. Location 48E Jainuddin Mistry Lane, Kolkata. Brand L.T. Elevator / MR. LIFT."
+  "door_side": "RHS",
+  "notes": "Capacity 6 persons (408 KG). Operation DOWN COLL. Controller V3F & DPI. Cabin M.S powder coated. Car door + landing door both M.S. Collapsible. Collapsible gate clear opening 860 (overall gate 1080), gate height 2000. Travel G+3 (existing, no numeric travel). Clear BM 2000 / under MC BTEL 2205. Hoisting hook cap 1500 KG. Forces on rail F=2500, R1=200 KG, R2=20 KG. Buffer: car buffer 3000 KG, CWT buffer 2400 KG, vertical force on safety 3100 KG. Vertical bracket spacing 2000 for car, 1800 for CWT rails. Contract LTNP-15263 / LTNL-4814. Location 48E Jainuddin Mistry Lane, Kolkata. Brand L.T. Elevator / MR. LIFT.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "e5018cef-d1bb-4a4d-8009-7ca394d693f7",
@@ -105,7 +108,8 @@
   "pit_depth_mm": 1800,
   "overhead_mm": 4600,
   "counterweight_position": "side",
-  "notes": "M.R.L. LIFT for M/s. DOEJOR, location Bhutan. Contract LTNP-15912 (BHT-12). Controller V3F, Full Collective Control. Car flooring PVC Tiles, S.S. Finish Cabin. Both landing door and car door: S.S. Finish Centre Opening Auto Door with Medium Vision Glass. Door height 2000, Clear Door Height 2000, Under Lintel 2200, Clear Height 2000. Platform 1195, Car Inside 900(W)x1100(D). Total Hoistway 1500x1500 (Total Fin Hoistway 1410). Bet. Wall 800, Opening 700. Hoisting Hook capacity 1500 KG. Reinforced pit reactions: car buffer 3000 KG, CWT buffer 2400 KG, vertical forces on guide rails 3100 KG. Forces on rail: F=1700 KG, R1=250 KG, R2=30 KG. Floor heights: Ground 3210, 1st 3260, 2nd 3270, 3rd 3240, 4th 3260, 5th 3250, 6th top. Bracket space 1800, total travel height 14500/19450. DB: 32A TPN 1No, 16A PN 2Nos, 7-hole earth bar 1No. Plain S.S. finish (no designer colour stated)."
+  "notes": "M.R.L. LIFT for M/s. DOEJOR, location Bhutan. Contract LTNP-15912 (BHT-12). Controller V3F, Full Collective Control. Car flooring PVC Tiles, S.S. Finish Cabin. Both landing door and car door: S.S. Finish Centre Opening Auto Door with Medium Vision Glass. Door height 2000, Clear Door Height 2000, Under Lintel 2200, Clear Height 2000. Platform 1195, Car Inside 900(W)x1100(D). Total Hoistway 1500x1500 (Total Fin Hoistway 1410). Bet. Wall 800, Opening 700. Hoisting Hook capacity 1500 KG. Reinforced pit reactions: car buffer 3000 KG, CWT buffer 2400 KG, vertical forces on guide rails 3100 KG. Forces on rail: F=1700 KG, R1=250 KG, R2=30 KG. Floor heights: Ground 3210, 1st 3260, 2nd 3270, 3rd 3240, 4th 3260, 5th 3250, 6th top. Bracket space 1800, total travel height 14500/19450. DB: 32A TPN 1No, 16A PN 2Nos, 7-hole earth bar 1No. Plain S.S. finish (no designer colour stated).",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "789cdefc-d108-437e-8759-2963e4a84108",
@@ -132,7 +136,8 @@
   "travel_mm": 13500,
   "overhead_mm": 4200,
   "pit_depth_mm": 1600,
-  "notes": "Spec: 10 PERSONS (680 KG); SPEED 1 M.P.S variable; TRAVEL G+3; FULL COLLECTIVE CONTROL; CONTROLLER V3F; Car flooring PVC tiles; M.S. Cabin. Floor heights 4500 each (Ground/1st/2nd). Under M/C base 3600. Total travel height 13500. Clear height 2000 / Under lintel 2200. Hoisting hook capacity 1500 KGS. Forces on rail F=1700kg R1=250kg R2=30kg. Pit reactions: car buffer 3000kg, CWT buffer 2400kg, guide-rail vertical 3100kg. Controller at top floor 300x250x1500. Bet.wall 1000, Total hoistway 1900, Total fin. hoistway 1750. Contract LTNP-15250 / LTNL-4960. Owner M/s Srijan Realty Pvt Ltd, B.T Road Kharda 700116. NOTE: queue lists 6PASS but drawing spec clearly states 10 persons/680kg."
+  "notes": "Spec: 10 PERSONS (680 KG); SPEED 1 M.P.S variable; TRAVEL G+3; FULL COLLECTIVE CONTROL; CONTROLLER V3F; Car flooring PVC tiles; M.S. Cabin. Floor heights 4500 each (Ground/1st/2nd). Under M/C base 3600. Total travel height 13500. Clear height 2000 / Under lintel 2200. Hoisting hook capacity 1500 KGS. Forces on rail F=1700kg R1=250kg R2=30kg. Pit reactions: car buffer 3000kg, CWT buffer 2400kg, guide-rail vertical 3100kg. Controller at top floor 300x250x1500. Bet.wall 1000, Total hoistway 1900, Total fin. hoistway 1750. Contract LTNP-15250 / LTNL-4960. Owner M/s Srijan Realty Pvt Ltd, B.T Road Kharda 700116. NOTE: queue lists 6PASS but drawing spec clearly states 10 persons/680kg.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "d4f129b4-d369-43c2-af8f-b72241c2d0f3",
@@ -143,7 +148,7 @@
   "door_type": "MT",
   "door_finish": "MS",
   "door_vision": "MV",
-  "door_side": "RHS",
+  "door_side": "LHS",
   "floors": 5,
   "capacity": "6PASS",
   "drive_type": "MR",
@@ -159,7 +164,8 @@
   "shaft_depth_mm": 2068,
   "counterweight_position": "rear",
   "readable": true,
-  "notes": "Maker: MR. LIFT / L.T. ELEVATOR. Owner: M/s. Koshal Garden Apartment, Jharsuguda, Odisha. Contract BBSR-308, 2 sheets, dated 18.11.2025. Cabin: M.S. (powder coated); car door + landing door: M.S. Manual Telescopic; controller V3F; flooring PVC tiles; operation Down Collective Control. Capacity 408 KG / 6 persons. Platform 1105 deep, finished hoistway depth 1966 (structural 2068). Floor heights GND 3570 / 1ST 3570 / 2ND 4200 / 3RD 3570 (sum=14910). Machine room 2340 x 4170; under-lintel height 2150. Forces on rail F=2500, R1=200kg, R2=20kg. Car buffer reaction 3000kg, CWT buffer 2400kg, guide-rail safety force 3100kg. Hoisting hook capacity 1500 kg. Door has small mesh/perforated vision window in upper leaf (treated as MV; not full-height glass)."
+  "notes": "Maker: MR. LIFT / L.T. ELEVATOR. Owner: M/s. Koshal Garden Apartment, Jharsuguda, Odisha. Contract BBSR-308, 2 sheets, dated 18.11.2025. Cabin: M.S. (powder coated); car door + landing door: M.S. Manual Telescopic; controller V3F; flooring PVC tiles; operation Down Collective Control. Capacity 408 KG / 6 persons. Platform 1105 deep, finished hoistway depth 1966 (structural 2068). Floor heights GND 3570 / 1ST 3570 / 2ND 4200 / 3RD 3570 (sum=14910). Machine room 2340 x 4170; under-lintel height 2150. Forces on rail F=2500, R1=200kg, R2=20kg. Car buffer reaction 3000kg, CWT buffer 2400kg, guide-rail safety force 3100kg. Hoisting hook capacity 1500 kg. Door has small mesh/perforated vision window in upper leaf (treated as MV; not full-height glass).",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "c75685c0-18af-4151-8480-faa60373c805",
@@ -186,7 +192,8 @@
   "machine_room": "no",
   "counterweight_position": "rear",
   "door_side": null,
-  "notes": "Title: M.R.L LIFT. Contract LTNL-4869. Customer M/s. SARMITA DEVELOPERS. Location: Samnipara, Nona Uluberia, Howrah-711315. Controller V3F, Full Collective Control, Variable speed 1 M.P.S. Capacity 6 persons (408 KG). Travel G+5+R (Ground 3050 / 1st 3150 / 2nd 3100 / 3rd 3150 / 4th 3150 / 5th 3150). Cabin S.S; car flooring PVC tiles. Both landing door and car door: S.S. Centre Opening Auto Door with Long Vision Glass. Plan dims: OPENING 700, BET. WALL 900, CAR INSIDE 1000(W)x1100(D), Platform 1195, Total Hoistway 1630(W)x1680(D), Total Fin. Hoistway 1590. Section: Existing overhead 4150, under M/C base 3550, total travel height 18750, clear door height 2000, bracket space 1800, pit required 1600. Hoisting hook capacity 1500 KG, M16 rod. Forces on rail: F=1700 KG, R1=250 KG, R2=30 KG. Buffers: car buffer 3000 KG, cwt buffer 2400 KG, vertical force on guide rails (safety) 3100 KG. 8 nos GI wire with earthing by owner; controller at top floor size 300x250x1500. Drawn A.Mukherjee, Approved A.Chakraborty, date 09.03.2026. door_finish stated as plain SS (no designer colour). door_vision = Long Vision Glass (LV)."
+  "notes": "Title: M.R.L LIFT. Contract LTNL-4869. Customer M/s. SARMITA DEVELOPERS. Location: Samnipara, Nona Uluberia, Howrah-711315. Controller V3F, Full Collective Control, Variable speed 1 M.P.S. Capacity 6 persons (408 KG). Travel G+5+R (Ground 3050 / 1st 3150 / 2nd 3100 / 3rd 3150 / 4th 3150 / 5th 3150). Cabin S.S; car flooring PVC tiles. Both landing door and car door: S.S. Centre Opening Auto Door with Long Vision Glass. Plan dims: OPENING 700, BET. WALL 900, CAR INSIDE 1000(W)x1100(D), Platform 1195, Total Hoistway 1630(W)x1680(D), Total Fin. Hoistway 1590. Section: Existing overhead 4150, under M/C base 3550, total travel height 18750, clear door height 2000, bracket space 1800, pit required 1600. Hoisting hook capacity 1500 KG, M16 rod. Forces on rail: F=1700 KG, R1=250 KG, R2=30 KG. Buffers: car buffer 3000 KG, cwt buffer 2400 KG, vertical force on guide rails (safety) 3100 KG. 8 nos GI wire with earthing by owner; controller at top floor size 300x250x1500. Drawn A.Mukherjee, Approved A.Chakraborty, date 09.03.2026. door_finish stated as plain SS (no designer colour). door_vision = Long Vision Glass (LV).",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "849a6239-cc64-41f8-b781-1b978c499162",
@@ -213,7 +220,8 @@
   "car_height_mm": 2200,
   "counterweight_position": "rear",
   "door_side": null,
-  "notes": "Order No 01005730091411 dated 21.11.2023; PMSM Gearless machine 8.8kW, insulation class F; Hoisting hook capacity 7800 KG; Required overhead 4800mm, required pit 1600mm, under M/C base 4200mm; Ground-to-1st floor height 6315mm; Platform 2240 x 2240, Car inside 1500W x 2040D; Total hoistway 2400W x 2500D; Bet. wall 1200, opening 1000; Car guide rail 89x62x16 / T89-1/B, counter guide rail 70x65x9 / T70B; Buffer spring; Governor trip 125%; 7 NOS x 30mm suspension belt media (rope-to-belt amendment); Cabin SS 1.2mm Hairline finish, PVC flooring, SS mirror false ceiling; Under lintel height 2200; LOP/COP LCD monochrome, Braille buttons; Forces on rail FX 3849N, FY 5151N, FZ 66970N. Owner: South East Central Railway, Bilaspur Gati Shakti. Job MP006 Umaria Lift No 1."
+  "notes": "Order No 01005730091411 dated 21.11.2023; PMSM Gearless machine 8.8kW, insulation class F; Hoisting hook capacity 7800 KG; Required overhead 4800mm, required pit 1600mm, under M/C base 4200mm; Ground-to-1st floor height 6315mm; Platform 2240 x 2240, Car inside 1500W x 2040D; Total hoistway 2400W x 2500D; Bet. wall 1200, opening 1000; Car guide rail 89x62x16 / T89-1/B, counter guide rail 70x65x9 / T70B; Buffer spring; Governor trip 125%; 7 NOS x 30mm suspension belt media (rope-to-belt amendment); Cabin SS 1.2mm Hairline finish, PVC flooring, SS mirror false ceiling; Under lintel height 2200; LOP/COP LCD monochrome, Braille buttons; Forces on rail FX 3849N, FY 5151N, FZ 66970N. Owner: South East Central Railway, Bilaspur Gati Shakti. Job MP006 Umaria Lift No 1.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "9395a98d-c53e-4866-94dc-8f29e5430a6b",
@@ -267,7 +275,8 @@
   "shaft_depth_mm": 1520,
   "overhead_mm": 3197,
   "pit_depth_mm": 170,
-  "notes": "Model RALPH 300; traction media BELT (30 x 2); operation FULL COLLECTIVE CONTROL; power AC 230V 1PH 50HZ; car flooring VINYL; cabin ROSE GOLD MATT in corners, rest ROSE GOLD MIRROR finish; platform 1230; under lintel 2200; clear height 2000; bracket spacing (BRAC SP) 1700; required pit 170; floor heights GND 3240 / 1ST 3353 / 2ND 3120; DB details 16A-PN 2 nos + 7 hole earth bar 1 no; controller at top floor 300x250x1500; hoisting hook capacity 1500 KGS; car-guide rail E0 F1=F2=12184 N, cwt-guide rail E0 F4=13009 N, F3=25113.6, F5=18835.2; site sheet overhead 3205, shaft door width 810, shaft door ht ~2195, GF shaft 1376x1511."
+  "notes": "Model RALPH 300; traction media BELT (30 x 2); operation FULL COLLECTIVE CONTROL; power AC 230V 1PH 50HZ; car flooring VINYL; cabin ROSE GOLD MATT in corners, rest ROSE GOLD MIRROR finish; platform 1230; under lintel 2200; clear height 2000; bracket spacing (BRAC SP) 1700; required pit 170; floor heights GND 3240 / 1ST 3353 / 2ND 3120; DB details 16A-PN 2 nos + 7 hole earth bar 1 no; controller at top floor 300x250x1500; hoisting hook capacity 1500 KGS; car-guide rail E0 F1=F2=12184 N, cwt-guide rail E0 F4=13009 N, F3=25113.6, F5=18835.2; site sheet overhead 3205, shaft door width 810, shaft door ht ~2195, GF shaft 1376x1511.",
+  "landing_door_finish": "SS Rose Gold Hairline"
  },
  {
   "job_id": "fac94947-b97e-48ad-b67f-304e71ba4f8b",
@@ -294,7 +303,8 @@
   "pit_depth_mm": 1500,
   "overhead_mm": 4760,
   "counterweight_position": "side",
-  "notes": "MODEL ALPHA 200; CABIN LTR-105 ROSEGOLD MIRROR + HAIRLINE ROSEGOLD; CAR FLOORING VINYL; CONTROLLER V3F; OPERATION FULL COLLECTIVE CONTROL; POWER AC 415V 3PH 50HZ. PLATFORM 1195 (depth dir). Under-lintel 2200. UNDER M/C BASE 4160; EXISTING OVERHEAD 4760; BRACKET SPACE 1800; REQUIRED PIT 1500. Floor heights GND 3110/1ST 3110/2ND 3100/3RD 3080/4TH 3100/5TH 3100 (sum=18600). Forces on rail F=1700kg R1=250kg R2=30kg. Hoisting hook capacity 1500kg. Buffers: car 3000kg, CWT 2400kg; vertical force on rails (safety) 3100kg. Site sheet: pit 1340, total travel 23360, overhead 4760, G+6. Owner KPR Homes (Exotica), Tirupathi."
+  "notes": "MODEL ALPHA 200; CABIN LTR-105 ROSEGOLD MIRROR + HAIRLINE ROSEGOLD; CAR FLOORING VINYL; CONTROLLER V3F; OPERATION FULL COLLECTIVE CONTROL; POWER AC 415V 3PH 50HZ. PLATFORM 1195 (depth dir). Under-lintel 2200. UNDER M/C BASE 4160; EXISTING OVERHEAD 4760; BRACKET SPACE 1800; REQUIRED PIT 1500. Floor heights GND 3110/1ST 3110/2ND 3100/3RD 3080/4TH 3100/5TH 3100 (sum=18600). Forces on rail F=1700kg R1=250kg R2=30kg. Hoisting hook capacity 1500kg. Buffers: car 3000kg, CWT 2400kg; vertical force on rails (safety) 3100kg. Site sheet: pit 1340, total travel 23360, overhead 4760, G+6. Owner KPR Homes (Exotica), Tirupathi.",
+  "landing_door_finish": "SS Rose Gold Hairline"
  },
  {
   "job_id": "f29b37d8-174d-4452-8d1a-4e1211a5a0e1",
@@ -303,9 +313,9 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 700,
   "door_type": "AT",
-  "door_finish": "Rose Gold Hairline",
+  "door_finish": "SS Rose Gold Hairline",
   "door_vision": "LV",
-  "door_side": "LHS",
+  "door_side": "RHS",
   "floors": 3,
   "capacity": "272 Kgs",
   "readable": true,
@@ -321,7 +331,8 @@
   "drive_type": "MRLBELT",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Model RALPH 300; Bungalow Lift; Traction media BELT (30 x 2); Operation FULL COLLECTIVE CONTROL; Power i) AC, 230V, 1PH, 50HZ; Floor heights GND 3500 + 1ST 3850 = travel 7350; Overhead 3200 required / 4200 existing; Bracket space 1700, bracket spacing 1700; S.P (pit) 130, R.C 30; Total fin. hoistway 1510; Platform 1230; Bet. wall 900; Under lintel 2200, clear height 2000; Car door Rose Gold Hairline auto telescopic w/ long vision glass, Landing door SS Hairline (page 3 revision) auto telescopic w/ long vision glass; Car flooring vinyl; Cabin Rose Gold matte finish; LOP Dot Matrix Touch + COP black; DB details 16A-PN-2nos, 7-hole earth bar 1no; Forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Cwt guide rail E0; Hoisting hook by owner; Controller at top floor 300x250x1500; Client Mr. Deepak Gupta, Noida UP 201304; Contract RNLDL0121; Date 16.06.2026 (p1)/19.02.2026 rev (p3); two D.B.G values 860 & 820 on car/guide side"
+  "notes": "Model RALPH 300; Bungalow Lift; Traction media BELT (30 x 2); Operation FULL COLLECTIVE CONTROL; Power i) AC, 230V, 1PH, 50HZ; Floor heights GND 3500 + 1ST 3850 = travel 7350; Overhead 3200 required / 4200 existing; Bracket space 1700, bracket spacing 1700; S.P (pit) 130, R.C 30; Total fin. hoistway 1510; Platform 1230; Bet. wall 900; Under lintel 2200, clear height 2000; Car door Rose Gold Hairline auto telescopic w/ long vision glass, Landing door SS Hairline (page 3 revision) auto telescopic w/ long vision glass; Car flooring vinyl; Cabin Rose Gold matte finish; LOP Dot Matrix Touch + COP black; DB details 16A-PN-2nos, 7-hole earth bar 1no; Forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Cwt guide rail E0; Hoisting hook by owner; Controller at top floor 300x250x1500; Client Mr. Deepak Gupta, Noida UP 201304; Contract RNLDL0121; Date 16.06.2026 (p1)/19.02.2026 rev (p3); two D.B.G values 860 & 820 on car/guide side",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "3d60add8-cc17-4e07-a249-78ff94fd25e1",
@@ -332,7 +343,7 @@
   "door_type": "AT",
   "door_finish": "SS Hairline",
   "door_vision": "LV",
-  "door_side": "LHS",
+  "door_side": "RHS",
   "floors": 3,
   "capacity": "340KG",
   "readable": true,
@@ -348,7 +359,8 @@
   "pit_depth_mm": 170,
   "overhead_mm": 3300,
   "counterweight_position": "rear",
-  "notes": "Bungalow Lift, Model RALPH 400. Traction media BELT (30x2). Travel G+2 (NO OPENING ON 1ST FLR). Operation FULL COLLECTIVE CONTROL. Power AC 230V 1PH 50Hz. Cabin: SS Mirror finish with back & right side glass. Car flooring: Vinyl. Door: SIDE SLIDE auto telescopic with long vision glass (both landing + car door SS hairline). Platform 1170. Under lintel 2250, clear height 2000. Floor heights: GND 2905, 1ST 2640 (no opening), brac. sp. 1700. Overhead existing 3300. Slab thk 150. DB details 16A-PN-2nos, 7-hole earth bar. Forces (N) for E0: F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2. Structure ISMC 100. Location Thiranga, Chawl, Nagpur. Client Mr. Atul Pise. Date 24.03.2026. Contract RNLNAG0010."
+  "notes": "Bungalow Lift, Model RALPH 400. Traction media BELT (30x2). Travel G+2 (NO OPENING ON 1ST FLR). Operation FULL COLLECTIVE CONTROL. Power AC 230V 1PH 50Hz. Cabin: SS Mirror finish with back & right side glass. Car flooring: Vinyl. Door: SIDE SLIDE auto telescopic with long vision glass (both landing + car door SS hairline). Platform 1170. Under lintel 2250, clear height 2000. Floor heights: GND 2905, 1ST 2640 (no opening), brac. sp. 1700. Overhead existing 3300. Slab thk 150. DB details 16A-PN-2nos, 7-hole earth bar. Forces (N) for E0: F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2. Structure ISMC 100. Location Thiranga, Chawl, Nagpur. Client Mr. Atul Pise. Date 24.03.2026. Contract RNLNAG0010.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "3d902473-2ba3-4118-9e58-60f7b0429464",
@@ -429,7 +441,8 @@
   "speed_mps": 0.5,
   "drive_type": "MR",
   "machine_room": "yes",
-  "notes": "Title block: M.R.L.(GOODS LIFT). Operation DOWN COLLECTIVE; Controller V3F; Others: Emergency Light. Car door & Landing door = M.S. Collapsible Door; Car flooring = M.S. chequered plate; Cabin = M.S. powder coated. Plan: BET. WALL 1320, BET. POST 1100, CAR INSIDE 1100x2100, PLATFORM 2280 deep, TOTAL FIN. HOISTWAY 2340, TOTAL HOISTWAY 1830(W) x 2370(D). Section: CLEAR ENT 2000, UNDER LINTEL 2205, CLEAR DOOR HEIGHT 2000. Counterweight is side type (D.B.G 1050 block on car LHS). Floor heights GND 3050 / 1ST 3060 / 2ND 3050 (3RD top), sum = TOTAL TRAVEL HEIGHT 9160. Bracket space 1600. Required overhead 4600 (2000 under M/C base 4000). Forces on rail F=1700kg R1=250kg R2=30kg. Buffers: car 3000kg, cwt 2400kg, safety vertical 3100kg. Hoisting hook capacity 1500kg. Proposal LTNL-5000; Customer M/s Roy Apparels Pvt Ltd; Location Gangarampur Road, Kolkata; Date 09.04.2026; NTS."
+  "notes": "Title block: M.R.L.(GOODS LIFT). Operation DOWN COLLECTIVE; Controller V3F; Others: Emergency Light. Car door & Landing door = M.S. Collapsible Door; Car flooring = M.S. chequered plate; Cabin = M.S. powder coated. Plan: BET. WALL 1320, BET. POST 1100, CAR INSIDE 1100x2100, PLATFORM 2280 deep, TOTAL FIN. HOISTWAY 2340, TOTAL HOISTWAY 1830(W) x 2370(D). Section: CLEAR ENT 2000, UNDER LINTEL 2205, CLEAR DOOR HEIGHT 2000. Counterweight is side type (D.B.G 1050 block on car LHS). Floor heights GND 3050 / 1ST 3060 / 2ND 3050 (3RD top), sum = TOTAL TRAVEL HEIGHT 9160. Bracket space 1600. Required overhead 4600 (2000 under M/C base 4000). Forces on rail F=1700kg R1=250kg R2=30kg. Buffers: car 3000kg, cwt 2400kg, safety vertical 3100kg. Hoisting hook capacity 1500kg. Proposal LTNL-5000; Customer M/s Roy Apparels Pvt Ltd; Location Gangarampur Road, Kolkata; Date 09.04.2026; NTS.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "1fc4c487-3b96-4b8b-b7e6-9ce656def501",
@@ -456,7 +469,8 @@
   "travel_mm": 26000,
   "overhead_mm": 5200,
   "pit_depth_mm": 2100,
-  "notes": "Capacity 20 persons (1360 KG); Speed 1.5 m/s variable; Travel level 0 to 26 m, 5 stops & 5 openings; Full Collective Control; Power: 415V 3PH 50Hz + 230V 1PH 50Hz; Clear door height 2000; Bracket space 1800; Platform 1500x2095; Required W/C base 4000, under M/C base 2000; Forces on rail F=1700kg, R1=250kg, R2=30kg; Reinforced pit reactions: car buffer 3000kg, CWT buffer 2400kg, vertical guide-rail force on safety 3100kg; Hoisting hook capacity 1500 KG (M12x40 anchor bolts, dia16mm rod hook); Car flooring PVC tiles; SS cabin; ARD system, emergency light, overload indicator, infra-red door screen, floor announcer, seven segment, 14in TFT screen in COP. Both car door and landing door: S.S Center Opening Auto Door. Contract LTNP-14867 / LTNL-4821. Location: Bellilious Park, Howrah. Customer M/s Panchdeep Construction. Date 19.02.2025."
+  "notes": "Capacity 20 persons (1360 KG); Speed 1.5 m/s variable; Travel level 0 to 26 m, 5 stops & 5 openings; Full Collective Control; Power: 415V 3PH 50Hz + 230V 1PH 50Hz; Clear door height 2000; Bracket space 1800; Platform 1500x2095; Required W/C base 4000, under M/C base 2000; Forces on rail F=1700kg, R1=250kg, R2=30kg; Reinforced pit reactions: car buffer 3000kg, CWT buffer 2400kg, vertical guide-rail force on safety 3100kg; Hoisting hook capacity 1500 KG (M12x40 anchor bolts, dia16mm rod hook); Car flooring PVC tiles; SS cabin; ARD system, emergency light, overload indicator, infra-red door screen, floor announcer, seven segment, 14in TFT screen in COP. Both car door and landing door: S.S Center Opening Auto Door. Contract LTNP-14867 / LTNL-4821. Location: Bellilious Park, Howrah. Customer M/s Panchdeep Construction. Date 19.02.2025.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "b277c397-ea75-4cf1-a4dd-da7d9c8f89d1",
@@ -483,7 +497,8 @@
   "travel_mm": 6315,
   "door_side": null,
   "counterweight_position": "rear",
-  "notes": "Owner: South East Central Railway (Bilaspur Gati Shakti). Order No 01005730091411 dt 21.11.2023. Sheet set covers BBSR-245 to 246, CH-008 to 013 & MP-002 to 007 (this job = CH010, Akaltara LIFT NO 1). Machine: PMSM GEARLESS, MRL; amendment note \"ROPE TO BELT & MACHINE\" => belt suspension; No. & suspension belt media 7NO X 30mm. Motor 8.8KW, insulation class F. Hoisting hook capacity 7800 KG. Required pit 1600mm, total hoistway (W) 2400 / total fin. hoistway depth 2500, platform 2240. Car guide rail 89x62x16 (T89-1/B); counter guide rail 70x65x9 (T70B). Forces on rail: FX 3849N, FY 5151N, FZ 66970N; F1 66970, F2 66970, F3 92017.8, F4 29813, F5 65334.6 N. Cabin finish SS 1.2mm Hairline; PVC flooring; SS mirror false ceiling. Door: Automatic Centre Opening, Infrared (3D) door sensor + safety door edge. Under lintel height 2200, door height 2000. Buffer: spring; governor trip 125%. LOP/COP LCD monochrome, Braille buttons, 2 COP inside car. Ground floor height 6315 (used as travel). Counterweight DBG not legibly labelled on plan."
+  "notes": "Owner: South East Central Railway (Bilaspur Gati Shakti). Order No 01005730091411 dt 21.11.2023. Sheet set covers BBSR-245 to 246, CH-008 to 013 & MP-002 to 007 (this job = CH010, Akaltara LIFT NO 1). Machine: PMSM GEARLESS, MRL; amendment note \"ROPE TO BELT & MACHINE\" => belt suspension; No. & suspension belt media 7NO X 30mm. Motor 8.8KW, insulation class F. Hoisting hook capacity 7800 KG. Required pit 1600mm, total hoistway (W) 2400 / total fin. hoistway depth 2500, platform 2240. Car guide rail 89x62x16 (T89-1/B); counter guide rail 70x65x9 (T70B). Forces on rail: FX 3849N, FY 5151N, FZ 66970N; F1 66970, F2 66970, F3 92017.8, F4 29813, F5 65334.6 N. Cabin finish SS 1.2mm Hairline; PVC flooring; SS mirror false ceiling. Door: Automatic Centre Opening, Infrared (3D) door sensor + safety door edge. Under lintel height 2200, door height 2000. Buffer: spring; governor trip 125%. LOP/COP LCD monochrome, Braille buttons, 2 COP inside car. Ground floor height 6315 (used as travel). Counterweight DBG not legibly labelled on plan.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "1a93a22a-80e8-40f3-8b70-951f62a43df5",
@@ -494,7 +509,7 @@
   "door_type": "AT",
   "door_finish": "SS",
   "door_vision": "LV",
-  "door_side": "LHS",
+  "door_side": "RHS",
   "floors": 3,
   "capacity": "UPTO 272 KGS",
   "readable": true,
@@ -510,7 +525,8 @@
   "shaft_width_mm": 1450,
   "shaft_depth_mm": 1170,
   "counterweight_position": "side",
-  "notes": "Brand RICARDO, model RALPH 300, \"BUNGALOW LIFT\". Traction media BELT (30 x 2). Civil shaft. Full Collective Control. Power AC 230V 1PH 50Hz. Car flooring Vinyl. Cabin SS Finish. Platform 930; Bet. wall 1000; Total Fin. Hoistway 1040. Under lintel 2200. Bracket spacing 1700. Floor heights: GND 3600, 1ST 3670 (2ND blank). Hook load capacity 1500KG by owner; hoisting hook 1500 KGS. Slab thk 150. Forces (N) for E0: F1 12184, F2 12184, F3 25113.6, F4 13009, F5 18835.2. Door elevation jambs 420 (left) / 30 (right) about 800 opening -> opens to LHS. Controller at top floor 300x250x1500. DB: 16A-PN 2 nos, 7-hole earth bar 1 no. Location Bhairunda, Sehore, Bhopal 466331. Drawn R.P.Shaw, appvd B.Karmakar, dated 27.03.2026."
+  "notes": "Brand RICARDO, model RALPH 300, \"BUNGALOW LIFT\". Traction media BELT (30 x 2). Civil shaft. Full Collective Control. Power AC 230V 1PH 50Hz. Car flooring Vinyl. Cabin SS Finish. Platform 930; Bet. wall 1000; Total Fin. Hoistway 1040. Under lintel 2200. Bracket spacing 1700. Floor heights: GND 3600, 1ST 3670 (2ND blank). Hook load capacity 1500KG by owner; hoisting hook 1500 KGS. Slab thk 150. Forces (N) for E0: F1 12184, F2 12184, F3 25113.6, F4 13009, F5 18835.2. Door elevation jambs 420 (left) / 30 (right) about 800 opening -> opens to LHS. Controller at top floor 300x250x1500. DB: 16A-PN 2 nos, 7-hole earth bar 1 no. Location Bhairunda, Sehore, Bhopal 466331. Drawn R.P.Shaw, appvd B.Karmakar, dated 27.03.2026.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "827226dc-18d6-44a8-ab77-483b9197c9ce",
@@ -519,7 +535,7 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 700,
   "door_type": "CO",
-  "door_finish": "SS Linen Rose Gold",
+  "door_finish": "SS Rose Gold Linen",
   "door_vision": "LV",
   "floors": 3,
   "capacity": "272KG",
@@ -537,7 +553,8 @@
   "drive_type": "HOME",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Bungalow/Home lift \"L.T. ELEVATOR\", contract no. LTNL-4883. Capacity 272 KG = 4PASS. Operation: DOWN COLLECTIVE CONTROL. Power: AC 230V 1PH 50Hz. G+1+R = 3 stops; floor heights GND 3550, 1ST 3500 (travel 7050). Platform depth 1230, total finished hoistway depth 1360, total hoistway depth 1490, total hoistway width 1575. Opening 700, between-wall 900, car inside 1000 (W). Controller at top floor, size 300x250x1500. Door (landing + car) = Linen Rose Gold finish auto centre-opening with LONG VISION GLASS. Cabin = combination of Linen Rose Gold & Mirror finish Rose Gold. Under-lintel height 2230, door height 2000. Overhead required 3050, bracket space 7700, bracket spacing 1700. Guide-rail forces (E0): car F1=F2=12184N, F3=25113.6N; cwt F4=13009N, F5=18835.2N. Hoisting hook by client at car-pull centre. Two D.B.G labels read on the car/main side of the plan: 860 (taken as car DBG) and 820 (taken as counterweight DBG). Pit shallow (R.C 130 / S.P 130); pit_depth set from \"250 REQUIRED\" at GND level. No machine room (HOME drive, controller at top floor)."
+  "notes": "Bungalow/Home lift \"L.T. ELEVATOR\", contract no. LTNL-4883. Capacity 272 KG = 4PASS. Operation: DOWN COLLECTIVE CONTROL. Power: AC 230V 1PH 50Hz. G+1+R = 3 stops; floor heights GND 3550, 1ST 3500 (travel 7050). Platform depth 1230, total finished hoistway depth 1360, total hoistway depth 1490, total hoistway width 1575. Opening 700, between-wall 900, car inside 1000 (W). Controller at top floor, size 300x250x1500. Door (landing + car) = Linen Rose Gold finish auto centre-opening with LONG VISION GLASS. Cabin = combination of Linen Rose Gold & Mirror finish Rose Gold. Under-lintel height 2230, door height 2000. Overhead required 3050, bracket space 7700, bracket spacing 1700. Guide-rail forces (E0): car F1=F2=12184N, F3=25113.6N; cwt F4=13009N, F5=18835.2N. Hoisting hook by client at car-pull centre. Two D.B.G labels read on the car/main side of the plan: 860 (taken as car DBG) and 820 (taken as counterweight DBG). Pit shallow (R.C 130 / S.P 130); pit_depth set from \"250 REQUIRED\" at GND level. No machine room (HOME drive, controller at top floor).",
+  "landing_door_finish": "SS Rose Gold Linen"
  },
  {
   "job_id": "0576837f-f18d-4704-9cd6-b99e2a291682",
@@ -591,7 +608,8 @@
   "machine_room": "no",
   "counterweight_position": "side",
   "door_side": null,
-  "notes": "Capacity 4 PERSONS (272 KGS); Operation DOWN COLLECTIVE; Controller V3F AND DPI at top floor (300x250x1500); Car door + Landing door both M.S. COLLAPSIBLE DOOR; Car flooring PVC tiles; Cabin M.S. powder coated; Section A-A: clear entrance 2000, under lintel 2205, clear lintel 2200, lobby opening 1070, BET WALL 850 (110+850+110=1070); Floor heights GND 3300, 1st-4th 3050 each, Roof; G+4+R; Hoisting hook min load 1500 KG (Ø16mm rod); Pit reactions: car buffer 3000kg, cwt buffer 2400kg, rail safety vertical force 3100kg; Bracket spacing 1700mm; nearest striking point 1700; contract LTNL-4809; location 70/A Sitaram Ghosh Street, Kolkata-700009; owner Mr. Samapta Chakraborty; BET POST 850, BET WALL 1070; CAR INSIDE 800 wide x 900 deep, PLATFORM 880; total fin hoistway 1435 / total hoistway 1460/1100"
+  "notes": "Capacity 4 PERSONS (272 KGS); Operation DOWN COLLECTIVE; Controller V3F AND DPI at top floor (300x250x1500); Car door + Landing door both M.S. COLLAPSIBLE DOOR; Car flooring PVC tiles; Cabin M.S. powder coated; Section A-A: clear entrance 2000, under lintel 2205, clear lintel 2200, lobby opening 1070, BET WALL 850 (110+850+110=1070); Floor heights GND 3300, 1st-4th 3050 each, Roof; G+4+R; Hoisting hook min load 1500 KG (Ø16mm rod); Pit reactions: car buffer 3000kg, cwt buffer 2400kg, rail safety vertical force 3100kg; Bracket spacing 1700mm; nearest striking point 1700; contract LTNL-4809; location 70/A Sitaram Ghosh Street, Kolkata-700009; owner Mr. Samapta Chakraborty; BET POST 850, BET WALL 1070; CAR INSIDE 800 wide x 900 deep, PLATFORM 880; total fin hoistway 1435 / total hoistway 1460/1100",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "976f3156-2287-4a02-bc22-8310c30f277d",
@@ -629,7 +647,7 @@
   "door_type": "COL",
   "door_finish": "MS",
   "door_vision": "NV",
-  "door_side": null,
+  "door_side": "RHS",
   "floors": 6,
   "capacity": "5PASS",
   "readable": true,
@@ -645,7 +663,8 @@
   "drive_type": "MR",
   "machine_room": "yes",
   "counterweight_position": "rear",
-  "notes": "Capacity 5 PERSONS (340 KG); Operation DOWN COLL.; Controller V3F & DPI; Cabin S.S. CABIN; Car door + landing door both M.S. COLLAPSIBLE; Flooring PVC TILES; Floor heights GND-4TH = 3050 each (G+5); Machine room total 2600 x 2000, total hoistway in MR 1240 x 1580; Clear entrance 2000, under lintel 2205; Hoisting hook capacity 1500 KG; Car buffer 3000 KG, CWT buffer 2400 KG, guide-rail safety force 3100 KG; Forces on rail F=2500, R1=200, R2=20; Power i) AC 415V 3PH 50Hz ii) AC 220V 1PH 50Hz; Contract LTNP-15151 / LTNL-4789; Location Baguihati, Kolkata-700028 (M/s. Sree Gopal Construction); Vertical bracket spacing max 2000 (car) & 1800 (CWT rails); BET. WALL 1150, BET. POST 930; CAR INSIDE depth 800 / PLATFORM 880; rope stretch 150, pit 1500 existing."
+  "notes": "Capacity 5 PERSONS (340 KG); Operation DOWN COLL.; Controller V3F & DPI; Cabin S.S. CABIN; Car door + landing door both M.S. COLLAPSIBLE; Flooring PVC TILES; Floor heights GND-4TH = 3050 each (G+5); Machine room total 2600 x 2000, total hoistway in MR 1240 x 1580; Clear entrance 2000, under lintel 2205; Hoisting hook capacity 1500 KG; Car buffer 3000 KG, CWT buffer 2400 KG, guide-rail safety force 3100 KG; Forces on rail F=2500, R1=200, R2=20; Power i) AC 415V 3PH 50Hz ii) AC 220V 1PH 50Hz; Contract LTNP-15151 / LTNL-4789; Location Baguihati, Kolkata-700028 (M/s. Sree Gopal Construction); Vertical bracket spacing max 2000 (car) & 1800 (CWT rails); BET. WALL 1150, BET. POST 930; CAR INSIDE depth 800 / PLATFORM 880; rope stretch 150, pit 1500 existing.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "3c117f0a-3e84-41a0-940d-ad12111ce0ac",
@@ -745,7 +764,7 @@
   "car_height_mm": 2000,
   "shaft_width_mm": 1700,
   "shaft_depth_mm": 1370,
-  "door_side": "LHS",
+  "door_side": "RHS",
   "counterweight_position": "side",
   "drive_type": "MRLBELT",
   "machine_room": "no",
@@ -753,7 +772,8 @@
   "travel_mm": 10860,
   "overhead_mm": 3800,
   "pit_depth_mm": 1700,
-  "notes": "Model RALPH 400; traction media BELT (30x2); operation DOWN COLLECTIVE CONTROL; power i) AC 230V 1PH 50Hz; platform 1170; total fin. hoistway 1370 / ext 1600; total hoistway 1700 / ext 1800; bet wall 1000; under lintel 2250, clear height 2000; D.B.G 860 (car) / D.B.G 820 (cwt); shaft details powder coated shaft (RAL-B017 MI) with rear side glass; landing door M.S auto telescopic (RAL-B017 MI) with long vision glass; cabin Rose Gold Mirror Finish with rear side glass; vinyl tiles flooring; floor heights GND 3970 / 1ST 3430 / 2ND 3460 / 3RD; bracket spacing 1200; rail fitted upto 3500; slab thk 150; client Mr. Abubacker; location Choice Mall Payyavoor Road Kannur; Forces E0 F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; date 17.03.2026; S.P 130, R.C 30"
+  "notes": "Model RALPH 400; traction media BELT (30x2); operation DOWN COLLECTIVE CONTROL; power i) AC 230V 1PH 50Hz; platform 1170; total fin. hoistway 1370 / ext 1600; total hoistway 1700 / ext 1800; bet wall 1000; under lintel 2250, clear height 2000; D.B.G 860 (car) / D.B.G 820 (cwt); shaft details powder coated shaft (RAL-B017 MI) with rear side glass; landing door M.S auto telescopic (RAL-B017 MI) with long vision glass; cabin Rose Gold Mirror Finish with rear side glass; vinyl tiles flooring; floor heights GND 3970 / 1ST 3430 / 2ND 3460 / 3RD; bracket spacing 1200; rail fitted upto 3500; slab thk 150; client Mr. Abubacker; location Choice Mall Payyavoor Road Kannur; Forces E0 F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; date 17.03.2026; S.P 130, R.C 30",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "a67f321a-3ece-41fc-b2d1-b79000c53b32",
@@ -780,7 +800,8 @@
   "machine_room": "no",
   "counterweight_position": "side",
   "door_side": "LHS",
-  "notes": "Bungalow Lift, Model RALPH 300; Traction media BELT (30 x 2); Operation FULL COLLECTIVE CONTROL; Power 230V 1PH 50Hz; Car flooring VINYL; Cabin S.S. Hairline finish; Travel G+2; Platform 1230 deep, Total fin. hoistway 1520; Bet. wall 1000; Floor heights GND/1ST/2ND = 3500 each; Controller at top floor 300x250x1500; Pit forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Hoisting hook capacity 1500 kg (by client); DB 16A PN-2nos + 7-hole earth bar; Car-guide & Cwt-guide rail E0; D.B.G dims on car side 860 (outer) / 820 (inner). Site sheet: pit 500mm, overhead 3500, travel 11000 (GF to under M/C floor slab), G+2=3 floors, brick fly-ash 200mm, belt drive mechanism left side."
+  "notes": "Bungalow Lift, Model RALPH 300; Traction media BELT (30 x 2); Operation FULL COLLECTIVE CONTROL; Power 230V 1PH 50Hz; Car flooring VINYL; Cabin S.S. Hairline finish; Travel G+2; Platform 1230 deep, Total fin. hoistway 1520; Bet. wall 1000; Floor heights GND/1ST/2ND = 3500 each; Controller at top floor 300x250x1500; Pit forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Hoisting hook capacity 1500 kg (by client); DB 16A PN-2nos + 7-hole earth bar; Car-guide & Cwt-guide rail E0; D.B.G dims on car side 860 (outer) / 820 (inner). Site sheet: pit 500mm, overhead 3500, travel 11000 (GF to under M/C floor slab), G+2=3 floors, brick fly-ash 200mm, belt drive mechanism left side.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "9241ffe1-0698-45f0-b621-62442d363e91",
@@ -888,7 +909,8 @@
   "drive_type": "MRL",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Owner M/s. MANNAT COMMERCIAL; contract LTNL-4819; location 4 Cowie Lane, Kolkata-700016. Controller V3F, FULL COLLECTIVE CONTROL. Car flooring PVC tiles; S.S cabin. Capacity 6 persons (408 KG). G+4 (ROOF, 3RD, 2ND, 1ST, GROUND). Floor heights: GROUND 3325, 1ST/2ND/3RD 3025 each. PLATFORM depth 1095, CAR INSIDE 1000 (depth); BET. WALL 900; TOTAL FIN. HOISTWAY 1210. Hoisting hook capacity 1500 KG (by owner). Forces on rail F=1700kg, R1=250kg, R2=30kg. Pit reactions: car buffer 3000kg, cwt buffer 2400kg, vertical safety 3100kg. UNDER M/C BASE 4000, UNDER GOV. BASE 4200, bracket space 1800, rope stretch 900. Under lintel height 2200."
+  "notes": "Owner M/s. MANNAT COMMERCIAL; contract LTNL-4819; location 4 Cowie Lane, Kolkata-700016. Controller V3F, FULL COLLECTIVE CONTROL. Car flooring PVC tiles; S.S cabin. Capacity 6 persons (408 KG). G+4 (ROOF, 3RD, 2ND, 1ST, GROUND). Floor heights: GROUND 3325, 1ST/2ND/3RD 3025 each. PLATFORM depth 1095, CAR INSIDE 1000 (depth); BET. WALL 900; TOTAL FIN. HOISTWAY 1210. Hoisting hook capacity 1500 KG (by owner). Forces on rail F=1700kg, R1=250kg, R2=30kg. Pit reactions: car buffer 3000kg, cwt buffer 2400kg, vertical safety 3100kg. UNDER M/C BASE 4000, UNDER GOV. BASE 4200, bracket space 1800, rope stretch 900. Under lintel height 2200.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "42b38e30-6eab-4b12-ae39-d77c615e8c15",
@@ -942,7 +964,8 @@
   "shaft_depth_mm": 2780,
   "counterweight_position": "side",
   "notes": "M.R.L. GOODS LIFT. Operation FULL COLLECTIVE; Controller V3F. Travel G+3+R, floor heights GND 5000 / 1ST 5000 / 2ND 5000 / 3RD 3500 (sum 18500). Car door & landing door both \"M.S. AUTOMATIC CENTRE OPENING 4 FOLD DOOR\"; under-lintel height 2200. Car flooring MS Chequered Plate; Cabin MS power-coated. Platform 1880 (W) x 2470 (D); BET. WALL 1600; CAR INSIDE 1800 x 2300. Bracket spacing 1700. Forces on rail F=5000kg, R1=250kg, R2=20kg. Pit reactions: two carbuffer 3000kg, one cwt buffer 2400kg, vertical guide-rail safety force 3600kg. Proposal LTNL-4890, dated 14.03.2026, owner M/s. Elkos Pens Ltd, Howrah.",
-  "readable": true
+  "readable": true,
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "0d9bdd68-113c-4ef7-8690-592dca87a44e",
@@ -996,7 +1019,8 @@
   "machine_room": "no",
   "counterweight_position": "side",
   "door_side": null,
-  "notes": "M.R.L GOODS LIFT BLOCK-C. Door: M.S AUTOMATIC CENTRE OPENING 4 PART 2 FOLD DOOR (both landing and car). Operation FULL COLLECTIVE. Controller V3F. Owner M/s. SRIJAN REALTY Pvt Ltd. Location 33/27 B.T Road Kharda 700116. Proposal LTNP-15250 / LTNL-4954. Platform 3770; Car flooring M.S chequered plate; M.S. cabin. CWT frame 3300, side-mounted counterweight (D.B.G 2050). Floor heights Ground/1st/2nd = 4500 each (G+3). Forces on rail F=5000 KG, R1=250 KG, R2=20 KG. Pit reinforcement: two carbuffer 3000 KG, one CWT buffer 2400 KG, vertical force on guide rails on safety 3600 KG. Total fin. hoistway 4020. Under-lintel height 2200. Features: emergency light, overload indicator, ARD system, floor announcer, infra-red door screen."
+  "notes": "M.R.L GOODS LIFT BLOCK-C. Door: M.S AUTOMATIC CENTRE OPENING 4 PART 2 FOLD DOOR (both landing and car). Operation FULL COLLECTIVE. Controller V3F. Owner M/s. SRIJAN REALTY Pvt Ltd. Location 33/27 B.T Road Kharda 700116. Proposal LTNP-15250 / LTNL-4954. Platform 3770; Car flooring M.S chequered plate; M.S. cabin. CWT frame 3300, side-mounted counterweight (D.B.G 2050). Floor heights Ground/1st/2nd = 4500 each (G+3). Forces on rail F=5000 KG, R1=250 KG, R2=20 KG. Pit reinforcement: two carbuffer 3000 KG, one CWT buffer 2400 KG, vertical force on guide rails on safety 3600 KG. Total fin. hoistway 4020. Under-lintel height 2200. Features: emergency light, overload indicator, ARD system, floor announcer, infra-red door screen.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "de9ac875-2a2c-45d9-87aa-36358670818e",
@@ -1005,7 +1029,7 @@
   "dbg_counter_mm": 850,
   "door_opening_width_mm": 800,
   "door_type": "CO",
-  "door_finish": "MS",
+  "door_finish": "MS Powder Coated",
   "door_vision": "NV",
   "floors": 2,
   "capacity": "8PASS",
@@ -1023,7 +1047,8 @@
   "car_height_mm": 2000,
   "counterweight_position": "side",
   "door_side": null,
-  "notes": "Controller V3F; Full Collective Control. L.Door + Car Door: M.S. Powder Coated Centre Opening Auto Door. Auto centre opening door. Car flooring PVC tiles. Cabin: M.S powder coated with false ceiling. Forces on rail F=1700KG R1=250KG R2=30KG. Hoisting hook capacity 1500KG. Pit reactions: car buffer 3000KG, cwt buffer 2400KG, guide-rail vertical force on safety 3100KG. Under lintel 2200, clear height 2000. Total travel height 5700, bracket space 1800, under M/C base 3800. Total hoistway depth structural 1730 / finished 1550. Platform 1490 deep. BET.WALL 1000. Power AC 415V 3PH 50Hz + AC 220V 1PH 50Hz. Controller position at top floor 300x250x1500. Contract LTNP-15581 / LTNL-4975. Owner M/s Srijan Realty Pvt Ltd, Royal Ganges C4-137/NEW PS-Maheshtala Kolkata 700140. Travel G+1."
+  "notes": "Controller V3F; Full Collective Control. L.Door + Car Door: M.S. Powder Coated Centre Opening Auto Door. Auto centre opening door. Car flooring PVC tiles. Cabin: M.S powder coated with false ceiling. Forces on rail F=1700KG R1=250KG R2=30KG. Hoisting hook capacity 1500KG. Pit reactions: car buffer 3000KG, cwt buffer 2400KG, guide-rail vertical force on safety 3100KG. Under lintel 2200, clear height 2000. Total travel height 5700, bracket space 1800, under M/C base 3800. Total hoistway depth structural 1730 / finished 1550. Platform 1490 deep. BET.WALL 1000. Power AC 415V 3PH 50Hz + AC 220V 1PH 50Hz. Controller position at top floor 300x250x1500. Contract LTNP-15581 / LTNL-4975. Owner M/s Srijan Realty Pvt Ltd, Royal Ganges C4-137/NEW PS-Maheshtala Kolkata 700140. Travel G+1.",
+  "landing_door_finish": "MS Powder Coated"
  },
  {
   "job_id": "9a6fa951-c6c3-4ed1-a5c8-0a620b2aab80",
@@ -1050,7 +1075,8 @@
   "overhead_mm": 3300,
   "travel_mm": 7500,
   "speed_mps": 0.32,
-  "notes": "Title \"BUNGALOW LIFT\" (villa/home lift), Villa No-2. Rated load 272 KG. Operation: DOWN COLLECTIVE CONTROL. Power: AC 230V 1PH 50HZ. Floor heights GND 4000 + 1ST 3500 = travel 7500. Total fin. hoistway depth 1310; platform 1060(W) x 1225(D); car inside 1000(W) x 1100(D); bet. wall 900. Under lintel 2200. Hoisting hook capacity 1500 KG (by client). Cabin: wooden finish in corners (WD07) + light jute sheet. Controller at top floor 300x250x1500. DB 16A-PN 2nos + 7-hole earth bar. Guide rails car E0 / cwt E0; pit forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N. Bracket spacing 1700. Contract LTNP-13992."
+  "notes": "Title \"BUNGALOW LIFT\" (villa/home lift), Villa No-2. Rated load 272 KG. Operation: DOWN COLLECTIVE CONTROL. Power: AC 230V 1PH 50HZ. Floor heights GND 4000 + 1ST 3500 = travel 7500. Total fin. hoistway depth 1310; platform 1060(W) x 1225(D); car inside 1000(W) x 1100(D); bet. wall 900. Under lintel 2200. Hoisting hook capacity 1500 KG (by client). Cabin: wooden finish in corners (WD07) + light jute sheet. Controller at top floor 300x250x1500. DB 16A-PN 2nos + 7-hole earth bar. Guide rails car E0 / cwt E0; pit forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N. Bracket spacing 1700. Contract LTNP-13992.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "a8464f0f-8df2-42cc-9a40-5c202aa5e7bf",
@@ -1131,7 +1157,8 @@
   "drive_type": "MRLBELT",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Model RALPH 300; Traction media BELT (30x2); MRL belt drive (queue drive_type=BELT). Owner MOHIT SINGH, location Bangalore, date 12.02.2026. Car/landing door: Rosegold Linen finish auto telescopic with long vision glass. Car flooring VINYL. Cabin LTR-103 profile light + black mirror + rosegold linen. Controller V3F, full collective control, AC 230V 1ph 50Hz. Floor heights: GND 3220, 1ST 3510, 2ND 3220. BRAC.SP 1700, slab thk 150, rail fitted upto 3500, required pit 170. Forces (N) for E0: F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2. Plan DBGs labelled D.B.G 720 (inner) and D.B.G 760 (outer); per pit-forces-plan the outer/full-span pair are the car guide rails (=760 car) and inner pair the cwt rails (=720). BET.WALL 810, OPENING 700 (400+300), platform 1030, total fin hoistway depth 1215. Under lintel 2230. Note on plan: 'Integrated Password Access Control System in COP'; controller at top floor 300x250x1500 has to be extended."
+  "notes": "Model RALPH 300; Traction media BELT (30x2); MRL belt drive (queue drive_type=BELT). Owner MOHIT SINGH, location Bangalore, date 12.02.2026. Car/landing door: Rosegold Linen finish auto telescopic with long vision glass. Car flooring VINYL. Cabin LTR-103 profile light + black mirror + rosegold linen. Controller V3F, full collective control, AC 230V 1ph 50Hz. Floor heights: GND 3220, 1ST 3510, 2ND 3220. BRAC.SP 1700, slab thk 150, rail fitted upto 3500, required pit 170. Forces (N) for E0: F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2. Plan DBGs labelled D.B.G 720 (inner) and D.B.G 760 (outer); per pit-forces-plan the outer/full-span pair are the car guide rails (=760 car) and inner pair the cwt rails (=720). BET.WALL 810, OPENING 700 (400+300), platform 1030, total fin hoistway depth 1215. Under lintel 2230. Note on plan: 'Integrated Password Access Control System in COP'; controller at top floor 300x250x1500 has to be extended.",
+  "landing_door_finish": "SS Rose Gold Linen"
  },
  {
   "job_id": "4dac12ff-3289-44f9-96a9-f404f9488c28",
@@ -1185,7 +1212,8 @@
   "car_depth_mm": 1000,
   "car_height_mm": 2000,
   "counterweight_position": "side",
-  "notes": "Title: M.R.L. LIFT / L.T. ELEVATOR. Capacity 6 PERSONS (408 KG). Travel G+5 (6 stops). Operation FULL COLLECTIVE CONTROL. Controller V3F. Cabin finish: Rose Gold Linen & Black Mirror with profile light false ceiling. Car flooring PVC tiles. Door elevation: AUTOMATIC CENTRE OPENING DOOR WITH LONG VISION GLASS; door panels 516/700/484. UNDER LINTEL 2200, CLEAR HEIGHT 2000. TOTAL FIN. HOISTWAY 1260 (depth), TOTAL HOISTWAY 1350 (depth) / 1900 (width). CAR INSIDE 1100 (w) x 1000 (d), PLATFORM 1095. Counterweight on left side, D.B.G 850. Required overhead 4400, total travel height 15450, pit required 1600, bracket space 1800, required M/C base 3800. Floor heights: GND 3200, 1ST 3100, 2ND 3050, 3RD 3050, 4TH 3050. Forces on rail F=1700kg, R1=250kg, R2=30kg. Hoisting hook capacity 1500 KGS (must carry min 1500 KG). Reinforced pit: car buffer 3000kg, cwt buffer 2400kg, guide-rail vertical force on safety 3100kg. Controller 300x250x1500 at top floor. DB details: 32A TPN 1No, 16A PN 2Nos, 7-hole earth bar. Power: 415V 3Ph 50Hz + 230V 1Ph 50Hz. Contract LTNP-15615 / LTNL-4930. Owner M/s ROCKY PROPERTIES Pvt. Ltd. Location Park Circus, Kolkata. Date 23.05.2026. Drawn A.Mukherjee, Appvd A.Chakraborty. Scale N.T.S."
+  "notes": "Title: M.R.L. LIFT / L.T. ELEVATOR. Capacity 6 PERSONS (408 KG). Travel G+5 (6 stops). Operation FULL COLLECTIVE CONTROL. Controller V3F. Cabin finish: Rose Gold Linen & Black Mirror with profile light false ceiling. Car flooring PVC tiles. Door elevation: AUTOMATIC CENTRE OPENING DOOR WITH LONG VISION GLASS; door panels 516/700/484. UNDER LINTEL 2200, CLEAR HEIGHT 2000. TOTAL FIN. HOISTWAY 1260 (depth), TOTAL HOISTWAY 1350 (depth) / 1900 (width). CAR INSIDE 1100 (w) x 1000 (d), PLATFORM 1095. Counterweight on left side, D.B.G 850. Required overhead 4400, total travel height 15450, pit required 1600, bracket space 1800, required M/C base 3800. Floor heights: GND 3200, 1ST 3100, 2ND 3050, 3RD 3050, 4TH 3050. Forces on rail F=1700kg, R1=250kg, R2=30kg. Hoisting hook capacity 1500 KGS (must carry min 1500 KG). Reinforced pit: car buffer 3000kg, cwt buffer 2400kg, guide-rail vertical force on safety 3100kg. Controller 300x250x1500 at top floor. DB details: 32A TPN 1No, 16A PN 2Nos, 7-hole earth bar. Power: 415V 3Ph 50Hz + 230V 1Ph 50Hz. Contract LTNP-15615 / LTNL-4930. Owner M/s ROCKY PROPERTIES Pvt. Ltd. Location Park Circus, Kolkata. Date 23.05.2026. Drawn A.Mukherjee, Appvd A.Chakraborty. Scale N.T.S.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "d73bfe60-e62c-40b0-9827-d860089f9364",
@@ -1239,7 +1267,8 @@
   "drive_type": "MRL",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Model ALPHA 200; Controller V3F; Operation FULL COLLECTIVE CONTROL; Cabin S.S.; Car flooring VINYL; Power i) AC 415V 3PH 50Hz ii) AC 230V 1PH 50Hz. Contract RNLDL0105. Owner Mr. Sanjeev Sejwal, 432/2 Block A-1 Neb Sarai Sainik Farm New Delhi 110068. Platform 1195 depth; Bet.wall 900; Total fin. hoistway depth 1410. Hoisting hook capacity 1500 KG. Forces on rail F=1700kg, R1=250kg, R2=30kg. Reinforced pit: car buffer 3000kg, cwt buffer 2400kg, vertical forces on guide rails 3100kg. Clear/total door height 2000. Under M/C base 4500; existing overhead 5060. Floor heights GND2950/1ST2890/2ND3050/3RD3040/4TH3030/5TH3090 (G+6). Controller at top floor 300x250x1500."
+  "notes": "Model ALPHA 200; Controller V3F; Operation FULL COLLECTIVE CONTROL; Cabin S.S.; Car flooring VINYL; Power i) AC 415V 3PH 50Hz ii) AC 230V 1PH 50Hz. Contract RNLDL0105. Owner Mr. Sanjeev Sejwal, 432/2 Block A-1 Neb Sarai Sainik Farm New Delhi 110068. Platform 1195 depth; Bet.wall 900; Total fin. hoistway depth 1410. Hoisting hook capacity 1500 KG. Forces on rail F=1700kg, R1=250kg, R2=30kg. Reinforced pit: car buffer 3000kg, cwt buffer 2400kg, vertical forces on guide rails 3100kg. Clear/total door height 2000. Under M/C base 4500; existing overhead 5060. Floor heights GND2950/1ST2890/2ND3050/3RD3040/4TH3030/5TH3090 (G+6). Controller at top floor 300x250x1500.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "0360dae3-22fd-4e75-b1c5-74ea4c0f16e9",
@@ -1275,7 +1304,7 @@
   "dbg_counter_mm": 710,
   "door_opening_width_mm": 700,
   "door_type": "AT",
-  "door_finish": "MS",
+  "door_finish": "MS Powder Coated",
   "door_vision": "NV",
   "floors": 6,
   "capacity": "5PASS",
@@ -1293,7 +1322,8 @@
   "overhead_mm": 4600,
   "counterweight_position": "side",
   "door_side": "LHS",
-  "notes": "Model ALPHA 200; Operation FULL COLLECTIVE CONTROL; Power AC 415V 3PH 50HZ; Controller V3F at top floor 300x250x1500; Car flooring Vinyl; Cabin MS Powder Economy; Both car & landing doors MS Powder Economy Automatic Telescopic Blind Door; Platform 1030; Bet.wall 900; Clear car height 2000 / under lintel 2200; Pit existing 1600; OHRH required 4600 / under gov base 4200 / under M/C base 4000; Hoisting hook capacity 1500 KG; Forces on rail F=1700KG R1=250KG R2=30KG; Buffer reactions car 3000KG, cwt 2400KG, safety 3100KG; Floor heights GF2950/1st2950/2nd2980/3rd2965/4th2980, 5th bracket spacing 1800; Rope stretch 125; RCC wall 130mm; Total fin. hoistway 1188."
+  "notes": "Model ALPHA 200; Operation FULL COLLECTIVE CONTROL; Power AC 415V 3PH 50HZ; Controller V3F at top floor 300x250x1500; Car flooring Vinyl; Cabin MS Powder Economy; Both car & landing doors MS Powder Economy Automatic Telescopic Blind Door; Platform 1030; Bet.wall 900; Clear car height 2000 / under lintel 2200; Pit existing 1600; OHRH required 4600 / under gov base 4200 / under M/C base 4000; Hoisting hook capacity 1500 KG; Forces on rail F=1700KG R1=250KG R2=30KG; Buffer reactions car 3000KG, cwt 2400KG, safety 3100KG; Floor heights GF2950/1st2950/2nd2980/3rd2965/4th2980, 5th bracket spacing 1800; Rope stretch 125; RCC wall 130mm; Total fin. hoistway 1188.",
+  "landing_door_finish": "MS Powder Coated"
  },
  {
   "job_id": "2cf5840a-7d5f-45ce-9bab-cd2833b6e700",
@@ -1320,7 +1350,8 @@
   "drive_type": "MRL",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "M.R.L Goods Lift, Block-C. Operation: Full Collective. Controller V3F. Power: 415V 3PH 50Hz + 230V 1PH 50Hz. Doors (L.DOOR + CAR DOOR): M.S Automatic Centre Opening 4 Part 2 Fold (frame 1800 = 100+1600+100). Car flooring: M.S Chequered Plate. Cabin: M.S Cabin. Others: emergency light, overload indicator, ARD system, floor announcer, infra-red door screen. Plan: car inside 2400(W)x3600(D), platform 3770, bet.wall 1800, RCC wall 230, total hoistway 3450(W)x4150(D), total fin. hoistway 4020. CWT frame 3300, bracket spacing 1800. Floor heights: Ground/1st/2nd = 4500 each (G+3). Total travel 13500. Forces on rail: F=5000KG, R1=250KG, R2=20KG. Buffers: two car buffers 3000KG, one CWT buffer 2400KG, vertical forces on guide rails on safety application 3600KG. Under lintel height 2200, door height 2000. Proposal LTNP-15250 / LTNL-4953. Owner: M/s Srijan Realty Pvt Ltd, B.T Road Kharda 700116."
+  "notes": "M.R.L Goods Lift, Block-C. Operation: Full Collective. Controller V3F. Power: 415V 3PH 50Hz + 230V 1PH 50Hz. Doors (L.DOOR + CAR DOOR): M.S Automatic Centre Opening 4 Part 2 Fold (frame 1800 = 100+1600+100). Car flooring: M.S Chequered Plate. Cabin: M.S Cabin. Others: emergency light, overload indicator, ARD system, floor announcer, infra-red door screen. Plan: car inside 2400(W)x3600(D), platform 3770, bet.wall 1800, RCC wall 230, total hoistway 3450(W)x4150(D), total fin. hoistway 4020. CWT frame 3300, bracket spacing 1800. Floor heights: Ground/1st/2nd = 4500 each (G+3). Total travel 13500. Forces on rail: F=5000KG, R1=250KG, R2=20KG. Buffers: two car buffers 3000KG, one CWT buffer 2400KG, vertical forces on guide rails on safety application 3600KG. Under lintel height 2200, door height 2000. Proposal LTNP-15250 / LTNL-4953. Owner: M/s Srijan Realty Pvt Ltd, B.T Road Kharda 700116.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "df46f556-1fe0-4ba8-b59d-4403ce51cd75",
@@ -1347,7 +1378,8 @@
   "shaft_depth_mm": 2550,
   "door_side": null,
   "counterweight_position": "side",
-  "notes": "G+1 / 2 stops, openings TWO SIDE (REVERSE). Machine: MRL PMSM Gearless, AC Gearless with VVVF, microprocessor control, Simplex Selective Collective. Roping 2:1, 6 nos x 8mm steel wire rope, motor 6 KW, factor of safety 12. Hoisting hook capacity 7800 KG. Car guide rail 70x65x9, counterweight guide 70x65x9. Pit 1600, Required OH/RH 4800, base 4200, ground floor height 7540. Forces on rail: F1=24667N, F2=24667N, F3=67689N, F4=12316N, F5=48559.5N (FX=1413N, FY=2009N, FZ=24667N). Car inside 1500x1500, under-lintel height 2200, door opening height 2000. Total hoistway outside 2850, column C/C 2400 (width) / 2250 (depth). Vertical bracket spacing 1500 for car & 2000 for CWT rails, total travel 7540 approx. Location ANDH041 Chipurupalli PF.1. Order 01005730102439 dated 04.05.2024, ECoR Waltair Division."
+  "notes": "G+1 / 2 stops, openings TWO SIDE (REVERSE). Machine: MRL PMSM Gearless, AC Gearless with VVVF, microprocessor control, Simplex Selective Collective. Roping 2:1, 6 nos x 8mm steel wire rope, motor 6 KW, factor of safety 12. Hoisting hook capacity 7800 KG. Car guide rail 70x65x9, counterweight guide 70x65x9. Pit 1600, Required OH/RH 4800, base 4200, ground floor height 7540. Forces on rail: F1=24667N, F2=24667N, F3=67689N, F4=12316N, F5=48559.5N (FX=1413N, FY=2009N, FZ=24667N). Car inside 1500x1500, under-lintel height 2200, door opening height 2000. Total hoistway outside 2850, column C/C 2400 (width) / 2250 (depth). Vertical bracket spacing 1500 for car & 2000 for CWT rails, total travel 7540 approx. Location ANDH041 Chipurupalli PF.1. Order 01005730102439 dated 04.05.2024, ECoR Waltair Division.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "d0404c10-dfdb-475a-b951-d05f5bf770f1",
@@ -1374,7 +1406,8 @@
   "car_height_mm": null,
   "counterweight_position": "rear",
   "door_side": null,
-  "notes": "M.R.L LIFT (machine at top floor, no machine room). Capacity 8 PERSONS (544 KG). Operation FULL COLLECTIVE CONTROL, Controller V3F. Cabin S.S., car flooring PVC TILES. Contract LTNL-4870. Customer M/s Sarmita Developers, Samnipara, Nona Uluberia, Howrah-711315. Plan: TOTAL FIN. HOISTWAY 2250 (vs total 2340), PLATFORM depth 1395, BET. WALL 1000. Section: TOTAL TRAVEL HEIGHT 15650, CLEAR DOOR HEIGHT 2000, UNDER LINTEL HEIGHT 2200, BRACKET SPACE 1800, UNDER W/C BASE 4000 / 2000. Hoisting hook capacity 1500 KG (16mm rod). Forces on rail F=1700 KG, R1=250 KG, R2=30 KG. Buffer: car -3000 KG, cwt -2400 KG; vertical guide-rail force on safety -3100 KG. Floor heights G+5: Ground 3050, 1st-4th 3150 each."
+  "notes": "M.R.L LIFT (machine at top floor, no machine room). Capacity 8 PERSONS (544 KG). Operation FULL COLLECTIVE CONTROL, Controller V3F. Cabin S.S., car flooring PVC TILES. Contract LTNL-4870. Customer M/s Sarmita Developers, Samnipara, Nona Uluberia, Howrah-711315. Plan: TOTAL FIN. HOISTWAY 2250 (vs total 2340), PLATFORM depth 1395, BET. WALL 1000. Section: TOTAL TRAVEL HEIGHT 15650, CLEAR DOOR HEIGHT 2000, UNDER LINTEL HEIGHT 2200, BRACKET SPACE 1800, UNDER W/C BASE 4000 / 2000. Hoisting hook capacity 1500 KG (16mm rod). Forces on rail F=1700 KG, R1=250 KG, R2=30 KG. Buffer: car -3000 KG, cwt -2400 KG; vertical guide-rail force on safety -3100 KG. Floor heights G+5: Ground 3050, 1st-4th 3150 each.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "7521afee-97eb-4fe3-a783-62f6cf39e4ba",
@@ -1383,9 +1416,9 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 800,
   "door_type": "AT",
-  "door_finish": "SS Mirror",
+  "door_finish": "MS",
   "door_vision": "LV",
-  "door_side": "LHS",
+  "door_side": "RHS",
   "floors": 3,
   "capacity": "408KG",
   "readable": true,
@@ -1401,7 +1434,8 @@
   "drive_type": "BELT",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Model RALPH 400; Bungalow Lift; Traction media BELT (30x2); Operation FULL COLLECTIVE CONTROL; Power AC 230V 1PH 50Hz; Car flooring VINYL; Cabin LTR-104 White Linen + SS Mirror with left & right side glass; Shaft = powder-coated with 2 side glass & 1 side ACP; Platform 1130; Total fin. hoistway 1645; Under lintel 2250 / clear height 2000; Floor height GND/1ST = 3520; Brac. sp. 1200/1700; Required pit 170; DB 16A-PN 2 nos + 7-hole earth bar 1 no; Controller at top floor 300x250x1500; Forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Client Mr. Akanshu Khurana, Satna 485001; Contract RNLIND0014; side-slide telescopic door."
+  "notes": "Model RALPH 400; Bungalow Lift; Traction media BELT (30x2); Operation FULL COLLECTIVE CONTROL; Power AC 230V 1PH 50Hz; Car flooring VINYL; Cabin LTR-104 White Linen + SS Mirror with left & right side glass; Shaft = powder-coated with 2 side glass & 1 side ACP; Platform 1130; Total fin. hoistway 1645; Under lintel 2250 / clear height 2000; Floor height GND/1ST = 3520; Brac. sp. 1200/1700; Required pit 170; DB 16A-PN 2 nos + 7-hole earth bar 1 no; Controller at top floor 300x250x1500; Forces F1=12184 F2=12184 F3=25113.6 F4=13009 F5=18835.2 N; Client Mr. Akanshu Khurana, Satna 485001; Contract RNLIND0014; side-slide telescopic door.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "4b7d1bbd-bd4a-4242-92a6-18e73d19a623",
@@ -1428,7 +1462,8 @@
   "drive_type": "MRL",
   "machine_room": "no",
   "counterweight_position": "side",
-  "notes": "Drawing No BBSR 314 (3 sheets). Client: East Coast Railway, BALU New station building. Capacity 16 persons / 1088 KG. Speed 1 M.P.S variable. Travel G+1. Gearless machine. Platform 1695, Car inside 1600, Bet. wall 1164, Total fin hoistway 2880. Total floor height 3980. Wire ropes 8mm x 7 No, FOS-12. Roping 2:1. Motor 7.4 kw. Battery 12 AH x 4. Car guide 89x62x16, counterweight guide 70x65x9. Controller at top floor, floor size 350x250x1500. Forces on rail: F1 5733, F2 5733, F3 9000, F4 3504, F5 5500 KG; FX 396, FY 452, FZ 5733 KG. Hoisting hook capacity 1500 KGS, dia 16mm rod. Fireman's switch & wall phone only at ground floor. Under lintel 2200, clear height 2000."
+  "notes": "Drawing No BBSR 314 (3 sheets). Client: East Coast Railway, BALU New station building. Capacity 16 persons / 1088 KG. Speed 1 M.P.S variable. Travel G+1. Gearless machine. Platform 1695, Car inside 1600, Bet. wall 1164, Total fin hoistway 2880. Total floor height 3980. Wire ropes 8mm x 7 No, FOS-12. Roping 2:1. Motor 7.4 kw. Battery 12 AH x 4. Car guide 89x62x16, counterweight guide 70x65x9. Controller at top floor, floor size 350x250x1500. Forces on rail: F1 5733, F2 5733, F3 9000, F4 3504, F5 5500 KG; FX 396, FY 452, FZ 5733 KG. Hoisting hook capacity 1500 KGS, dia 16mm rod. Fireman's switch & wall phone only at ground floor. Under lintel 2200, clear height 2000.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "84d1a68e-302c-4281-9ba9-f5df3bd28353",
@@ -1452,10 +1487,11 @@
   "shaft_depth_mm": 1350,
   "door_opening_width_mm": 700,
   "door_type": "AT",
-  "door_finish": "SS Rose Gold",
+  "door_finish": "SS Rose Gold Mirror",
   "door_vision": "LV",
   "door_side": "LHS",
-  "notes": "BUNGLOW LIFT, MODEL RALPH 400. TRACTION MEDIA: BELT (30x2). CAPACITY UPTO 408 KGS. SPEED 0.5 m/s, TRAVEL G+3, DOWN COLLECTIVE CONTROL, AC 230V 1PH 50Hz. Landing door (L.DOOR): MS POWDER COATED RAL 8017 MI automatic telescopic w/ long vision glass; Car door: ROSE GOLD MIRROR FINISH automatic telescopic w/ long vision glass. Cabin: combination of Rose Gold Matt & Mirror finish (right side) with back & left side glass + false ceiling. CAR FLOORING: VINYL TILES. Plan: TOTAL HOISTWAY 1480 (EXT 1580) wide x 1350 (EXT 1450) deep; TOTAL FIN. HOISTWAY 1270; PLATFORM 1170; CAR INSIDE 800x1000; BET. WALL 900. UNDER LINTEL 2250, CLEAR HEIGHT 2000. Two stacked guide spans: D.B.G 760 (car) / D.B.G 720 (cwt). Section: OVERHEAD EXISTING 3110, TRAVEL HEIGHT 9910mm, EXISTING PIT 630, SLAB THK 150, BRAC. SP. 1200. Floor heights GND 3300 / 1ST 3300 / 2ND 3310 / 3RD. Site sheet: total travel (GF to under M/C floor slab) 13050; slab thickness 1st 540 / 2nd 560 / 3rd 525. Pit forces (E0): F1=F2=12184N, F3=25113.6N, F4=13009N, F5=18835.2N. DB DETAILS 16A-PN-2NOS, 7-hole earth bar 1no. Controller at top floor 300x250x1500. Door leaf split 350+350. Location Bangalore, client Mr. Gibran. Door_side (telescopic park direction) inferred LHS from plan; not explicitly labelled."
+  "notes": "BUNGLOW LIFT, MODEL RALPH 400. TRACTION MEDIA: BELT (30x2). CAPACITY UPTO 408 KGS. SPEED 0.5 m/s, TRAVEL G+3, DOWN COLLECTIVE CONTROL, AC 230V 1PH 50Hz. Landing door (L.DOOR): MS POWDER COATED RAL 8017 MI automatic telescopic w/ long vision glass; Car door: ROSE GOLD MIRROR FINISH automatic telescopic w/ long vision glass. Cabin: combination of Rose Gold Matt & Mirror finish (right side) with back & left side glass + false ceiling. CAR FLOORING: VINYL TILES. Plan: TOTAL HOISTWAY 1480 (EXT 1580) wide x 1350 (EXT 1450) deep; TOTAL FIN. HOISTWAY 1270; PLATFORM 1170; CAR INSIDE 800x1000; BET. WALL 900. UNDER LINTEL 2250, CLEAR HEIGHT 2000. Two stacked guide spans: D.B.G 760 (car) / D.B.G 720 (cwt). Section: OVERHEAD EXISTING 3110, TRAVEL HEIGHT 9910mm, EXISTING PIT 630, SLAB THK 150, BRAC. SP. 1200. Floor heights GND 3300 / 1ST 3300 / 2ND 3310 / 3RD. Site sheet: total travel (GF to under M/C floor slab) 13050; slab thickness 1st 540 / 2nd 560 / 3rd 525. Pit forces (E0): F1=F2=12184N, F3=25113.6N, F4=13009N, F5=18835.2N. DB DETAILS 16A-PN-2NOS, 7-hole earth bar 1no. Controller at top floor 300x250x1500. Door leaf split 350+350. Location Bangalore, client Mr. Gibran. Door_side (telescopic park direction) inferred LHS from plan; not explicitly labelled.",
+  "landing_door_finish": "MS Powder Coated"
  },
  {
   "job_id": "82333336-35df-49f2-b042-1c30d33f6a26",
@@ -1491,8 +1527,8 @@
   "dbg_counter_mm": 1050,
   "door_opening_width_mm": 800,
   "door_type": "MT",
-  "door_finish": "MS",
-  "door_vision": "NV",
+  "door_finish": "MS Powder Coated",
+  "door_vision": "MV",
   "floors": 5,
   "capacity": "8PASS",
   "readable": true,
@@ -1509,7 +1545,8 @@
   "travel_mm": 12400,
   "pit_depth_mm": 1600,
   "overhead_mm": 5250,
-  "notes": "Drawing LTNL-4875 (Sheet 1&2 of 2), dated 09.12.2025, owner M/s. Rameswara Infra Space LLP, location Barrackpore N24 Parganas; M.R LIFT-01 (BLOCK-5). OPERATION: DOWN COLLECTIVE. CONTROLLER V3F. CAR FLOORING PVC TILES. CABIN M.S. (powder coated). Power supply 430V 3PH 50Hz / 230V 1PH 50Hz. Under-lintel/finished-door height 2150. Platform depth 1205; car inside 1100 (depth) x 1300 (width). Bet. wall 1050. Total machine room 5550. Max vertical bracket spacing 2000 (car) / 1800 (CWT rails); CWT rail spacing 2000. Hoisting hook cap 1500 KG. Forces on rail F=2500, R1=200 KG, R2=20 KG. Reinforced pit reactions: car buffer 3000 KG, CWT buffer 2400 KG, safety on guide rails 3100 KG. Machine room slab 1000 KG/m2 UDL. Floor heights: GND 3250, 1ST/2ND/3RD 3050 each, top 4TH."
+  "notes": "Drawing LTNL-4875 (Sheet 1&2 of 2), dated 09.12.2025, owner M/s. Rameswara Infra Space LLP, location Barrackpore N24 Parganas; M.R LIFT-01 (BLOCK-5). OPERATION: DOWN COLLECTIVE. CONTROLLER V3F. CAR FLOORING PVC TILES. CABIN M.S. (powder coated). Power supply 430V 3PH 50Hz / 230V 1PH 50Hz. Under-lintel/finished-door height 2150. Platform depth 1205; car inside 1100 (depth) x 1300 (width). Bet. wall 1050. Total machine room 5550. Max vertical bracket spacing 2000 (car) / 1800 (CWT rails); CWT rail spacing 2000. Hoisting hook cap 1500 KG. Forces on rail F=2500, R1=200 KG, R2=20 KG. Reinforced pit reactions: car buffer 3000 KG, CWT buffer 2400 KG, safety on guide rails 3100 KG. Machine room slab 1000 KG/m2 UDL. Floor heights: GND 3250, 1ST/2ND/3RD 3050 each, top 4TH.",
+  "landing_door_finish": "MS Powder Coated"
  },
  {
   "job_id": "c0633993-0e76-4918-94db-14acb88d4ed4",
@@ -1536,7 +1573,8 @@
   "car_depth_mm": 1000,
   "car_height_mm": null,
   "notes": "Landing door: S.S. HAIRLINE SWING DOOR (at top floor); Car door: M.S. COLLAPSIBLE DOOR. Cabin: S.S. Hairline finish. Car flooring: PVC tiles. Controller V3F AND DPI, Model ALPHA 200, Traction media ROPE. Operation FULL COLLECTIVE. Clear entrance 2000, under lintel 2205. Platform 1080 x 1000. BET. WALL 1025. Total fin. hoistway 1195. Under M/C base 3770. Bracket space 1800. Pit existing 1500. Floor heights: GND 3070, 1ST 3015, 2ND 3045, 3RD 3040, 4TH top. Forces on rail F=1700kg R1=250kg R2=30kg. Hoisting hook capacity 1500 kg (2 nos). Buffer reactions: car 3000kg, cwt 2400kg, safety 3100kg. Power: 415V 3PH 50Hz / 230V 1PH 50Hz. DB by owner: 32A TPN 1no, 16A PN 2nos. Site: Rathtala, Adarsha Pally, Belgharia, Kolkata-700057. Counterweight D.B.G read as 320. Page-3 site measurement sheet lists Job RNLKOL-0056 (related survey).",
-  "readable": true
+  "readable": true,
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "9a0bde89-6540-4c7d-ab20-d1f7f4fbfd3a",
@@ -1626,7 +1664,7 @@
   "dbg_counter_mm": 1050,
   "door_opening_width_mm": 800,
   "door_type": "Auto Center Opening",
-  "door_finish": "Gold Designer Finish",
+  "door_finish": "SS Gold Designer",
   "door_vision": "LV",
   "door_side": null,
   "floors": 5,
@@ -1644,7 +1682,8 @@
   "car_height_mm": null,
   "counterweight_position": "Side (left of car in plan)",
   "readable": true,
-  "notes": "RICARDO M.R.L. Lift, Model ALPHA 200. Operation: Full Collective Control. Power: AC 415V 3Ph 50Hz. Travel G+4 (floor heights GND 3005, 1ST 3040, 2ND 3015, 3RD 3010 = 12070 mm; 4TH row blank). Both car door and landing door: Gold Designer Finish Auto Center Opening Door with Long Vision Glass (top floor). Car flooring: Vinyl. Cabin: Gold Designer cabin for left & right, back side gold mirror. Plan dims: OPENING 800, BET WALL 1000, CAR INSIDE 1400 (W) x 1000 (D), Platform 1095, DBG 1542 (car), D.B.G 1050 (counterweight), TOTAL HOISTWAY 2224 (W) x TOTAL FIN HOISTWAY 1725 (D). Section: Required pit 1500, existing overhead 4190, clear door height 2200, under lintel 2200, clear height 2000. Hoisting hook capacity 1500 kg. Forces on rail F=1700, R1=250, R2=30 kg. Buffers: car 3000 kg, cwt 2400 kg. Contract RNLAP0010, Location Nellore. Date 04.03.2026. Car height not given as an explicit dimension so left null."
+  "notes": "RICARDO M.R.L. Lift, Model ALPHA 200. Operation: Full Collective Control. Power: AC 415V 3Ph 50Hz. Travel G+4 (floor heights GND 3005, 1ST 3040, 2ND 3015, 3RD 3010 = 12070 mm; 4TH row blank). Both car door and landing door: Gold Designer Finish Auto Center Opening Door with Long Vision Glass (top floor). Car flooring: Vinyl. Cabin: Gold Designer cabin for left & right, back side gold mirror. Plan dims: OPENING 800, BET WALL 1000, CAR INSIDE 1400 (W) x 1000 (D), Platform 1095, DBG 1542 (car), D.B.G 1050 (counterweight), TOTAL HOISTWAY 2224 (W) x TOTAL FIN HOISTWAY 1725 (D). Section: Required pit 1500, existing overhead 4190, clear door height 2200, under lintel 2200, clear height 2000. Hoisting hook capacity 1500 kg. Forces on rail F=1700, R1=250, R2=30 kg. Buffers: car 3000 kg, cwt 2400 kg. Contract RNLAP0010, Location Nellore. Date 04.03.2026. Car height not given as an explicit dimension so left null.",
+  "landing_door_finish": "SS Gold Designer"
  },
  {
   "job_id": "b2eb403f-f63e-43be-8817-2aa71b7436b6",
@@ -1653,7 +1692,7 @@
   "dbg_counter_mm": 720,
   "door_opening_width_mm": 700,
   "door_type": "Automatic Centre Opening (spec table); drawing door elevation labels it \"Side Slide Auto Telescopic Door\"",
-  "door_finish": "Car door: Black Mirror Finish; Landing door: MS Powder Coated Black Finish",
+  "door_finish": "SS Black Mirror",
   "door_vision": "LV",
   "door_side": null,
   "floors": 4,
@@ -1671,7 +1710,8 @@
   "overhead_mm": 3210,
   "travel_mm": 10514,
   "notes": "RICARDO \"BUNGALOW LIFT\". Client Mr. Murugesh Bhoopalan, Location Bangalore, Contract RNLBLR0067, date 25.05.2026 (sht1) / 25.06.2026 (sht2), drawn A.Mukherjee. Operation: FULL COLLECTIVE CONTROL. Power: AC 230V 1PH 50Hz. Travel G+3. Model RALPH 400, traction media BELT (30x2). Car inside 800(W) x 1000(D); Platform 1170. Hoistway (width): OPENING 700, BET WALL 900, TOTAL HOISTWAY 1347 (EXT 1447). Hoistway (depth): TOTAL FIN. HOISTWAY 1250, TOTAL HOISTWAY 1330 (EXT 1430). Section A-A: UNDER LINTEL 2250, CLEAR HEIGHT 2000. Page2 section: OVERHEAD EXISTING 3210, TRAVEL HEIGHT 10514mm, EXISTING PIT 520, BRACKET SPACING (BRAC.SP) 1200, SLAB THK 150. Floor heights: GND 3479, 1ST 3505, 2ND 3530, 3RD (blank). Two stacked DBG on car/rail side: D.B.G. 760 (taken as car/main) and D.B.G. 720 (taken as counterweight). DB DETAILS: 16A-PN 2 nos, 7 hole earth bar 1 no; DB & pit light by owner. Car flooring VINYL. Cabin: Rose Gold Matt finish (back side) & Black Mirror finish at corners, spot light, right & left side glass. Shaft: MS powder coated black matt with right & left side glass. Pit forces (E0): F1=12184, F2=12184, F3=25113.6, F4=13009, F5=18835.2 N. NOTE: door rows in spec table say \"Automatic Centre Opening\" but the door elevation drawing is labelled \"Side Slide Auto Telescopic Door\" - genuine conflict on the drawing.",
-  "readable": true
+  "readable": true,
+  "landing_door_finish": "MS Powder Coated Black"
  },
  {
   "job_id": "00918cf9-f22c-473f-8697-c9e6603fdfb9",
@@ -1680,9 +1720,9 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 800,
   "door_type": "Automatic Telescopic",
-  "door_finish": "SS Hairline Finish",
+  "door_finish": "SS Hairline",
   "door_vision": "LV",
-  "door_side": null,
+  "door_side": "RHS",
   "floors": 3,
   "capacity": "UPTO 400 KGS",
   "readable": true,
@@ -1698,7 +1738,8 @@
   "drive_type": "Belt (Bungalow Lift, MRL)",
   "machine_room": "MRL (no machine room - belt traction)",
   "counterweight_position": "Side",
-  "notes": "RICARDO / RNL Elevators. Model RALPH 300, Bungalow Lift. Traction media BELT (30x2). Civil shaft. Operation: Full Collective Control. Power AC 230V 1PH 50Hz. Cabin SS Hairline Finish, car flooring Vinyl. Both landing door and car door: SS Hairline Finish Automatic Telescopic Door with Long Vision Glass. Hoistway plan: D.B.G 860 / D.B.G 820 (car-guide rails), OPENING 800, BET. WALL 1000, CAR INSIDE 1300 (W) x 1000 (D), PLATFORM 1430, TOTAL HOISTWAY 1660 (W) x 2090 (D). Section: clear height 2000, under lintel 2200, controller at top floor 300x250x1500. DB details: 16A-PN 2 nos, 7-hole earth bar 1 no. Page-2: Travel height 6200mm, overhead existing 3940, existing pit 400, rail fitted up to 3500, bracket spacing 1700, slab thk 150. Floor heights: GND 3100, 1ST 3100, 2ND (top). Hoisting hook capacity 1500 KGS by client. Location Kharar, client Mr. Raghbir Singh, contract RNLCHA0038. Note: no separate counterweight D.B.G labelled - dbg_counter set from the second car-rail D.B.G 820 (the two stacked D.B.G values are 860 and 820)."
+  "notes": "RICARDO / RNL Elevators. Model RALPH 300, Bungalow Lift. Traction media BELT (30x2). Civil shaft. Operation: Full Collective Control. Power AC 230V 1PH 50Hz. Cabin SS Hairline Finish, car flooring Vinyl. Both landing door and car door: SS Hairline Finish Automatic Telescopic Door with Long Vision Glass. Hoistway plan: D.B.G 860 / D.B.G 820 (car-guide rails), OPENING 800, BET. WALL 1000, CAR INSIDE 1300 (W) x 1000 (D), PLATFORM 1430, TOTAL HOISTWAY 1660 (W) x 2090 (D). Section: clear height 2000, under lintel 2200, controller at top floor 300x250x1500. DB details: 16A-PN 2 nos, 7-hole earth bar 1 no. Page-2: Travel height 6200mm, overhead existing 3940, existing pit 400, rail fitted up to 3500, bracket spacing 1700, slab thk 150. Floor heights: GND 3100, 1ST 3100, 2ND (top). Hoisting hook capacity 1500 KGS by client. Location Kharar, client Mr. Raghbir Singh, contract RNLCHA0038. Note: no separate counterweight D.B.G labelled - dbg_counter set from the second car-rail D.B.G 820 (the two stacked D.B.G values are 860 and 820).",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "1221b2d1-48e1-43ed-a611-cf146d279b93",
@@ -1707,7 +1748,7 @@
   "dbg_counter_mm": 620,
   "door_opening_width_mm": 700,
   "door_type": "Automatic Center Opening",
-  "door_finish": "SS Hairline (drawing handwritten override of Rose Gold Linen)",
+  "door_finish": "SS Hairline",
   "door_vision": "LV",
   "door_side": null,
   "floors": 2,
@@ -1725,7 +1766,8 @@
   "overhead_mm": 2900,
   "travel_mm": 3000,
   "readable": true,
-  "notes": "Ricardo brand, Model RALPH 300, \"Bungalow Lift\". G+1 (2 stops). Power: AC 230V 1PH 50Hz. Operation: Full Collective Control. Traction media BELT (30x2). Contract RNLKEL0044, location Salim, Shoranur, Palakkad, dated 12.03.2026. Car: CAR INSIDE 1000 (W) x 900 (D), PLATFORM 995, CAR INSIDE 900 depth. Door: AUTOMATIC CENTER OPENING WITH LONG VISION GLASS; printed finish \"Rose Gold Linen\" but car door & landing door rows hand-overwritten \"SS HAIRLINE\"; cabin finish Rose Gold Linen with right & back side glass. UNDER LINTEL 2200, CLEAR HEIGHT 2000. BET. WALL 900, TOTAL HOISTWAY 1650 (width) / TOTAL HOISTWAY 1250 (depth), TOTAL FIN. HOISTWAY 1160. Site sheet: Pit 600, Overhead existing 2900, Total travel GF-to-under-slab 6500, shaft GF 1650x1250 / 1st 1650x1250, floor heights GND 3000 / 1st 2900. TRAVEL HEIGHT 3000 mm on section. DB: 16A PN 2nos, 7-hole earth bar. Mechanism shaft left side. Two stacked car-side DBG labels: D.B.G 660 (car-guide rail) and D.B.G 620 (counterweight-guide rail, separate Cwt-guide rail E0 with F4=13009N). Flooring vinyl. Features: emergency light, floor announcer, overload indicator, infra-red door screen, dot matrix touch LOP & COP black, blower fan."
+  "notes": "Ricardo brand, Model RALPH 300, \"Bungalow Lift\". G+1 (2 stops). Power: AC 230V 1PH 50Hz. Operation: Full Collective Control. Traction media BELT (30x2). Contract RNLKEL0044, location Salim, Shoranur, Palakkad, dated 12.03.2026. Car: CAR INSIDE 1000 (W) x 900 (D), PLATFORM 995, CAR INSIDE 900 depth. Door: AUTOMATIC CENTER OPENING WITH LONG VISION GLASS; printed finish \"Rose Gold Linen\" but car door & landing door rows hand-overwritten \"SS HAIRLINE\"; cabin finish Rose Gold Linen with right & back side glass. UNDER LINTEL 2200, CLEAR HEIGHT 2000. BET. WALL 900, TOTAL HOISTWAY 1650 (width) / TOTAL HOISTWAY 1250 (depth), TOTAL FIN. HOISTWAY 1160. Site sheet: Pit 600, Overhead existing 2900, Total travel GF-to-under-slab 6500, shaft GF 1650x1250 / 1st 1650x1250, floor heights GND 3000 / 1st 2900. TRAVEL HEIGHT 3000 mm on section. DB: 16A PN 2nos, 7-hole earth bar. Mechanism shaft left side. Two stacked car-side DBG labels: D.B.G 660 (car-guide rail) and D.B.G 620 (counterweight-guide rail, separate Cwt-guide rail E0 with F4=13009N). Flooring vinyl. Features: emergency light, floor announcer, overload indicator, infra-red door screen, dot matrix touch LOP & COP black, blower fan.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "f2f6e645-48e2-408f-9fdf-421aaab87890",
@@ -1763,7 +1805,7 @@
   "door_type": "Automatic Telescopic (2-panel, side-opening)",
   "door_finish": "SS Hairline",
   "door_vision": "LV",
-  "door_side": null,
+  "door_side": "RHS",
   "floors": 4,
   "capacity": "340 kg (UPTO 340 KGS)",
   "speed_mps": 0.5,
@@ -1779,7 +1821,8 @@
   "overhead_mm": 3300,
   "travel_mm": 9810,
   "readable": true,
-  "notes": "Ricardo \"Ralph 400\" Bungalow Lift, belt-traction MRL, G+3 (4 stops). Side counterweight (left of car). Car DBG 760, CW DBG 720 (nested guide-rail spans on left of hoistway plan, 45/65 bracket offsets). Door: 2-panel side-slide automatic telescopic, OPENING 700, door clear height 2000, under lintel 2250. Both landing and car door SS Hairline finish with Long Vision Glass. Cabin: SS Hairline with back & right side glass; car flooring vinyl. Hoistway plan: CAR INSIDE 800 (w) x 1000 (d), PLATFORM 1170, BET. WALL 900, TOTAL HOISTWAY 1400x1400 (EXT 1496 x 1500), TOTAL FIN. HOISTWAY 1270. Section/structural: OVERHEAD EXISTING 3300, TRAVEL HEIGHT 9810, REQUIRED PIT 170, BRAC. SP. 1700, slab thk 150. Floor heights: GND 3300, 1ST 3210, 2ND 3300, 3RD. Capacity UPTO 340 KGS, 0.5 m/s, AC 230V 1PH 50HZ, full collective control. Shaft: welded, right & back side glass by vendor. Contract no on drawing = RNLNAG0011 (queue job_number RNLNAG011 echoed verbatim). Location: Sarang, Lambat, Nagpur. Client: Mr. Sarang Lambat."
+  "notes": "Ricardo \"Ralph 400\" Bungalow Lift, belt-traction MRL, G+3 (4 stops). Side counterweight (left of car). Car DBG 760, CW DBG 720 (nested guide-rail spans on left of hoistway plan, 45/65 bracket offsets). Door: 2-panel side-slide automatic telescopic, OPENING 700, door clear height 2000, under lintel 2250. Both landing and car door SS Hairline finish with Long Vision Glass. Cabin: SS Hairline with back & right side glass; car flooring vinyl. Hoistway plan: CAR INSIDE 800 (w) x 1000 (d), PLATFORM 1170, BET. WALL 900, TOTAL HOISTWAY 1400x1400 (EXT 1496 x 1500), TOTAL FIN. HOISTWAY 1270. Section/structural: OVERHEAD EXISTING 3300, TRAVEL HEIGHT 9810, REQUIRED PIT 170, BRAC. SP. 1700, slab thk 150. Floor heights: GND 3300, 1ST 3210, 2ND 3300, 3RD. Capacity UPTO 340 KGS, 0.5 m/s, AC 230V 1PH 50HZ, full collective control. Shaft: welded, right & back side glass by vendor. Contract no on drawing = RNLNAG0011 (queue job_number RNLNAG011 echoed verbatim). Location: Sarang, Lambat, Nagpur. Client: Mr. Sarang Lambat.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "cea6b34b-2ae3-4847-bce3-06e38e24da00",
@@ -1788,7 +1831,7 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 700,
   "door_type": "Centre Opening Auto Door",
-  "door_finish": "S.S.",
+  "door_finish": "SS",
   "door_vision": "LV",
   "floors": 2,
   "capacity": "400 KGS",
@@ -1806,7 +1849,8 @@
   "drive_type": "HOME",
   "machine_room": "Machine-Room-Less",
   "counterweight_position": "Side/Rear",
-  "notes": "BUNGLOW LIFT. Operation: Down Collective Control. Controller: V3F. Travel G+1 (2 stops). Car flooring: Vinyl Tiles. Cabin: Laminated Wooden Sheet Designer Cabin with False Ceiling. Car lighting: Energy Saving LED. Ventilation: Blower. Brake: Disc Type. Power: 1PH 220V 50Hz. Under lintel height 2230. Hall between wall 900, opening 700. Total hoistway 1700 (W) x 1450 fin. (D). Two D.B.G values on car side: 860 and 820. Contract LNP-15325 / GUW-177. Customer Mr. Kashyap Neog, Beltola Wireless, Assam. Date 29.12.2025."
+  "notes": "BUNGLOW LIFT. Operation: Down Collective Control. Controller: V3F. Travel G+1 (2 stops). Car flooring: Vinyl Tiles. Cabin: Laminated Wooden Sheet Designer Cabin with False Ceiling. Car lighting: Energy Saving LED. Ventilation: Blower. Brake: Disc Type. Power: 1PH 220V 50Hz. Under lintel height 2230. Hall between wall 900, opening 700. Total hoistway 1700 (W) x 1450 fin. (D). Two D.B.G values on car side: 860 and 820. Contract LNP-15325 / GUW-177. Customer Mr. Kashyap Neog, Beltola Wireless, Assam. Date 29.12.2025.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "39fb8f75-d3a0-4539-82bf-3beb7d37b2af",
@@ -1815,7 +1859,7 @@
   "dbg_counter_mm": 850,
   "door_opening_width_mm": 700,
   "door_type": "Collapsible",
-  "door_finish": "M.S.",
+  "door_finish": "MS",
   "door_vision": null,
   "floors": 4,
   "capacity": "5 PERSONS (340 KG.)",
@@ -1833,7 +1877,8 @@
   "car_width_mm": 800,
   "car_depth_mm": 900,
   "car_height_mm": null,
-  "notes": "Title block: \"M.R.L LIFT\" / L.T. ELEVATOR. CONTROLLER: V3F AND DPI. Landing door (L. DOOR) and CAR DOOR both \"M.S. COLLAPSIBLE DOOR\". CABIN: M.S. CABIN (POWDER COATED). CAR FLOORING: PVC TILES. OPERATION: DOWN COLLECTIVE. TRAVEL: G+3+R. Contract LTNP-14763 (LTNL-4732). CAPACITY CONFLICT: page-1 spec table reads \"4 PERSONS (278 KG.)\" while page-2 (sheet 2 of 2) spec table reads \"5 PERSONS (340 KG.)\"; reported the sheet-2 value. Hoistway plan: TOTAL HOISTWAY 1400 (W) x 1150 (D, fin. 1125); BET. POST 860, BET. WALL 1080, CAR INSIDE 800, PLATFORM 980 / CAR INSIDE 900; D.B.G 942 (car main), D.B.G 850 (counterweight, side-mounted diagonal), OPENING 700. Collapsible gate elevation: BET. POST 860, 110+860+110=1080, CLEAR ENT 2000, UNDER LINTEL 2205. Section A-A: CLEAR ENT 2000 / UNDER LINTEL 2205. Page 2 elevation: TOTAL TRAVEL 12400 mm, REQUIRED OHRH 4600, REQUIRED PIT 1600, BRACKET SPACE 1800; floor heights GND 3100, 1ST 3050, 2ND 3050, 3RD (—); HOOK LOAD CAPACITY 1500 KG; FORCES ON RAIL F=1700, R1=250, R2=30. Door vision null (collapsible gate has no vision panel). car_height_mm null (cabin height not dimensioned; 2000 is clear entrance/door height). Queue metadata listed floors=5 and capacity 6PASS, but drawing shows G+3+R (4 served stops) and 5 PERSONS / 340 KG (or 4P/278KG on page 1) — reported from the drawing."
+  "notes": "Title block: \"M.R.L LIFT\" / L.T. ELEVATOR. CONTROLLER: V3F AND DPI. Landing door (L. DOOR) and CAR DOOR both \"M.S. COLLAPSIBLE DOOR\". CABIN: M.S. CABIN (POWDER COATED). CAR FLOORING: PVC TILES. OPERATION: DOWN COLLECTIVE. TRAVEL: G+3+R. Contract LTNP-14763 (LTNL-4732). CAPACITY CONFLICT: page-1 spec table reads \"4 PERSONS (278 KG.)\" while page-2 (sheet 2 of 2) spec table reads \"5 PERSONS (340 KG.)\"; reported the sheet-2 value. Hoistway plan: TOTAL HOISTWAY 1400 (W) x 1150 (D, fin. 1125); BET. POST 860, BET. WALL 1080, CAR INSIDE 800, PLATFORM 980 / CAR INSIDE 900; D.B.G 942 (car main), D.B.G 850 (counterweight, side-mounted diagonal), OPENING 700. Collapsible gate elevation: BET. POST 860, 110+860+110=1080, CLEAR ENT 2000, UNDER LINTEL 2205. Section A-A: CLEAR ENT 2000 / UNDER LINTEL 2205. Page 2 elevation: TOTAL TRAVEL 12400 mm, REQUIRED OHRH 4600, REQUIRED PIT 1600, BRACKET SPACE 1800; floor heights GND 3100, 1ST 3050, 2ND 3050, 3RD (—); HOOK LOAD CAPACITY 1500 KG; FORCES ON RAIL F=1700, R1=250, R2=30. Door vision null (collapsible gate has no vision panel). car_height_mm null (cabin height not dimensioned; 2000 is clear entrance/door height). Queue metadata listed floors=5 and capacity 6PASS, but drawing shows G+3+R (4 served stops) and 5 PERSONS / 340 KG (or 4P/278KG on page 1) — reported from the drawing.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "2c451535-eb1f-45a4-95ad-4513c0d5c981",
@@ -1842,12 +1887,12 @@
   "dbg_counter_mm": null,
   "door_opening_width_mm": 700,
   "door_type": "Automatic Telescopic",
-  "door_finish": "Champagne Hairline Finish",
-  "door_vision": null,
+  "door_finish": "SS Champagne Hairline",
+  "door_vision": "NV",
   "floors": 2,
   "capacity": "340 KGS",
   "readable": true,
-  "door_side": null,
+  "door_side": "LHS",
   "counterweight_position": null,
   "drive_type": "Traction Media Belt (30x2)",
   "machine_room": "MRL",
@@ -1860,7 +1905,8 @@
   "car_width_mm": 1100,
   "car_depth_mm": 930,
   "car_height_mm": 2000,
-  "notes": "Bungalow lift, Model RALPH 300, Civil Shaft. Traction Media Belt (30x2), MRL. Full Collective Control, AC 230V 1PH 50HZ. G+1 (GND floor height 3300). Car inside 1100 (W) x 800 (D), Platform 930. Hoistway 1460 (W) x 1560 (D). Opening 700, Bet. Wall 900. Clear height 2000, Under lintel 2230. Required pit 500, travel 3300, overhead 3000. Controller at top floor 300x250x1500. Plan shows D.B.G 860 (outer) and D.B.G 820 (inner) on car side; no counterweight DBG (belt MRL bungalow lift). Client Mr. Sathiapal, Thrissur Kerala. Both L.Door and Car Door: Champagne Hairline Finish Auto Telescopic. Cabin: Champagne Hairline Finish. Drawn A.Mukherjee, dated 28.05.2026."
+  "notes": "Bungalow lift, Model RALPH 300, Civil Shaft. Traction Media Belt (30x2), MRL. Full Collective Control, AC 230V 1PH 50HZ. G+1 (GND floor height 3300). Car inside 1100 (W) x 800 (D), Platform 930. Hoistway 1460 (W) x 1560 (D). Opening 700, Bet. Wall 900. Clear height 2000, Under lintel 2230. Required pit 500, travel 3300, overhead 3000. Controller at top floor 300x250x1500. Plan shows D.B.G 860 (outer) and D.B.G 820 (inner) on car side; no counterweight DBG (belt MRL bungalow lift). Client Mr. Sathiapal, Thrissur Kerala. Both L.Door and Car Door: Champagne Hairline Finish Auto Telescopic. Cabin: Champagne Hairline Finish. Drawn A.Mukherjee, dated 28.05.2026.",
+  "landing_door_finish": "SS Champagne Hairline"
  },
  {
   "job_id": "53694f3b-a8bf-4f9e-b7d5-6672ded3110f",
@@ -1977,7 +2023,7 @@
   "dbg_counter_mm": 820,
   "door_opening_width_mm": 700,
   "door_type": "Auto Center Opening",
-  "door_finish": "SS Hairline Finish",
+  "door_finish": "SS Hairline",
   "door_vision": "LV",
   "door_side": null,
   "floors": 5,
@@ -1995,7 +2041,8 @@
   "drive_type": "Belt (30 x 2)",
   "machine_room": "MRL (Bungalow Lift)",
   "counterweight_position": "Side",
-  "notes": "Model RALPH 300 R. Traction media BELT (30x2). B+G+3 = 5 levels (Basement, Gnd, 1st, 2nd, 3rd). Floor heights: Basement 2880, Gnd 3390, 1st 3280, 2nd 3200, 3rd. Full Collective Control operation. AC 230V 1PH 50Hz. Car flooring vinyl. Cabin SS Hairline finish. Car door and landing door both SS Hairline finish auto center opening long vision glass (page-1 spec corrected from 'SS Mirror Finish' to 'SS Hairline' by hand). DB details 16A-PN-2Nos, 7-hole earth bar 1No. Controller at top floor 300x250x1500. Two car-side DBG labels shown (860 and 820); no distinct counterweight DBG number explicitly labelled, 820 captured as the secondary/smaller value. Travel shown as 7740 on one sheet and 12750 on a later revision; overhead existing 3261, design 3200. Clear height 2000, under lintel 2200. Door opening 700 with 355/425 reveals, gap 5 / RC 30 / SP 90. Location Panchkula Sec-21, client Mrs. Anisha Gupta, contract RNLCHA0026."
+  "notes": "Model RALPH 300 R. Traction media BELT (30x2). B+G+3 = 5 levels (Basement, Gnd, 1st, 2nd, 3rd). Floor heights: Basement 2880, Gnd 3390, 1st 3280, 2nd 3200, 3rd. Full Collective Control operation. AC 230V 1PH 50Hz. Car flooring vinyl. Cabin SS Hairline finish. Car door and landing door both SS Hairline finish auto center opening long vision glass (page-1 spec corrected from 'SS Mirror Finish' to 'SS Hairline' by hand). DB details 16A-PN-2Nos, 7-hole earth bar 1No. Controller at top floor 300x250x1500. Two car-side DBG labels shown (860 and 820); no distinct counterweight DBG number explicitly labelled, 820 captured as the secondary/smaller value. Travel shown as 7740 on one sheet and 12750 on a later revision; overhead existing 3261, design 3200. Clear height 2000, under lintel 2200. Door opening 700 with 355/425 reveals, gap 5 / RC 30 / SP 90. Location Panchkula Sec-21, client Mrs. Anisha Gupta, contract RNLCHA0026.",
+  "landing_door_finish": "SS Hairline"
  },
  {
   "job_id": "77518919-f1e1-456e-b029-64de582a3f39",
@@ -2058,7 +2105,7 @@
   "dbg_counter_mm": 850,
   "door_opening_width_mm": 700,
   "door_type": "Centre Opening Auto Door",
-  "door_finish": "S.S.",
+  "door_finish": "SS",
   "door_vision": "MV",
   "door_side": null,
   "floors": 5,
@@ -2076,7 +2123,8 @@
   "drive_type": "Geared (MR)",
   "machine_room": "Yes",
   "counterweight_position": "rear",
-  "notes": "G+4 (5 stops). Controller V3F. Operation: Full Collective Control. Car flooring: PVC Tiles. Cabin: S.S. Cabin. Car door and landing door both S.S. centre opening auto door with medium vision glass. Door panel elevation: 100+700+100 = 900 frame, opening 2000 high, under lintel 2200. Floor heights: GND 2900, 1ST 2950, 2ND 2950, 3RD 3000, 4TH top. Travel 11800mm. Pit 1500 required, overhead/MR headroom 2400 required. Machine room present (TOTAL MACHINE ROOM 3000 wide x 2600 deep, M.R. lift). Counterweight at rear (DBG.850). Car inside 1135 wide x 800 deep, platform 895. Total hoistway 1580 x 1300. Hoisting hook capacity 1500 KG by owner. Contract LTNP-14720 / LTNL-4734. Owner: M/s Lucky Eight CHS Ltd, New Town Kolkata."
+  "notes": "G+4 (5 stops). Controller V3F. Operation: Full Collective Control. Car flooring: PVC Tiles. Cabin: S.S. Cabin. Car door and landing door both S.S. centre opening auto door with medium vision glass. Door panel elevation: 100+700+100 = 900 frame, opening 2000 high, under lintel 2200. Floor heights: GND 2900, 1ST 2950, 2ND 2950, 3RD 3000, 4TH top. Travel 11800mm. Pit 1500 required, overhead/MR headroom 2400 required. Machine room present (TOTAL MACHINE ROOM 3000 wide x 2600 deep, M.R. lift). Counterweight at rear (DBG.850). Car inside 1135 wide x 800 deep, platform 895. Total hoistway 1580 x 1300. Hoisting hook capacity 1500 KG by owner. Contract LTNP-14720 / LTNL-4734. Owner: M/s Lucky Eight CHS Ltd, New Town Kolkata.",
+  "landing_door_finish": "SS"
  },
  {
   "job_id": "e080335a-0ea8-4764-b514-86f7b98a2d4f",
@@ -2085,7 +2133,7 @@
   "dbg_counter_mm": 1050,
   "door_opening_width_mm": 1400,
   "door_type": "Automatic Centre Opening 4 Fold",
-  "door_finish": "M.S.",
+  "door_finish": "MS",
   "door_vision": "NV",
   "door_side": null,
   "floors": 5,
@@ -2103,7 +2151,8 @@
   "pit_depth_mm": 1700,
   "overhead_mm": 4800,
   "readable": true,
-  "notes": "M.R.L. Goods Lift (LIFT-01), proposal LTNL-4964, customer M/s Agarwall Zipper & Slider Pvt. Ltd., Howrah. Operation: Full Collective. Controller: V3F. Landing door & car door both M.S. Automatic Centre Opening 4 Fold; car flooring M.S. chequered plate; cabin M.S. power-coated; others: emergency light. Under-lintel height 2200, opening height 2000. Width direction (door/opening): total hoistway 2600, bet. wall 1600, car inside 1800, platform 1880, D.B.G 2022. Depth direction: total hoistway 2550 (fin. 2425), car inside 2000, platform 2170. Counterweight side block D.B.G 1050 (300/300/300, 660/710). Floor heights: GND 3100, 1ST 3100, 2ND 3600, 3RD 3500 (4TH top) -> travel 13300. Pit 1700, OHRH 4800, bracket spacing 1700. Forces on rail: F=5000, R1=250, R2=20 KG; carbuffer 2x 3000, cwt buffer 2400, safety vertical 3600 KG. SCALE N.T.S."
+  "notes": "M.R.L. Goods Lift (LIFT-01), proposal LTNL-4964, customer M/s Agarwall Zipper & Slider Pvt. Ltd., Howrah. Operation: Full Collective. Controller: V3F. Landing door & car door both M.S. Automatic Centre Opening 4 Fold; car flooring M.S. chequered plate; cabin M.S. power-coated; others: emergency light. Under-lintel height 2200, opening height 2000. Width direction (door/opening): total hoistway 2600, bet. wall 1600, car inside 1800, platform 1880, D.B.G 2022. Depth direction: total hoistway 2550 (fin. 2425), car inside 2000, platform 2170. Counterweight side block D.B.G 1050 (300/300/300, 660/710). Floor heights: GND 3100, 1ST 3100, 2ND 3600, 3RD 3500 (4TH top) -> travel 13300. Pit 1700, OHRH 4800, bracket spacing 1700. Forces on rail: F=5000, R1=250, R2=20 KG; carbuffer 2x 3000, cwt buffer 2400, safety vertical 3600 KG. SCALE N.T.S.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "157f259b-ff51-45ee-9afd-47b968cc75bf",
@@ -2139,7 +2188,7 @@
   "dbg_counter_mm": 1050,
   "door_opening_width_mm": 1400,
   "door_type": "Auto Four Fold (Center Opening)",
-  "door_finish": "M.S.",
+  "door_finish": "MS",
   "door_vision": "NV",
   "floors": 6,
   "capacity": "2000 KG",
@@ -2157,7 +2206,8 @@
   "shaft_width_mm": 3000,
   "shaft_depth_mm": 3000,
   "counterweight_position": "side (right)",
-  "notes": "M.R.L. Goods Lift. Proposal LTNL-4661 R, date 07.04.2026. Operation FULL COLLECTIVE (page 1) / DOWN COLLECTIVE (page 2). Controller V3F. L.Door + Car Door both M.S. AUTO FOUR FOLD DOOR; CENTER OPENING FOUR FOLD AUTO DOOR. Car flooring M.S. chequered plate; Cabin M.S. (powder coated). Others: Infra Red Door Screen, Emergency Light. Under-lintel height 2200. Plan: BET.WALL 1600, CAR INSIDE 2000 (W) x 2300 (D), PLATFORM 2080/2470, D.B.G 2222 (car), D.B.G 1050 (cwt). OPENING 1400. Pit 1700 required, OHRH 4500 required. Floor heights: Ground 4000, 1st 5400, 2nd 4000, 3rd 4000, 4th 4000 = total travel 21400 (approx). Forces on rail: F=5000kg, R1=250kg, R2=20kg. Owner: M/S Black Burn & Co. Pvt. Ltd., Moynagarh/Mahestala, Kolkata-700141."
+  "notes": "M.R.L. Goods Lift. Proposal LTNL-4661 R, date 07.04.2026. Operation FULL COLLECTIVE (page 1) / DOWN COLLECTIVE (page 2). Controller V3F. L.Door + Car Door both M.S. AUTO FOUR FOLD DOOR; CENTER OPENING FOUR FOLD AUTO DOOR. Car flooring M.S. chequered plate; Cabin M.S. (powder coated). Others: Infra Red Door Screen, Emergency Light. Under-lintel height 2200. Plan: BET.WALL 1600, CAR INSIDE 2000 (W) x 2300 (D), PLATFORM 2080/2470, D.B.G 2222 (car), D.B.G 1050 (cwt). OPENING 1400. Pit 1700 required, OHRH 4500 required. Floor heights: Ground 4000, 1st 5400, 2nd 4000, 3rd 4000, 4th 4000 = total travel 21400 (approx). Forces on rail: F=5000kg, R1=250kg, R2=20kg. Owner: M/S Black Burn & Co. Pvt. Ltd., Moynagarh/Mahestala, Kolkata-700141.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "e9307705-7cf4-485b-8e4a-9d35393353ce",
@@ -2247,8 +2297,8 @@
   "dbg_counter_mm": 1050,
   "door_opening_width_mm": 800,
   "door_type": "Manual Telescopic",
-  "door_finish": "M.S (Powder Coated)",
-  "door_vision": "NV",
+  "door_finish": "MS",
+  "door_vision": "MV",
   "floors": 5,
   "capacity": "8 Persons (544 KG)",
   "readable": true,
@@ -2264,8 +2314,9 @@
   "drive_type": "Geared (Machine Room)",
   "machine_room": "Yes",
   "counterweight_position": "Side",
-  "door_side": null,
-  "notes": "Manual telescopic M.S doors (landing + car). M.S cabin powder coated, PVC tile flooring, V3F controller, DOWN COLLECTIVE operation. G+4 (5 floors). Floor heights: GND 3250, 1ST/2ND/3RD 3050 each = total travel 12400. Power: 430V 3PH 50Hz / 230V 1PH 50Hz. Car inside 1300W x 1100D, platform 1205. Total hoistway 1950 x 2140 (fin 2038/2140). Machine room present (total 5550 x 5550). Pit 1600, overhead 5250. Under-lintel height 2250. Hoisting hook capacity 1500 kg. Owner M/s Rameswara Infra Space LLP. Location Rameswara River View, Monirampur, Barrackpore, North 24 Parganas. Drawing LTNL-4876 dated 09.12.2025. Counterweight side-mounted."
+  "door_side": "LHS",
+  "notes": "Manual telescopic M.S doors (landing + car). M.S cabin powder coated, PVC tile flooring, V3F controller, DOWN COLLECTIVE operation. G+4 (5 floors). Floor heights: GND 3250, 1ST/2ND/3RD 3050 each = total travel 12400. Power: 430V 3PH 50Hz / 230V 1PH 50Hz. Car inside 1300W x 1100D, platform 1205. Total hoistway 1950 x 2140 (fin 2038/2140). Machine room present (total 5550 x 5550). Pit 1600, overhead 5250. Under-lintel height 2250. Hoisting hook capacity 1500 kg. Owner M/s Rameswara Infra Space LLP. Location Rameswara River View, Monirampur, Barrackpore, North 24 Parganas. Drawing LTNL-4876 dated 09.12.2025. Counterweight side-mounted.",
+  "landing_door_finish": "MS"
  },
  {
   "job_id": "30f84071-1c60-400b-8e11-9cf316f866c0",
@@ -2274,7 +2325,7 @@
   "dbg_counter_mm": 850,
   "door_opening_width_mm": 800,
   "door_type": "Center Opening Auto Door (2-panel center slide)",
-  "door_finish": "S.S. 304 Grade",
+  "door_finish": "SS 304",
   "door_vision": "NV",
   "floors": 3,
   "capacity": "8 Persons (544 KG)",
@@ -2292,6 +2343,7 @@
   "travel_mm": 7900,
   "pit_depth_mm": 1600,
   "overhead_mm": 4600,
-  "notes": "M.R.L. LIFT for M/s. Rajat Group, Amantran, 94 D.H. Road, Kolkata 700104. Contract LTNL-4907 / LTNP-15416, dated 13.01.2025. Travel G+2+R, floor height 3950 mm each (GROUND/1ST/2ND in floor-height table = 3 served stops; queue hint of 4 not supported by drawing). Speed 1.00 M.P.S. variable. Operation FULL COLLECTIVE CONTROL. Controller V3F. Car flooring PVC tiles, cabin S.S. 304 grade. Both landing and car doors: S.S. (304 GRADE) CENTER SLIDE AUTO DOOR (automatic center opening). Hoistway plan: TOTAL HOISTWAY 1900 (W) x 1500 (D); TOTAL FIN. HOISTWAY 1410; CAR INSIDE 1300 (W) x 1100 (D); PLATFORM 1195; BET. WALL 1200; OPENING 800. Car DBG.1442; counterweight D.B.G 850 on left side (side counterweight). Door: UNDER LINTEL 2230, clear door panel height 2000. Section (pg2): REQUIRED OVERHEAD 4600, PIT REQUIRED 1600, BRACKET SPACE 1800, UNDER M/C BASE 3800, TOTAL TRAVEL HEIGHT 11850. Controller position at top floor 300x250x1500. DB details: 32A-TPN-1No, 16A-PN-2Nos, 7-hole earth bar-1No. Hoisting hook capacity 1500 KG. Forces on rail F=1700, R1=250, R2=30 KG. car_height_mm recorded as under-lintel 2230 (clear door panel height is 2000). No vision glass specified on door rows."
+  "notes": "M.R.L. LIFT for M/s. Rajat Group, Amantran, 94 D.H. Road, Kolkata 700104. Contract LTNL-4907 / LTNP-15416, dated 13.01.2025. Travel G+2+R, floor height 3950 mm each (GROUND/1ST/2ND in floor-height table = 3 served stops; queue hint of 4 not supported by drawing). Speed 1.00 M.P.S. variable. Operation FULL COLLECTIVE CONTROL. Controller V3F. Car flooring PVC tiles, cabin S.S. 304 grade. Both landing and car doors: S.S. (304 GRADE) CENTER SLIDE AUTO DOOR (automatic center opening). Hoistway plan: TOTAL HOISTWAY 1900 (W) x 1500 (D); TOTAL FIN. HOISTWAY 1410; CAR INSIDE 1300 (W) x 1100 (D); PLATFORM 1195; BET. WALL 1200; OPENING 800. Car DBG.1442; counterweight D.B.G 850 on left side (side counterweight). Door: UNDER LINTEL 2230, clear door panel height 2000. Section (pg2): REQUIRED OVERHEAD 4600, PIT REQUIRED 1600, BRACKET SPACE 1800, UNDER M/C BASE 3800, TOTAL TRAVEL HEIGHT 11850. Controller position at top floor 300x250x1500. DB details: 32A-TPN-1No, 16A-PN-2Nos, 7-hole earth bar-1No. Hoisting hook capacity 1500 KG. Forces on rail F=1700, R1=250, R2=30 KG. car_height_mm recorded as under-lintel 2230 (clear door panel height is 2000). No vision glass specified on door rows.",
+  "landing_door_finish": "SS 304"
  }
 ]
