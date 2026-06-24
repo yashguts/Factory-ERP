@@ -274,23 +274,37 @@ function skuSide(s: string): string | null {
   return null;
 }
 
-type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "side" | "frameType" | "dbgCar" | "dbgCtr";
+// Collapsible gate SKUs are named by their CHANNEL count, not width:
+// "Collapsible Gate 7+1Channel". Channels ≈ opening width / 100 (mined per the rule
+// pass): 700→6, 760→7, 800→8, 900→9, 1000→10, 1500→15, 2000→20.
+function channelsFromWidth(w: number): number {
+  if (w <= 730) return 6;
+  if (w <= 780) return 7;
+  if (w <= 850) return 8;
+  if (w <= 950) return 9;
+  if (w <= 1200) return 10;
+  if (w <= 1700) return 15;
+  return 20;
+}
+type AttrKey = "doorType" | "material" | "vision" | "width" | "color" | "side" | "channels" | "frameType" | "dbgCar" | "dbgCtr";
 interface AttrDef { weight: number; target: (t: BomTargetSpec) => string | number | null; match: (sku: string, v: string | number) => boolean; }
 const ATTRS: Record<AttrKey, AttrDef> = {
   doorType: { weight: 3, target: (t) => classifyDoorToken(t.door_type), match: (s, v) => classifyDoorToken(s) === v },
   material: { weight: 2, target: targetMaterial, match: (s, v) => skuMaterial(s) === v },
   vision: { weight: 2, target: targetVision, match: (s, v) => skuVision(s) === v },
-  width: { weight: 3, target: (t) => t.door_opening_width ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
+  // Width drives non-collapsible door SKUs; a collapsible gate carries channels, not width.
+  width: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" || t.door_opening_width == null ? null : t.door_opening_width), match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL) },
   color: { weight: 2, target: targetColor, match: (s, v) => skuColor(s) === v },
   side: { weight: 2, target: (t) => (t.door_side === "LHS" || t.door_side === "RHS" ? t.door_side : null), match: (s, v) => skuSide(s) === v },
+  channels: { weight: 3, target: (t) => (classifyDoorToken(t.door_type) === "COL" && t.door_opening_width ? channelsFromWidth(t.door_opening_width) : null), match: (s, v) => new RegExp(`\\b${v}\\s*\\+?\\s*1?\\s*CHANNEL`).test(s.toUpperCase()) },
   frameType: { weight: 3, target: targetFrameType, match: (s, v) => skuFrameType(s) === v },
   dbgCar: { weight: 4, target: (t) => t.dbg_main_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
   dbgCtr: { weight: 4, target: (t) => t.dbg_counter_mm ?? null, match: (s, v) => namedDims(s).some((d) => Math.abs(d - (v as number)) <= TUNING.SIZE_TOL_DBG) },
 };
 // Which attributes compose each section's SKU (from the reverse-engineering pass).
 const COMPOSE: Record<string, AttrKey[]> = {
-  "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side"],
-  "Landing Door Panel": ["doorType", "material", "vision", "width", "color", "side"],
+  "Car Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
+  "Landing Door Panel": ["doorType", "material", "vision", "width", "color", "side", "channels"],
   "Linton Panel": ["doorType", "material", "width", "color"],
   "Door Sill": ["doorType", "width"],
   "Door Post / Frame": ["doorType", "material", "color", "side"], // door post SKU carries no width
