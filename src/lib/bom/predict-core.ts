@@ -804,7 +804,11 @@ export function aggregateDraft(
 
 /** Build the section→item pool (every item ever used per section, with how many
  *  jobs used it and which drive types) — for name-composition on size-keyed sections. */
-function buildSectionPool(corpus: TrainingJob[]): SectionPool {
+/** A section's full inventory pool: every catalogued SKU for that section, so
+ *  composition can resolve the exact attribute combo even if no past job used it. */
+export type InventoryPool = Map<string, TrainingLine[]>;
+
+function buildSectionPool(corpus: TrainingJob[], inventory?: InventoryPool): SectionPool {
   const pool: SectionPool = new Map();
   for (const j of corpus) {
     const drive = j.spec.drive_type ?? "";
@@ -823,11 +827,23 @@ function buildSectionPool(corpus: TrainingJob[]): SectionPool {
       }
     }
   }
+  // Fold in the full catalogue for composable sections — items not used by any past
+  // job become available to compose (count 0 so a past-used SKU still wins ties).
+  if (inventory) {
+    for (const [sec, lines] of inventory) {
+      if (!COMPOSE[sec]) continue;
+      let arr = pool.get(sec);
+      if (!arr) { arr = []; pool.set(sec, arr); }
+      for (const ln of lines) {
+        if (!arr.some((x) => x.line.item_id === ln.item_id)) arr.push({ line: ln, count: 0, drives: new Set() });
+      }
+    }
+  }
   return pool;
 }
 
 /** Top-level pure prediction (used by both the server action and the backtest). */
-export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[]): BomPrediction {
+export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[], inventory?: InventoryPool): BomPrediction {
   const dsim = buildDriveSim(corpus);
   const scored = corpus.map((job) => ({ job, sim: similarity(target, job.spec, dsim) }));
   const neighbours = selectNeighbours(scored, target);
@@ -836,7 +852,7 @@ export function predictFromCorpus(target: BomTargetSpec, corpus: TrainingJob[]):
     warnings.push("Closest past job is only a loose match — review everything.");
   if ((target.drive_type === "HYD" || target.drive_type === "CANTI"))
     warnings.push(`Rare drive type (${target.drive_type}) — very few similar jobs; verify all.`);
-  const sectionPool = buildSectionPool(corpus);
+  const sectionPool = buildSectionPool(corpus, inventory);
   const { draft, completenessSource, warnings: aw } = aggregateDraft(target, neighbours, sectionPool);
   const overall = draft.length ? draft.reduce((a, l) => a + l.confidence, 0) / draft.length : 0;
   return {
