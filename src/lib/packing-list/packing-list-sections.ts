@@ -1372,6 +1372,13 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "ARKEL / 350mm",
   },
   {
+    key: "p-s-s-handle",
+    label: "S.S. Hand Rail",
+    captureType: "item",
+    categoryPaths: ["Small Purchased Items > Cabin Hand Rail"],
+    specHint: "1100X2 / 500X1",
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
@@ -1854,13 +1861,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "free",
     categoryPaths: [],
     specHint: "6x20",
-  },
-  {
-    key: "p-s-s-handle",
-    label: "S.S Handle",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "1100X2 / 500X1",
   },
   {
     key: "p-screw-csk-ss-nut-f-w-s-w",

@@ -256,6 +256,8 @@ const CURATED = [
   C("p-magnet", "Magnet", { group: "Doors", capture: "free" }),
   C("p-magnet-bracket", "Magnet Bracket", { group: "Doors", cats: ["Small Manufactured Items > Magnet Bracket"] }),
   C("p-magnet-trey", "Magnet trey", { group: "Doors", cats: ["Small Manufactured Items > Magnet Trey"] }),
+  // batch 7 — S.S Handle renamed "S.S. Hand Rail", mapped to Cabin Hand Rail (cat renamed in migration 044)
+  C("p-s-s-handle", "S.S. Hand Rail", { group: "Cabin Items", cats: ["Small Purchased Items > Cabin Hand Rail"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
