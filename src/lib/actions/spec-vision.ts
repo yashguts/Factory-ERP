@@ -64,6 +64,8 @@ export interface RichDrawing {
     overhead_mm: SpecField<string>;
     travel_mm: SpecField<string>;
     speed_mps: SpecField<string>;
+    car_rail_to_wall_mm: SpecField<string>; // car guide rail -> wall gap (sets the standard bracket projection class)
+    counter_rail_to_wall_mm: SpecField<string>; // counterweight guide rail -> wall gap (sets the combination bracket projection)
   };
   machine_room: SpecField<string>;
   counterweight_position: SpecField<string>;
@@ -146,11 +148,12 @@ const SCHEMA = {
         shaft_width_mm: DIM(), shaft_depth_mm: DIM(), car_width_mm: DIM(), car_depth_mm: DIM(),
         car_height_mm: DIM(), door_opening_width_mm: DIM(), door_opening_height_mm: DIM(),
         pit_depth_mm: DIM(), overhead_mm: DIM(), travel_mm: DIM(), speed_mps: DIM(),
+        car_rail_to_wall_mm: DIM(), counter_rail_to_wall_mm: DIM(),
       },
       required: [
         "shaft_width_mm", "shaft_depth_mm", "car_width_mm", "car_depth_mm", "car_height_mm",
         "door_opening_width_mm", "door_opening_height_mm", "pit_depth_mm", "overhead_mm",
-        "travel_mm", "speed_mps",
+        "travel_mm", "speed_mps", "car_rail_to_wall_mm", "counter_rail_to_wall_mm",
       ],
     },
     machine_room: CONF("string"),
@@ -190,6 +193,8 @@ Normalisation rules:
 - door_vision -> extent of vision glass on the door leaf, from the door-row text ("...WITH LONG VISION GLASS") or the door elevation: "LV" (long/full vision), "MV" (medium/half vision), "NV" (no vision/blind). null if not shown.
 - door_side -> for a side-opening telescopic / swing door, the side the door OPENS TOWARD (the direction the leading door panel travels to fully open), viewed from the LANDING facing the car: "LHS" (opens to the left) or "RHS" (opens to the right). Read it from the asymmetric door layout: in a side-slide telescopic the panels PARK on the WIDER jamb side and the door opens toward the NARROWER jamb — e.g. an elevation showing "520 | 700 opening | 40" parks on the LEFT (520) and opens RIGHT, so it is RHS. Do NOT report the parking side. null for centre-opening (CO) doors or if the door is symmetric / not shown.
 - dimensions -> the labelled value with units (mm). machine_room -> "yes"/"no". counterweight_position -> "rear"/"side" if shown.
+- car_rail_to_wall_mm -> on the HOISTWAY PLAN (top view), the small clearance dimension from the BACK of a CAR guide rail to the adjacent shaft WALL face — i.e. how far the rail-bracket arm projects from the wall to the rail. It is the SMALL gap dimension (typically 50-400mm) right at the rail, NOT the big shaft/DBG dimensions. This sets the rail-bracket projection CLASS (50-100=B, 100-160=C, 160-210=D, 210-310=E, 310-360=F, 360-410=G). Read the typical/larger of the two car rails. null if not dimensioned.
+- counter_rail_to_wall_mm -> same idea for a COUNTERWEIGHT guide rail -> wall gap (the counterweight is the hatched block at the side/rear of the plan, near a "D.B.G" label). This sets the COMBINATION bracket's projection (e.g. 180 in "DBG-850X50X180"). null if the counterweight rails aren't dimensioned.
 - confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
 const USER_PROMPT =
