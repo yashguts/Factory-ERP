@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Check, Search, X, Loader2, AlertTriangle, Sparkles, ChevronDown, ChevronRight,
   Plus, CircleCheck, ShieldCheck, PackageCheck, Pencil, FileText,
@@ -514,6 +515,26 @@ function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick
   const [results, setResults] = useState<SearchableItem[]>([]);
   const [loading, setLoading] = useState(false);
   const t = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // The dropdown is portalled to <body> so the group card's `overflow-hidden`
+  // can't clip it — otherwise only the couple of rows that fit inside the card
+  // are visible. Position it under the input and keep it pinned on scroll/resize.
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const place = useCallback(() => {
+    const r = anchorRef.current?.getBoundingClientRect();
+    if (r) setPos({ top: r.bottom + 4, left: r.left, width: r.width });
+  }, []);
+  useEffect(() => {
+    if (!open) return;
+    place();
+    const h = () => place();
+    window.addEventListener("scroll", h, true);
+    window.addEventListener("resize", h);
+    return () => {
+      window.removeEventListener("scroll", h, true);
+      window.removeEventListener("resize", h);
+    };
+  }, [open, place]);
 
   const search = useCallback((query: string) => {
     if (t.current) clearTimeout(t.current);
@@ -533,21 +554,24 @@ function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick
     );
   }
   return (
-    <div className="relative">
+    <div className="relative" ref={anchorRef}>
       <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--background)] px-2">
         <Search className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
         <input
           value={q}
           onChange={(e) => { setQ(e.target.value); setOpen(true); search(e.target.value); }}
-          onFocus={() => { setOpen(true); if (!results.length) search(""); }}
+          onFocus={() => { setOpen(true); place(); if (!results.length) search(""); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="Search item…"
           className="h-7 w-full bg-transparent text-[13px] focus:outline-none"
         />
         {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--muted-foreground)]" />}
       </div>
-      {open && results.length > 0 && (
-        <div className="absolute z-30 mt-1 max-h-64 w-[22rem] overflow-auto rounded-md border border-[var(--border)] bg-[var(--background)] shadow-lg">
+      {open && results.length > 0 && pos && createPortal(
+        <div
+          style={{ position: "fixed", top: pos.top, left: pos.left, width: Math.max(pos.width, 320) }}
+          className="z-50 max-h-72 overflow-auto rounded-md border border-[var(--border)] bg-[var(--background)] shadow-lg"
+        >
           {results.map((it) => (
             <button key={it.id} onMouseDown={(e) => { e.preventDefault(); onPick(it); setOpen(false); setQ(""); }}
               className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px] hover:bg-[var(--muted)] cursor-pointer">
@@ -556,7 +580,8 @@ function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick
               <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">{it.code}</span>
             </button>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );
