@@ -27,6 +27,17 @@ const NOPOOL = process.argv.includes("--nopool");
 const NODIMS = process.argv.includes("--nodims");
 const VISION = process.argv.includes("--vision"); // also feed door vision-glass + side (ceiling test)
 const FINISH = process.argv.includes("--finish"); // also feed door material + designer colour (page-1 spec-table read)
+// --real: feed dims/finish from the INDEPENDENT vision extractions (partlist-brain/
+// data/drawing-extractions.json) instead of the truth SKUs — the honest end-to-end
+// drawing->BOM test. Falls back to nothing for jobs with no extraction.
+const REAL = process.argv.includes("--real");
+const realById = new Map<string, any>();
+if (REAL) {
+  const p = path.join(__dirname, "partlist-brain", "data", "drawing-extractions.json");
+  if (!fs.existsSync(p)) { console.error("run the drawing-extractions workflow first (missing " + p + ")"); process.exit(1); }
+  for (const e of JSON.parse(fs.readFileSync(p, "utf8"))) if (e && e.job_id) realById.set(e.job_id, e);
+  console.log(`--real: ${realById.size} extractions loaded`);
+}
 
 async function fetchAll(table: string, select: string): Promise<any[]> {
   const out: any[] = [];
@@ -118,9 +129,21 @@ const widthOf = (name: string): number | null => {
   const bump = (s: string) => per.get(s) ?? (per.set(s, { hit: 0, tot: 0, miss: [] }), per.get(s)!);
 
   for (const held of evalSet) {
+    if (REAL && !realById.has(held.id)) continue; // honest metric: only jobs we actually read
     const train = corpus.filter((j) => j.id !== held.id);
     const spec = { ...held.spec } as any;
-    if (!NODIMS) {
+    if (REAL) {
+      // Honest end-to-end: dims + finish from the INDEPENDENT drawing extraction.
+      const ex = realById.get(held.id);
+      if (ex) {
+        if (ex.dbg_main_mm != null) spec.dbg_main_mm = ex.dbg_main_mm;
+        if (ex.dbg_counter_mm != null) spec.dbg_counter_mm = ex.dbg_counter_mm;
+        if (ex.door_opening_width_mm != null) spec.door_opening_width = ex.door_opening_width_mm;
+        if (ex.door_finish) spec.door_finish = ex.door_finish;
+        if (ex.door_vision) { spec.door_vision = ex.door_vision; spec.landing_door_vision = ex.door_vision; }
+        if (ex.door_side) spec.door_side = ex.door_side;
+      }
+    } else if (!NODIMS) {
       const sfDbg = held.sections["Safety"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
       const cfDbg = held.sections["Counter Frame"]?.map((l) => dbgOf(l.item_name)).find((x) => x != null);
       const w = held.sections["Car Door Panel"]?.map((l) => widthOf(l.item_name)).find((x) => x != null)

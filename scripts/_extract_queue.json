@@ -1,0 +1,786 @@
+[
+  {
+    "job_id": "c1e05ae2-a64e-4a6d-b083-40582c4069cc",
+    "job_number": "RNLDL-0113",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c1e05ae2-a64e-4a6d-b083-40582c4069cc.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "4d87f68a-2160-465c-8b43-335917f95d87",
+    "job_number": "RNLCHA-0057",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\4d87f68a-2160-465c-8b43-335917f95d87.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "2b0de82d-abcd-4ab1-941d-280180708223",
+    "job_number": "4814",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\2b0de82d-abcd-4ab1-941d-280180708223.pdf",
+    "drive_type": "MR",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "e5018cef-d1bb-4a4d-8009-7ca394d693f7",
+    "job_number": "BHT-012",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\e5018cef-d1bb-4a4d-8009-7ca394d693f7.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "789cdefc-d108-437e-8759-2963e4a84108",
+    "job_number": "4960",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\789cdefc-d108-437e-8759-2963e4a84108.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "d4f129b4-d369-43c2-af8f-b72241c2d0f3",
+    "job_number": "BBSR308",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\d4f129b4-d369-43c2-af8f-b72241c2d0f3.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "c75685c0-18af-4151-8480-faa60373c805",
+    "job_number": "4869",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c75685c0-18af-4151-8480-faa60373c805.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "849a6239-cc64-41f8-b781-1b978c499162",
+    "job_number": "MP-006",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\849a6239-cc64-41f8-b781-1b978c499162.pdf",
+    "drive_type": "MRLBELT",
+    "floors": 2,
+    "capacity": "20PASS"
+  },
+  {
+    "job_id": "9395a98d-c53e-4866-94dc-8f29e5430a6b",
+    "job_number": "4914",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\9395a98d-c53e-4866-94dc-8f29e5430a6b.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "4c48c5de-9338-4b21-bf57-6caa7776b81a",
+    "job_number": "RNLBLR-0073",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\4c48c5de-9338-4b21-bf57-6caa7776b81a.pdf",
+    "drive_type": "HOME",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "fac94947-b97e-48ad-b67f-304e71ba4f8b",
+    "job_number": "RNLPRO-0025",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\fac94947-b97e-48ad-b67f-304e71ba4f8b.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "3c117f0a-3e84-41a0-940d-ad12111ce0ac",
+    "job_number": "RNLKEL0045",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\3c117f0a-3e84-41a0-940d-ad12111ce0ac.pdf",
+    "drive_type": "MRL",
+    "floors": 3,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "f29b37d8-174d-4452-8d1a-4e1211a5a0e1",
+    "job_number": "RNLDL-0121",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f29b37d8-174d-4452-8d1a-4e1211a5a0e1.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "3d60add8-cc17-4e07-a249-78ff94fd25e1",
+    "job_number": "RNLNAG010",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\3d60add8-cc17-4e07-a249-78ff94fd25e1.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "3d902473-2ba3-4118-9e58-60f7b0429464",
+    "job_number": "ANDH043",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\3d902473-2ba3-4118-9e58-60f7b0429464.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "13PASS"
+  },
+  {
+    "job_id": "f881e05b-f980-415f-8f7a-e1f36bde870b",
+    "job_number": "MP-007",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f881e05b-f980-415f-8f7a-e1f36bde870b.pdf",
+    "drive_type": "MRLBELT",
+    "floors": 2,
+    "capacity": "20PASS"
+  },
+  {
+    "job_id": "07958b50-f8a0-44f5-8b95-30a7587259e5",
+    "job_number": "RNLHYD0098",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\07958b50-f8a0-44f5-8b95-30a7587259e5.pdf",
+    "drive_type": "HOME",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "f4f87b71-1897-4392-a8b4-51d0738d412c",
+    "job_number": "RNLNAG009",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f4f87b71-1897-4392-a8b4-51d0738d412c.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "c0f5f67b-aa82-4d7d-a4c9-a359eddea411",
+    "job_number": "5000",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c0f5f67b-aa82-4d7d-a4c9-a359eddea411.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "1000KG"
+  },
+  {
+    "job_id": "1fc4c487-3b96-4b8b-b7e6-9ce656def501",
+    "job_number": "4821",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\1fc4c487-3b96-4b8b-b7e6-9ce656def501.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "20PASS"
+  },
+  {
+    "job_id": "b277c397-ea75-4cf1-a4dd-da7d9c8f89d1",
+    "job_number": "CH-010",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\b277c397-ea75-4cf1-a4dd-da7d9c8f89d1.pdf",
+    "drive_type": "MRLBELT",
+    "floors": 2,
+    "capacity": "20PASS"
+  },
+  {
+    "job_id": "2892166a-7230-4645-9a71-d6f0a6d8958c",
+    "job_number": "RNLAP-0010",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\2892166a-7230-4645-9a71-d6f0a6d8958c.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "1a93a22a-80e8-40f3-8b70-951f62a43df5",
+    "job_number": "RNLBHO-0010",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\1a93a22a-80e8-40f3-8b70-951f62a43df5.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "827226dc-18d6-44a8-ab77-483b9197c9ce",
+    "job_number": "4883",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\827226dc-18d6-44a8-ab77-483b9197c9ce.pdf",
+    "drive_type": "HOME",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "baa1daa6-74c2-4e8e-b531-708d236a858d",
+    "job_number": "4890",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\baa1daa6-74c2-4e8e-b531-708d236a858d.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "2000KG"
+  },
+  {
+    "job_id": "0576837f-f18d-4704-9cd6-b99e2a291682",
+    "job_number": "RNLKEL0018",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0576837f-f18d-4704-9cd6-b99e2a291682.pdf",
+    "drive_type": "HYD",
+    "floors": 3,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "b2eb403f-f63e-43be-8817-2aa71b7436b6",
+    "job_number": "RNLBLR0067",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\b2eb403f-f63e-43be-8817-2aa71b7436b6.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "00918cf9-f22c-473f-8697-c9e6603fdfb9",
+    "job_number": "RNLCHA-0038",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\00918cf9-f22c-473f-8697-c9e6603fdfb9.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "68a2e42e-2692-494f-940f-b92b53be0b9e",
+    "job_number": "4809",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\68a2e42e-2692-494f-940f-b92b53be0b9e.pdf",
+    "drive_type": "CANTI",
+    "floors": 6,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "976f3156-2287-4a02-bc22-8310c30f277d",
+    "job_number": "RNLKEL-0034",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\976f3156-2287-4a02-bc22-8310c30f277d.pdf",
+    "drive_type": "MRL",
+    "floors": 3,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "1221b2d1-48e1-43ed-a611-cf146d279b93",
+    "job_number": "RNLKEL-0044",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\1221b2d1-48e1-43ed-a611-cf146d279b93.pdf",
+    "drive_type": "BELT",
+    "floors": 2,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "de9ac875-2a2c-45d9-87aa-36358670818e",
+    "job_number": "4975",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\de9ac875-2a2c-45d9-87aa-36358670818e.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "dfaf25b6-4c83-4fd4-8175-2b02968c32bf",
+    "job_number": "4789",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\dfaf25b6-4c83-4fd4-8175-2b02968c32bf.pdf",
+    "drive_type": "MR",
+    "floors": 6,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "f2f6e645-48e2-408f-9fdf-421aaab87890",
+    "job_number": "RNLBLR-0066",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f2f6e645-48e2-408f-9fdf-421aaab87890.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "71b6a457-e438-4013-b6ec-e288c9ab2dd1",
+    "job_number": "RNLKEL-0035",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\71b6a457-e438-4013-b6ec-e288c9ab2dd1.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "53398dab-5d48-499d-ba45-836f652f8979",
+    "job_number": "4977",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\53398dab-5d48-499d-ba45-836f652f8979.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "3000KG"
+  },
+  {
+    "job_id": "92d1e658-44bb-4426-81c4-4341deaba849",
+    "job_number": "RNLKEL0029",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\92d1e658-44bb-4426-81c4-4341deaba849.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "2f79b599-c9b4-4dcd-8f8f-7678c129dd73",
+    "job_number": "RNLNAG011",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\2f79b599-c9b4-4dcd-8f8f-7678c129dd73.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "f5da21a0-b80e-4cc1-a4fc-da1b9772475d",
+    "job_number": "4662",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f5da21a0-b80e-4cc1-a4fc-da1b9772475d.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "2000KG"
+  },
+  {
+    "job_id": "a67f321a-3ece-41fc-b2d1-b79000c53b32",
+    "job_number": "RNLKEL-0020",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\a67f321a-3ece-41fc-b2d1-b79000c53b32.pdf",
+    "drive_type": "HOME",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "5e9f0c2b-a9cd-400c-bd7e-d9c95d2d1eba",
+    "job_number": "JHK115",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\5e9f0c2b-a9cd-400c-bd7e-d9c95d2d1eba.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "2500KG"
+  },
+  {
+    "job_id": "cea6b34b-2ae3-4847-bce3-06e38e24da00",
+    "job_number": "GUW-177",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\cea6b34b-2ae3-4847-bce3-06e38e24da00.pdf",
+    "drive_type": "HOME",
+    "floors": 2,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "a9f82b2c-03f3-4e63-a40b-929488483b82",
+    "job_number": "4819",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\a9f82b2c-03f3-4e63-a40b-929488483b82.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "39fb8f75-d3a0-4539-82bf-3beb7d37b2af",
+    "job_number": "4732",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\39fb8f75-d3a0-4539-82bf-3beb7d37b2af.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "2c451535-eb1f-45a4-95ad-4513c0d5c981",
+    "job_number": "RNLKEL-0014",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\2c451535-eb1f-45a4-95ad-4513c0d5c981.pdf",
+    "drive_type": "BELT",
+    "floors": 2,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "53694f3b-a8bf-4f9e-b7d5-6672ded3110f",
+    "job_number": "4939",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\53694f3b-a8bf-4f9e-b7d5-6672ded3110f.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "1500KG"
+  },
+  {
+    "job_id": "84a0d222-f223-41eb-b76e-55f6e63187af",
+    "job_number": "4411",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\84a0d222-f223-41eb-b76e-55f6e63187af.pdf",
+    "drive_type": "HOME",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "06091fcf-63e8-4dba-96e3-7b2a79f84887",
+    "job_number": "RNLCHA-0012",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\06091fcf-63e8-4dba-96e3-7b2a79f84887.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "dcb1630b-ee53-4a17-8ff3-359036ff5677",
+    "job_number": "RNLBLR0042",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\dcb1630b-ee53-4a17-8ff3-359036ff5677.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "0d9bdd68-113c-4ef7-8690-592dca87a44e",
+    "job_number": "ANDH042",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0d9bdd68-113c-4ef7-8690-592dca87a44e.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "13PASS"
+  },
+  {
+    "job_id": "12295cf3-f640-46f5-a6c4-2eb4dd02c521",
+    "job_number": "RNLDL-0117",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\12295cf3-f640-46f5-a6c4-2eb4dd02c521.pdf",
+    "drive_type": "HOME",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "af5f7874-ca1c-4cd6-b57b-2c788c0f0588",
+    "job_number": "RNLCHA-0063",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\af5f7874-ca1c-4cd6-b57b-2c788c0f0588.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "9a6fa951-c6c3-4ed1-a5c8-0a620b2aab80",
+    "job_number": "HMP001",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\9a6fa951-c6c3-4ed1-a5c8-0a620b2aab80.pdf",
+    "drive_type": "HOME",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "42b38e30-6eab-4b12-ae39-d77c615e8c15",
+    "job_number": "RNLKEL-0041",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\42b38e30-6eab-4b12-ae39-d77c615e8c15.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "d73bfe60-e62c-40b0-9827-d860089f9364",
+    "job_number": "4923",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\d73bfe60-e62c-40b0-9827-d860089f9364.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "302c3b4c-2588-4be1-a3f5-54cb724483d6",
+    "job_number": "4931",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\302c3b4c-2588-4be1-a3f5-54cb724483d6.pdf",
+    "drive_type": "MR",
+    "floors": 7,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "8d119bfd-4c0c-414c-8dc4-9bf409c8a8bc",
+    "job_number": "RNLCHA-0026",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\8d119bfd-4c0c-414c-8dc4-9bf409c8a8bc.pdf",
+    "drive_type": "HOME",
+    "floors": 5,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "a8464f0f-8df2-42cc-9a40-5c202aa5e7bf",
+    "job_number": "4946",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\a8464f0f-8df2-42cc-9a40-5c202aa5e7bf.pdf",
+    "drive_type": "MRL",
+    "floors": 3,
+    "capacity": "1000KG"
+  },
+  {
+    "job_id": "aec90011-ea0f-4d40-b133-fa6c95432a7d",
+    "job_number": "RNLBLR0078",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\aec90011-ea0f-4d40-b133-fa6c95432a7d.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "0966e01c-622e-4c73-a7f5-4960aaba6a6d",
+    "job_number": "MAH-008",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0966e01c-622e-4c73-a7f5-4960aaba6a6d.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "77518919-f1e1-456e-b029-64de582a3f39",
+    "job_number": "4938",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\77518919-f1e1-456e-b029-64de582a3f39.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "4de430fe-8cca-48c3-a58c-91d46304f747",
+    "job_number": "4988",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\4de430fe-8cca-48c3-a58c-91d46304f747.pdf",
+    "drive_type": "HOME",
+    "floors": 2,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "d05e9efd-5f2a-4926-950b-3dbdbb51a3ea",
+    "job_number": "4734",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\d05e9efd-5f2a-4926-950b-3dbdbb51a3ea.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "69fc0e2e-b68d-4999-9f80-d1c610251dec",
+    "job_number": "RNLDL-0122",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\69fc0e2e-b68d-4999-9f80-d1c610251dec.pdf",
+    "drive_type": "HOME",
+    "floors": 2,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "0ec8468b-c9ec-46f8-8139-de83798626ee",
+    "job_number": "RNLKOL-0055",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0ec8468b-c9ec-46f8-8139-de83798626ee.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "87fa3d2e-3037-4fff-bdf2-0e64724db229",
+    "job_number": "4696",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\87fa3d2e-3037-4fff-bdf2-0e64724db229.pdf",
+    "drive_type": "HOME",
+    "floors": 6,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "e080335a-0ea8-4764-b514-86f7b98a2d4f",
+    "job_number": "4964",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\e080335a-0ea8-4764-b514-86f7b98a2d4f.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "1500KG"
+  },
+  {
+    "job_id": "4dac12ff-3289-44f9-96a9-f404f9488c28",
+    "job_number": "4571",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\4dac12ff-3289-44f9-96a9-f404f9488c28.pdf",
+    "drive_type": "MR",
+    "floors": 6,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "46b4869c-05ad-43ba-ae1e-143f3c937902",
+    "job_number": "4954",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\46b4869c-05ad-43ba-ae1e-143f3c937902.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "4000KG"
+  },
+  {
+    "job_id": "67231add-1753-4eb2-ae64-7dff47b2e543",
+    "job_number": "4930",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\67231add-1753-4eb2-ae64-7dff47b2e543.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "9241ffe1-0698-45f0-b621-62442d363e91",
+    "job_number": "4798",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\9241ffe1-0698-45f0-b621-62442d363e91.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "69aed5b4-e2bb-410b-af21-269475849a26",
+    "job_number": "RNLIND-0015",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\69aed5b4-e2bb-410b-af21-269475849a26.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "0360dae3-22fd-4e75-b1c5-74ea4c0f16e9",
+    "job_number": "RNLDL0052",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0360dae3-22fd-4e75-b1c5-74ea4c0f16e9.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "84d1a68e-302c-4281-9ba9-f5df3bd28353",
+    "job_number": "RNLBLR0045",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\84d1a68e-302c-4281-9ba9-f5df3bd28353.pdf",
+    "drive_type": "BELT",
+    "floors": 4,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "82333336-35df-49f2-b042-1c30d33f6a26",
+    "job_number": "4919",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\82333336-35df-49f2-b042-1c30d33f6a26.pdf",
+    "drive_type": "HOME",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "d90a5b44-6fe3-4f1e-b265-97586aae7f8c",
+    "job_number": "RNLDL-0105",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\d90a5b44-6fe3-4f1e-b265-97586aae7f8c.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "2cf5840a-7d5f-45ce-9bab-cd2833b6e700",
+    "job_number": "4953",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\2cf5840a-7d5f-45ce-9bab-cd2833b6e700.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "4000KG"
+  },
+  {
+    "job_id": "157f259b-ff51-45ee-9afd-47b968cc75bf",
+    "job_number": "RNLCHA-0064",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\157f259b-ff51-45ee-9afd-47b968cc75bf.pdf",
+    "drive_type": "HOME",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "c44d5696-b67b-4a37-bb42-4d826d21eb37",
+    "job_number": "4709",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c44d5696-b67b-4a37-bb42-4d826d21eb37.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "d0404c10-dfdb-475a-b951-d05f5bf770f1",
+    "job_number": "4870",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\d0404c10-dfdb-475a-b951-d05f5bf770f1.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "f1ecbd82-444c-4402-a426-1d8aad457afe",
+    "job_number": "4661",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\f1ecbd82-444c-4402-a426-1d8aad457afe.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "2000KG"
+  },
+  {
+    "job_id": "aee2f368-023e-4e17-a40e-27047e648e7b",
+    "job_number": "RNLCHA-0027",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\aee2f368-023e-4e17-a40e-27047e648e7b.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "ef5a6f99-8226-4925-81b9-5c3de7b8b5ea",
+    "job_number": "RNLDL-0119",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\ef5a6f99-8226-4925-81b9-5c3de7b8b5ea.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "e9307705-7cf4-485b-8e4a-9d35393353ce",
+    "job_number": "4802",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\e9307705-7cf4-485b-8e4a-9d35393353ce.pdf",
+    "drive_type": "HOME",
+    "floors": 5,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "df46f556-1fe0-4ba8-b59d-4403ce51cd75",
+    "job_number": "ANDH041",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\df46f556-1fe0-4ba8-b59d-4403ce51cd75.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "13PASS"
+  },
+  {
+    "job_id": "7521afee-97eb-4fe3-a783-62f6cf39e4ba",
+    "job_number": "RNLIND-0014",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\7521afee-97eb-4fe3-a783-62f6cf39e4ba.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "0ecaa1b8-6b41-4b37-b437-d9fbec2f7acb",
+    "job_number": "RNLBLR-0051",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0ecaa1b8-6b41-4b37-b437-d9fbec2f7acb.pdf",
+    "drive_type": "BELT",
+    "floors": 3,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "1fc12e0e-5e4c-4045-b8c7-b3e91e19c272",
+    "job_number": "4944",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\1fc12e0e-5e4c-4045-b8c7-b3e91e19c272.pdf",
+    "drive_type": "MRL",
+    "floors": 6,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "fd0a220f-3bf8-448c-9047-0093fb7347fd",
+    "job_number": "JHK114",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\fd0a220f-3bf8-448c-9047-0093fb7347fd.pdf",
+    "drive_type": "MRL",
+    "floors": 7,
+    "capacity": "2500KG"
+  },
+  {
+    "job_id": "0e63b9b8-c460-40da-8143-2ef41414ac9b",
+    "job_number": "ANDH051",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0e63b9b8-c460-40da-8143-2ef41414ac9b.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "13PASS"
+  },
+  {
+    "job_id": "c0633993-0e76-4918-94db-14acb88d4ed4",
+    "job_number": "RNLKOL-0057",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c0633993-0e76-4918-94db-14acb88d4ed4.pdf",
+    "drive_type": "MRL",
+    "floors": 5,
+    "capacity": "4PASS"
+  },
+  {
+    "job_id": "70554e48-c29e-49e5-9667-862098b563aa",
+    "job_number": "CH-011",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\70554e48-c29e-49e5-9667-862098b563aa.pdf",
+    "drive_type": "MRLBELT",
+    "floors": 2,
+    "capacity": "20PASS"
+  },
+  {
+    "job_id": "9a0bde89-6540-4c7d-ab20-d1f7f4fbfd3a",
+    "job_number": "BBSR313",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\9a0bde89-6540-4c7d-ab20-d1f7f4fbfd3a.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "c2150fcf-96d4-47e4-b6db-7a22ffa06ca6",
+    "job_number": "4876",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\c2150fcf-96d4-47e4-b6db-7a22ffa06ca6.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "4b7d1bbd-bd4a-4242-92a6-18e73d19a623",
+    "job_number": "BBSR-314",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\4b7d1bbd-bd4a-4242-92a6-18e73d19a623.pdf",
+    "drive_type": "MRL",
+    "floors": 2,
+    "capacity": "16PASS"
+  },
+  {
+    "job_id": "0c6b6fc5-87a3-4db6-8c82-a9eb92714dcb",
+    "job_number": "RNLCHA-0050",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\0c6b6fc5-87a3-4db6-8c82-a9eb92714dcb.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "6PASS"
+  },
+  {
+    "job_id": "30f84071-1c60-400b-8e11-9cf316f866c0",
+    "job_number": "4907",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\30f84071-1c60-400b-8e11-9cf316f866c0.pdf",
+    "drive_type": "MRL",
+    "floors": 4,
+    "capacity": "8PASS"
+  },
+  {
+    "job_id": "aeac08bc-f1e0-4a72-bf00-737c87ad7046",
+    "job_number": "4875",
+    "pdf": "C:\\Users\\yash_\\OneDrive\\Desktop\\Factory ERP\\scripts\\_drawing_pdfs\\aeac08bc-f1e0-4a72-bf00-737c87ad7046.pdf",
+    "drive_type": "MR",
+    "floors": 5,
+    "capacity": "8PASS"
+  }
+]
