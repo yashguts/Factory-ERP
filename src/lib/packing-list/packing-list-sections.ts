@@ -170,16 +170,9 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
   },
   {
     key: "p-wire-rope-main",
-    label: "Wire Rope Main/Belt Main",
+    label: "Wire Rope/Belt",
     captureType: "item",
     categoryPaths: ["Large Purchased Items > Wire Rope","Large Purchased Items > Belt"],
-    specHint: "8mm",
-  },
-  {
-    key: "p-wire-rope-gov",
-    label: "Wire Rope (Gov)",
-    captureType: "item",
-    categoryPaths: ["Large Purchased Items > Wire Rope"],
     specHint: "8mm",
   },
   {

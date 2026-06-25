@@ -54,8 +54,7 @@ const CURATED = [
   C("p-governor-switch", "Governor Switch", { group: "Machine", cats: ["Miscallaneous > Governor Switch"], drives: ["HOME", "BELT", "CANTI"] }),
 
   // Rope / belt + rope hardware
-  C("p-wire-rope-main", "Wire Rope Main/Belt Main", { group: "Rope", cats: ["Large Purchased Items > Wire Rope", "Large Purchased Items > Belt"] }),
-  C("p-wire-rope-gov", "Wire Rope (Gov)", { group: "Rope", cats: ["Large Purchased Items > Wire Rope"] }),
+  C("p-wire-rope-main", "Wire Rope/Belt", { group: "Rope", cats: ["Large Purchased Items > Wire Rope", "Large Purchased Items > Belt"] }),
   C("p-thimbel", "Thimble", { group: "Rope", merge: ["p-thimbel-o-type"], cats: ["Hardware > Thimbel"] }),
   C("__new_i_bolt_belt", "I-Bolt Belt", { group: "Rope", capture: "free", drives: ["BELT", "MRLBELT"] }),
   C("p-bull-dog-clip", "Bull Dog Clip", { group: "Rope", merge: ["p-bull-dog-clip-main", "p-bull-dog-clip-gov"], cats: ["Hardware > Bull Dog Clips"] }),
