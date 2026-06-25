@@ -35,6 +35,29 @@ const GROUP_ORDER = (() => {
 const GROUP_LABELS: Record<string, string> = { OTHER: "Unsorted (from BOM) — please file" };
 const glabel = (g: string): string => GROUP_LABELS[g] ?? g;
 
+// Per-category accent colour — makes it obvious from the UI which category a row
+// belongs to (coloured left bar + tinted header + dot). Hues are spread around the
+// wheel so adjacent categories read as distinct; muted enough for light + dark.
+const GROUP_COLOR: Record<string, string> = {
+  Rails: "#3b82f6",
+  Brackets: "#6366f1",
+  Machine: "#8b5cf6",
+  Rope: "#06b6d4",
+  Pulley: "#14b8a6",
+  Oil: "#f59e0b",
+  "Header & Sill": "#f97316",
+  Doors: "#22c55e",
+  Safety: "#ef4444",
+  Counter: "#a855f7",
+  "Limit & Cam": "#f43f5e",
+  "Misc Fitted": "#0ea5e9",
+  "Cabin Items": "#10b981",
+  "Nut-Bolts": "#84cc16",
+  Screws: "#eab308",
+  OTHER: "#64748b",
+};
+const groupColor = (g: string): string => GROUP_COLOR[g] ?? "#64748b";
+
 interface Row {
   uid: string;
   item_id: string | null;
@@ -112,6 +135,9 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [showGreyed, setShowGreyed] = useState<Set<string>>(new Set(GROUP_ORDER)); // greyed visible by default
   const [filter, setFilter] = useState("");
+  // The most recently added line — auto-focused + highlighted so it's obvious it
+  // was added (the old "+ add" gave no feedback).
+  const [justAddedUid, setJustAddedUid] = useState<string | null>(null);
   const [busy, setBusy] = useState<null | "generate" | "save" | "ready" | "read">(null);
   const [confirmGen, setConfirmGen] = useState(false);
   const lastWarnings = useRef<string[]>(initial ? [] : []);
@@ -145,6 +171,7 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
   const addRow = useCallback((sk: string) => {
     const r: Row = { uid: uid(), item_id: null, code: null, name: null, uom: null, spec: null, qty: 1, source: "manual", confidence: null, is_conflict: false, conflict_note: null, not_required: false, non_inventory: false, bom_line_id: null, dismissed_reason: null, checked: false };
     setRows((prev) => ({ ...prev, [sk]: [...(prev[sk] || []), r] }));
+    setJustAddedUid(r.uid);
     setStatus("draft");
     setDispositions((d) => { const g = sk === OTHER_SECTION_KEY ? "OTHER" : sectionGroup(sk); if (!d[g]) return d; const { [g]: _x, ...rest } = d; return rest; });
   }, []);
@@ -405,54 +432,58 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
         const greyCount = g === "OTHER" ? 0 : tmpl.filter((s) => !(rows[s.key]?.length)).length;
 
         return (
-          <div key={g} className="mb-3 overflow-hidden rounded-lg border border-[var(--border)]">
-            <div className="flex items-center gap-2 bg-[var(--muted)]/40 px-3 py-2">
+          <div key={g} className="mb-3 overflow-hidden rounded-lg border border-[var(--border)]" style={{ borderLeft: `4px solid ${groupColor(g)}` }}>
+            <div className="flex items-center gap-2 px-3 py-2" style={{ backgroundColor: groupColor(g) + "14" }}>
               <button onClick={() => setCollapsed((c) => { const n = new Set(c); n.has(g) ? n.delete(g) : n.add(g); return n; })} className="flex items-center gap-1.5 text-sm font-semibold text-[var(--foreground)] cursor-pointer">
                 {isCollapsed ? <ChevronRight className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+                <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: groupColor(g) }} />
                 {glabel(g)}
               </button>
               <span className="text-xs text-[var(--muted-foreground)]">{groupChecked}/{groupActive.length} confirmed{greyCount ? ` · ${greyCount} n/a` : ""}</span>
               <div className="ml-auto flex items-center gap-2">
-                <Button variant="ghost" size="sm" onClick={() => onSaveSection(g)} disabled={!!busy} title="Save just this section">Save section</Button>
+                <Button variant="secondary" size="sm" onClick={() => onSaveSection(g)} disabled={!!busy} title="Save just this category">Save category</Button>
                 {dispositions[g] ? (
                   <span className="flex items-center gap-1 rounded bg-emerald-500/15 px-2 py-0.5 text-xs font-medium text-emerald-600"><CircleCheck className="h-3.5 w-3.5" /> Confirmed</span>
                 ) : (
-                  <Button variant="ghost" size="sm" onClick={() => confirmGroup(g)}>Confirm section</Button>
+                  <Button variant="ghost" size="sm" onClick={() => confirmGroup(g)}>Confirm category</Button>
                 )}
               </div>
             </div>
 
             {!isCollapsed && (
-              <div className="divide-y divide-[var(--border)]">
-                {g === "OTHER"
-                  ? otherRows.map((r) => <LineRow key={r.uid} sk={OTHER_SECTION_KEY} sec={null} row={r} onPatch={patchRow} onRemove={removeRow} onToggle={toggleCheck} />)
-                  : tmpl.map((sec) => {
-                      const secRows = rows[sec.key] || [];
-                      if (!secRows.length) {
-                        if (!greyShown) return null;
+              <div>
+                <ColumnHeader />
+                <div className="divide-y divide-[var(--border)]">
+                  {g === "OTHER"
+                    ? otherRows.map((r) => <LineRow key={r.uid} sk={OTHER_SECTION_KEY} sec={null} row={r} autoFocus={r.uid === justAddedUid} onPatch={patchRow} onRemove={removeRow} onToggle={toggleCheck} />)
+                    : tmpl.map((sec) => {
+                        const secRows = rows[sec.key] || [];
+                        if (!secRows.length) {
+                          if (!greyShown) return null;
+                          return (
+                            <div key={sec.key} className="flex items-center gap-2 px-3 py-1 text-xs text-[var(--muted-foreground)] opacity-60">
+                              <span className="h-3.5 w-3.5" />
+                              <span className="flex-1 truncate">{sec.label}</span>
+                              <span className="italic">not applicable</span>
+                              <button onClick={() => addRow(sec.key)} className="rounded px-1.5 py-0.5 text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer">+ add</button>
+                            </div>
+                          );
+                        }
                         return (
-                          <div key={sec.key} className="flex items-center gap-2 px-3 py-1 text-xs text-[var(--muted-foreground)] opacity-60">
-                            <span className="h-3.5 w-3.5" />
-                            <span className="flex-1 truncate">{sec.label}</span>
-                            <span className="italic">not applicable</span>
-                            <button onClick={() => addRow(sec.key)} className="rounded px-1.5 py-0.5 text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer">+ add</button>
+                          <div key={sec.key}>
+                            {secRows.map((r, i) => <LineRow key={r.uid} sk={sec.key} sec={sec} row={r} label={i === 0 ? sec.label : ""} autoFocus={r.uid === justAddedUid} onPatch={patchRow} onRemove={removeRow} onToggle={toggleCheck} />)}
+                            <div className="px-3 pb-1 pl-9">
+                              <button onClick={() => addRow(sec.key)} className="text-xs text-[var(--primary)] hover:underline cursor-pointer">+ add line</button>
+                            </div>
                           </div>
                         );
-                      }
-                      return (
-                        <div key={sec.key}>
-                          {secRows.map((r, i) => <LineRow key={r.uid} sk={sec.key} sec={sec} row={r} label={i === 0 ? sec.label : ""} onPatch={patchRow} onRemove={removeRow} onToggle={toggleCheck} />)}
-                          <div className="px-3 pb-1 pl-9">
-                            <button onClick={() => addRow(sec.key)} className="text-xs text-[var(--primary)] hover:underline cursor-pointer">+ add line</button>
-                          </div>
-                        </div>
-                      );
-                    })}
-                {g !== "OTHER" && greyCount > 0 && (
-                  <button onClick={() => setShowGreyed((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })} className="w-full px-3 py-1 text-left text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]/40 cursor-pointer">
-                    {greyShown ? "Hide" : "Show"} {greyCount} not-applicable particular{greyCount > 1 ? "s" : ""}
-                  </button>
-                )}
+                      })}
+                  {g !== "OTHER" && greyCount > 0 && (
+                    <button onClick={() => setShowGreyed((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })} className="w-full px-3 py-1 text-left text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]/40 cursor-pointer">
+                      {greyShown ? "Hide" : "Show"} {greyCount} not-applicable particular{greyCount > 1 ? "s" : ""}
+                    </button>
+                  )}
+                </div>
               </div>
             )}
           </div>
@@ -493,45 +524,89 @@ function CoverageBanner({ coverage }: { coverage: { total: number; covered: numb
 const SRC_LABEL: Record<string, string> = {};
 const confColor = (c: string | null) => (c === "high" ? "bg-emerald-500" : c === "medium" ? "bg-amber-500" : "bg-[var(--muted-foreground)]");
 
+// Column headers — printed once per category so every field is labelled (kills the
+// "which box is the name? which is the spec?" confusion). Widths mirror LineRow.
+function ColumnHeader() {
+  return (
+    <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+      <span className="h-4 w-4 shrink-0" />
+      <span className="w-52 shrink-0">Particular</span>
+      <span className="min-w-0 flex-1">Item / Name</span>
+      <span className="w-28 shrink-0">Specification</span>
+      <span className="w-14 shrink-0 text-right">Qty</span>
+      <span className="w-24 shrink-0 text-right">Source</span>
+      <span className="w-4 shrink-0" />
+    </div>
+  );
+}
+
 interface LineRowProps {
   sk: string;
   sec: PackingSection | null; // null = OTHER (free-form, has its own name)
   row: Row;
   label?: string;
+  autoFocus?: boolean;
   onPatch: (sk: string, uid: string, patch: Partial<Row>) => void;
   onRemove: (sk: string, row: Row) => void;
   onToggle: (sk: string, row: Row) => void;
 }
 
-function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowProps) {
+function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }: LineRowProps) {
   const isFree = sec?.captureType === "free";
   const dismissed = row.not_required;
+  // A non-inventory line (a free-text template line OR an item line flipped to
+  // non-stock) is described by a Name + Specification the engineer types. A true
+  // inventory line just searches the catalogue — its SKU name already carries the
+  // spec, so no separate spec field is needed (shown faint/read-only as a hint).
+  const nameAndSpec = isFree || row.non_inventory;
   const needsItem = !dismissed && !isFree && !row.item_id && !row.non_inventory;
+  const particular = sec ? (label ?? sec.label) : (row.name || "(BOM item)");
   return (
-    <div className={cn("flex items-center gap-2 px-3 py-1.5 text-[13px]", dismissed && "opacity-50", row.is_conflict && "bg-red-500/5")}>
-      {/* check */}
+    <div className={cn(
+      "flex items-center gap-2 px-3 py-1.5 text-[13px]",
+      dismissed && "opacity-50",
+      row.is_conflict && "bg-red-500/5",
+      autoFocus && "bg-[var(--primary)]/5 ring-1 ring-inset ring-[var(--primary)]",
+    )}>
+      {/* confirm */}
       <button onClick={() => onToggle(sk, row)} title={row.checked ? "Confirmed" : "Confirm this line"}
         className={cn("flex h-4 w-4 shrink-0 items-center justify-center rounded border cursor-pointer", row.checked ? "border-emerald-500 bg-emerald-500 text-white" : "border-[var(--border)] hover:border-[var(--primary)]")}>
         {row.checked && <Check className="h-3 w-3" />}
       </button>
 
-      {/* label + chips */}
+      {/* particular (the checklist slot) + chips */}
       <div className="flex w-52 shrink-0 items-center gap-1.5">
-        <span className="truncate" title={sec?.label || row.name || ""}>{sec ? (label ?? sec.label) : (row.name || "(BOM item)")}</span>
+        <span className="truncate font-medium" title={particular}>{particular}</span>
         {row.is_conflict && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label={row.conflict_note || "conflict"} />}
         {needsItem && <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] font-medium text-amber-600">needs item</span>}
-        {row.non_inventory && <span className="shrink-0 rounded bg-violet-500/15 px-1 text-[10px] font-medium text-violet-600">non-stock</span>}
       </div>
 
-      {/* item picker / free text / non-stock */}
-      <div className="min-w-0 flex-1">
-        {isFree
+      {/* item (inventory search) OR name (non-inventory) + non-stock toggle */}
+      <div className="flex min-w-0 flex-1 items-center gap-1.5">
+        {nameAndSpec
+          ? <input autoFocus={autoFocus} value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={isFree ? "Name / description" : "Name of the non-stock part"} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+          : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} autoFocus={autoFocus} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
+        {!isFree && (
+          <button
+            onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false, item_id: null, code: null, name: null, uom: null } : { non_inventory: true, item_id: null, code: null, name: null, uom: null })}
+            title={row.non_inventory ? "Switch back to an inventory item" : "Mark as a non-stock item (no inventory SKU — e.g. fish plate, cut-from-sheet part)"}
+            className={cn("shrink-0 rounded border px-1.5 py-0.5 text-[10px] cursor-pointer", row.non_inventory ? "border-[var(--border)] text-[var(--muted-foreground)] hover:border-[var(--primary)]" : "border-violet-300 text-violet-600 hover:bg-violet-500/10")}
+          >
+            {row.non_inventory ? "use inventory" : "non-stock"}
+          </button>
+        )}
+      </div>
+
+      {/* specification — editable for non-inventory (size-picker when the section
+          offers preset sizes, e.g. fasteners); faint read-only hint for inventory */}
+      <div className="w-28 shrink-0">
+        {nameAndSpec
           ? (
             <>
-              <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })}
+              <input value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })}
                 list={sec?.specOptions?.length ? `opts-${row.uid}` : undefined}
-                placeholder={sec?.specOptions?.length ? "pick or type a size" : `e.g. ${sec?.specHint || "spec"}`}
-                className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+                placeholder={sec?.specOptions?.length ? "pick / type size" : (sec?.specHint ? `e.g. ${sec.specHint}` : "Specification")}
+                className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
               {sec?.specOptions?.length ? (
                 <datalist id={`opts-${row.uid}`}>
                   {sec.specOptions.map((o) => <option key={o} value={o} />)}
@@ -539,32 +614,16 @@ function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowPr
               ) : null}
             </>
           )
-          : row.non_inventory
-            ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder="non-stock item name (no inventory SKU — e.g. fish plate, cut part)" className="h-7 w-full rounded border border-violet-400/60 bg-violet-500/5 px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-violet-400" />
-            : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
+          : <span className="block truncate px-1.5 text-[11px] italic text-[var(--muted-foreground)]" title={row.spec || ""}>{row.spec || "—"}</span>}
       </div>
-
-      {/* non-stock toggle (item-type rows only) */}
-      {!isFree && (
-        <button
-          onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false } : { non_inventory: true, item_id: null, code: null, uom: null })}
-          title="Mark as a non-stock item (no inventory SKU — e.g. fish plate, cut part)"
-          className={cn("shrink-0 rounded border px-1 text-[10px] cursor-pointer", row.non_inventory ? "border-violet-400 bg-violet-500/15 text-violet-600" : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-violet-400")}
-        >
-          non-stock
-        </button>
-      )}
-
-      {/* spec */}
-      <input value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })} placeholder="spec" className="h-7 w-24 shrink-0 rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
 
       {/* qty */}
       <input type="number" min={0} step="any" value={row.qty || ""} onChange={(e) => onPatch(sk, row.uid, { qty: e.target.value ? Number(e.target.value) : 0 })} placeholder="Qty" className="h-7 w-14 shrink-0 rounded border border-[var(--border)] bg-[var(--background)] px-1 text-right text-[13px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
 
       {/* source + confidence */}
-      <div className="flex w-20 shrink-0 items-center justify-end gap-1">
-        {row.confidence && <span className={cn("h-1.5 w-1.5 rounded-full", confColor(row.confidence))} title={`${row.confidence} confidence`} />}
-        {row.source && <span className="truncate text-[10px] text-[var(--muted-foreground)]" title={`source: ${row.source}`}>{SRC_LABEL[row.source] || row.source}</span>}
+      <div className="flex w-24 shrink-0 items-center justify-end gap-1">
+        {row.confidence && <span className={cn("h-1.5 w-1.5 shrink-0 rounded-full", confColor(row.confidence))} title={`${row.confidence} confidence`} />}
+        {row.source && <span className="truncate rounded bg-[var(--muted)] px-1.5 py-0.5 text-[10px] text-[var(--muted-foreground)]" title={`source: ${row.source}`}>{SRC_LABEL[row.source] || row.source}</span>}
       </div>
 
       <button onClick={() => onRemove(sk, row)} title={row.bom_line_id ? "Dismiss (from BOM)" : "Remove"} className="shrink-0 text-[var(--muted-foreground)] hover:text-red-500 cursor-pointer">
@@ -574,7 +633,7 @@ function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowPr
   );
 }
 
-function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick: (it: SearchableItem) => void; onClear: () => void }) {
+function ItemPicker({ sk, row, autoFocus, onPick, onClear }: { sk: string; row: Row; autoFocus?: boolean; onPick: (it: SearchableItem) => void; onClear: () => void }) {
   const [q, setQ] = useState("");
   const [open, setOpen] = useState(false);
   const [results, setResults] = useState<SearchableItem[]>([]);
@@ -623,11 +682,12 @@ function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick
       <div className="flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--background)] px-2">
         <Search className="h-3.5 w-3.5 shrink-0 text-[var(--muted-foreground)]" />
         <input
+          autoFocus={autoFocus}
           value={q}
           onChange={(e) => { setQ(e.target.value); setOpen(true); search(e.target.value); }}
           onFocus={() => { setOpen(true); place(); if (!results.length) search(""); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
-          placeholder="Search item…"
+          placeholder="Search inventory item…"
           className="h-7 w-full bg-transparent text-[13px] focus:outline-none"
         />
         {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--muted-foreground)]" />}
