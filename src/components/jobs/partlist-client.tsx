@@ -217,6 +217,7 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
           label: isFree ? r.name : (r.item_id ? null : r.name),
           spec: r.spec, qty: r.qty, source: r.source, confidence: r.confidence,
           is_conflict: r.is_conflict, checked: r.checked, not_required: r.not_required,
+          non_inventory: r.non_inventory,
           bom_line_id: r.bom_line_id, dismissed_reason: r.dismissed_reason,
         });
       }
@@ -527,14 +528,14 @@ function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowPr
         {isFree
           ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={`e.g. ${sec?.specHint || "spec"}`} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
           : row.non_inventory
-            ? <div className="flex h-7 items-center px-2 text-[13px] italic text-[var(--muted-foreground)]">Non-stock — no inventory item (spec only)</div>
+            ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder="non-stock item name (no inventory SKU — e.g. fish plate, cut part)" className="h-7 w-full rounded border border-violet-400/60 bg-violet-500/5 px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-violet-400" />
             : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
       </div>
 
       {/* non-stock toggle (item-type rows only) */}
       {!isFree && (
         <button
-          onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false } : { non_inventory: true, item_id: null, code: null, name: null, uom: null })}
+          onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false } : { non_inventory: true, item_id: null, code: null, uom: null })}
           title="Mark as a non-stock item (no inventory SKU — e.g. fish plate, cut part)"
           className={cn("shrink-0 rounded border px-1 text-[10px] cursor-pointer", row.non_inventory ? "border-violet-400 bg-violet-500/15 text-violet-600" : "border-[var(--border)] text-[var(--muted-foreground)] hover:border-violet-400")}
         >
