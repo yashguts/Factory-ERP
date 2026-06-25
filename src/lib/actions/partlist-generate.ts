@@ -37,7 +37,6 @@ interface RichLike {
 
 const GROUPS = sectionGroups as Record<string, string>;
 const TEMPLATE_ORDER = new Map(PACKING_SECTIONS.map((s, i) => [s.key, i]));
-const QTY_TOL = 0.5;
 
 function num(s: unknown): number | null {
   const m = String(s ?? "").replace(/[, ]/g, "").match(/-?\d+(\.\d+)?/);
@@ -203,64 +202,63 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
   const items = await fetchActiveItems(supabase);
   const resolver = buildResolver(items, cats);
 
+  // --- which sections is the BOM RESPONSIBLE for? ---
+  // Any section a category maps an item into is "BOM-owned" (EXCLUDING the pinned
+  // 'fixed' door/drive items, which the owner keeps as auto-fill). BOM-owned sections
+  // are the BOM's truth: the rule NEVER adds to or annotates them — even when this
+  // job's BOM has none (e.g. the parts were already dispatched), the section stays
+  // blank rather than being re-predicted. Every other section is rule/pinned-filled.
+  const bomOwnedSections = new Set(
+    [...catToSection.values()].filter((sk) => packingSection(sk)?.captureType !== "fixed"),
+  );
+
   // --- merge per section ---
   const sectionKeys = new Set<string>([...brainBySection.keys(), ...bomBySection.keys()]);
   const lines: DraftLine[] = [];
   for (const sk of sectionKeys) {
     const sec = packingSection(sk);
     if (!sec) continue; // unknown key (e.g. "other") — coverage handles it
-    const brainLine = brainBySection.get(sk);
-    const bomList = bomBySection.get(sk);
-    // Drive/door gating: skip a predicted-only line when it doesn't apply to this
-    // job (e.g. an R1000-only or Collapsible-only line). BOM lines are truth — kept.
-    if (!(bomList && bomList.length) && !sectionApplies(sec, drive, target.doorType ?? null)) continue;
-    // 'fixed' (pinned) lines behave as item lines downstream — the distinction
-    // lives in PackingSection and is resolved below.
     const captureType: "item" | "free" = sec.captureType === "free" ? "free" : "item";
     const group = GROUPS[sk] || "PART E";
+    const bomList = bomBySection.get(sk);
 
     if (bomList && bomList.length) {
-      // ONE draft line per BOM item — never collapse. Every BOM line must appear
-      // in the Part List (the owner's hard rule). When a single BOM item lands in
-      // a section it confirms the predicted particular, so blend the rule's spec/qty
-      // onto it; when several land in one section they're distinct parts, each its
-      // own line (rule spec doesn't apply across them).
-      const ruleForSection = bomList.length === 1 ? brainLine : undefined;
+      // BOM is the truth: one CLEAN line per BOM item — never blended with the rule,
+      // never flagged. Every BOM line must appear (the owner's hard rule).
       for (const bl of bomList) {
-        const sources = ["BOM"];
-        let is_conflict = false, conflict_note: string | null = null;
-        if (ruleForSection) {
-          sources.push("rule");
-          if (ruleForSection.qty > 0 && bl.qty > 0 && Math.abs(ruleForSection.qty - bl.qty) > QTY_TOL) {
-            is_conflict = true; conflict_note = `BOM qty ${bl.qty} vs predicted ${ruleForSection.qty}`;
-          }
-        }
         lines.push({
           sectionKey: sk, label: sec.label, group, captureType,
           item_id: bl.item_id, item_code: bl.code, item_name: bl.name,
-          spec: ruleForSection?.specs[0] ?? null, qty: bl.qty || ruleForSection?.qty || 0,
-          source: sources.join(" + "), confidence: "high", is_conflict, conflict_note,
+          spec: null, qty: bl.qty,
+          source: "BOM", confidence: "high", is_conflict: false, conflict_note: null,
           needs_item: false, non_inventory: false, bom_line_id: bl.id,
         });
       }
-    } else if (brainLine) {
-      const spec = brainLine.specs[0] ?? null;
-      let item_id: string | null = null, item_code: string | null = null, item_name: string | null = null;
-      // skip resolution for sections research flagged as genuinely non-inventory
-      if (captureType === "item" && !NON_INVENTORY.has(sk)) {
-        const r = resolver.resolve(sec.label, sk, spec);
-        if (r.item) { item_id = r.item.id; item_code = r.item.code; item_name = r.item.name; }
-      }
-      const non_inventory = NON_INVENTORY.has(sk) && !item_id;
-      const needs_item = captureType === "item" && !item_id && !non_inventory;
-      lines.push({
-        sectionKey: sk, label: sec.label, group, captureType,
-        item_id, item_code, item_name, spec, qty: brainLine.qty,
-        source: NON_INVENTORY.has(sk) ? "rule (non-stock)" : brainLine.source,
-        confidence: captureType === "free" || item_id ? brainLine.confidence : "low",
-        is_conflict: false, conflict_note: null, needs_item, non_inventory, bom_line_id: null,
-      });
+      continue;
     }
+
+    // No BOM line here. Fill from the rule ONLY for rule-type sections — a BOM-owned
+    // section with no BOM item stays empty (don't re-add dispatched/absent parts).
+    if (bomOwnedSections.has(sk)) continue;
+    const brainLine = brainBySection.get(sk);
+    if (!brainLine) continue;
+    if (!sectionApplies(sec, drive, target.doorType ?? null)) continue;
+    const spec = brainLine.specs[0] ?? null;
+    let item_id: string | null = null, item_code: string | null = null, item_name: string | null = null;
+    // skip resolution for sections research flagged as genuinely non-inventory
+    if (captureType === "item" && !NON_INVENTORY.has(sk)) {
+      const r = resolver.resolve(sec.label, sk, spec);
+      if (r.item) { item_id = r.item.id; item_code = r.item.code; item_name = r.item.name; }
+    }
+    const non_inventory = NON_INVENTORY.has(sk) && !item_id;
+    const needs_item = captureType === "item" && !item_id && !non_inventory;
+    lines.push({
+      sectionKey: sk, label: sec.label, group, captureType,
+      item_id, item_code, item_name, spec, qty: brainLine.qty,
+      source: NON_INVENTORY.has(sk) ? "rule (non-stock)" : brainLine.source,
+      confidence: captureType === "free" || item_id ? brainLine.confidence : "low",
+      is_conflict: false, conflict_note: null, needs_item, non_inventory, bom_line_id: null,
+    });
   }
 
   // Pinned ("fixed") sections: pre-fill the exact inventory item by name when the
