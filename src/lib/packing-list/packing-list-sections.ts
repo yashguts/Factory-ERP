@@ -1471,6 +1471,28 @@ export const PACKING_SECTIONS: PackingSection[] = [
     doors: ["SWING"],
   },
   {
+    key: "p-isolation-channel",
+    label: "Isolation Channel",
+    captureType: "item",
+    categoryPaths: ["Small Manufactured Items > Isolation Channel"],
+    specHint: "",
+  },
+  {
+    key: "p-hydraulic-cylinder",
+    label: "Hydraulic Cylinder",
+    captureType: "item",
+    categoryPaths: ["Hydraulic Items > Hydraulic Cylinder GMV"],
+    specHint: "",
+    drives: ["HYD"],
+  },
+  {
+    key: "p-rail-clip-combination",
+    label: "Rail Clip Combination",
+    captureType: "item",
+    categoryPaths: ["Rail Bracket > Rail Clip Combination"],
+    specHint: "",
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",

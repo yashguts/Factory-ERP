@@ -276,6 +276,10 @@ const CURATED = [
   C("__new_linton_panel", "Linton Panel", { group: "Doors", cats: ["Linton Pannel"] }),
   // gap fix: Swing Door — scope the "Swing Door" category (3 BOM items), door-gated to SWING
   C("__new_swing_door", "Swing Door", { group: "Doors", cats: ["Swing Door"], doors: ["SWING"] }),
+  // inventory-audit gap fixes: finished-part categories with no part-list home
+  C("__new_isolation_channel", "Isolation Channel", { group: "Machine", cats: ["Small Manufactured Items > Isolation Channel"] }),
+  C("__new_hydraulic_cylinder", "Hydraulic Cylinder", { group: "Machine", cats: ["Hydraulic Items > Hydraulic Cylinder GMV"], drives: ["HYD"] }),
+  C("__new_rail_clip_combination", "Rail Clip Combination", { group: "Rails", cats: ["Rail Bracket > Rail Clip Combination"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
@@ -324,6 +328,9 @@ const NEW = {
   "__new_eco_fasteners": "p-eco-fasteners",
   "__new_linton_panel": "p-linton-panel",
   "__new_swing_door": "p-swing-door-panel",
+  "__new_isolation_channel": "p-isolation-channel",
+  "__new_hydraulic_cylinder": "p-hydraulic-cylinder",
+  "__new_rail_clip_combination": "p-rail-clip-combination",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
