@@ -22,6 +22,9 @@ const byKey = new Map(SRC.map((s) => [s.key, s]));
 // cats: array of full category paths (picker scope + BOM blend). pin: inventory item name (captureType "fixed").
 const C = (key, label, opts = {}) => ({ key, label, ...opts });
 
+// Common Nut-Bolt sizes (owner-defined) — offered as a spec pick-list on the 9 bolt types.
+const NB_SIZES = ["16x100", "16x60", "16x40", "12x120", "12x75", "12x50", "12x40", "12x30", "12x25", "12x20", "10x75", "10x40", "10x30", "10x20", "8x50", "8x35", "8x20", "6x50", "6x35", "6x20", "6x12"];
+
 // ----- CURATED front, in assembly order. group = checklist group. -----
 const CURATED = [
   // Rails & fish plate
@@ -294,6 +297,17 @@ const CURATED = [
   C("__new_eco_magnet_bkt", "Magnet Bracket (Eco Space)", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "800x70mm" }),
   C("__new_eco_glass_pc", "Glass (Poly Carbonet) 6mm", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("__new_eco_fasteners", "Eco Space Fasteners (Bolts/Screws/Rivets)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
+
+  // Nut-Bolts — 9 fastener TYPES (free-text); size picked from the common NB_SIZES list.
+  C("__new_nb_bolt_sw_fwd", "Bolt+S.W+F.WD", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw_dot", "Bolt+S.W.", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_nut_dfw_sw", "Bolt+Nut+D.FW.+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw_fw_small", "Bolt+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_nut_flat_washer", "Nut & Flat Washner", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_fw_sw_nut", "Bolt+F.W+S.W+Nut", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_nut_sw_fw_small", "Bolt+Nut+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw", "Bolt+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_dnut_sw_fw_tw_sqw", "Bolt+D.Nut+S.W+F.W+T.W+Sq.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
 ];
 
 // New lines that don't reuse an existing key get a fresh slug.
@@ -328,6 +342,15 @@ const NEW = {
   "__new_isolation_channel": "p-isolation-channel",
   "__new_hydraulic_cylinder": "p-hydraulic-cylinder",
   "__new_brick_fastener": "p-brick-fastener",
+  "__new_nb_bolt_sw_fwd": "p-nb-bolt-sw-fwd",
+  "__new_nb_bolt_sw_dot": "p-nb-bolt-sw-dot",
+  "__new_nb_bolt_nut_dfw_sw": "p-nb-bolt-nut-dfw-sw",
+  "__new_nb_bolt_sw_fw_small": "p-nb-bolt-sw-fw-small",
+  "__new_nb_nut_flat_washer": "p-nb-nut-flat-washer",
+  "__new_nb_bolt_fw_sw_nut": "p-nb-bolt-fw-sw-nut",
+  "__new_nb_bolt_nut_sw_fw_small": "p-nb-bolt-nut-sw-fw-small",
+  "__new_nb_bolt_sw": "p-nb-bolt-sw",
+  "__new_nb_bolt_dnut_sw_fw_tw_sqw": "p-nb-bolt-dnut-sw-fw-tw-sqw",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
@@ -360,6 +383,7 @@ for (const c of CURATED) {
   if (c.drives) entry.drives = c.drives;
   if (c.doors) entry.doors = c.doors;
   if (c.pin) entry.pinnedItem = c.pin;
+  if (c.specOptions) entry.specOptions = c.specOptions;
   out.push(entry);
   groups[finalKey] = c.group;
 }
@@ -374,7 +398,11 @@ const tail = [];
 for (const s of SRC) {
   if (usedKeys.has(s.key)) continue;
   const fam = famOf(s.label);
-  if (fam === "TAIL" || TAIL_FLAGS.includes(s.key)) tail.push(s);
+  const isTail = fam === "TAIL" || TAIL_FLAGS.includes(s.key);
+  // The old free-text Nut-Bolts combos are superseded by the 9 curated fastener
+  // TYPES (size now picked from NB_SIZES) → drop them. Screws + flags + parked stay.
+  if (isTail && !TAIL_FLAGS.includes(s.key) && s.captureType === "free" && !/screw/i.test(s.label)) { dropped.push(s); continue; }
+  if (isTail) tail.push(s);
   else dropped.push(s);
 }
 for (const s of tail) {
@@ -391,7 +419,7 @@ for (const s of tail) {
 // ---- emit ----
 const esc = (v) => JSON.stringify(v);
 const lines = out.map((s) => {
-  const extra = (s.drives ? `\n    drives: ${esc(s.drives)},` : "") + (s.doors ? `\n    doors: ${esc(s.doors)},` : "") + (s.pinnedItem ? `\n    pinnedItem: ${esc(s.pinnedItem)},` : "");
+  const extra = (s.drives ? `\n    drives: ${esc(s.drives)},` : "") + (s.doors ? `\n    doors: ${esc(s.doors)},` : "") + (s.pinnedItem ? `\n    pinnedItem: ${esc(s.pinnedItem)},` : "") + (s.specOptions ? `\n    specOptions: ${esc(s.specOptions)},` : "");
   return `  {\n    key: ${esc(s.key)},\n    label: ${esc(s.label)},\n    captureType: ${esc(s.captureType)},\n    categoryPaths: ${esc(s.categoryPaths)},\n    specHint: ${esc(s.specHint)},${extra}\n  },`;
 }).join("\n");
 
@@ -423,6 +451,8 @@ export interface PackingSection {
   doors?: string[];
   /** For captureType 'fixed': the exact inventory item name to pin. */
   pinnedItem?: string;
+  /** Optional spec pick-list (e.g. fastener sizes) offered as a datalist on the line input. */
+  specOptions?: string[];
 }
 
 export const PACKING_SECTIONS: PackingSection[] = [
@@ -454,7 +484,7 @@ const outDir = path.join(__dirname, "..", "src", "lib", "packing-list");
 fs.writeFileSync(path.join(outDir, "packing-list-sections.ts"), ts);
 fs.writeFileSync(path.join(__dirname, "..", "src", "lib", "partlist", "section-groups.json"), JSON.stringify(groups));
 // also refresh the brain-side mirror copy so they stay in lockstep
-fs.writeFileSync(path.join(__dirname, "_packing_sections.json"), JSON.stringify(out.map((s) => ({ key: s.key, label: s.label, captureType: s.captureType, categoryPaths: s.categoryPaths, specHint: s.specHint, drives: s.drives, doors: s.doors, pinnedItem: s.pinnedItem }))));
+fs.writeFileSync(path.join(__dirname, "_packing_sections.json"), JSON.stringify(out.map((s) => ({ key: s.key, label: s.label, captureType: s.captureType, categoryPaths: s.categoryPaths, specHint: s.specHint, drives: s.drives, doors: s.doors, pinnedItem: s.pinnedItem, specOptions: s.specOptions }))));
 
 console.log(`curated front: ${CURATED.length}  ·  tail parked: ${tail.length}  ·  dropped: ${dropped.length}  ·  TOTAL: ${out.length}  (was ${SRC.length})`);
 const groupOrder = [...new Set(out.map((s) => groups[s.key]))];

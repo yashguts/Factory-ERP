@@ -526,7 +526,19 @@ function LineRow({ sk, sec, row, label, onPatch, onRemove, onToggle }: LineRowPr
       {/* item picker / free text / non-stock */}
       <div className="min-w-0 flex-1">
         {isFree
-          ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={`e.g. ${sec?.specHint || "spec"}`} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+          ? (
+            <>
+              <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })}
+                list={sec?.specOptions?.length ? `opts-${row.uid}` : undefined}
+                placeholder={sec?.specOptions?.length ? "pick or type a size" : `e.g. ${sec?.specHint || "spec"}`}
+                className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+              {sec?.specOptions?.length ? (
+                <datalist id={`opts-${row.uid}`}>
+                  {sec.specOptions.map((o) => <option key={o} value={o} />)}
+                </datalist>
+              ) : null}
+            </>
+          )
           : row.non_inventory
             ? <input value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder="non-stock item name (no inventory SKU — e.g. fish plate, cut part)" className="h-7 w-full rounded border border-violet-400/60 bg-violet-500/5 px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-violet-400" />
             : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
