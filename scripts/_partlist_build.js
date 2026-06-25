@@ -24,6 +24,8 @@ const C = (key, label, opts = {}) => ({ key, label, ...opts });
 
 // Common Nut-Bolt sizes (owner-defined) — offered as a spec pick-list on the 9 bolt types.
 const NB_SIZES = ["16x100", "16x60", "16x40", "12x120", "12x75", "12x50", "12x40", "12x30", "12x25", "12x20", "10x75", "10x40", "10x30", "10x20", "8x50", "8x35", "8x20", "6x50", "6x35", "6x20", "6x12"];
+// Common Screw sizes (owner-defined) — offered as a spec pick-list on the 4 screw types.
+const SCREW_SIZES = ["5x20", "6x25", "8x35", "6x15", "5x65", "6x13", "6x20", "5x12", "5x15", "5x50"];
 
 // ----- CURATED front, in assembly order. group = checklist group. -----
 const CURATED = [
@@ -308,6 +310,12 @@ const CURATED = [
   C("__new_nb_bolt_nut_sw_fw_small", "Bolt+Nut+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
   C("__new_nb_bolt_sw", "Bolt+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
   C("__new_nb_bolt_dnut_sw_fw_tw_sqw", "Bolt+D.Nut+S.W+F.W+T.W+Sq.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+
+  // Screws — 4 screw TYPES (free-text); size picked from the common SCREW_SIZES list.
+  C("__new_scr_chhd_nut_fw", "Screw Ch.Hd+Nut+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
+  C("__new_scr_csk_nut_sw_fw", "C.S.K Screw Nut+S.W+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
+  C("__new_scr_self_tap", "Self Tap Screw", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
+  C("__new_scr_wooden", "Wooden Screw", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
 ];
 
 // New lines that don't reuse an existing key get a fresh slug.
@@ -351,6 +359,10 @@ const NEW = {
   "__new_nb_bolt_nut_sw_fw_small": "p-nb-bolt-nut-sw-fw-small",
   "__new_nb_bolt_sw": "p-nb-bolt-sw",
   "__new_nb_bolt_dnut_sw_fw_tw_sqw": "p-nb-bolt-dnut-sw-fw-tw-sqw",
+  "__new_scr_chhd_nut_fw": "p-scr-chhd-nut-fw",
+  "__new_scr_csk_nut_sw_fw": "p-scr-csk-nut-sw-fw",
+  "__new_scr_self_tap": "p-scr-self-tap",
+  "__new_scr_wooden": "p-scr-wooden",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
@@ -399,9 +411,10 @@ for (const s of SRC) {
   if (usedKeys.has(s.key)) continue;
   const fam = famOf(s.label);
   const isTail = fam === "TAIL" || TAIL_FLAGS.includes(s.key);
-  // The old free-text Nut-Bolts combos are superseded by the 9 curated fastener
-  // TYPES (size now picked from NB_SIZES) → drop them. Screws + flags + parked stay.
-  if (isTail && !TAIL_FLAGS.includes(s.key) && s.captureType === "free" && !/screw/i.test(s.label)) { dropped.push(s); continue; }
+  // The old free-text fastener combos (Nut-Bolts + Screws) are superseded by the
+  // curated fastener TYPES (size picked from NB_SIZES / SCREW_SIZES) → drop them.
+  // Door flags + non-free parked items stay.
+  if (isTail && !TAIL_FLAGS.includes(s.key) && s.captureType === "free") { dropped.push(s); continue; }
   if (isTail) tail.push(s);
   else dropped.push(s);
 }
