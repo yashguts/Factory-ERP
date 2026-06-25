@@ -28,7 +28,7 @@ const CURATED = [
   C("p-guide-rail-main", "Guide Rail", { group: "Rails", cats: ["Large Purchased Items > Guide Rail"] }),
   C("p-fish-plate", "Fish Plate", { group: "Rails" }),
   C("p-rail-clip", "Rail Clip", { group: "Rails", merge: ["p-rail-clip-main", "p-rail-clip-counter"], cats: ["Hardware > Rail Clip"] }),
-  C("p-rail-fixing-kit", "Rail Fixing Kit", { group: "Rails", capture: "free" }),
+  C("p-rail-fixing-kit", "Rail Fixing Kit", { group: "Rails", capture: "free", specHint: "Bolt+Nut+SW+FW 12x40 or 8x35" }),
 
   // Rail brackets (from BOM) + their fasteners
   C("p-rail-bracket-main", "Main Bracket", { group: "Brackets", merge: ["p-rail-bracket-main-fabricated", "p-main-rail-bracket", "p-rail-bracket-main-combination", "p-rail-bracket-main-home", "p-main-rail-bracket-for-platfrom-support", "p-main-rail-bracket-b-50-100-mm", "p-combination-leg", "p-combination-lag-std", "p-combinition-bracket", "p-combinition-bracket-cutting-240mm", "p-rail-combination-channel", "p-rail-bracket-home"], cats: ["Rail Bracket > Rail Bracket Main", "Rail Bracket > Rail Bracket Combination Main", "Rail Bracket > Rail Bracket Combination Home"] }),

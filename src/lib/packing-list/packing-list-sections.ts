@@ -55,7 +55,7 @@ export const PACKING_SECTIONS: PackingSection[] = [
     label: "Rail Fixing Kit",
     captureType: "free",
     categoryPaths: [],
-    specHint: "",
+    specHint: "Bolt+Nut+SW+FW 12x40 or 8x35",
   },
   {
     key: "p-rail-bracket-main",
