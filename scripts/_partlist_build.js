@@ -39,6 +39,7 @@ const CURATED = [
   C("p-rail-bracket-main", "Main Bracket", { group: "Brackets", merge: ["p-rail-bracket-main-fabricated", "p-main-rail-bracket", "p-rail-bracket-main-combination", "p-rail-bracket-main-home", "p-main-rail-bracket-for-platfrom-support", "p-main-rail-bracket-b-50-100-mm", "p-combination-leg", "p-combination-lag-std", "p-combinition-bracket", "p-combinition-bracket-cutting-240mm", "p-rail-combination-channel", "p-rail-bracket-home"], cats: ["Rail Bracket > Rail Bracket Main", "Rail Bracket > Rail Bracket Combination Main", "Rail Bracket > Rail Bracket Combination Home"] }),
   C("p-rail-bracket-counter", "Counter Bracket", { group: "Brackets", merge: ["p-counter-rail-bracket", "p-rail-bracket-counter-home", "p-rail-bracket-counter-fabricated"], cats: ["Rail Bracket > Rail Bracket Counter"] }),
   C("p-fastner-rail-bracket", "Fastner (Rail Bracket)", { group: "Brackets", cats: ["Hardware > Stud Anchor"] }),
+  C("p-bolt-nut-d-fw-s-w-rail-bracket", "Bolt+Nut+FW+SW", { group: "Brackets", capture: "free", specHint: "12x50" }),
   C("__new_brick_fastener", "Brick Fastener", { group: "Brackets", cats: ["Hardware > Brick Dasfastner"] }),
 
   // Machine & governor
@@ -79,6 +80,8 @@ const CURATED = [
   // Header / sill adjustable bracket + fasteners (after Door System)
   C("p-header-bracket-mt", "Sill & Header Adjustable Bracket", { group: "Header & Sill", merge: ["p-header-bracket-co", "p-header-bracket-at"], cats: ["Adjustable Bracket > Sill & Header Adjustable Bracket"] }),
   C("p-fastner-for-header-bracket", "Fastner For Header Bracket", { group: "Header & Sill" }),
+  C("p-bolt-nut-s-w-f-w-for-header-fixing", "Bolt+Nut For Header Fixing", { group: "Header & Sill", capture: "free" }),
+  C("p-bolt-nut-s-w-f-wd-for-header-sill-bkt", "Bolt+Nut For Header+Sill Bkt", { group: "Header & Sill", capture: "free" }),
   C("p-fastner-for-sill-bracket", "Fastner For Sill Bracket", { group: "Header & Sill", cats: ["Small Manufactured Items > Sill Bracket"] }),
 
   // Sill (Door Sill + Sill Angle from BOM) + sill fasteners
@@ -87,12 +90,14 @@ const CURATED = [
   C("p-m-s-flat-25x6-for-sill-bracket-goods", "M.S Flat 25x6 For Sill Bracket (Goods)", { group: "Header & Sill", cats: ["Small Manufactured Items > Sill Bracket"], doors: ["COLLAPSIBLE"] }),
   C("p-c-s-k-screw-for-ss-sill", "C.S.K SS Screw", { group: "Header & Sill", capture: "free" }),
   C("p-screw-c-s-k-for-car-sill", "Screw C.S.K MS Car Sill", { group: "Header & Sill", capture: "free" }),
+  C("p-bolt-nut-s-w-f-wd-for-sill-fixing", "Bolt+Nut For Sill Fixing", { group: "Header & Sill", capture: "free" }),
 
   // Door System — door posts, panels & headers flow in FROM the BOM (one line per
   // BOM item) via these generic catch lines; no hardcoded door-type variants.
   C("__new_header_system", "Header System (Landing/Car)", { group: "Header & Sill", cats: ["Header Systems > Landing Header System", "Header Systems > Car Header System", "Header Systems > HEADER", "Header Systems > Manual Telescopic Landing Header System", "Header Systems > Manual Telescopic Car Header System"] }),
   C("__new_door_post", "Door Post", { group: "Doors", cats: ["Door Post/Frame"] }),
   C("__new_door_panel", "Door Panel (Landing/Car)", { group: "Doors", cats: ["Landing Door Pannel", "Car Door Pannel"] }),
+  C("p-bolt-nut-s-w-f-w-for-door-frame", "Bolt+Nut For Door Frame", { group: "Doors", capture: "free" }),
 
   // Doors kept (gated)
   C("p-gate-lock", "Gate Lock", { group: "Doors", cats: ["Small Purchased Items > Gate Lock Items"] }),
@@ -295,6 +300,17 @@ const CURATED = [
   C("__new_eco_glass_pc", "Glass (Poly Carbonet) 6mm", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("__new_eco_fasteners", "Eco Space Fasteners (Bolts/Screws/Rivets)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
 
+  // Nut-Bolts — 9 fastener TYPES (free-text); size picked from the common NB_SIZES list.
+  C("__new_nb_bolt_sw_fwd", "Bolt+S.W+F.WD", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw_dot", "Bolt+S.W.", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_nut_dfw_sw", "Bolt+Nut+D.FW.+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw_fw_small", "Bolt+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_nut_flat_washer", "Nut & Flat Washner", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_fw_sw_nut", "Bolt+F.W+S.W+Nut", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_nut_sw_fw_small", "Bolt+Nut+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_sw", "Bolt+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+  C("__new_nb_bolt_dnut_sw_fw_tw_sqw", "Bolt+D.Nut+S.W+F.W+T.W+Sq.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
+
   // Screws — 4 screw TYPES (free-text); size picked from the common SCREW_SIZES list.
   C("__new_scr_chhd_nut_fw", "Screw Ch.Hd+Nut+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
   C("__new_scr_csk_nut_sw_fw", "C.S.K Screw Nut+S.W+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
@@ -334,38 +350,20 @@ const NEW = {
   "__new_isolation_channel": "p-isolation-channel",
   "__new_hydraulic_cylinder": "p-hydraulic-cylinder",
   "__new_brick_fastener": "p-brick-fastener",
+  "__new_nb_bolt_sw_fwd": "p-nb-bolt-sw-fwd",
+  "__new_nb_bolt_sw_dot": "p-nb-bolt-sw-dot",
+  "__new_nb_bolt_nut_dfw_sw": "p-nb-bolt-nut-dfw-sw",
+  "__new_nb_bolt_sw_fw_small": "p-nb-bolt-sw-fw-small",
+  "__new_nb_nut_flat_washer": "p-nb-nut-flat-washer",
+  "__new_nb_bolt_fw_sw_nut": "p-nb-bolt-fw-sw-nut",
+  "__new_nb_bolt_nut_sw_fw_small": "p-nb-bolt-nut-sw-fw-small",
+  "__new_nb_bolt_sw": "p-nb-bolt-sw",
+  "__new_nb_bolt_dnut_sw_fw_tw_sqw": "p-nb-bolt-dnut-sw-fw-tw-sqw",
   "__new_scr_chhd_nut_fw": "p-scr-chhd-nut-fw",
   "__new_scr_csk_nut_sw_fw": "p-scr-csk-nut-sw-fw",
   "__new_scr_self_tap": "p-scr-self-tap",
   "__new_scr_wooden": "p-scr-wooden",
 };
-
-// Nut-Bolts are required in each assembly group (Rope / Oil / Misc Fitted excluded):
-// replicate the 9 fastener TYPES (with the NB_SIZES pick-list) into every target group
-// as a per-group fastener sub-block that renders at the end of that group.
-const NB_TYPES = [
-  ["bolt-sw-fwd", "Bolt+S.W+F.WD"],
-  ["bolt-sw-dot", "Bolt+S.W."],
-  ["bolt-nut-dfw-sw", "Bolt+Nut+D.FW.+S.W"],
-  ["bolt-sw-fw-small", "Bolt+S.W+F.W (Small O/D)"],
-  ["nut-flat-washer", "Nut & Flat Washner"],
-  ["bolt-fw-sw-nut", "Bolt+F.W+S.W+Nut"],
-  ["bolt-nut-sw-fw-small", "Bolt+Nut+S.W+F.W (Small O/D)"],
-  ["bolt-sw", "Bolt+S.W"],
-  ["bolt-dnut-sw-fw-tw-sqw", "Bolt+D.Nut+S.W+F.W+T.W+Sq.W"],
-];
-const NB_TARGET_GROUPS = [
-  ["rails", "Rails"], ["brackets", "Brackets"], ["machine", "Machine"], ["pulley", "Pulley"],
-  ["header-sill", "Header & Sill"], ["doors", "Doors"], ["safety", "Safety"], ["counter", "Counter"],
-  ["limit-cam", "Limit & Cam"], ["cabin", "Cabin Items"],
-];
-for (const [gslug, gname] of NB_TARGET_GROUPS) {
-  for (const [tslug, tlabel] of NB_TYPES) {
-    const nk = `__new_nb_${gslug}_${tslug}`;
-    NEW[nk] = `p-nb-${gslug}-${tslug}`;
-    CURATED.push(C(nk, tlabel, { group: gname, capture: "free", specOptions: NB_SIZES }));
-  }
-}
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
 const TAIL_FLAGS = ["p-gate-lock-keeper", "p-car-gate-arm", "p-imperforated-gate", "p-gate-fixing-kit"];
