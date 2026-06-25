@@ -54,6 +54,7 @@ const GROUP_COLOR: Record<string, string> = {
   Counter: "#a855f7",
   "Limit & Cam": "#f43f5e",
   "Misc Fitted": "#0ea5e9",
+  "Hoistway Items": "#b45309",
   "Cabin Items": "#10b981",
   OTHER: "#64748b",
 };

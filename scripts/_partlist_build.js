@@ -429,6 +429,47 @@ for (const s of tail) {
       : "Other (parked)";
 }
 
+// Owner reorg: move particulars out of "Misc Fitted" into their proper groups and
+// introduce the new "Hoistway Items" group (shaft / hoistway fittings). Pure group
+// reassignment — keys/positions unchanged.
+const REGROUP = {
+  // Hoistway Items (NEW)
+  "p-pvc-cable-hanger": "Hoistway Items",
+  "p-cable-hangern-bkt": "Hoistway Items",
+  "p-cable-hanger-fixing-kit": "Hoistway Items",
+  "p-pit-ladder": "Hoistway Items",
+  "p-pit-ladder-handle": "Hoistway Items",
+  "p-pvc-excution": "Hoistway Items",
+  "p-alluminium-rivet": "Hoistway Items",
+  "p-scaffolding-pipe": "Hoistway Items",
+  "p-joint-pipe": "Hoistway Items",
+  "p-pit-switch-box": "Hoistway Items",
+  // Cabin Items
+  "p-fan-grill": "Cabin Items",
+  "p-fan-grill-guard": "Cabin Items",
+  "p-addisive-tape": "Cabin Items",
+  "p-islution-rubber-pad": "Cabin Items",
+  // Machine
+  "p-controller-bracket": "Machine",
+  "p-m-s-plate-3mm": "Machine",
+  "p-ms-flat-40x6": "Machine",
+  "p-m-s-packing-for-rubber-pad": "Machine",
+  "p-m-s-packing": "Machine",
+  // Safety
+  "p-firemans-switch-box-red": "Safety",
+  "p-gomet-20mm": "Safety",
+  // Doors
+  "p-m-s-bush": "Doors",
+  "p-keeper-packing-4mm-1mm": "Doors",
+  "p-keeper-angle": "Doors",
+  // Rope
+  "p-cotton-tape": "Rope",
+};
+for (const [k, grp] of Object.entries(REGROUP)) {
+  if (groups[k] === undefined) warn.push("REGROUP key not found: " + k);
+  else groups[k] = grp;
+}
+
 // ---- emit ----
 const esc = (v) => JSON.stringify(v);
 const lines = out.map((s) => {

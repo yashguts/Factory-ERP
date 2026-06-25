@@ -12,8 +12,6 @@
  *     (gating). pinnedItem: the exact inventory item name for a 'fixed' line.
  */
 
-import { HARDWARE_SECTIONS } from "./hardware";
-
 export type CaptureType = "item" | "free" | "fixed";
 
 export interface PackingSection {
@@ -32,7 +30,7 @@ export interface PackingSection {
   specOptions?: string[];
 }
 
-const BASE_PACKING_SECTIONS: PackingSection[] = [
+export const PACKING_SECTIONS: PackingSection[] = [
   {
     key: "p-guide-rail-main",
     label: "Guide Rail",
@@ -1596,6 +1594,110 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     drives: ["R1000"],
   },
   {
+    key: "p-nb-bolt-sw-fwd",
+    label: "Bolt+S.W+F.WD",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-sw-dot",
+    label: "Bolt+S.W.",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-nut-dfw-sw",
+    label: "Bolt+Nut+D.FW.+S.W",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-sw-fw-small",
+    label: "Bolt+S.W+F.W (Small O/D)",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-nut-flat-washer",
+    label: "Nut & Flat Washner",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-fw-sw-nut",
+    label: "Bolt+F.W+S.W+Nut",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-nut-sw-fw-small",
+    label: "Bolt+Nut+S.W+F.W (Small O/D)",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-sw",
+    label: "Bolt+S.W",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-nb-bolt-dnut-sw-fw-tw-sqw",
+    label: "Bolt+D.Nut+S.W+F.W+T.W+Sq.W",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["16x100","16x60","16x40","12x120","12x75","12x50","12x40","12x30","12x25","12x20","10x75","10x40","10x30","10x20","8x50","8x35","8x20","6x50","6x35","6x20","6x12"],
+  },
+  {
+    key: "p-scr-chhd-nut-fw",
+    label: "Screw Ch.Hd+Nut+F.W",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["5x20","6x25","8x35","6x15","5x65","6x13","6x20","5x12","5x15","5x50"],
+  },
+  {
+    key: "p-scr-csk-nut-sw-fw",
+    label: "C.S.K Screw Nut+S.W+F.W",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["5x20","6x25","8x35","6x15","5x65","6x13","6x20","5x12","5x15","5x50"],
+  },
+  {
+    key: "p-scr-self-tap",
+    label: "Self Tap Screw",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["5x20","6x25","8x35","6x15","5x65","6x13","6x20","5x12","5x15","5x50"],
+  },
+  {
+    key: "p-scr-wooden",
+    label: "Wooden Screw",
+    captureType: "free",
+    categoryPaths: [],
+    specHint: "",
+    specOptions: ["5x20","6x25","8x35","6x15","5x65","6x13","6x20","5x12","5x15","5x50"],
+  },
+  {
     key: "p-car-gate-arm",
     label: "Car Gate Arm",
     captureType: "item",
@@ -1624,11 +1726,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     specHint: "\"B\" Type",
   },
 ];
-
-// Hardware (nut-bolts / screws) is no longer its own two categories — it's a manual
-// "+ Add Hardware" picker inside every other category. Append one "Hardware" section
-// per eligible category so packingSection()/save/the completion-gate all know them.
-export const PACKING_SECTIONS: PackingSection[] = [...BASE_PACKING_SECTIONS, ...HARDWARE_SECTIONS];
 
 const SECTION_BY_KEY = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));
 export function packingSection(key: string): PackingSection | undefined {
