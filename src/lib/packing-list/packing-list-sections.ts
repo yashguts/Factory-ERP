@@ -1463,6 +1463,14 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "",
   },
   {
+    key: "p-swing-door-panel",
+    label: "Swing Door",
+    captureType: "item",
+    categoryPaths: ["Swing Door"],
+    specHint: "",
+    doors: ["SWING"],
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
