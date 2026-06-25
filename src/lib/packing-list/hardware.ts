@@ -46,7 +46,8 @@ export function hardwareSpecOptions(label: string | null): string[] {
  *  Order mirrors the category order on the page. */
 export const HARDWARE_GROUPS = [
   "Rails", "Brackets", "Machine", "Rope", "Pulley", "Oil",
-  "Header & Sill", "Doors", "Safety", "Counter", "Limit & Cam", "Cabin Items",
+  "Header & Sill", "Doors", "Safety", "Counter", "Limit & Cam",
+  "Hoistway Items", "Cabin Items",
 ];
 
 const slug = (g: string): string => g.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
