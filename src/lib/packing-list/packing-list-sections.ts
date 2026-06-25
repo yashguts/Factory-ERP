@@ -31,17 +31,10 @@ export interface PackingSection {
 export const PACKING_SECTIONS: PackingSection[] = [
   {
     key: "p-guide-rail-main",
-    label: "Guide Rail (Main)",
+    label: "Guide Rail",
     captureType: "item",
     categoryPaths: ["Large Purchased Items > Guide Rail"],
     specHint: "9X65X70",
-  },
-  {
-    key: "p-guide-rail-counter",
-    label: "Guide Rail (Counter)",
-    captureType: "item",
-    categoryPaths: ["Large Purchased Items > Guide Rail"],
-    specHint: "5X45X45",
   },
   {
     key: "p-fish-plate",
@@ -56,13 +49,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Hardware > Rail Clip"],
     specHint: "Big",
-  },
-  {
-    key: "p-rail-fixing-bracket-structure",
-    label: "Rail Fixing Bracket (Structure)",
-    captureType: "item",
-    categoryPaths: [],
-    specHint: "",
   },
   {
     key: "p-rail-fixing-kit",
@@ -1484,13 +1470,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     categoryPaths: ["Hydraulic Items > Hydraulic Cylinder GMV"],
     specHint: "",
     drives: ["HYD"],
-  },
-  {
-    key: "p-rail-clip-combination",
-    label: "Rail Clip Combination",
-    captureType: "item",
-    categoryPaths: ["Rail Bracket > Rail Clip Combination"],
-    specHint: "",
   },
   {
     key: "p-eco-space-structure-kit",

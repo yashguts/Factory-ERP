@@ -25,11 +25,9 @@ const C = (key, label, opts = {}) => ({ key, label, ...opts });
 // ----- CURATED front, in assembly order. group = checklist group. -----
 const CURATED = [
   // Rails & fish plate
-  C("p-guide-rail-main", "Guide Rail (Main)", { group: "Rails", cats: ["Large Purchased Items > Guide Rail"] }),
-  C("p-guide-rail-counter", "Guide Rail (Counter)", { group: "Rails", cats: ["Large Purchased Items > Guide Rail"] }),
+  C("p-guide-rail-main", "Guide Rail", { group: "Rails", cats: ["Large Purchased Items > Guide Rail"] }),
   C("p-fish-plate", "Fish Plate", { group: "Rails" }),
   C("p-rail-clip", "Rail Clip", { group: "Rails", merge: ["p-rail-clip-main", "p-rail-clip-counter"], cats: ["Hardware > Rail Clip"] }),
-  C("p-rail-fixing-bracket-structure", "Rail Fixing Bracket (Structure)", { group: "Rails" }),
   C("p-rail-fixing-kit", "Rail Fixing Kit", { group: "Rails", capture: "free" }),
 
   // Rail brackets (from BOM) + their fasteners
@@ -279,7 +277,6 @@ const CURATED = [
   // inventory-audit gap fixes: finished-part categories with no part-list home
   C("__new_isolation_channel", "Isolation Channel", { group: "Machine", cats: ["Small Manufactured Items > Isolation Channel"] }),
   C("__new_hydraulic_cylinder", "Hydraulic Cylinder", { group: "Machine", cats: ["Hydraulic Items > Hydraulic Cylinder GMV"], drives: ["HYD"] }),
-  C("__new_rail_clip_combination", "Rail Clip Combination", { group: "Rails", cats: ["Rail Bracket > Rail Clip Combination"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
@@ -330,7 +327,6 @@ const NEW = {
   "__new_swing_door": "p-swing-door-panel",
   "__new_isolation_channel": "p-isolation-channel",
   "__new_hydraulic_cylinder": "p-hydraulic-cylinder",
-  "__new_rail_clip_combination": "p-rail-clip-combination",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
