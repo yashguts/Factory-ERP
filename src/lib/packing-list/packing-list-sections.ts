@@ -1449,6 +1449,13 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "",
   },
   {
+    key: "p-pit-switch-box",
+    label: "Pit Switch Box",
+    captureType: "item",
+    categoryPaths: ["Miscallaneous > Pit Switch Box"],
+    specHint: "(With 2pin Jack)",
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",
