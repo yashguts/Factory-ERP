@@ -1456,6 +1456,13 @@ export const PACKING_SECTIONS: PackingSection[] = [
     specHint: "(With 2pin Jack)",
   },
   {
+    key: "p-linton-panel",
+    label: "Linton Panel",
+    captureType: "item",
+    categoryPaths: ["Linton Pannel"],
+    specHint: "",
+  },
+  {
     key: "p-eco-space-structure-kit",
     label: "Eco Space Structure Kit",
     captureType: "free",

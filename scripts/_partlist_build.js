@@ -271,6 +271,9 @@ const CURATED = [
   C("p-joint-pipe", "Joint Pipe", { group: "Misc Fitted" }),
   // gap fix: re-map Pit Switch Box (item FG-BF-084, ~133 BOM lines) to its category
   C("p-pit-switch-box", "Pit Switch Box", { group: "Misc Fitted", cats: ["Miscallaneous > Pit Switch Box"] }),
+  // gap fix: Linton Panel — scope the parent "Linton Pannel" category (covers Auto Door /
+  // Manual Telescopic / ACO sub-types = ~80 BOM lines that were falling to Unsorted)
+  C("__new_linton_panel", "Linton Panel", { group: "Doors", cats: ["Linton Pannel"] }),
 
   // Eco Space Structure Kit — R1000-only, fillable (items to be created in DB later).
   C("p-eco-space-structure-kit", "Eco Space Structure Kit", { group: "Cabin Items", capture: "free", drives: ["R1000"], specHint: "Colour: Graphite" }),
@@ -317,6 +320,7 @@ const NEW = {
   "__new_eco_magnet_bkt": "p-eco-magnet-bkt",
   "__new_eco_glass_pc": "p-eco-glass-pc",
   "__new_eco_fasteners": "p-eco-fasteners",
+  "__new_linton_panel": "p-linton-panel",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
