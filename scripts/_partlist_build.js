@@ -300,22 +300,10 @@ const CURATED = [
   C("__new_eco_glass_pc", "Glass (Poly Carbonet) 6mm", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
   C("__new_eco_fasteners", "Eco Space Fasteners (Bolts/Screws/Rivets)", { group: "Cabin Items", capture: "free", drives: ["R1000"] }),
 
-  // Nut-Bolts — 9 fastener TYPES (free-text); size picked from the common NB_SIZES list.
-  C("__new_nb_bolt_sw_fwd", "Bolt+S.W+F.WD", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_sw_dot", "Bolt+S.W.", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_nut_dfw_sw", "Bolt+Nut+D.FW.+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_sw_fw_small", "Bolt+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_nut_flat_washer", "Nut & Flat Washner", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_fw_sw_nut", "Bolt+F.W+S.W+Nut", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_nut_sw_fw_small", "Bolt+Nut+S.W+F.W (Small O/D)", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_sw", "Bolt+S.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-  C("__new_nb_bolt_dnut_sw_fw_tw_sqw", "Bolt+D.Nut+S.W+F.W+T.W+Sq.W", { group: "Nut-Bolts", capture: "free", specOptions: NB_SIZES }),
-
-  // Screws — 4 screw TYPES (free-text); size picked from the common SCREW_SIZES list.
-  C("__new_scr_chhd_nut_fw", "Screw Ch.Hd+Nut+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
-  C("__new_scr_csk_nut_sw_fw", "C.S.K Screw Nut+S.W+F.W", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
-  C("__new_scr_self_tap", "Self Tap Screw", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
-  C("__new_scr_wooden", "Wooden Screw", { group: "Screws", capture: "free", specOptions: SCREW_SIZES }),
+  // Fasteners (nut-bolts / screws) are NO LONGER sections/categories here. The 13
+  // fastener types are the manual "+ Add Hardware" picker defined in
+  // src/lib/packing-list/hardware.ts (HARDWARE_ITEMS + per-category HARDWARE_SECTIONS).
+  // Do not re-add them here, or the Nut-Bolts/Screws categories come back.
 ];
 
 // New lines that don't reuse an existing key get a fresh slug.
@@ -491,6 +479,8 @@ const ts = `/**
  *     (gating). pinnedItem: the exact inventory item name for a 'fixed' line.
  */
 
+import { HARDWARE_SECTIONS } from "./hardware";
+
 export type CaptureType = "item" | "free" | "fixed";
 
 export interface PackingSection {
@@ -509,9 +499,14 @@ export interface PackingSection {
   specOptions?: string[];
 }
 
-export const PACKING_SECTIONS: PackingSection[] = [
+const BASE_PACKING_SECTIONS: PackingSection[] = [
 ${lines}
 ];
+
+// Hardware (nut-bolts / screws) is a per-category "+ Add Hardware" picker, not its
+// own categories — append one "Hardware" section per eligible category so
+// packingSection()/save/the completion-gate all know them.
+export const PACKING_SECTIONS: PackingSection[] = [...BASE_PACKING_SECTIONS, ...HARDWARE_SECTIONS];
 
 const SECTION_BY_KEY = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));
 export function packingSection(key: string): PackingSection | undefined {
