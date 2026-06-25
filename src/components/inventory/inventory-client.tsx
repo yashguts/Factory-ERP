@@ -287,6 +287,16 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
     return parent ? parent.subCategories : [];
   }, [categoryFilter, filteredCategoryTree]);
 
+  // The Sub-category dropdown is always shown (for discoverability) but disabled
+  // until a category with children is selected. The placeholder explains why.
+  const subCatDisabled = categoryFilter === "all" || subCategoryOptions.length === 0;
+  const subCatPlaceholder =
+    categoryFilter === "all"
+      ? "Sub-category — pick a category"
+      : subCategoryOptions.length === 0
+        ? "No sub-categories"
+        : "All Sub-categories";
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
 
   const handleSort = (key: SortKey) => {
@@ -534,19 +544,25 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
           ))}
         </Select>
 
-        {subCategoryOptions.length > 0 && (
-          <Select
-            size="sm"
-            value={subCategoryFilter}
-            onChange={(e) => { setSubCategoryFilter(e.target.value); resetPage(); }}
-            className="w-[220px]"
-          >
-            <option value="all">All Sub-categories</option>
-            {subCategoryOptions.map((cat) => (
-              <option key={cat.id} value={cat.id}>{cat.name}</option>
-            ))}
-          </Select>
-        )}
+        <Select
+          size="sm"
+          value={subCategoryFilter}
+          onChange={(e) => { setSubCategoryFilter(e.target.value); resetPage(); }}
+          className="w-[220px]"
+          disabled={subCatDisabled}
+          title={
+            categoryFilter === "all"
+              ? "Select a category first to filter by sub-category"
+              : subCategoryOptions.length === 0
+                ? "This category has no sub-categories"
+                : "Filter by sub-category"
+          }
+        >
+          <option value="all">{subCatPlaceholder}</option>
+          {subCategoryOptions.map((cat) => (
+            <option key={cat.id} value={cat.id}>{cat.name}</option>
+          ))}
+        </Select>
 
         <Select
           size="sm"
