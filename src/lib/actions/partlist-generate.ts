@@ -332,12 +332,30 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
     });
   }
 
-  lines.sort((a, b) => (TEMPLATE_ORDER.get(a.sectionKey) ?? 9999) - (TEMPLATE_ORDER.get(b.sectionKey) ?? 9999));
+  // De-dupe: drop a predicted/pinned line that re-adds an item already present from the
+  // LIFT BOM or the CABIN job. Happens when two particulars share one ERP category
+  // (Guide Rail Main/Counter, Buffer Channel Main/Counter, …): the BOM item lands in the
+  // first section and the rule re-resolves the SAME item under the sibling. BOM + Cabin
+  // lines are truth and are NEVER dropped — only the redundant predicted/pinned copy.
+  const authoritativeItemIds = new Set(
+    lines
+      .filter((l) => l.item_id && (l.bom_line_id != null || l.source === "Cabin Job"))
+      .map((l) => l.item_id as string),
+  );
+  const deduped = lines.filter((l) => {
+    const isAuthoritative = l.bom_line_id != null || l.source === "Cabin Job";
+    if (isAuthoritative) return true; // keep all BOM + Cabin lines
+    return !(l.item_id != null && authoritativeItemIds.has(l.item_id)); // drop predicted dup
+  });
+  const removedDup = lines.length - deduped.length;
+  if (removedDup > 0) warnings.push(`Removed ${removedDup} duplicate predicted line(s) already covered by the BOM.`);
+
+  deduped.sort((a, b) => (TEMPLATE_ORDER.get(a.sectionKey) ?? 9999) - (TEMPLATE_ORDER.get(b.sectionKey) ?? 9999));
 
   if (!brain.matchedDoor && target.doorType) warnings.push("No rule template for this door type yet — showing core particulars only; the BOM fills the door-specific parts.");
 
   return {
-    lines,
+    lines: deduped,
     coverage: { total: bomTotal, covered: bomTotal - unmapped.length, unmapped },
     drawingRead,
     doorType: target.doorType ?? null,

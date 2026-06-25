@@ -30,13 +30,13 @@ export async function downloadPartlistPdf(
 
   doc.setFont("helvetica", "bold");
   doc.setFontSize(15);
-  doc.text(`Part List — ${meta.jobNumber}`, margin, 16);
+  doc.text(`Part List - ${meta.jobNumber}`, margin, 16);
 
   doc.setFont("helvetica", "normal");
   doc.setFontSize(9);
   const sub = [meta.customerName, `Status: ${meta.status}`, new Date().toLocaleDateString()]
     .filter(Boolean)
-    .join("   ·   ");
+    .join("   |   ");
   doc.text(sub, margin, 22);
 
   // Group the flat rows in encounter order (already in GROUP_ORDER from the caller).
