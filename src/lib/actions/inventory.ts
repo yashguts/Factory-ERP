@@ -507,6 +507,41 @@ async function attachItemPrograms(rows: InventoryRow[]): Promise<void> {
   }
 }
 
+/** Resolve a query's category filter to a concrete id set: a chosen
+ *  sub-category is exact; a chosen parent expands to all its descendants
+ *  (matches the old UI). Returns null for "all". */
+async function resolveCategoryFilter(q: InventoryQuery): Promise<string[] | null> {
+  if (q.sub && q.sub !== "all") return [q.sub];
+  if (q.category && q.category !== "all") {
+    return expandCategoryDescendants([q.category]);
+  }
+  return null;
+}
+
+/** Map one raw search_inventory row to an InventoryRow (programs filled in
+ *  separately by attachItemPrograms; [] here). */
+function mapInventoryRow(r: Record<string, unknown>): InventoryRow {
+  return {
+    id: r.id as string,
+    code: r.code as string,
+    name: r.name as string,
+    description: (r.description as string | null) ?? null,
+    item_type: r.item_type as ItemType,
+    category_id: (r.category_id as string | null) ?? null,
+    category_name: (r.category_name as string | null) ?? null,
+    uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
+    total_stock: Number(r.total_stock ?? 0),
+    reorder_point: Number(r.reorder_point ?? 0),
+    cost_price: Number(r.cost_price ?? 0),
+    stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
+    effective_procurement_type:
+      (r.effective_procurement_type as "make" | "trade" | null) ?? null,
+    demand_source: (r.demand_source as DemandSource) ?? "none",
+    demand_overridden: Boolean(r.demand_overridden),
+    programs: [],
+  };
+}
+
 /**
  * One page of inventory rows + the full filtered count. Not cached: it's a
  * single fast RPC and we want it live (fresh for every user, no cross-instance
@@ -518,14 +553,7 @@ export async function getInventoryPage(
   const pageSize = q.pageSize ?? 50;
   const page = Math.max(1, q.page ?? 1);
 
-  // Resolve the category filter to a concrete id set: a chosen sub-category is
-  // exact; a chosen parent expands to all its descendants (matches the old UI).
-  let categoryIds: string[] | null = null;
-  if (q.sub && q.sub !== "all") categoryIds = [q.sub];
-  else if (q.category && q.category !== "all") {
-    categoryIds = await expandCategoryDescendants([q.category]);
-  }
-
+  const categoryIds = await resolveCategoryFilter(q);
   const boundCategoryIds = await getJobBoundCategoryIds();
 
   const supabase = createCacheClient();
@@ -548,27 +576,59 @@ export async function getInventoryPage(
 
   const rows = (data ?? []) as Record<string, unknown>[];
   const total = rows.length > 0 ? Number(rows[0].total_count) : 0;
-  const mapped: InventoryRow[] = rows.map((r) => ({
-    id: r.id as string,
-    code: r.code as string,
-    name: r.name as string,
-    description: (r.description as string | null) ?? null,
-    item_type: r.item_type as ItemType,
-    category_id: (r.category_id as string | null) ?? null,
-    category_name: (r.category_name as string | null) ?? null,
-    uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
-    total_stock: Number(r.total_stock ?? 0),
-    reorder_point: Number(r.reorder_point ?? 0),
-    cost_price: Number(r.cost_price ?? 0),
-    stock_behaviour: (r.stock_behaviour as StockBehaviour) ?? "stocked",
-    effective_procurement_type:
-      (r.effective_procurement_type as "make" | "trade" | null) ?? null,
-    demand_source: (r.demand_source as DemandSource) ?? "none",
-    demand_overridden: Boolean(r.demand_overridden),
-    programs: [],
-  }));
+  const mapped = rows.map(mapInventoryRow);
   await attachItemPrograms(mapped);
   return { total, rows: mapped };
+}
+
+/** Hard cap on a single export, so a runaway filter can't pull the whole DB
+ *  into the browser. Comfortably above the full catalog (~2.6k rows). */
+const EXPORT_MAX_ROWS = 20000;
+
+/**
+ * Every inventory row matching a query, ignoring pagination — backs the
+ * Excel / PDF export on the list. Same filters + sort as getInventoryPage, so
+ * the export order matches what the user sees, but it returns the FULL filtered
+ * set. Paged through the RPC in 1000-row batches so a PostgREST row cap can't
+ * silently truncate a large export. The per-item Programs column is omitted
+ * (it isn't in the export, and a `.in()` over thousands of ids would be heavy).
+ */
+export async function getInventoryForExport(
+  q: InventoryQuery,
+): Promise<InventoryRow[]> {
+  const categoryIds = await resolveCategoryFilter(q);
+  const boundCategoryIds = await getJobBoundCategoryIds();
+  const supabase = createCacheClient();
+
+  const BATCH = 1000;
+  const out: InventoryRow[] = [];
+  let offset = 0;
+  let total = Infinity;
+  while (offset < total && out.length < EXPORT_MAX_ROWS) {
+    const { data, error } = await supabase.rpc("search_inventory", {
+      p_search: q.search?.trim() ? q.search.trim() : null,
+      p_type: q.type && q.type !== "all" ? q.type : null,
+      p_category_ids: categoryIds,
+      p_stock: q.stock && q.stock !== "all" ? q.stock : null,
+      p_behaviour: q.behaviour && q.behaviour !== "all" ? q.behaviour : null,
+      p_sort: q.sort ?? "code",
+      p_dir: q.dir ?? "asc",
+      p_limit: BATCH,
+      p_offset: offset,
+      p_procurement:
+        q.procurement && q.procurement !== "all" ? q.procurement : null,
+      p_demand: q.demand && q.demand !== "all" ? q.demand : null,
+      p_bound_category_ids:
+        boundCategoryIds.length > 0 ? boundCategoryIds : null,
+    });
+    if (error) throw error;
+    const rows = (data ?? []) as Record<string, unknown>[];
+    if (rows.length === 0) break;
+    total = Number(rows[0].total_count);
+    for (const r of rows) out.push(mapInventoryRow(r));
+    offset += rows.length;
+  }
+  return out;
 }
 
 /**

@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History } from "lucide-react";
+import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History, FileText, FileSpreadsheet, Loader2 } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
@@ -28,14 +28,19 @@ import { ProgramsPopover } from "@/components/inventory/programs-popover";
 import { StockLedgerPopover } from "@/components/inventory/stock-ledger-popover";
 import {
   getInventoryPage,
+  getInventoryForExport,
   getItemForEdit,
   suggestNextCode,
   setItemDemandOverride,
+  type InventoryQuery,
   type InventoryRow,
   type InventoryTabCounts,
   type ItemWithStock,
   type TypeCatFacet,
 } from "@/lib/actions/inventory";
+import { exportRowsToXlsx } from "@/lib/export/xlsx";
+import { downloadInventoryPdf } from "@/lib/export/inventory-pdf";
+import { INVENTORY_EXPORT_COLUMNS } from "@/lib/export/inventory-export";
 import type { ItemType, ItemCategory, UnitOfMeasurement, Warehouse, DemandOverride } from "@/lib/supabase/types";
 import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
 import { useToast } from "@/components/ui/toast";
@@ -145,6 +150,8 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
 
   // Inline Demand Flow Type editor: which row's menu is open.
   const [demandMenuFor, setDemandMenuFor] = useState<string | null>(null);
+  // Which export is in flight (it fetches the full filtered set, not just the page).
+  const [exporting, setExporting] = useState<null | "pdf" | "excel">(null);
   const toast = useToast();
 
   const resetPage = () => setPage(1);
@@ -339,6 +346,73 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
     });
   };
 
+  // ----- Export (Excel / PDF) ------------------------------------------------
+  // Query for the CURRENT filters with no pagination — the export covers the
+  // whole filtered set, in the on-screen sort order (not just the visible page).
+  const exportQuery = (): InventoryQuery => ({
+    search: debouncedSearch,
+    type: typeFilter,
+    category: categoryFilter,
+    sub: subCategoryFilter,
+    stock: stockFilter,
+    behaviour: behaviourFilter,
+    procurement: mtTab,
+    demand: demandFilter,
+    sort: sortKey,
+    dir: sortDir,
+  });
+
+  const exportScope = mtTab === "make" ? "Make" : mtTab === "trade" ? "Trade" : "All";
+
+  // One-line summary of the active filters, printed in the PDF header.
+  const filtersSummary = (): string => {
+    const parts: string[] = [];
+    if (debouncedSearch.trim()) parts.push(`Search: "${debouncedSearch.trim()}"`);
+    if (typeFilter !== "all") parts.push(`Type: ${TYPE_LABELS[typeFilter]}`);
+    if (categoryFilter !== "all") {
+      const cat = categories.find((c) => c.id === categoryFilter);
+      if (cat) parts.push(`Category: ${cat.name}`);
+    }
+    if (subCategoryFilter !== "all") {
+      const sub = categories.find((c) => c.id === subCategoryFilter);
+      if (sub) parts.push(sub.name);
+    }
+    if (stockFilter !== "all") {
+      parts.push({ low: "Low Stock", zero: "Zero Stock", in_stock: "In Stock" }[stockFilter]);
+    }
+    if (behaviourFilter !== "all") {
+      parts.push({ stocked: "Stocked", phantom: "Loose (phantom)", tooling: "Tooling" }[behaviourFilter]);
+    }
+    if (demandFilter !== "all") {
+      parts.push(`Demand: ${{ jobs: "Jobs", formula: "Formula", none: "No link" }[demandFilter]}`);
+    }
+    return parts.join(" · ");
+  };
+
+  const handleExport = async (fmt: "pdf" | "excel") => {
+    if (exporting) return;
+    setExporting(fmt);
+    try {
+      const all = await getInventoryForExport(exportQuery());
+      if (all.length === 0) {
+        toast.error("Nothing to export for the current filters.");
+        return;
+      }
+      const stamp = new Date().toISOString().slice(0, 10);
+      const filename = `Inventory_${exportScope}_${stamp}`;
+      if (fmt === "excel") {
+        exportRowsToXlsx({ rows: all, columns: INVENTORY_EXPORT_COLUMNS, filename, sheetName: "Inventory" });
+      } else {
+        await downloadInventoryPdf(all, { scope: exportScope, filtersSummary: filtersSummary(), filename });
+      }
+      toast.success(`Exported ${all.length.toLocaleString()} items to ${fmt === "excel" ? "Excel" : "PDF"}`);
+    } catch (e) {
+      toast.error(e instanceof Error ? e.message : "Export failed.");
+    } finally {
+      setExporting(null);
+    }
+  };
+
   const SortHeader = ({ label, sortField }: { label: string; sortField: SortKey }) => (
     <TableHead
       className="cursor-pointer select-none hover:bg-[var(--muted)] transition-colors"
@@ -363,6 +437,34 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
         meta={`${total.toLocaleString()} items${isPending ? " — loading..." : ""}`}
         actions={
           <>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleExport("pdf")}
+              disabled={!!exporting || total === 0}
+              title="Download the current filtered list as PDF"
+            >
+              {exporting === "pdf" ? (
+                <Loader2 size={16} className="mr-2 animate-spin" />
+              ) : (
+                <FileText size={16} className="mr-2" />
+              )}
+              PDF
+            </Button>
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => handleExport("excel")}
+              disabled={!!exporting || total === 0}
+              title="Download the current filtered list as Excel"
+            >
+              {exporting === "excel" ? (
+                <Loader2 size={16} className="mr-2 animate-spin" />
+              ) : (
+                <FileSpreadsheet size={16} className="mr-2" />
+              )}
+              Excel
+            </Button>
             <Link href="/inventory/changes">
               <Button variant="secondary" size="sm" title="See what changed on a given day">
                 <History size={16} className="mr-2" />
