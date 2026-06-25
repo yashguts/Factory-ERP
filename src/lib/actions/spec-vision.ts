@@ -44,6 +44,11 @@ export interface ExtractedSpec {
   counter_rail_to_wall_mm: number | null;
   /** Rail-bracket vertical pitch (mm) — with travel gives the bracket level count. */
   bracket_spacing_mm: number | null;
+  /** Distance Between Guides (mm). dbg_main = CAR guide rails (sizes the Safety frame);
+   *  dbg_counter = COUNTERWEIGHT guide rails (sizes Counter Frame / Guard Net / Machine
+   *  Beam / Buffer Channels). The SKU names bake these in ("... DBG-1442"). */
+  dbg_main_mm: number | null;
+  dbg_counter_mm: number | null;
   notes: string;
 }
 /** The FULL read — everything we can pull off the drawing, for the deep corpus. */
@@ -72,6 +77,8 @@ export interface RichDrawing {
     car_rail_to_wall_mm: SpecField<string>; // car guide rail -> wall gap (sets the standard bracket projection class)
     counter_rail_to_wall_mm: SpecField<string>; // counterweight guide rail -> wall gap (sets the combination bracket projection)
     bracket_spacing_mm: SpecField<string>; // vertical rail-bracket pitch ("BRACKET SPACE") -> bracket level count
+    dbg_main_mm: SpecField<string>; // CAR distance-between-guides -> Safety frame size
+    dbg_counter_mm: SpecField<string>; // COUNTERWEIGHT distance-between-guides -> Counter frame / guard / beam / buffer
   };
   machine_room: SpecField<string>;
   counterweight_position: SpecField<string>;
@@ -94,6 +101,13 @@ export interface Discrepancy {
 }
 
 const MODEL = "claude-opus-4-8";
+
+// Bump this whenever the extraction SCHEMA/PROMPT gains fields the predictor relies on,
+// so the cache-first read (extractSpecCached) treats older stored reads as STALE and
+// re-studies the drawing instead of reusing a read taken before those fields existed.
+// rich_v1 = the original; rich_v2 (2026-06-25) adds door_side/landing_finish/vision/
+// counterweight + DBG (dbg_main/dbg_counter) to the live read.
+const CURRENT_SCHEMA = "rich_v2";
 
 // Reading a (often multi-sheet, "merged") GA PDF can run long, and the autofill
 // runs inside a synchronous serverless function with a hard execution cap. If the
@@ -155,11 +169,13 @@ const SCHEMA = {
         car_height_mm: DIM(), door_opening_width_mm: DIM(), door_opening_height_mm: DIM(),
         pit_depth_mm: DIM(), overhead_mm: DIM(), travel_mm: DIM(), speed_mps: DIM(),
         car_rail_to_wall_mm: DIM(), counter_rail_to_wall_mm: DIM(), bracket_spacing_mm: DIM(),
+        dbg_main_mm: DIM(), dbg_counter_mm: DIM(),
       },
       required: [
         "shaft_width_mm", "shaft_depth_mm", "car_width_mm", "car_depth_mm", "car_height_mm",
         "door_opening_width_mm", "door_opening_height_mm", "pit_depth_mm", "overhead_mm",
         "travel_mm", "speed_mps", "car_rail_to_wall_mm", "counter_rail_to_wall_mm", "bracket_spacing_mm",
+        "dbg_main_mm", "dbg_counter_mm",
       ],
     },
     machine_room: CONF("string"),
@@ -202,6 +218,8 @@ Normalisation rules:
 - car_rail_to_wall_mm -> on the HOISTWAY PLAN (top view), the small clearance dimension from the BACK of a CAR guide rail to the adjacent shaft WALL face — i.e. how far the rail-bracket arm projects from the wall to the rail. It is the SMALL gap dimension (typically 50-400mm) right at the rail, NOT the big shaft/DBG dimensions. This sets the rail-bracket projection CLASS (50-100=B, 100-160=C, 160-210=D, 210-310=E, 310-360=F, 360-410=G). Read the typical/larger of the two car rails. null if not dimensioned.
 - counter_rail_to_wall_mm -> same idea for a COUNTERWEIGHT guide rail -> wall gap (the counterweight is the hatched block at the side/rear of the plan, near a "D.B.G" label). This sets the COMBINATION bracket's projection (e.g. 180 in "DBG-850X50X180"). null if the counterweight rails aren't dimensioned.
 - bracket_spacing_mm -> on PAGE 2 (the vertical hoistway SECTION), the labelled "BRACKET SPACE ####" or the vertical pitch between rail brackets up the shaft (typically 1200-2000mm). With travel it gives the number of bracket rows. null if not shown.
+- dbg_main_mm -> the CAR "D.B.G" (Distance Between Guides) on the hoistway plan: the dimension ACROSS the car between its two CAR guide rails (typically 1100-1800mm). This sizes the Safety frame, whose SKU bakes it in ("Safety Frame ... DBG-1442"). Use the inner/finished D.B.G value at the rails — NOT a "between walls"/shaft/hoistway dimension. null if not labelled.
+- dbg_counter_mm -> the COUNTERWEIGHT "D.B.G": the dimension between the two COUNTERWEIGHT guide rails (the hatched counterweight block, usually at the rear/side), typically 400-1100mm — SMALLER than the car DBG. It sizes the Counter Frame / Counter Guard Net / Machine Beam / Buffer Channels (SKU "... DBG-####"). When two "D.B.G" labels are stacked, the larger/outer is the CAR (dbg_main) and the smaller/inner is the COUNTERWEIGHT (dbg_counter). null if not labelled.
 - confidence -> "high" (clearly printed), "medium" (inferred), "low" (guessed/absent). Never invent; null+low when silent. rationale -> where on the drawing you read each core field.`;
 
 const USER_PROMPT =
@@ -315,7 +333,7 @@ export async function extractDrawingData(jobId: string): Promise<RichResult> {
         extracted: rich,
         spec,
         model: MODEL,
-        schema_version: "rich_v1",
+        schema_version: CURRENT_SCHEMA,
         discrepancies,
       });
     } catch {
@@ -392,6 +410,8 @@ function richToExtractedSpec(rich: RichDrawing): ExtractedSpec {
     car_rail_to_wall_mm: parseWidthMm(rich.dimensions?.car_rail_to_wall_mm?.value),
     counter_rail_to_wall_mm: parseWidthMm(rich.dimensions?.counter_rail_to_wall_mm?.value),
     bracket_spacing_mm: parseWidthMm(rich.dimensions?.bracket_spacing_mm?.value),
+    dbg_main_mm: parseWidthMm(rich.dimensions?.dbg_main_mm?.value),
+    dbg_counter_mm: parseWidthMm(rich.dimensions?.dbg_counter_mm?.value),
     notes: rich.notes ?? "",
   };
 }
@@ -405,13 +425,13 @@ export async function extractSpecFromPdf(jobId: string): Promise<ExtractSpecResu
 
 /**
  * Cache-FIRST spec read for the autofill. Reuse the latest stored extraction of the
- * job's CURRENT drawing (instant — no ~22s vision call, no API key needed); only fall
- * back to a fresh read when nothing is on file. The fresh read was previously run on
- * EVERY autofill — re-reading a drawing already extracted — and that ~22s synchronous
- * call is what starved the downstream corpus fetch and tipped the serverless function
- * over its time limit (surfacing as "Could not build a suggestion right now."). The
- * stored extraction is wiped on re-upload, so a hit is always for the current drawing;
- * we also match on drawing_url as a belt-and-suspenders guard.
+ * job's CURRENT drawing (instant — no ~22s vision call, no API key needed) ONLY when it
+ * was taken with the CURRENT schema; otherwise re-study the drawing with a fresh read.
+ * The schema gate matters: an old read (rich_v1) predates door_side/landing_finish/
+ * vision/counterweight + DBG, so reusing it would silently fill the form from data that
+ * never saw those fields (the drawing wouldn't actually be studied). A fresh read is
+ * still skipped once a CURRENT-schema read is on file — keeping the slow vision call off
+ * the repeat path that was tipping the serverless function over its time limit.
  */
 export async function extractSpecCached(jobId: string): Promise<ExtractSpecResult> {
   if (!jobId) return { ok: false, error: "Missing jobId" };
@@ -426,9 +446,10 @@ export async function extractSpecCached(jobId: string): Promise<ExtractSpecResul
     if (url) {
       const { data: cached } = await supabase
         .from("job_drawing_extractions")
-        .select("extracted, drawing_url")
+        .select("extracted, drawing_url, schema_version")
         .eq("job_id", jobId)
         .eq("drawing_url", url)
+        .eq("schema_version", CURRENT_SCHEMA)
         .order("extracted_at", { ascending: false })
         .limit(1)
         .maybeSingle();

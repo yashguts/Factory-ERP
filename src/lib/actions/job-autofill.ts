@@ -66,6 +66,8 @@ function buildDrawingReads(s: ExtractedSpec): DrawingRead[] {
   push("Car rail → wall gap", s.car_rail_to_wall_mm != null ? `${s.car_rail_to_wall_mm} mm` : null, undefined, "sets the main-bracket projection class");
   push("Counter rail → wall gap", s.counter_rail_to_wall_mm != null ? `${s.counter_rail_to_wall_mm} mm` : null, undefined, "sets the combination / counter-bracket projection");
   push("Bracket spacing (pitch)", s.bracket_spacing_mm != null ? `${s.bracket_spacing_mm} mm` : null, undefined, "× travel ⇒ number of bracket rows");
+  push("Car DBG", s.dbg_main_mm != null ? `${s.dbg_main_mm} mm` : null, undefined, "sizes the safety frame");
+  push("Counter DBG", s.dbg_counter_mm != null ? `${s.dbg_counter_mm} mm` : null, undefined, "sizes counter frame / guard net / machine beam / buffers");
   return reads;
 }
 
@@ -191,6 +193,10 @@ export async function autofillFromDrawing(
       counter_rail_to_wall_mm: (vision.ok ? vision.spec.counter_rail_to_wall_mm : null) ?? typedSpec.counter_rail_to_wall_mm ?? null,
       // Bracket vertical pitch — with travel gives the bracket level count (combination qty).
       bracket_spacing_mm: (vision.ok ? vision.spec.bracket_spacing_mm : null) ?? typedSpec.bracket_spacing_mm ?? null,
+      // Distance-between-guides — sizes Safety (car DBG) + Counter Frame / Guard Net /
+      // Machine Beam / Buffer Channels (counter DBG). The SKU names bake the DBG in.
+      dbg_main_mm: (vision.ok ? vision.spec.dbg_main_mm : null) ?? typedSpec.dbg_main_mm ?? null,
+      dbg_counter_mm: (vision.ok ? vision.spec.dbg_counter_mm : null) ?? typedSpec.dbg_counter_mm ?? null,
     };
 
     // Read-only transparency blocks: the rich drawing reads the predictor used (so
