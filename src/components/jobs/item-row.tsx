@@ -142,6 +142,8 @@ export function ItemRow({
         family: item.family,
         finish: item.finish,
         required_quantity: row.required_quantity || 1,
+        // The engineer chose this item — it's no longer an AI guess, so drop the flag.
+        confidence: undefined,
       });
       setSearch(item.name);
       setOpen(false);
@@ -205,6 +207,11 @@ export function ItemRow({
           }}
           onFocus={() => setOpen(true)}
           onKeyDown={handleKey}
+          title={
+            hasItem && row.confidence === "low"
+              ? "Low-confidence AI suggestion — verify or replace"
+              : undefined
+          }
           placeholder={
             row.label && !hasItem
               ? `Fill: ${row.label}`
@@ -212,7 +219,11 @@ export function ItemRow({
           }
           className={cn(
             "w-full h-8 pl-8 pr-7 text-sm rounded-md border bg-[var(--background)] text-[var(--foreground)] placeholder:text-[var(--muted-foreground)] focus:outline-none focus:ring-2 focus:ring-[var(--primary)] focus:ring-offset-1",
-            hasItem ? "border-blue-300" : "border-[var(--border)]",
+            hasItem
+              ? row.confidence === "low"
+                ? "border-amber-400 bg-amber-50/40"
+                : "border-blue-300"
+              : "border-[var(--border)]",
           )}
         />
         {hasItem && (
@@ -330,6 +341,16 @@ export function ItemRow({
           </div>
         )}
       </div>
+
+      {/* Low-confidence AI flag */}
+      {hasItem && row.confidence === "low" && (
+        <span
+          className="mt-2 shrink-0"
+          title="Low-confidence AI suggestion — verify or replace"
+        >
+          <AlertTriangle className="h-3.5 w-3.5 text-amber-500" />
+        </span>
+      )}
 
       {/* Qty */}
       <input

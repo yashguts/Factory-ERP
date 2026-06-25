@@ -11,7 +11,8 @@ import { ItemPickerSection } from "@/components/jobs/item-picker-section";
 import type { PickedItem } from "@/components/jobs/item-picker-section";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import { JobTemplatePickerModal } from "@/components/jobs/job-template-picker-modal";
-import { AutofillReviewModal, type ApplyPayload } from "@/components/jobs/autofill-review-modal";
+import { type ApplyPayload } from "@/components/jobs/autofill-review-modal";
+import { AutofillContextPanel } from "@/components/jobs/autofill-context-panel";
 import type { AppliedSuggestion, AutofillResult } from "@/components/jobs/autofill-types";
 import { autofillFromDrawing, captureSuggestionOutcome } from "@/lib/actions/job-autofill";
 import { useToast } from "@/components/ui/toast";
@@ -50,6 +51,44 @@ type PickerState = Record<string, PickedItem[]>;
 
 /** Phase label for user-added ad-hoc sections. */
 const AD_HOC_PHASE = "Additional Items";
+
+const rid = () => Math.random().toString(36).slice(2);
+const SPEC_KEYS = ["drive_type", "floors", "capacity", "door_finish", "brand"] as const;
+
+/**
+ * Turn an autofill result into the apply payload — EVERY suggested row (including
+ * low-confidence, flagged via `confidence`), plus the spec, plus the learning trace.
+ * No review gate: the form itself is the review surface (the owner's call).
+ */
+function buildAutofillPayload(data: AutofillResult): ApplyPayload {
+  const spec: ApplyPayload["spec"] = {};
+  const applied: AppliedSuggestion[] = [];
+  if (data.spec) {
+    for (const key of SPEC_KEYS) {
+      const cell = data.spec[key];
+      if (!cell || cell.value == null) continue;
+      if (key === "floors") spec.floors = Number(cell.value);
+      else (spec as Record<string, unknown>)[key] = cell.value;
+      applied.push({ kind: "spec", field: key, suggested_value: String(cell.value), suggested_qty: null, confidence: cell.confidence, provenance: [] });
+    }
+  }
+  const sections: Record<string, PickedItem[]> = {};
+  for (const l of data.bom) {
+    (sections[l.section] ??= []).push({
+      _key: rid(),
+      item_id: l.item_id,
+      item_code: l.item_code,
+      item_name: l.item_name,
+      item_lookup: null,
+      uom: l.uom,
+      category_name: null,
+      required_quantity: l.suggestedQty,
+      confidence: l.confidenceBand,
+    });
+    applied.push({ kind: "bom_line", field: l.section, suggested_value: l.item_id, suggested_qty: l.suggestedQty, confidence: l.confidenceBand, provenance: l.supportingJobs });
+  }
+  return { spec, sections, applied };
+}
 
 /* ------------------------------------------------------------------ */
 /*  Props                                                             */
@@ -287,7 +326,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
   // ── AI Auto-fill (additive: produces a draft the engineer applies) ──
   const toast = useToast();
-  const [autofillOpen, setAutofillOpen] = useState(false);
+  const [autofillPanelOpen, setAutofillPanelOpen] = useState(false);
   const [autofilling, setAutofilling] = useState(false);
   const [autofillResult, setAutofillResult] = useState<AutofillResult | null>(null);
   // The suggestions last applied — graded against the saved BOM on Save.
@@ -358,8 +397,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   );
 
   // Run AI auto-fill for the saved job: reads the drawing (if a key is set)
-  // for the spec, then predicts the BOM from your similar past jobs. Read-only
-  // — opens a review modal; nothing is saved until the engineer applies + Saves.
+  // for the spec, then predicts the BOM from your similar past jobs. Fills the
+  // form DIRECTLY (no review popup — the form is the review surface); nothing is
+  // saved until the engineer uses the normal Save buttons. The drawing reads +
+  // manual-fill hints show in the inline AutofillContextPanel above the BOM.
   const runAutofill = useCallback(() => {
     if (!savedJobId) return;
     setAutofilling(true);
@@ -374,8 +415,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           toast.error(res.error);
           return;
         }
+        applyAutofill(buildAutofillPayload(res.data));
         setAutofillResult(res.data);
-        setAutofillOpen(true);
+        setAutofillPanelOpen(true);
       } catch (err: unknown) {
         // Never let a failed action bubble to the route error boundary — toast it.
         toast.error(err instanceof Error ? err.message : "Auto-fill failed — please try again.");
@@ -419,10 +461,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       setSavedPhases({});
       setJobSaved(false);
       suggestionTrace.current = p.applied;
-      setAutofillOpen(false);
 
       const n = Object.values(p.sections).reduce((a, r) => a + r.length, 0) + Object.keys(p.spec).length;
-      toast.info(`Applied ${n} suggestions — review, edit, then Save.`);
+      toast.info(`Filled ${n} suggestions into the form — review, edit, then Save.`);
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [],
@@ -792,13 +833,6 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         />
       )}
 
-      {autofillOpen && autofillResult && (
-        <AutofillReviewModal
-          result={autofillResult}
-          onApply={applyAutofill}
-          onClose={() => setAutofillOpen(false)}
-        />
-      )}
 
       {/* In split view we render a 2-column grid: form on the left
           (scrollable), GAD drawing on the right (scrollable). In
@@ -865,6 +899,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <span className="font-medium">Required to save:</span>{" "}
           {[...missingFields, ...(mobileError ? [mobileError] : [])].join(", ")}.
         </div>
+      )}
+
+      {/* ── AI Auto-fill context (drawing reads + manual-fill hints) ── */}
+      {autofillPanelOpen && autofillResult && (
+        <AutofillContextPanel
+          result={autofillResult}
+          onClose={() => setAutofillPanelOpen(false)}
+        />
       )}
 
       {/* ── BOM Sections by Phase ── */}

@@ -30,6 +30,9 @@ export interface PickedItem {
   /** Finish-variant grouping of the picked item (used by the parts-list editor). */
   family?: string | null;
   finish?: string | null;
+  /** Set when the row was placed by AI Auto-fill — drives the low-confidence flag.
+   *  Cleared once the engineer picks/changes the item themselves. */
+  confidence?: "high" | "medium" | "low";
 }
 
 interface ItemPickerSectionProps {
