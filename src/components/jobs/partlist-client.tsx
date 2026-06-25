@@ -367,7 +367,7 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
   const matchFilter = (s: PackingSection) => !filter || s.label.toLowerCase().includes(filter.toLowerCase());
 
   return (
-    <div className="mx-auto max-w-5xl px-4 py-5">
+    <div className="mx-auto max-w-[1800px] px-4 py-5">
       {/* header */}
       <div className="sticky top-0 z-20 -mx-4 mb-3 border-b border-[var(--border)] bg-[var(--background)]/95 px-4 py-3 backdrop-blur">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
@@ -550,7 +550,7 @@ function ColumnHeader() {
   return (
     <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-1 text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
       <span className="h-4 w-4 shrink-0" />
-      <span className="w-52 shrink-0">Particular</span>
+      <span className="w-64 shrink-0">Particular</span>
       <span className="min-w-0 flex-1">Item / Name</span>
       <span className="w-28 shrink-0">Specification</span>
       <span className="w-14 shrink-0 text-right">Qty</span>
@@ -586,7 +586,7 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
   const particular = sec ? (label ?? sec.label) : (row.name || "(BOM item)");
   return (
     <div className={cn(
-      "flex items-center gap-2 px-3 py-1.5 text-[13px]",
+      "flex items-center gap-2 px-3 py-1.5 text-xs",
       dismissed && "opacity-50",
       row.is_conflict && "bg-red-500/5",
       autoFocus && "bg-[var(--primary)]/5 ring-1 ring-inset ring-[var(--primary)]",
@@ -598,7 +598,7 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
       </button>
 
       {/* particular (the checklist slot) + chips */}
-      <div className="flex w-52 shrink-0 items-center gap-1.5">
+      <div className="flex w-64 shrink-0 items-center gap-1.5">
         <span className="truncate font-medium" title={particular}>{particular}</span>
         {row.is_conflict && <AlertTriangle className="h-3.5 w-3.5 shrink-0 text-red-500" aria-label={row.conflict_note || "conflict"} />}
         {needsItem && <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] font-medium text-amber-600">needs item</span>}
@@ -610,13 +610,13 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
           ? (
             <select autoFocus={autoFocus} value={row.name || ""}
               onChange={(e) => { const nm = e.target.value; const keep = hardwareSpecOptions(nm).includes(row.spec || "") ? row.spec : ""; onPatch(sk, row.uid, { name: nm, spec: keep }); }}
-              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] cursor-pointer">
+              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--primary)] cursor-pointer">
               <option value="">— select hardware —</option>
               {HARDWARE_ITEMS.map((h) => <option key={h.label} value={h.label}>{h.label}</option>)}
             </select>
           )
           : nameAndSpec
-            ? <input autoFocus={autoFocus} value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={isFree ? "Name / description" : "Name of the non-stock part"} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+            ? <input autoFocus={autoFocus} value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={isFree ? "Name / description" : "Name of the non-stock part"} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
             : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} autoFocus={autoFocus} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
         {!isFree && (
           <button
@@ -635,7 +635,7 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
         {isHardware
           ? (
             <select value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })} disabled={!row.name}
-              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50 cursor-pointer">
+              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50 cursor-pointer">
               <option value="">size…</option>
               {hardwareSpecOptions(row.name).map((s) => <option key={s} value={s}>{s}</option>)}
             </select>
@@ -646,7 +646,7 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
               <input value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })}
                 list={sec?.specOptions?.length ? `opts-${row.uid}` : undefined}
                 placeholder={sec?.specOptions?.length ? "pick / type size" : (sec?.specHint ? `e.g. ${sec.specHint}` : "Specification")}
-                className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+                className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-xs focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
               {sec?.specOptions?.length ? (
                 <datalist id={`opts-${row.uid}`}>
                   {sec.specOptions.map((o) => <option key={o} value={o} />)}
@@ -658,7 +658,7 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
       </div>
 
       {/* qty */}
-      <input type="number" min={0} step="any" value={row.qty || ""} onChange={(e) => onPatch(sk, row.uid, { qty: e.target.value ? Number(e.target.value) : 0 })} placeholder="Qty" className="h-7 w-14 shrink-0 rounded border border-[var(--border)] bg-[var(--background)] px-1 text-right text-[13px] tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+      <input type="number" min={0} step="any" value={row.qty || ""} onChange={(e) => onPatch(sk, row.uid, { qty: e.target.value ? Number(e.target.value) : 0 })} placeholder="Qty" className="h-7 w-14 shrink-0 rounded border border-[var(--border)] bg-[var(--background)] px-1 text-right text-xs tabular-nums focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
 
       {/* source + confidence */}
       <div className="flex w-24 shrink-0 items-center justify-end gap-1">
@@ -711,7 +711,7 @@ function ItemPicker({ sk, row, autoFocus, onPick, onClear }: { sk: string; row: 
   if (row.item_id) {
     return (
       <div className="flex items-center gap-1.5 rounded border border-[var(--border)] bg-[var(--muted)]/30 px-2 py-1">
-        <span className="truncate text-[13px]" title={row.name || ""}>{row.name}</span>
+        <span className="truncate text-xs" title={row.name || ""}>{row.name}</span>
         {row.code && <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">{row.code}</span>}
         <button onClick={onClear} className="ml-auto shrink-0 text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"><X className="h-3 w-3" /></button>
       </div>
@@ -728,7 +728,7 @@ function ItemPicker({ sk, row, autoFocus, onPick, onClear }: { sk: string; row: 
           onFocus={() => { setOpen(true); place(); if (!results.length) search(""); }}
           onBlur={() => setTimeout(() => setOpen(false), 150)}
           placeholder="Search inventory item…"
-          className="h-7 w-full bg-transparent text-[13px] focus:outline-none"
+          className="h-7 w-full bg-transparent text-xs focus:outline-none"
         />
         {loading && <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-[var(--muted-foreground)]" />}
       </div>
@@ -739,7 +739,7 @@ function ItemPicker({ sk, row, autoFocus, onPick, onClear }: { sk: string; row: 
         >
           {results.map((it) => (
             <button key={it.id} onMouseDown={(e) => { e.preventDefault(); onPick(it); setOpen(false); setQ(""); }}
-              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-[13px] hover:bg-[var(--muted)] cursor-pointer">
+              className="flex w-full items-center gap-2 px-2 py-1.5 text-left text-xs hover:bg-[var(--muted)] cursor-pointer">
               <span className="flex-1 truncate">{it.name}</span>
               <span className={cn("shrink-0 tabular-nums text-[11px]", it.total_stock <= 0 ? "text-red-500" : "text-[var(--muted-foreground)]")}>{it.total_stock}</span>
               <span className="shrink-0 text-[10px] text-[var(--muted-foreground)]">{it.code}</span>
