@@ -605,7 +605,7 @@ function ItemPicker({ sk, row, onPick, onClear }: { sk: string; row: Row; onPick
     if (t.current) clearTimeout(t.current);
     t.current = setTimeout(async () => {
       setLoading(true);
-      try { setResults(await searchPartItems(sk, query, 30)); } catch { setResults([]); } finally { setLoading(false); }
+      try { setResults(await searchPartItems(sk, query, 60)); } catch { setResults([]); } finally { setLoading(false); }
     }, query ? 200 : 40);
   }, [sk]);
 
