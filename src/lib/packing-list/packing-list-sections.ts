@@ -55,13 +55,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     specHint: "Big",
   },
   {
-    key: "p-rail-fixing-kit",
-    label: "Rail Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "Bolt+Nut+SW+FW 12x40 or 8x35",
-  },
-  {
     key: "p-rail-bracket-main",
     label: "Main Bracket",
     captureType: "item",
@@ -81,13 +74,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Hardware > Stud Anchor"],
     specHint: "Stud Anchar 12x100",
-  },
-  {
-    key: "p-bolt-nut-d-fw-s-w-rail-bracket",
-    label: "Bolt+Nut+FW+SW",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "12x50",
   },
   {
     key: "p-brick-fastener",
@@ -165,14 +151,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Purchased Items > Speed Governor"],
     specHint: "1mts L.H",
-  },
-  {
-    key: "p-speed-governor-fixing-kit",
-    label: "Speed Governor Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "",
-    drives: ["HOME","BELT","CANTI"],
   },
   {
     key: "p-governor-extension-plate",
@@ -314,20 +292,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     specHint: "Stud Anchar 8x75",
   },
   {
-    key: "p-bolt-nut-s-w-f-w-for-header-fixing",
-    label: "Bolt+Nut For Header Fixing",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "8x20",
-  },
-  {
-    key: "p-bolt-nut-s-w-f-wd-for-header-sill-bkt",
-    label: "Bolt+Nut For Header+Sill Bkt",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "8x20",
-  },
-  {
     key: "p-fastner-for-sill-bracket",
     label: "Fastner For Sill Bracket",
     captureType: "item",
@@ -357,27 +321,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     doors: ["COLLAPSIBLE"],
   },
   {
-    key: "p-c-s-k-screw-for-ss-sill",
-    label: "C.S.K SS Screw",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "6x15",
-  },
-  {
-    key: "p-screw-c-s-k-for-car-sill",
-    label: "Screw C.S.K MS Car Sill",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "6x15",
-  },
-  {
-    key: "p-bolt-nut-s-w-f-wd-for-sill-fixing",
-    label: "Bolt+Nut For Sill Fixing",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "8x35",
-  },
-  {
     key: "p-header-system",
     label: "Header System (Landing/Car)",
     captureType: "item",
@@ -397,13 +340,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Landing Door Pannel","Car Door Pannel"],
     specHint: "",
-  },
-  {
-    key: "p-bolt-nut-s-w-f-w-for-door-frame",
-    label: "Bolt+Nut For Door Frame",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "8x20",
   },
   {
     key: "p-gate-lock",
@@ -450,14 +386,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     categoryPaths: ["Miscallaneous > Gate Handel"],
     specHint: "0",
     doors: ["COLLAPSIBLE"],
-  },
-  {
-    key: "p-swing-door-fixing-kit",
-    label: "Swing Door Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "Colour- Z-Black / 9005",
-    doors: ["SWING"],
   },
   {
     key: "p-door-closer",
@@ -521,13 +449,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Manufactured Items > Safety Switch Bkt"],
     specHint: "30x3mm",
-  },
-  {
-    key: "p-safety-frame-fixing-kit",
-    label: "Safety Frame Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "",
   },
   {
     key: "p-main-guide-shoe",
@@ -646,13 +567,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     specHint: "STD",
   },
   {
-    key: "p-limit-switch-fixing-kit",
-    label: "Limit Switch Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "",
-  },
-  {
     key: "p-limit-switch-cam",
     label: "Limit Switch Cam",
     captureType: "item",
@@ -689,13 +603,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Manufactured Items > Returning Cam Bkt"],
     specHint: "40x6 Flat  / 900mm Flat",
-  },
-  {
-    key: "p-returning-cam-fixing-kit",
-    label: "Returning Cam Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "0",
   },
   {
     key: "p-stationary-cam",
@@ -752,13 +659,6 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Small Manufactured Items > Cable Hangern Bkt"],
     specHint: "\"L\"Type",
-  },
-  {
-    key: "p-cable-hanger-fixing-kit",
-    label: "Cable Hanger Fixing Kit",
-    captureType: "free",
-    categoryPaths: [],
-    specHint: "",
   },
   {
     key: "p-controller-bracket",
@@ -1625,11 +1525,9 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
   },
 ];
 
-// Hardware (nut-bolts / screws) is no longer its own two categories — it's a manual
-// "+ Add Hardware" picker inside every other category. Append one "Hardware" section
-// per eligible category so packingSection()/save/the completion-gate all know them.
-// NOTE: scripts/_partlist_build.js regenerates the BASE list above; it must NOT
-// re-emit the p-nb-*/p-scr- fastener sections (they now live in hardware.ts).
+// Hardware (nut-bolts / screws) is a per-category "+ Add Hardware" picker, not its
+// own categories — append one "Hardware" section per eligible category so
+// packingSection()/save/the completion-gate all know them.
 export const PACKING_SECTIONS: PackingSection[] = [...BASE_PACKING_SECTIONS, ...HARDWARE_SECTIONS];
 
 const SECTION_BY_KEY = new Map(PACKING_SECTIONS.map((s) => [s.key, s]));

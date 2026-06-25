@@ -33,13 +33,11 @@ const CURATED = [
   C("p-guide-rail-main", "Guide Rail", { group: "Rails", cats: ["Large Purchased Items > Guide Rail"] }),
   C("p-fish-plate", "Fish Plate", { group: "Rails" }),
   C("p-rail-clip", "Rail Clip", { group: "Rails", merge: ["p-rail-clip-main", "p-rail-clip-counter"], cats: ["Hardware > Rail Clip"] }),
-  C("p-rail-fixing-kit", "Rail Fixing Kit", { group: "Rails", capture: "free", specHint: "Bolt+Nut+SW+FW 12x40 or 8x35" }),
 
   // Rail brackets (from BOM) + their fasteners
   C("p-rail-bracket-main", "Main Bracket", { group: "Brackets", merge: ["p-rail-bracket-main-fabricated", "p-main-rail-bracket", "p-rail-bracket-main-combination", "p-rail-bracket-main-home", "p-main-rail-bracket-for-platfrom-support", "p-main-rail-bracket-b-50-100-mm", "p-combination-leg", "p-combination-lag-std", "p-combinition-bracket", "p-combinition-bracket-cutting-240mm", "p-rail-combination-channel", "p-rail-bracket-home"], cats: ["Rail Bracket > Rail Bracket Main", "Rail Bracket > Rail Bracket Combination Main", "Rail Bracket > Rail Bracket Combination Home"] }),
   C("p-rail-bracket-counter", "Counter Bracket", { group: "Brackets", merge: ["p-counter-rail-bracket", "p-rail-bracket-counter-home", "p-rail-bracket-counter-fabricated"], cats: ["Rail Bracket > Rail Bracket Counter"] }),
   C("p-fastner-rail-bracket", "Fastner (Rail Bracket)", { group: "Brackets", cats: ["Hardware > Stud Anchor"] }),
-  C("p-bolt-nut-d-fw-s-w-rail-bracket", "Bolt+Nut+FW+SW", { group: "Brackets", capture: "free", specHint: "12x50" }),
   C("__new_brick_fastener", "Brick Fastener", { group: "Brackets", cats: ["Hardware > Brick Dasfastner"] }),
 
   // Machine & governor
@@ -52,7 +50,6 @@ const CURATED = [
   C("p-machine-lifting-frame-with-counter-gide-shoe", "Machine Lifting Frame With Counter Guide Shoe", { group: "Machine", drives: ["R1000"] }),
   C("p-machine-lifting-frame-with", "Machine Lifting Frame", { group: "Machine", drives: ["R1000"] }),
   C("p-speed-governor-both", "Speed Governor", { group: "Machine", merge: ["p-speed-governor-sr-no"], cats: ["Small Purchased Items > Speed Governor"] }),
-  C("p-speed-governor-fixing-kit", "Speed Governor Fixing Kit", { group: "Machine", capture: "free", drives: ["HOME", "BELT", "CANTI"] }),
   C("p-governor-extension-plate", "Governor Extension Plate", { group: "Machine", drives: ["HOME", "BELT", "CANTI"] }),
   C("p-governor-switch", "Governor Switch", { group: "Machine", cats: ["Miscallaneous > Governor Switch"], drives: ["HOME", "BELT", "CANTI"] }),
 
@@ -80,24 +77,18 @@ const CURATED = [
   // Header / sill adjustable bracket + fasteners (after Door System)
   C("p-header-bracket-mt", "Sill & Header Adjustable Bracket", { group: "Header & Sill", merge: ["p-header-bracket-co", "p-header-bracket-at"], cats: ["Adjustable Bracket > Sill & Header Adjustable Bracket"] }),
   C("p-fastner-for-header-bracket", "Fastner For Header Bracket", { group: "Header & Sill" }),
-  C("p-bolt-nut-s-w-f-w-for-header-fixing", "Bolt+Nut For Header Fixing", { group: "Header & Sill", capture: "free" }),
-  C("p-bolt-nut-s-w-f-wd-for-header-sill-bkt", "Bolt+Nut For Header+Sill Bkt", { group: "Header & Sill", capture: "free" }),
   C("p-fastner-for-sill-bracket", "Fastner For Sill Bracket", { group: "Header & Sill", cats: ["Small Manufactured Items > Sill Bracket"] }),
 
   // Sill (Door Sill + Sill Angle from BOM) + sill fasteners
   C("__new_door_sill", "Door Sill", { group: "Header & Sill", cats: ["Door Sill > Aluminium Sill", "Door Sill > Auto Door SS Sill", "Door Sill > Collapsible Landing Sill", "Door Sill > Manual Telescopic Sill"] }),
   C("__new_sill_angle", "Sill Angle", { group: "Header & Sill", cats: ["Door Sill > Auto Door Sill Angle", "Small Manufactured Items > Manual Telescopic Sill Angle"] }),
   C("p-m-s-flat-25x6-for-sill-bracket-goods", "M.S Flat 25x6 For Sill Bracket (Goods)", { group: "Header & Sill", cats: ["Small Manufactured Items > Sill Bracket"], doors: ["COLLAPSIBLE"] }),
-  C("p-c-s-k-screw-for-ss-sill", "C.S.K SS Screw", { group: "Header & Sill", capture: "free" }),
-  C("p-screw-c-s-k-for-car-sill", "Screw C.S.K MS Car Sill", { group: "Header & Sill", capture: "free" }),
-  C("p-bolt-nut-s-w-f-wd-for-sill-fixing", "Bolt+Nut For Sill Fixing", { group: "Header & Sill", capture: "free" }),
 
   // Door System — door posts, panels & headers flow in FROM the BOM (one line per
   // BOM item) via these generic catch lines; no hardcoded door-type variants.
   C("__new_header_system", "Header System (Landing/Car)", { group: "Header & Sill", cats: ["Header Systems > Landing Header System", "Header Systems > Car Header System", "Header Systems > HEADER", "Header Systems > Manual Telescopic Landing Header System", "Header Systems > Manual Telescopic Car Header System"] }),
   C("__new_door_post", "Door Post", { group: "Doors", cats: ["Door Post/Frame"] }),
   C("__new_door_panel", "Door Panel (Landing/Car)", { group: "Doors", cats: ["Landing Door Pannel", "Car Door Pannel"] }),
-  C("p-bolt-nut-s-w-f-w-for-door-frame", "Bolt+Nut For Door Frame", { group: "Doors", capture: "free" }),
 
   // Doors kept (gated)
   C("p-gate-lock", "Gate Lock", { group: "Doors", cats: ["Small Purchased Items > Gate Lock Items"] }),
@@ -106,7 +97,6 @@ const CURATED = [
   C("p-collapsible-top-track-car", "Collapsible Top Track Car", { group: "Doors", cats: ["Small Manufactured Items > Collapsible Top track"], doors: ["COLLAPSIBLE"] }),
   C("p-collapsible-gate-bearing", "Collapsible Gate Bearing", { group: "Doors", cats: ["Hardware > Bearing"], doors: ["COLLAPSIBLE"] }),
   C("p-gate-handel", "Gate Handel", { group: "Doors", cats: ["Miscallaneous > Gate Handel"], doors: ["COLLAPSIBLE"] }),
-  C("p-swing-door-fixing-kit", "Swing Door Fixing Kit", { group: "Doors", capture: "free", doors: ["SWING"] }),
   C("p-door-closer", "Door Closer", { group: "Doors", capture: "fixed", pin: "Door Closer", doors: ["SWING"] }),
   C("p-car-gate-switch-bkt", "Car Gate Switch Bkt", { group: "Doors", capture: "fixed", pin: "Car Gate Switch Bkt", doors: ["MT", "SWING", "COLLAPSIBLE"] }),
   C("p-telescopic-door-shoe-12mm", "Telescopic Door Shoe 12mm", { group: "Doors", capture: "fixed", pin: "Telescopic Door Shoe 12mm", doors: ["MT"] }),
@@ -119,7 +109,6 @@ const CURATED = [
   C("p-safety-rod", "Safety Rod", { group: "Safety", cats: ["Small Manufactured Items > Safety Rod"] }),
   C("p-up-right-channel", "UP Right Channel", { group: "Safety", cats: ["Safety Frame > UP Right Channel"] }),
   C("p-safety-switch-bkt", "Safety Switch Bkt", { group: "Safety", cats: ["Small Manufactured Items > Safety Switch Bkt"] }),
-  C("p-safety-frame-fixing-kit", "Safety Frame Fixing Kit", { group: "Safety", capture: "free" }),
 
   // Guide shoes
   C("p-main-guide-shoe", "Guide Shoe Main (Gibs/Roller Type)", { group: "Safety", cats: ["Guide Shoe"] }),
@@ -142,13 +131,11 @@ const CURATED = [
   // Limit switch + cam
   C("p-limit-switch", "Limit Switch", { group: "Limit & Cam", merge: ["p-limit-switch-n-c-hr", "p-limit-switch-arkel", "p-limit-switch-home"], cats: ["Miscallaneous > Limit Switch Items"] }),
   C("p-limit-switch-bkt", "Limit Switch Bracket", { group: "Limit & Cam", merge: ["p-limit-channel-thik"], cats: ["Miscallaneous > Limit Switch Items"] }),
-  C("p-limit-switch-fixing-kit", "Limit Switch Fixing Kit", { group: "Limit & Cam", capture: "free" }),
   C("p-limit-switch-cam", "Limit Switch Cam", { group: "Limit & Cam", cats: ["Miscallaneous > Limit Switch Items"], drives: ["HOME", "BELT", "CANTI"] }),
   C("p-limit-switch-cam-bracket", "Limit Switch Cam Bracket", { group: "Limit & Cam", drives: ["HOME", "BELT", "CANTI"] }),
   C("p-limit-switch-cam-channel", "Limit Switch Cam Channel", { group: "Limit & Cam", drives: ["HOME", "BELT", "CANTI"] }),
   C("p-retiring-cam-set", "Retiring Cam Set", { group: "Limit & Cam", cats: ["Small Purchased Items > Retiring Cam Set"] }),
   C("p-returning-cam-bkt", "Returning Cam Bkt", { group: "Limit & Cam", cats: ["Small Manufactured Items > Returning Cam Bkt"] }),
-  C("p-returning-cam-fixing-kit", "Returning Cam Fixing Kit", { group: "Limit & Cam", capture: "free" }),
   C("p-stationary-cam", "Stationary Cam", { group: "Limit & Cam", merge: ["p-stationary-cam-std", "p-stationary-cam-home"], cats: ["Small Manufactured Items > Stationary Cam STD", "Small Manufactured Items > Stationary Cam Home", "Small Manufactured Items > Stationary Cam Drumbwater"] }),
   C("p-stationary-cam-bkt-home", "Stationary Cam Bkt Home", { group: "Limit & Cam", cats: ["Small Manufactured Items > Stationary Cam Bkt Home"] }),
 
@@ -159,7 +146,6 @@ const CURATED = [
   C("p-troughing", "Troughing 50", { group: "Misc Fitted", cats: ["Small Manufactured Items > Troughing"] }),
   C("__new_troughing_100", "Troughing 100", { group: "Misc Fitted", cats: ["Small Manufactured Items > Troughing"] }),
   C("p-cable-hangern-bkt", "Cable Hanger Bracket", { group: "Misc Fitted", cats: ["Small Manufactured Items > Cable Hangern Bkt"] }),
-  C("p-cable-hanger-fixing-kit", "Cable Hanger Fixing Kit", { group: "Misc Fitted", capture: "free" }),
   C("p-controller-bracket", "Controller Bracket", { group: "Misc Fitted", merge: ["p-controller-bracket-new", "p-controller-bracket-home"], cats: ["Small Manufactured Items > Controller Bracket"] }),
 
   // Cabin Items — main panels come from the linked Cabin Job (dynamic holder,
@@ -424,7 +410,6 @@ const REGROUP = {
   // Hoistway Items (NEW)
   "p-pvc-cable-hanger": "Hoistway Items",
   "p-cable-hangern-bkt": "Hoistway Items",
-  "p-cable-hanger-fixing-kit": "Hoistway Items",
   "p-pit-ladder": "Hoistway Items",
   "p-pit-ladder-handle": "Hoistway Items",
   "p-pvc-excution": "Hoistway Items",
