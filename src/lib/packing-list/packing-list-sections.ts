@@ -75,15 +75,22 @@ export const PACKING_SECTIONS: PackingSection[] = [
     key: "p-fastner-rail-bracket",
     label: "Fastner (Rail Bracket)",
     captureType: "item",
-    categoryPaths: [],
+    categoryPaths: ["Hardware > Stud Anchor"],
     specHint: "Stud Anchar 12x100",
   },
   {
     key: "p-bolt-nut-d-fw-s-w-rail-bracket",
-    label: "Bolt+Nut+d.fw+s.w (Rail Bracket)",
+    label: "Bolt+Nut+FW+SW",
     captureType: "free",
     categoryPaths: [],
     specHint: "12x50",
+  },
+  {
+    key: "p-brick-fastener",
+    label: "Brick Fastener",
+    captureType: "item",
+    categoryPaths: ["Hardware > Brick Dasfastner"],
+    specHint: "",
   },
   {
     key: "p-machine-unit",
@@ -920,13 +927,6 @@ export const PACKING_SECTIONS: PackingSection[] = [
     captureType: "item",
     categoryPaths: ["Hardware > I-Bolt Rod"],
     specHint: "12mm (150mm)",
-  },
-  {
-    key: "p-fastner-for-supporting-bracket",
-    label: "Fastner For Supporting Bracket",
-    captureType: "item",
-    categoryPaths: ["Hardware > Brick Dasfastner","Hardware > Stud Anchor"],
-    specHint: "Stud Anchar 8x75",
   },
   {
     key: "p-supporting-bracket-mt",

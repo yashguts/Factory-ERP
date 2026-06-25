@@ -33,8 +33,9 @@ const CURATED = [
   // Rail brackets (from BOM) + their fasteners
   C("p-rail-bracket-main", "Main Bracket", { group: "Brackets", merge: ["p-rail-bracket-main-fabricated", "p-main-rail-bracket", "p-rail-bracket-main-combination", "p-rail-bracket-main-home", "p-main-rail-bracket-for-platfrom-support", "p-main-rail-bracket-b-50-100-mm", "p-combination-leg", "p-combination-lag-std", "p-combinition-bracket", "p-combinition-bracket-cutting-240mm", "p-rail-combination-channel", "p-rail-bracket-home"], cats: ["Rail Bracket > Rail Bracket Main", "Rail Bracket > Rail Bracket Combination Main", "Rail Bracket > Rail Bracket Combination Home"] }),
   C("p-rail-bracket-counter", "Counter Bracket", { group: "Brackets", merge: ["p-counter-rail-bracket", "p-rail-bracket-counter-home", "p-rail-bracket-counter-fabricated"], cats: ["Rail Bracket > Rail Bracket Counter"] }),
-  C("p-fastner-rail-bracket", "Fastner (Rail Bracket)", { group: "Brackets" }),
-  C("p-bolt-nut-d-fw-s-w-rail-bracket", "Bolt+Nut+d.fw+s.w (Rail Bracket)", { group: "Brackets", capture: "free" }),
+  C("p-fastner-rail-bracket", "Fastner (Rail Bracket)", { group: "Brackets", cats: ["Hardware > Stud Anchor"] }),
+  C("p-bolt-nut-d-fw-s-w-rail-bracket", "Bolt+Nut+FW+SW", { group: "Brackets", capture: "free", specHint: "12x50" }),
+  C("__new_brick_fastener", "Brick Fastener", { group: "Brackets", cats: ["Hardware > Brick Dasfastner"] }),
 
   // Machine & governor
   C("p-machine-unit", "Machine Unit", { group: "Machine", merge: ["p-machine-unit-seg-35", "p-machine-unit-seg-20", "p-machine-unit-sharp-seg-50", "p-machine-unit-seg-45", "p-machine-unit-sharp-seg-40", "p-machine-unit-bbl", "p-machine-unit-nidec", "p-machine-unit-sharp", "p-machine-unit-sharp-seg-30", "p-machine-unit-sharp-seg-05", "p-machine-unit-belt", "p-machine-unit-seg-05-sharp", "p-machine-unit-traction"], cats: ["Large Purchased Items > Machine Unit"], drives: ["MR", "MRL", "HOME", "BELT", "MRLBELT", "CANTI", "R1000"] }),
@@ -188,7 +189,6 @@ const CURATED = [
   C("p-g-i-wire", "G.I Wire", { group: "Rope", cats: ["Small Purchased Items > G.I Wire"] }),
   C("p-i-bolt", "I-Bolt", { group: "Rope", cats: ["Hardware > I-Bolt Rod"] }),
   // Brackets / header & sill
-  C("p-fastner-for-supporting-bracket", "Fastner For Supporting Bracket", { group: "Brackets", cats: ["Hardware > Brick Dasfastner", "Hardware > Stud Anchor"] }),
   C("p-supporting-bracket-mt", "Supporting Bracket MT", { group: "Header & Sill", cats: ["Miscallaneous > Supporting Bracket"] }),
   // Doors / electricals
   C("p-lock-latch-with-m-f-contact", "Lock Latch With M/F Contact", { group: "Doors", capture: "free" }),
@@ -327,6 +327,7 @@ const NEW = {
   "__new_swing_door": "p-swing-door-panel",
   "__new_isolation_channel": "p-isolation-channel",
   "__new_hydraulic_cylinder": "p-hydraulic-cylinder",
+  "__new_brick_fastener": "p-brick-fastener",
 };
 
 // Door-flag keys to PARK at the end (decided "later"), kept as-is.
@@ -365,7 +366,7 @@ for (const c of CURATED) {
 
 // Retired sections — now sourced elsewhere (False Ceiling comes from the Cabin Job's
 // finish-fanned item). Mark used so they are neither curated nor parked.
-for (const k of ["p-false-ceiling", "p-read-bracket-nice", "p-magnet-bracket-nice", "p-magnet-bracket-spl", "p-magnet-trey-fixing-plate", "p-pvc-magnet-holder-magnet-40mm", "p-car-frame-assembly-instruction-t-509-2-1", "p-kick-angel", "p-fastner", "p-g-i-wire-no-24", "p-stud-anchar-12x100", "p-i-bolt-rod", "p-i-bolt-spring", "p-i-bolt-rod-home", "p-i-bolt-rod-belt", "p-car-location-plate-spl", "p-car-location-plate-goods", "p-car-location-plate-std", "p-big-jali", "p-small-jali", "p-jali-wooden", "p-50x6-angle", "p-buffer-stand-main-goods", "p-buffer-stand-counter-goods", "p-rubber-buffer", "p-rubber-buffer-10mm", "p-facia-plate", "p-facia-bkt", "p-pit-switch", "p-returnable"]) usedKeys.add(k);
+for (const k of ["p-false-ceiling", "p-read-bracket-nice", "p-magnet-bracket-nice", "p-magnet-bracket-spl", "p-magnet-trey-fixing-plate", "p-pvc-magnet-holder-magnet-40mm", "p-car-frame-assembly-instruction-t-509-2-1", "p-kick-angel", "p-fastner", "p-g-i-wire-no-24", "p-stud-anchar-12x100", "p-i-bolt-rod", "p-i-bolt-spring", "p-i-bolt-rod-home", "p-i-bolt-rod-belt", "p-car-location-plate-spl", "p-car-location-plate-goods", "p-car-location-plate-std", "p-big-jali", "p-small-jali", "p-jali-wooden", "p-50x6-angle", "p-buffer-stand-main-goods", "p-buffer-stand-counter-goods", "p-rubber-buffer", "p-rubber-buffer-10mm", "p-facia-plate", "p-facia-bkt", "p-pit-switch", "p-returnable", "p-fastner-for-supporting-bracket"]) usedKeys.add(k);
 
 // TAIL: everything not used, split into (decided→dropped) vs (tail→kept at end).
 const dropped = [];
