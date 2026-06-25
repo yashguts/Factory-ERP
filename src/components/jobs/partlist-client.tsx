@@ -12,6 +12,7 @@ import { useToast } from "@/components/ui/toast";
 import { cn } from "@/lib/utils";
 import { PACKING_SECTIONS, type PackingSection } from "@/lib/packing-list/packing-list-sections";
 import { OTHER_SECTION_KEY } from "@/lib/packing-list/helpers";
+import { HARDWARE_ITEMS, hardwareSpecOptions, isHardwareKey, HARDWARE_GROUP_MAP } from "@/lib/packing-list/hardware";
 import groupsJson from "@/lib/partlist/section-groups.json";
 import type { SearchableItem } from "@/lib/actions/items";
 import {
@@ -23,7 +24,9 @@ import { exportRowsToXlsx } from "@/lib/export/xlsx";
 import { downloadPartlistPdf, type PartlistExportRow } from "@/lib/export/partlist-pdf";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 
-const GROUPS = groupsJson as Record<string, string>;
+// Base section→category map + one entry per synthetic "Hardware" section so the
+// "+ Add Hardware" rows group under their category.
+const GROUPS = { ...(groupsJson as Record<string, string>), ...HARDWARE_GROUP_MAP };
 // Group order = the order groups first appear in the curated section list, plus the
 // BOM "Unsorted" group at the end.
 const GROUP_ORDER = (() => {
@@ -52,8 +55,6 @@ const GROUP_COLOR: Record<string, string> = {
   "Limit & Cam": "#f43f5e",
   "Misc Fitted": "#0ea5e9",
   "Cabin Items": "#10b981",
-  "Nut-Bolts": "#84cc16",
-  Screws: "#eab308",
   OTHER: "#64748b",
 };
 const groupColor = (g: string): string => GROUP_COLOR[g] ?? "#64748b";
@@ -422,12 +423,18 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
 
       {/* groups */}
       {GROUP_ORDER.map((g) => {
-        const tmpl = (templateByGroup[g] || []).filter(matchFilter);
+        const tmplAll = templateByGroup[g] || [];
+        // The synthetic "Hardware" section (if this category has one) is pulled out
+        // of the normal particular list and surfaced via a dedicated "+ Add Hardware".
+        const hwSection = tmplAll.find((s) => isHardwareKey(s.key)) || null;
+        const hwRows = hwSection ? (rows[hwSection.key] || []) : [];
+        const tmpl = tmplAll.filter((s) => !isHardwareKey(s.key)).filter(matchFilter);
         const otherRows = g === "OTHER" ? (rows[OTHER_SECTION_KEY] || []) : [];
-        if (!tmpl.length && !otherRows.length) return null;
+        if (!tmpl.length && !otherRows.length && !hwRows.length) return null;
         const isCollapsed = collapsed.has(g);
         const greyShown = showGreyed.has(g);
-        const groupActive = (g === "OTHER" ? [OTHER_SECTION_KEY] : tmpl.map((s) => s.key)).flatMap((k) => rows[k] || []).filter((r) => !r.not_required && (r.item_id || (r.name && r.name.trim())));
+        const groupKeys = g === "OTHER" ? [OTHER_SECTION_KEY] : tmplAll.map((s) => s.key);
+        const groupActive = groupKeys.flatMap((k) => rows[k] || []).filter((r) => !r.not_required && (r.item_id || (r.name && r.name.trim())));
         const groupChecked = groupActive.filter((r) => r.checked).length;
         const greyCount = g === "OTHER" ? 0 : tmpl.filter((s) => !(rows[s.key]?.length)).length;
 
@@ -482,6 +489,18 @@ export function PartListClient({ jobId, jobNumber, customerName, driveType, door
                     <button onClick={() => setShowGreyed((s) => { const n = new Set(s); n.has(g) ? n.delete(g) : n.add(g); return n; })} className="w-full px-3 py-1 text-left text-xs text-[var(--muted-foreground)] hover:bg-[var(--muted)]/40 cursor-pointer">
                       {greyShown ? "Hide" : "Show"} {greyCount} not-applicable particular{greyCount > 1 ? "s" : ""}
                     </button>
+                  )}
+                  {hwSection && (
+                    <div>
+                      {hwRows.map((r, i) => (
+                        <LineRow key={r.uid} sk={hwSection.key} sec={hwSection} row={r} label={i === 0 ? "Hardware" : ""} autoFocus={r.uid === justAddedUid} onPatch={patchRow} onRemove={removeRow} onToggle={toggleCheck} />
+                      ))}
+                      <div className="px-3 py-1.5 pl-9">
+                        <button onClick={() => addRow(hwSection.key)} className="inline-flex items-center gap-1 rounded-md border border-dashed px-2.5 py-1 text-xs font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 cursor-pointer" style={{ borderColor: groupColor(g) }}>
+                          <Plus className="h-3.5 w-3.5" /> Add Hardware
+                        </button>
+                      </div>
+                    </div>
                   )}
                 </div>
               </div>
@@ -553,6 +572,9 @@ interface LineRowProps {
 
 function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }: LineRowProps) {
   const isFree = sec?.captureType === "free";
+  // Hardware rows (the per-category "+ Add Hardware" picker): item = dropdown of the
+  // 13 fastener types, spec = dropdown of that item's sizes, qty. Manual entry only.
+  const isHardware = isHardwareKey(sk);
   const dismissed = row.not_required;
   // A non-inventory line (a free-text template line OR an item line flipped to
   // non-stock) is described by a Name + Specification the engineer types. A true
@@ -581,11 +603,20 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
         {needsItem && <span className="shrink-0 rounded bg-amber-500/15 px-1 text-[10px] font-medium text-amber-600">needs item</span>}
       </div>
 
-      {/* item (inventory search) OR name (non-inventory) + non-stock toggle */}
+      {/* item: hardware dropdown · non-inventory name · or inventory search + non-stock toggle */}
       <div className="flex min-w-0 flex-1 items-center gap-1.5">
-        {nameAndSpec
-          ? <input autoFocus={autoFocus} value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={isFree ? "Name / description" : "Name of the non-stock part"} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
-          : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} autoFocus={autoFocus} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
+        {isHardware
+          ? (
+            <select autoFocus={autoFocus} value={row.name || ""}
+              onChange={(e) => { const nm = e.target.value; const keep = hardwareSpecOptions(nm).includes(row.spec || "") ? row.spec : ""; onPatch(sk, row.uid, { name: nm, spec: keep }); }}
+              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] cursor-pointer">
+              <option value="">— select hardware —</option>
+              {HARDWARE_ITEMS.map((h) => <option key={h.label} value={h.label}>{h.label}</option>)}
+            </select>
+          )
+          : nameAndSpec
+            ? <input autoFocus={autoFocus} value={row.name || ""} onChange={(e) => onPatch(sk, row.uid, { name: e.target.value })} placeholder={isFree ? "Name / description" : "Name of the non-stock part"} className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-2 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)]" />
+            : <ItemPicker sk={sk === OTHER_SECTION_KEY ? "" : sk} row={row} autoFocus={autoFocus} onPick={(it) => onPatch(sk, row.uid, { item_id: it.id, code: it.code, name: it.name, uom: it.uom_abbreviation })} onClear={() => onPatch(sk, row.uid, { item_id: null, code: null, name: null, uom: null })} />}
         {!isFree && (
           <button
             onClick={() => onPatch(sk, row.uid, row.non_inventory ? { non_inventory: false, item_id: null, code: null, name: null, uom: null } : { non_inventory: true, item_id: null, code: null, name: null, uom: null })}
@@ -600,7 +631,15 @@ function LineRow({ sk, sec, row, label, autoFocus, onPatch, onRemove, onToggle }
       {/* specification — editable for non-inventory (size-picker when the section
           offers preset sizes, e.g. fasteners); faint read-only hint for inventory */}
       <div className="w-28 shrink-0">
-        {nameAndSpec
+        {isHardware
+          ? (
+            <select value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })} disabled={!row.name}
+              className="h-7 w-full rounded border border-[var(--border)] bg-[var(--background)] px-1.5 text-[13px] focus:outline-none focus:ring-1 focus:ring-[var(--primary)] disabled:opacity-50 cursor-pointer">
+              <option value="">size…</option>
+              {hardwareSpecOptions(row.name).map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )
+          : nameAndSpec
           ? (
             <>
               <input value={row.spec || ""} onChange={(e) => onPatch(sk, row.uid, { spec: e.target.value })}
