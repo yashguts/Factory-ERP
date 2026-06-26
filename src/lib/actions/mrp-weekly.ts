@@ -479,7 +479,11 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   for (let i = 0; i < N; i++) {
     const finishedShort = new Map<string, number>();
     for (const f of core.makeable) { const cs = makeableCum.get(f)![i]; if (cs > 0) finishedShort.set(f, cs); }
-    const leaves = explodeToLeaves(finishedShort, core.topo, core.partsOf, core.stock, isMakeLeaf);
+    const leaves = explodeToLeaves(
+      finishedShort, core.topo, core.partsOf, core.stock,
+      (id) => isMakeLeaf(id) && core.aud.has(id),
+      isMakeLeaf,
+    );
     for (const [leaf, q] of leaves) {
       const arr = leafCumDemand.get(leaf) ?? new Array(N).fill(0);
       arr[i] = q;

@@ -15,6 +15,7 @@ import {
   Puzzle,
   ArrowUpFromLine,
   ArrowDownToLine,
+  TriangleAlert,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -113,6 +114,13 @@ export function ItemDetailClient({
 
   const isTrade = item.effective_procurement_type === "trade";
   const hasBom = bom.lines.length > 0;
+  const realBuilt = builtRows.filter((r) => r.item_id).length;
+  const realLoose = looseRows.filter((r) => r.item_id).length;
+  // Guardrail: a MADE item that lists only bought ("Built from") parts, has no
+  // loose (Assembly) part, and isn't itself a program's output won't get a
+  // production run — the planner has no way to make it. Flag it (non-blocking).
+  const noProductionRoute =
+    !isTrade && realBuilt > 0 && realLoose === 0 && producedBy.length === 0;
   const identity = isTrade
     ? "bought"
     : hasBom
@@ -214,6 +222,20 @@ export function ItemDetailClient({
 
       {!isTrade && (
         <>
+          {noProductionRoute && (
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
+              <TriangleAlert className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-medium">No production route.</span> This made
+                item is built only from bought parts and no program produces it, so
+                planning can&apos;t schedule a run for it. If it&apos;s cut whole by a
+                program, open that program and add this item as an output — planning
+                will then schedule the run automatically and still buy the parts
+                below. If it&apos;s hand-assembled from the bought parts, you can
+                ignore this.
+              </span>
+            </div>
+          )}
           {/* Stocked sub-parts */}
           <PartsSection
             title="Built from"

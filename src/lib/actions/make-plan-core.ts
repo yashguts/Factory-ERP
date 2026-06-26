@@ -159,9 +159,17 @@ export function reportedSheets(runs: Runs, inputsOf: Map<string, Map<string, num
  * matching `collectLeaf`), stock netted at every level. The SAME explosion the
  * optimiser uses for its global `leafProduce` (collectLeaf = isMakeLeaf); the
  * weekly layer also calls it per-week with cumulative finished shortfall to
- * derive each leaf's per-week cumulative demand, and with a trade predicate to
- * derive the purchased (trade-leaf) buy list. `topo` must be a topological order
- * over all items reachable from the finished set (parents before children).
+ * derive each leaf's per-week cumulative demand. `topo` must be a topological
+ * order over all items reachable from the finished set (parents before children).
+ *
+ * `isMakeChild` splits a parts list: a MADE child (sub-part / assembly part)
+ * keeps the explosion going, a BOUGHT (trade) child is demanded but does not
+ * make its parent an assembly. An item with NO made children is produced WHOLE
+ * by its own program, so it is itself a production leaf even while it still
+ * consumes bought parts — e.g. a door panel cut from a sheet that also takes a
+ * glass insert. `collectLeaf` should additionally require the item to actually
+ * have a producing program, so such "made-whole + bought parts" items only land
+ * in `leafProduce` when a program can make them.
  */
 export function explodeToLeaves(
   finishedShortfall: Map<string, number>,
@@ -169,6 +177,7 @@ export function explodeToLeaves(
   partsOf: Map<string, { child: string; qty: number }[]>,
   stock: Map<string, number>,
   collectLeaf: (id: string) => boolean,
+  isMakeChild: (id: string) => boolean,
 ): Map<string, number> {
   const demand = new Map<string, number>();
   for (const [f, sf] of finishedShortfall) demand.set(f, (demand.get(f) ?? 0) + sf + (stock.get(f) ?? 0)); // gross = shortfall + stock so produce nets back to shortfall
@@ -177,8 +186,14 @@ export function explodeToLeaves(
     const prod = Math.max(0, (demand.get(it) ?? 0) - (stock.get(it) ?? 0));
     if (prod <= 0) continue;
     const kids = partsOf.get(it) ?? [];
-    if (kids.length) for (const { child, qty } of kids) demand.set(child, (demand.get(child) ?? 0) + prod * qty);
-    else if (collectLeaf(it)) leafProduce.set(it, (leafProduce.get(it) ?? 0) + prod);
+    let hasMakeChild = false;
+    for (const { child, qty } of kids) {
+      demand.set(child, (demand.get(child) ?? 0) + prod * qty);
+      if (isMakeChild(child)) hasMakeChild = true;
+    }
+    // No made sub-parts → this item is cut whole by its own program (a leaf);
+    // made sub-parts → it's an assembly, the explosion continues into them.
+    if (!hasMakeChild && collectLeaf(it)) leafProduce.set(it, (leafProduce.get(it) ?? 0) + prod);
   }
   return leafProduce;
 }
@@ -188,6 +203,9 @@ export interface MakePlanCore {
   short: Map<string, { shortfall: number; code: string; name: string; category: string }>;
   makeable: string[];
   statusOf: Map<string, { kind: string; missing: string[] }>;
+  /** item_id → its audited producing programs (op → qty/run). Lets callers
+   *  (weekly board, verifier) gate a made terminal on "has a program". */
+  aud: Map<string, Map<string, number>>;
   pend: Map<string, Map<string, number>>;
   partsOf: Map<string, { child: string; qty: number }[]>;
   topo: string[];
@@ -207,7 +225,7 @@ export interface MakePlanCore {
 }
 
 const EMPTY_CORE: Omit<MakePlanCore, "empty"> = {
-  short: new Map(), makeable: [], statusOf: new Map(), pend: new Map(), partsOf: new Map(),
+  short: new Map(), makeable: [], statusOf: new Map(), aud: new Map(), pend: new Map(), partsOf: new Map(),
   topo: [], stock: new Map(), itemInfo: new Map(), catProc: new Map(), ops: new Map(),
   leafProduce: new Map(), progOut: new Map(), progOutOriginal: new Map(), inputsOf: new Map(),
   fullOut: new Map(), finishedByLeaf: new Map(), runs: new Map(), runsSheets: 0, sheetsSimple: 0,
@@ -434,8 +452,11 @@ export async function computeMakePlanCore(
       const it = st.pop() as string;
       if (seen.has(it)) continue;
       seen.add(it);
-      const kids = partsOf.get(it) ?? [];
-      if (kids.length) for (const { child } of kids) st.push(child);
+      // Descend only into MADE sub-parts; an item with no made children is a
+      // production terminal — cut whole by its own program, its bought children
+      // (e.g. glass) are fitted at assembly, not produced here.
+      const makeKids = (partsOf.get(it) ?? []).filter((k) => isMakeLeaf(k.child));
+      if (makeKids.length) for (const { child } of makeKids) st.push(child);
       else out.add(it);
     }
     leavesCache.set(f, out);
@@ -444,11 +465,17 @@ export async function computeMakePlanCore(
   const statusOf = new Map<string, { kind: string; missing: string[] }>();
   for (const f of short.keys()) {
     const lv = leavesOf(f);
-    const makeLeaves = [...lv].filter(isMakeLeaf);
-    const missing = makeLeaves.filter((l) => !aud.has(l));
-    if (makeLeaves.length === 0) statusOf.set(f, { kind: "no-make", missing: [] });
-    else if (missing.length === 0) statusOf.set(f, { kind: lv.size === 1 && lv.has(f) ? "direct" : "assembly", missing: [] });
-    else statusOf.set(f, { kind: "blocked", missing });
+    // Each terminal is a made item with no made sub-parts. Producible if a
+    // program outputs it; if it has no program but DOES take bought children it
+    // is assembled from purchased parts (no program needed — just buy them);
+    // with neither it is genuinely blocked (a made part with no way to cut it).
+    const coverable = [...lv].filter((l) => aud.has(l));
+    const missing = [...lv].filter(
+      (l) => !aud.has(l) && !(partsOf.get(l) ?? []).some((k) => !isMakeLeaf(k.child)),
+    );
+    if (coverable.length === 0 && missing.length === 0) statusOf.set(f, { kind: "no-make", missing: [] });
+    else if (missing.length > 0) statusOf.set(f, { kind: "blocked", missing });
+    else statusOf.set(f, { kind: lv.size === 1 && lv.has(f) ? "direct" : "assembly", missing: [] });
   }
   const makeable = [...short.keys()].filter((f) => ["direct", "assembly"].includes(statusOf.get(f)!.kind));
 
@@ -472,7 +499,12 @@ export async function computeMakePlanCore(
 
   const leafProduce = explodeToLeaves(
     new Map(makeable.map((f) => [f, short.get(f)!.shortfall])),
-    topo, partsOf, stock, isMakeLeaf,
+    topo, partsOf, stock,
+    // a made terminal is a production leaf only when a program actually outputs
+    // it (so "made-whole + bought parts" panels are scheduled, but make items
+    // merely assembled from bought parts aren't treated as un-makeable leaves)
+    (id) => isMakeLeaf(id) && aud.has(id),
+    isMakeLeaf,
   );
 
   // candidate programs for the needed parts
@@ -526,7 +558,7 @@ export async function computeMakePlanCore(
 
   return {
     empty: false,
-    short, makeable, statusOf, pend, partsOf, topo, stock, itemInfo, catProc, ops,
+    short, makeable, statusOf, aud, pend, partsOf, topo, stock, itemInfo, catProc, ops,
     leafProduce, progOut, progOutOriginal, inputsOf, fullOut, finishedByLeaf,
     runs, runsSheets, sheetsSimple,
   };
