@@ -944,10 +944,29 @@ async function _getProductionPlanUncached(
     if (bom && bom.length > 0) {
       const nv = new Set(visited);
       nv.add(itemId);
+      let hasMakeChild = false;
       for (const line of bom) {
         const childId = resolveChild(line, it.finish);
-        if (childId) explode(childId, qty * (Number(line.qty) || 0), it.finish, nv, depth + 1);
+        if (!childId) continue;
+        const child = itemById.get(childId);
+        if (child && child.effective_procurement_type !== "trade") hasMakeChild = true;
+        explode(childId, qty * (Number(line.qty) || 0), it.finish, nv, depth + 1);
       }
+      // A real assembly (has MADE sub-parts) is fully covered by exploding those.
+      // But an item whose only children are BOUGHT (e.g. a door panel + glass) is
+      // itself cut WHOLE by its own program — fall through and route it through
+      // that program so its sheet reaches the buy list (previously this returned
+      // early and the panel's sheet silently vanished).
+      if (hasMakeChild) return;
+      const prog = itemToProgram.get(itemId);
+      if (prog) {
+        const runs = qty / (prog.outQty || 1);
+        programRuns.set(prog.programId, Math.max(programRuns.get(prog.programId) ?? 0, runs));
+        programIdsUsed.add(prog.programId);
+        return;
+      }
+      if (it.item_type === "raw_material") rawLeaf.set(itemId, (rawLeaf.get(itemId) ?? 0) + qty);
+      else unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
       return;
     }
     const prog = itemToProgram.get(itemId);

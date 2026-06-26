@@ -86,7 +86,7 @@ const near = (a: number, b: number, eps = 0.01) => Math.abs(a - b) <= eps;
   for (let i = 0; i < N; i++) {
     const fin = new Map<string, number>();
     for (const f of core.makeable) { const cs = mc.get(f)![i]; if (cs > 0) fin.set(f, cs); }
-    for (const [leaf, q] of explodeToLeaves(fin, core.topo, core.partsOf, core.stock, isMakeLeaf)) {
+    for (const [leaf, q] of explodeToLeaves(fin, core.topo, core.partsOf, core.stock, (id) => isMakeLeaf(id) && core.aud.has(id), isMakeLeaf)) {
       const arr = leafCumDemand.get(leaf) ?? new Array(N).fill(0); arr[i] = q; leafCumDemand.set(leaf, arr);
     }
   }
