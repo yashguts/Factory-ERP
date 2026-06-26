@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,7 +14,7 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, Package, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
-import { updateJob, deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
+import { deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { shouldRenderSection, driveTypeLabel } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
@@ -22,9 +22,11 @@ import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
 import type { JobDispatchSummary } from "@/lib/actions/dispatch";
 import { dispatchStat, toneChip } from "@/lib/dispatch-status";
-import type { Job, JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
+import type { Job, JobStatus, JobStage, JobGadVersion, JobStatusChange } from "@/lib/supabase/types";
 import { gadAlert, acknowledgedRev } from "@/lib/jobs/gad-alert";
 import { useOperator } from "@/lib/jobs/use-operator";
+import { changeJobStatus, acknowledgeStatusAlert, getJobStatusHistory } from "@/lib/actions/job-status";
+import { alertKind, reasonRequired, ALERT_META, statusLabel } from "@/lib/jobs/status-alert";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -129,9 +131,28 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   // drawing is already attached so the user sees it immediately.
   const [splitView, setSplitView] = useState<boolean>(!!job.gad_drawing_url);
 
+  const [statusHistory, setStatusHistory] = useState<JobStatusChange[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getJobStatusHistory(job.id).then((h) => { if (alive) setStatusHistory(h); }).catch(() => {});
+    return () => { alive = false; };
+  }, [job.id, job.status]);
+  const statusOpenAlert = statusHistory.find((h) => h.alert_kind && !h.acknowledged_at) ?? null;
+
   const handleStatusChange = (newStatus: JobStatus) => {
+    const from = job.status as JobStatus;
+    if (from === newStatus) return;
+    const operator = ensureOperator();
+    let reason: string | null = null;
+    if (reasonRequired(from, newStatus)) {
+      const k = alertKind(from, newStatus);
+      const r = window.prompt(`Reason for "${k ? ALERT_META[k].label : "this change"}" (required):`, "");
+      if (r === null || !r.trim()) { window.alert("Status change cancelled — a reason is required."); return; }
+      reason = r.trim();
+    }
     startTransition(async () => {
-      await updateJob(job.id, { status: newStatus });
+      const res = await changeJobStatus(job.id, newStatus, operator, reason);
+      if (!res.ok) window.alert(`Could not change status: ${res.error}`);
       router.refresh();
     });
   };
@@ -146,6 +167,16 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         alert(`Could not mark audited: ${res.error}`);
         return;
       }
+      router.refresh();
+    });
+  };
+
+  const handleAckStatus = (changeId: string) => {
+    const operator = ensureOperator();
+    startTransition(async () => {
+      const res = await acknowledgeStatusAlert(changeId, operator);
+      if (!res.ok) window.alert(`Could not acknowledge: ${res.error}`);
+      else getJobStatusHistory(job.id).then(setStatusHistory).catch(() => {});
       router.refresh();
     });
   };
@@ -479,6 +510,65 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             </Button>
           </div>
         </div>
+      )}
+
+      {/* Job status open alert — a production-critical status change (set by
+          Sales/CRM) awaiting factory acknowledgement. */}
+      {statusOpenAlert && (
+        <div className={`mb-4 rounded-lg border px-4 py-3 ${statusOpenAlert.alert_kind === "held" ? "border-red-300 bg-red-50" : statusOpenAlert.alert_kind === "reverted" ? "border-amber-300 bg-amber-50" : statusOpenAlert.alert_kind === "started" ? "border-emerald-300 bg-emerald-50" : "border-blue-300 bg-blue-50"}`}>
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="mt-0.5 shrink-0 text-amber-600" />
+            <div className="flex-1 text-sm">
+              <div className="font-semibold">
+                {ALERT_META[statusOpenAlert.alert_kind!].icon} {ALERT_META[statusOpenAlert.alert_kind!].label} — needs acknowledgement
+              </div>
+              <div className="mt-0.5 text-[var(--muted-foreground)]">
+                {statusLabel(statusOpenAlert.from_status)} → {statusLabel(statusOpenAlert.to_status)}
+                {statusOpenAlert.changed_by && statusOpenAlert.changed_by !== "unknown" ? ` · by ${statusOpenAlert.changed_by}` : ""}
+                {` · ${new Date(statusOpenAlert.changed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}`}
+              </div>
+              {statusOpenAlert.reason && (
+                <div className="mt-1 text-sm"><span className="font-medium">Reason:</span> {statusOpenAlert.reason}</div>
+              )}
+            </div>
+            <Button size="sm" onClick={() => handleAckStatus(statusOpenAlert.id)} disabled={isPending} className="shrink-0">
+              <CheckCircle2 className="h-4 w-4 mr-1" /> Acknowledge
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Status change history — every status move with who / when / why. */}
+      {statusHistory.length > 0 && (
+        <details className="mb-4 card-surface overflow-hidden p-0">
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-sm font-medium">
+            <FileClock size={15} className="text-[var(--muted-foreground)]" />
+            Status history
+            <span className="text-xs text-[var(--muted-foreground)]">({statusHistory.length})</span>
+          </summary>
+          <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+            {statusHistory.map((h) => (
+              <div key={h.id} className="flex items-center gap-3 px-3 py-2 text-sm">
+                <span className="w-36 shrink-0 text-xs text-[var(--muted-foreground)]">
+                  {new Date(h.changed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+                <span className="shrink-0">
+                  {statusLabel(h.from_status)} <span className="text-[var(--muted-foreground)]">→</span> <strong>{statusLabel(h.to_status)}</strong>
+                </span>
+                {h.alert_kind && (
+                  <Badge variant={ALERT_META[h.alert_kind].tone === "red" ? "red" : ALERT_META[h.alert_kind].tone === "green" ? "green" : "amber"}>
+                    {ALERT_META[h.alert_kind].short}
+                  </Badge>
+                )}
+                {h.reason && <span className="truncate text-xs italic text-[var(--muted-foreground)]">“{h.reason}”</span>}
+                <span className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]">
+                  {h.changed_by === "system (backfill)" ? "initial" : (h.changed_by || "—")}
+                  {h.acknowledged_at ? ` · ✓ ${h.acknowledged_by || ""}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
       )}
 
       {/* GAD version history — every uploaded drawing is kept. Auto-open when the

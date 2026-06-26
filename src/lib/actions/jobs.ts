@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { alertKind } from "@/lib/jobs/status-alert";
 
 export interface BomLineInput {
   category: string;
@@ -758,9 +759,20 @@ export async function updateJob(
     requirement_stage?: JobStage | null;
     requirement_dispatch_date?: string | null;
     structure_included?: "NA" | "Factory-made" | "Site-fabricated";
-  }
+  },
+  operator?: string | null,
 ) {
   const supabase = await createClient();
+
+  // The status dropdowns use changeJobStatus(); the edit form comes through
+  // here — snapshot the prior status so an edit-form status change is still
+  // logged (and alerted) in job_status_changes, never unrecorded.
+  let prevStatus: JobStatus | undefined;
+  if (data.status !== undefined) {
+    const { data: cur } = await supabase.from("jobs").select("status").eq("id", id).maybeSingle();
+    prevStatus = (cur?.status as JobStatus) ?? undefined;
+  }
+
   const { data: job, error } = await supabase
     .from("jobs")
     .update(data)
@@ -769,6 +781,16 @@ export async function updateJob(
     .single();
 
   if (error) throw error;
+
+  if (data.status !== undefined && prevStatus !== undefined && prevStatus !== data.status) {
+    await supabase.from("job_status_changes").insert({
+      job_id: id, from_status: prevStatus, to_status: data.status,
+      alert_kind: alertKind(prevStatus, data.status), reason: null, changed_by: operator ?? null,
+    });
+    revalidateTag("status-alerts");
+    revalidatePath("/jobs/status-alerts");
+  }
+
   revalidateTag("jobs");
   revalidatePath(`/jobs/${id}`);
   revalidatePath(`/jobs/${id}/edit`);

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useTransition } from "react";
+import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   readParam,
@@ -24,6 +24,9 @@ import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { updateJob, type JobReadinessFlags } from "@/lib/actions/jobs";
+import { changeJobStatus, getOpenStatusAlerts } from "@/lib/actions/job-status";
+import { useOperator } from "@/lib/jobs/use-operator";
+import { reasonRequired, alertKind, ALERT_META } from "@/lib/jobs/status-alert";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
@@ -267,6 +270,48 @@ export function JobsClient({
     }
   };
 
+  const { ensureOperator } = useOperator();
+  // job_ids with an OPEN (unacknowledged) status alert → amber "!" chip in the list.
+  const [openAlertJobs, setOpenAlertJobs] = useState<Set<string>>(new Set());
+  const [statusRefreshKey, setStatusRefreshKey] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    getOpenStatusAlerts()
+      .then((rows) => { if (alive) setOpenAlertJobs(new Set(rows.map((r) => r.job_id))); })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, [statusRefreshKey]);
+
+  // Status changes go through the audited choke-point (records who/when/why + alerts).
+  const handleStatusChange = (jobId: string, newStatus: JobStatus) => {
+    const job = jobs.find((j) => j.id === jobId);
+    const from = (job?.status ?? null) as JobStatus | null;
+    if (from === newStatus) return;
+    const operator = ensureOperator();
+    let reason: string | null = null;
+    if (reasonRequired(from, newStatus)) {
+      const k = alertKind(from, newStatus);
+      const r = window.prompt(`Reason for "${k ? ALERT_META[k].label : "this change"}" on job ${job?.job_number ?? ""} (required):`, "");
+      if (r === null || !r.trim()) { toast.error("Status change cancelled — a reason is required."); return; }
+      reason = r.trim();
+    }
+    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: newStatus } : j)));
+    setSavingJobId(jobId);
+    startTransition(async () => {
+      try {
+        const res = await changeJobStatus(jobId, newStatus, operator, reason);
+        if (!res.ok) { toast.error(res.error ?? "Could not change status"); router.refresh(); }
+        else if (res.alertKind) toast.success(`${job?.job_number ?? "Job"}: ${ALERT_META[res.alertKind].label}.`);
+      } catch {
+        toast.error(`Could not change status for ${job?.job_number ?? "job"}.`);
+        router.refresh();
+      } finally {
+        setSavingJobId(null);
+        setStatusRefreshKey((k) => k + 1);
+      }
+    });
+  };
+
   const handleInlineUpdate = (jobId: string, data: Record<string, any>) => {
     const jobNumber = jobs.find((j) => j.id === jobId)?.job_number ?? "";
     // Optimistic: update local state instantly so UI never blocks
@@ -381,6 +426,23 @@ export function JobsClient({
           <span className="text-sm">
             <strong>{gadDriftCount}</strong>{" "}
             {gadDriftCount === 1 ? "job has" : "jobs have"} a GAD changed after the BOM was defined — review before cutting/procuring.
+          </span>
+          <span className="ml-auto text-sm font-medium underline underline-offset-2">
+            Review
+          </span>
+        </Link>
+      )}
+
+      {/* Job status alerts banner — links to the global Status Alerts page */}
+      {openAlertJobs.size > 0 && (
+        <Link
+          href="/jobs/status-alerts"
+          className="flex items-center gap-3 mb-4 px-4 py-3 rounded-lg border border-amber-300 bg-amber-50 text-amber-700 hover:opacity-90 transition-colors"
+        >
+          <AlertTriangle size={18} className="shrink-0" />
+          <span className="text-sm">
+            <strong>{openAlertJobs.size}</strong>{" "}
+            {openAlertJobs.size === 1 ? "job has" : "jobs have"} an open status alert (started / held / reverted / resumed) awaiting acknowledgement.
           </span>
           <span className="ml-auto text-sm font-medium underline underline-offset-2">
             Review
@@ -619,16 +681,21 @@ export function JobsClient({
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
-                    <select
-                      className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STATUS_SELECT_COLORS[job.status]}`}
-                      value={job.status}
-                      onChange={(e) => handleInlineUpdate(job.id, { status: e.target.value })}
-                      disabled={savingJobId === job.id}
-                    >
-                      {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
-                        <option key={s} value={s}>{STATUS_LABELS[s]}</option>
-                      ))}
-                    </select>
+                    <div className="flex items-center gap-1.5">
+                      <select
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STATUS_SELECT_COLORS[job.status]}`}
+                        value={job.status}
+                        onChange={(e) => handleStatusChange(job.id, e.target.value as JobStatus)}
+                        disabled={savingJobId === job.id}
+                      >
+                        {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
+                          <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                        ))}
+                      </select>
+                      {openAlertJobs.has(job.id) && (
+                        <Link href="/jobs/status-alerts" onClick={(e) => e.stopPropagation()} title="Open status alert — review &amp; acknowledge" className="shrink-0 rounded-full bg-amber-500/20 px-1.5 font-bold text-amber-600 hover:bg-amber-500/30">!</Link>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>
                     {(() => {
