@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import { CABIN_PARENT, cabinCodePrefix } from "@/lib/cabin/cabin-types";
+import { currentOperatorName } from "@/lib/actions/inventory";
 
 /** Resolve a sub-type under a cabin type to its category id (creating it if new),
  *  else the type itself. Shared by createCabinItem + createCabinPanelVariants. */
@@ -400,6 +401,7 @@ export async function createCabinItem(input: {
       quantity: qty,
       notes: "Opening stock (cabin add item)",
       reference_type: "import",
+      created_by_name: await currentOperatorName(),
     });
   }
 

@@ -66,20 +66,21 @@ export async function downloadStockLedgerPdf(ledger: ItemLedger): Promise<void> 
     theme: "grid",
     styles: { fontSize: 8, cellPadding: 1.5 },
     headStyles: { fillColor: [34, 51, 68], textColor: 255 },
-    head: [["Date", "Type", "Warehouse", "In", "Out", "Balance", "Note / Ref"]],
+    head: [["Date", "Type", "Warehouse", "User", "In", "Out", "Balance", "Note / Ref"]],
     body: asc.map((r) => [
       fmtDateTime(r.created_at),
       TXN_LABELS[r.transaction_type] ?? r.transaction_type,
       r.warehouse_name ?? "—",
+      r.created_by_name || "—",
       r.signed_qty > 0 ? fmtQty(r.signed_qty) : "",
       r.signed_qty < 0 ? fmtQty(Math.abs(r.signed_qty)) : "",
       fmtQty(r.running_balance),
       r.po_number ? `PO ${r.po_number}` : r.note ?? "",
     ]),
     columnStyles: {
-      3: { halign: "right" },
       4: { halign: "right" },
-      5: { halign: "right", fontStyle: "bold" },
+      5: { halign: "right" },
+      6: { halign: "right", fontStyle: "bold" },
     },
   });
 
