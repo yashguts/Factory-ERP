@@ -969,18 +969,19 @@ async function _getProductionPlanUncached(
     explode(d.item_id, d.total_required, itemById.get(d.item_id)?.finish ?? null, new Set(), 0);
   }
 
-  // Roll up program input sheets at whole runs.
+  // Roll up program input sheets at whole runs. Program inputs are the raw stock a
+  // program nests on (steel sheets etc.), so they belong on the buy list as raw
+  // materials — even when classified Trade, because sheets ARE bought. Previously
+  // trade inputs were routed to `purchased`, but the Trade "what to buy" page only
+  // renders rawMaterials, so every bought sheet silently vanished from MRP. Keep all
+  // program inputs in rawDemand. (Parts-list trade LEAVES still go to `purchased`
+  // via explode() above — those surface on Trade MRP through getMrpData.)
   const rawDemand = new Map<string, number>(rawLeaf);
   for (const [pid, runs] of programRuns) {
     const wholeRuns = Math.ceil(runs - 1e-9);
     for (const inp of programInputs.get(pid) ?? []) {
-      const it = itemById.get(inp.item_id);
       const add = wholeRuns * inp.qty;
-      if (it && it.effective_procurement_type === "trade") {
-        purchased.set(inp.item_id, (purchased.get(inp.item_id) ?? 0) + add);
-      } else {
-        rawDemand.set(inp.item_id, (rawDemand.get(inp.item_id) ?? 0) + add);
-      }
+      rawDemand.set(inp.item_id, (rawDemand.get(inp.item_id) ?? 0) + add);
     }
   }
 

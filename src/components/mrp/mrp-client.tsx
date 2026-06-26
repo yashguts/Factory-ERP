@@ -102,14 +102,17 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets }: P
     }
     if (isTrade && sheets) {
       for (const s of sheets) {
-        // A sheet shown as its own group must not also appear as a trade row.
+        // A sheet shown here must not also appear as a trade row.
         if (seen.has(s.item_id)) continue;
         out.push({
           item_id: s.item_id,
           item_code: s.code,
           item_name: s.name,
           category_name: s.subCategory,
-          group: SHEET_GROUP,
+          // Group exploded sheets under their real top-level category (e.g. "MS
+          // Sheet/Plate", "SS Sheet") so they sit alongside the rest of the buy
+          // list by category, matching how Inventory is browsed.
+          group: s.category && s.category !== "(none)" ? s.category : UNCATEGORISED,
           uom: s.uom,
           total_required: s.qty,
           total_stock: s.in_stock,
