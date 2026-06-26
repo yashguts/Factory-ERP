@@ -247,7 +247,7 @@ const CURATED = [
   // batch 7 — S.S Handle renamed "S.S. Hand Rail", mapped to Cabin Hand Rail (cat renamed in migration 044)
   C("p-s-s-handle", "S.S. Hand Rail", { group: "Cabin Items", cats: ["Small Purchased Items > Cabin Hand Rail"] }),
   // batch 8 — remaining "Other" parked -> Miscellaneous (open, manual qty)
-  C("p-hydraulic-pump", "Hydraulic Pump", { group: "Misc Fitted" }),
+  C("p-hydraulic-pump", "Hydraulic Power Pack", { group: "Misc Fitted" }),
   C("p-dendrite-200ml", "Dendrite 200ml", { group: "Misc Fitted" }),
   C("p-pvc-excution", "PVC Excution", { group: "Misc Fitted" }),
   C("p-keeper-packing-4mm-1mm", "Keeper Packing 4mm + 1mm", { group: "Misc Fitted" }),

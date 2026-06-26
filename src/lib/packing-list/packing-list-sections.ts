@@ -1263,7 +1263,7 @@ const BASE_PACKING_SECTIONS: PackingSection[] = [
   },
   {
     key: "p-hydraulic-pump",
-    label: "Hydraulic Pump",
+    label: "Hydraulic Power Pack",
     captureType: "item",
     categoryPaths: [],
     specHint: "80X5X3500mm",
