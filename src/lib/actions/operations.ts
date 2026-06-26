@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { OperationMachine, OutputRole } from "@/lib/supabase/types";
+import { auditBlockers, isOutputResolved, summaryFromLines } from "@/lib/operations/audit-eligibility";
 
 /* ------------------------------------------------------------------ *
  * Operations catalog (production-visibility Phase 0).
@@ -166,10 +167,8 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       input_matched: ins.filter((r: any) => r.item_id).length,
       // An output is "resolved" if it's linked to an item OR intentionally not
       // an item (cut_part/tooling/scrap). Only unmapped 'component' outputs are
-      // true gaps that still need an inventory item.
-      output_matched: outs.filter(
-        (r: any) => r.item_id || (r.role && r.role !== "component"),
-      ).length,
+      // true gaps that still need an inventory item. (Shared with the audit guard.)
+      output_matched: outs.filter((r: any) => isOutputResolved(r)).length,
       is_active: row.is_active as boolean,
     };
   });
@@ -527,6 +526,44 @@ export async function setOperationAudited(
 ): Promise<{ ok: boolean; error?: string }> {
   if (!id) return { ok: false, error: "Missing operation id." };
   const supabase = await createClient();
+
+  // Marking audited asserts the program is complete + correctly mapped, and
+  // downstream logic (e.g. the production-run logger) trusts that. Enforce the
+  // audit rules here — the one choke point both the list and detail page call.
+  // Un-auditing is always allowed (no validation).
+  if (audited) {
+    const { data: op, error: loadErr } = await supabase
+      .from("operations")
+      .select(
+        `material_label, machine,
+         operation_inputs(item_id),
+         operation_outputs(item_id, role)`,
+      )
+      .eq("id", id)
+      .single();
+    if (loadErr) return { ok: false, error: loadErr.message };
+    if (!op) return { ok: false, error: "Program not found." };
+    const inputs = (Array.isArray(op.operation_inputs)
+      ? op.operation_inputs
+      : []) as { item_id: string | null }[];
+    const outputs = (Array.isArray(op.operation_outputs)
+      ? op.operation_outputs
+      : []) as { item_id: string | null; role?: OutputRole | null }[];
+    const blockers = auditBlockers(
+      summaryFromLines(
+        {
+          material_label: (op.material_label as string | null) ?? null,
+          machine: op.machine as OperationMachine,
+        },
+        inputs,
+        outputs,
+      ),
+    );
+    if (blockers.length > 0) {
+      return { ok: false, error: "Cannot mark audited:\n• " + blockers.join("\n• ") };
+    }
+  }
+
   const { error } = await supabase
     .from("operations")
     .update({ audited_at: audited ? new Date().toISOString() : null })

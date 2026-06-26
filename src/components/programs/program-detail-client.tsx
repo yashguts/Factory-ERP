@@ -46,6 +46,10 @@ import {
   type UnitOfMeasurement,
   type ItemType,
 } from "@/lib/supabase/types";
+import {
+  auditBlockers,
+  summaryFromLines,
+} from "@/lib/operations/audit-eligibility";
 
 interface Props {
   operation: OperationDetail;
@@ -71,6 +75,9 @@ export function ProgramDetailClient({
   const [showClone, setShowClone] = useState(false);
   const [audited, setAudited] = useState(!!operation.audited_at);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  // Reasons the program can't be audited yet (audit-rule failures, or a server
+  // rejection). Shows a blocking dialog instead of the confirm dialog.
+  const [auditBlocked, setAuditBlocked] = useState<string[] | null>(null);
   const [isPending, startTransition] = useTransition();
 
   // Inventory-match summary for this program: how many input/output lines are
@@ -90,6 +97,16 @@ export function ProgramDetailClient({
     };
   }, [operation.inputs, operation.outputs]);
 
+  // Audit-eligibility rules (shared with the list + server guard): inputs mapped,
+  // outputs resolved, material/finish set, canonical type. Empty ⇒ can audit.
+  const blockers = useMemo(
+    () =>
+      auditBlockers(
+        summaryFromLines(operation, operation.inputs, operation.outputs),
+      ),
+    [operation],
+  );
+
   // Unmark immediately; require confirmation before marking audited.
   const requestAudit = () => {
     if (audited) {
@@ -98,9 +115,13 @@ export function ProgramDetailClient({
         const res = await setOperationAudited(operation.id, false);
         if (!res.ok) setAudited(true);
       });
-    } else {
-      setConfirmOpen(true);
+      return;
     }
+    if (blockers.length > 0) {
+      setAuditBlocked(blockers);
+      return;
+    }
+    setConfirmOpen(true);
   };
 
   const confirmAuditYes = () => {
@@ -108,7 +129,10 @@ export function ProgramDetailClient({
     setConfirmOpen(false);
     startTransition(async () => {
       const res = await setOperationAudited(operation.id, true);
-      if (!res.ok) setAudited(false);
+      if (!res.ok) {
+        setAudited(false);
+        setAuditBlocked([res.error ?? "Could not mark this program audited."]);
+      }
     });
   };
 
@@ -374,6 +398,31 @@ export function ProgramDetailClient({
           cancelLabel="No"
           onConfirm={confirmAuditYes}
           onCancel={() => setConfirmOpen(false)}
+        />
+      )}
+
+      {auditBlocked && (
+        <ConfirmDialog
+          title="Can’t mark audited yet"
+          message={
+            <>
+              <span className="font-medium">{operation.name}</span> is missing:
+              <ul className="mt-2 list-disc pl-5 space-y-1 text-[var(--warning)]">
+                {auditBlocked.map((r, i) => (
+                  <li key={i} className="whitespace-pre-line">
+                    {r}
+                  </li>
+                ))}
+              </ul>
+            </>
+          }
+          confirmLabel="Edit program"
+          cancelLabel="Close"
+          onConfirm={() => {
+            setAuditBlocked(null);
+            setShowEdit(true);
+          }}
+          onCancel={() => setAuditBlocked(null)}
         />
       )}
     </div>
