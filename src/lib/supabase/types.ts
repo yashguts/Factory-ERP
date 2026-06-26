@@ -224,6 +224,21 @@ export interface JobGadVersion {
   uploaded_at: string;
 }
 
+/** Immutable audit log of a job status change (047_job_status_changes). */
+export interface JobStatusChange {
+  id: string;
+  job_id: string;
+  from_status: JobStatus | null;
+  to_status: JobStatus;
+  /** started|held|reverted|resumed for an alerting transition, else null. */
+  alert_kind: "started" | "held" | "reverted" | "resumed" | null;
+  reason: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+}
+
 export type StructureIncluded = "NA" | "Factory-made" | "Site-fabricated";
 export const STRUCTURE_INCLUDED_OPTIONS: StructureIncluded[] = [
   "NA",

@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { useOperator } from "@/lib/jobs/use-operator";
 import { getGadDriftCount } from "@/lib/actions/gad-alert-count";
+import { getStatusAlertCount } from "@/lib/actions/status-alert-count";
 import {
   Package,
   ClipboardList,
@@ -95,11 +96,18 @@ export function Sidebar() {
   // (which previously made every save hang). Refreshes on navigation; the
   // underlying action is cached (120s) so repeat calls are cheap.
   const [gadDrift, setGadDrift] = useState(0);
+  // Open job status alerts (started / held / reverted / resumed) → amber badge.
+  const [statusAlerts, setStatusAlerts] = useState(0);
   useEffect(() => {
     let alive = true;
     getGadDriftCount()
       .then((n) => {
         if (alive) setGadDrift(n);
+      })
+      .catch(() => {});
+    getStatusAlertCount()
+      .then((n) => {
+        if (alive) setStatusAlerts(n);
       })
       .catch(() => {});
     return () => {
@@ -152,6 +160,7 @@ export function Sidebar() {
                 const Icon = item.icon;
                 const isActive = item.href === activeHref;
                 const badge = item.href === "/jobs" ? gadDrift : 0;
+                const statusBadge = item.href === "/jobs" ? statusAlerts : 0;
                 return (
                   <Link
                     key={item.href}
@@ -165,6 +174,14 @@ export function Sidebar() {
                   >
                     <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
                     <span className="flex-1">{item.label}</span>
+                    {statusBadge > 0 && (
+                      <span
+                        title={`${statusBadge} open job status alert${statusBadge === 1 ? "" : "s"}`}
+                        className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white"
+                      >
+                        {statusBadge > 99 ? "99+" : statusBadge}
+                      </span>
+                    )}
                     {badge > 0 && (
                       <span
                         title={`${badge} GAD change${badge === 1 ? "" : "s"} need review`}
