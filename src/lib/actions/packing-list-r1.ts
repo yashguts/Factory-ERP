@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
+import { unstable_cache } from "next/cache";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { getAllCategories, expandCategoryDescendants } from "@/lib/actions/categories";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import type { PackingLineKind } from "@/lib/supabase/types";
@@ -554,6 +556,49 @@ export async function itemsInCategory(categoryId: string, q?: string): Promise<R
     name: it.name as string,
     uom: relOne<{ abbreviation: string }>(it.uom)?.abbreviation ?? null,
   }));
+}
+
+/** category_id → item count (subtree, active items). Cached 5 min on the items
+ *  tag — drives the count badge next to each category dropdown in the builder. */
+export async function getCategoryItemCounts(): Promise<Record<string, number>> {
+  return unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const cats = await getAllCategories();
+      const children = new Map<string, string[]>();
+      for (const c of cats) {
+        if (c.parent_id) {
+          const a = children.get(c.parent_id);
+          if (a) a.push(c.id);
+          else children.set(c.parent_id, [c.id]);
+        }
+      }
+      const rows = await fetchAllRanged<{ category_id: string | null }>((from, to, wc) =>
+        supabase
+          .from("items")
+          .select("category_id", wc ? { count: "exact" } : {})
+          .eq("is_active", true)
+          .not("category_id", "is", null)
+          .range(from, to),
+      );
+      const direct = new Map<string, number>();
+      for (const r of rows) if (r.category_id) direct.set(r.category_id, (direct.get(r.category_id) ?? 0) + 1);
+      const memo = new Map<string, number>();
+      const subtree = (id: string): number => {
+        const m = memo.get(id);
+        if (m !== undefined) return m;
+        let n = direct.get(id) ?? 0;
+        for (const ch of children.get(id) ?? []) n += subtree(ch);
+        memo.set(id, n);
+        return n;
+      };
+      const out: Record<string, number> = {};
+      for (const c of cats) out[c.id] = subtree(c.id);
+      return out;
+    },
+    ["r1-category-item-counts"],
+    { revalidate: 300, tags: ["items"] },
+  )();
 }
 
 // ============================================================================

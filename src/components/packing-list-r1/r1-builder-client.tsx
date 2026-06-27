@@ -210,10 +210,12 @@ export function R1BuilderClient({
   list,
   categories,
   demand,
+  counts,
 }: {
   list: R1ListView;
   categories: CategoryNode[];
   demand: R1Demand;
+  counts: Record<string, number>;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -458,6 +460,7 @@ export function R1BuilderClient({
                       const isExtra =
                         !!prev && prev.label === l.label && prev.category_id === l.category_id && prev.kind === l.kind;
                       const canAdd = l.kind === "category" || l.kind === "hardware";
+                      const pc = pickerCat(l);
                       return (
                         <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
                           <td className={"py-1 pr-2 align-middle w-[32%] " + (isExtra ? "pl-5 font-normal text-[#6b7280]" : "font-medium")}>
@@ -480,29 +483,42 @@ export function R1BuilderClient({
                             {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
                           </td>
                           <td className="py-1 px-2 align-middle w-[46%]">
-                            {l.item_id ? (
-                              <span className="inline-flex items-center">
-                                <span className="font-medium">{l.item_name}</span>
-                                {l.item_code && <CodeChip code={l.item_code} />}
-                                {canAdd && (
-                                  <button
-                                    onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
-                                    className="ml-1.5 text-[#6b7280] hover:text-red-600"
-                                    title="clear"
-                                  >
-                                    ×
-                                  </button>
-                                )}
-                              </span>
-                            ) : canAdd ? (
-                              <ScopedItemPicker
-                                categoryId={pickerCat(l)}
-                                placeholder={l.category_name ?? l.label ?? "category"}
-                                onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
-                              />
-                            ) : (
-                              <span className="text-xs text-[#6b7280]">—</span>
-                            )}
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              {l.item_id ? (
+                                <span className="inline-flex items-center">
+                                  <span className="font-medium">{l.item_name}</span>
+                                  {l.item_code && <CodeChip code={l.item_code} />}
+                                  {canAdd && (
+                                    <button
+                                      onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
+                                      className="ml-1.5 text-[#6b7280] hover:text-red-600"
+                                      title="clear"
+                                    >
+                                      ×
+                                    </button>
+                                  )}
+                                </span>
+                              ) : canAdd ? (
+                                <ScopedItemPicker
+                                  categoryId={pc}
+                                  placeholder={l.category_name ?? l.label ?? "category"}
+                                  onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
+                                />
+                              ) : (
+                                <span className="text-xs text-[#6b7280]">—</span>
+                              )}
+                              {canAdd && pc != null && (
+                                <span
+                                  className={
+                                    "rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+                                    ((counts[pc] ?? 0) === 0 ? "bg-red-100 text-red-700" : "bg-[#e0e7ff] text-[#3730a3]")
+                                  }
+                                  title="items available in this category"
+                                >
+                                  {counts[pc] ?? 0}
+                                </span>
+                              )}
+                            </div>
                           </td>
                           <td className="py-1 px-2 align-middle w-[12%]">
                             <input
