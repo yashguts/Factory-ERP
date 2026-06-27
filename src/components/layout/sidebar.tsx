@@ -19,6 +19,7 @@ import {
   Search,
   PlayCircle,
   ShoppingCart,
+  PackageCheck,
   Truck,
   PackageSearch,
   Settings,
@@ -74,6 +75,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
       { href: "/demand", label: "Demand Rules", icon: Network },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
+      { href: "/packing-list-r1", label: "Packing List R1", icon: PackageCheck },
     ],
   },
   {

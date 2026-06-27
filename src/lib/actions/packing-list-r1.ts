@@ -92,6 +92,42 @@ function relOne<T>(rel: unknown): T | null {
 }
 
 // ============================================================================
+// LANDING — existing job lists
+// ============================================================================
+export interface R1ListSummary {
+  jobId: string;
+  jobNumber: string | null;
+  customerName: string | null;
+  status: "draft" | "final";
+  lineCount: number;
+  updatedAt: string;
+}
+export async function getR1Lists(): Promise<R1ListSummary[]> {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase
+    .from("packing_r1_lists")
+    .select(
+      `id, job_id, status, updated_at,
+       job:jobs!packing_r1_lists_job_id_fkey(job_number, customer_name),
+       lines:packing_r1_lines!packing_r1_lines_list_id_fkey(count)`,
+    )
+    .order("updated_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map((r) => {
+    const job = relOne<{ job_number: string; customer_name: string | null }>(r.job);
+    const cnt = Array.isArray(r.lines) ? ((r.lines[0] as { count?: number })?.count ?? 0) : 0;
+    return {
+      jobId: r.job_id as string,
+      jobNumber: job?.job_number ?? null,
+      customerName: job?.customer_name ?? null,
+      status: (r.status as "draft" | "final") ?? "draft",
+      lineCount: Number(cnt) || 0,
+      updatedAt: r.updated_at as string,
+    };
+  });
+}
+
+// ============================================================================
 // TEMPLATE
 // ============================================================================
 export async function getTemplate(): Promise<R1TemplatePart[]> {
