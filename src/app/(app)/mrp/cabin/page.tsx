@@ -1,9 +1,7 @@
-import { getCabinRequirements } from "@/lib/actions/cabin-program-plan";
-import { CabinRequirementsClient } from "@/components/mrp/cabin-requirements-client";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Cabin MRP — Requirements" };
-
-export default async function CabinRequirementsPage() {
-  const rows = await getCabinRequirements();
-  return <CabinRequirementsClient rows={rows} />;
+// Cabin MRP retired alongside folding cabin programs into the main Programs
+// catalogue. Cabin demand continues to flow through Cabin Jobs.
+export default function CabinMrpRetired() {
+  redirect("/mrp");
 }
