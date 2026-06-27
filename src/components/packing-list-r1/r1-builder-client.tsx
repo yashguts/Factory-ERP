@@ -267,6 +267,24 @@ export function R1BuilderClient({
         sort_order: d[pi].lines.length,
       });
     });
+  // "+ Add" / "+ Add hardware": clone a line right after it so the same
+  // particular can carry multiple items (the Excel's {Add Multiple}).
+  const addExtra = (pi: number, li: number) =>
+    mut((d) => {
+      const src = d[pi].lines[li];
+      d[pi].lines.splice(li + 1, 0, {
+        ...src,
+        _k: nk(),
+        id: nk(),
+        template_line_id: null,
+        item_id: null,
+        item_code: null,
+        item_name: null,
+        uom: null,
+        qty: 0,
+        source: "manual",
+      });
+    });
   const addPart = () => {
     const t = newPart.trim();
     if (!t) return;
@@ -435,65 +453,86 @@ export function R1BuilderClient({
                 <div className="text-[10px] font-bold uppercase tracking-wider text-[#6b7280] mt-2 mb-1">{gname}</div>
                 <table className="w-full border-collapse">
                   <tbody>
-                    {glines.map(([li, l]) => (
-                      <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
-                        <td className="py-1 pr-2 align-middle w-[34%] font-medium">
-                          {l.kind === "free" ? (
+                    {glines.map(([li, l], gi) => {
+                      const prev = gi > 0 ? glines[gi - 1][1] : null;
+                      const isExtra =
+                        !!prev && prev.label === l.label && prev.category_id === l.category_id && prev.kind === l.kind;
+                      const canAdd = l.kind === "category" || l.kind === "hardware";
+                      return (
+                        <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
+                          <td className={"py-1 pr-2 align-middle w-[32%] " + (isExtra ? "pl-5 font-normal text-[#6b7280]" : "font-medium")}>
+                            {l.kind === "free" ? (
+                              <input
+                                value={l.label ?? ""}
+                                onChange={(e) => setLine(pi, li, { label: e.target.value })}
+                                placeholder="free-text…"
+                                className="w-full rounded border px-2 py-1 text-xs"
+                                style={{ borderColor: C.line }}
+                              />
+                            ) : isExtra ? (
+                              <span className="text-xs">↳ also</span>
+                            ) : (
+                              <span>{l.label ?? l.category_name ?? "—"}</span>
+                            )}
+                            {!isExtra && l.kind === "hardware" && (
+                              <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>+ Add hardware</span>
+                            )}
+                            {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
+                          </td>
+                          <td className="py-1 px-2 align-middle w-[46%]">
+                            {l.item_id ? (
+                              <span className="inline-flex items-center">
+                                <span className="font-medium">{l.item_name}</span>
+                                {l.item_code && <CodeChip code={l.item_code} />}
+                                {canAdd && (
+                                  <button
+                                    onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
+                                    className="ml-1.5 text-[#6b7280] hover:text-red-600"
+                                    title="clear"
+                                  >
+                                    ×
+                                  </button>
+                                )}
+                              </span>
+                            ) : canAdd ? (
+                              <ScopedItemPicker
+                                categoryId={pickerCat(l)}
+                                placeholder={l.category_name ?? l.label ?? "category"}
+                                onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
+                              />
+                            ) : (
+                              <span className="text-xs text-[#6b7280]">—</span>
+                            )}
+                          </td>
+                          <td className="py-1 px-2 align-middle w-[12%]">
                             <input
-                              value={l.label ?? ""}
-                              onChange={(e) => setLine(pi, li, { label: e.target.value })}
-                              placeholder="free-text…"
-                              className="w-full rounded border px-2 py-1 text-xs"
+                              type="number"
+                              min={0}
+                              value={String(l.qty ?? 0)}
+                              onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
+                              placeholder="QTY"
+                              className="w-full max-w-[90px] rounded border px-2 py-1 text-xs text-right"
                               style={{ borderColor: C.line }}
                             />
-                          ) : (
-                            <span>{l.label ?? l.category_name ?? "—"}</span>
-                          )}
-                          {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
-                        </td>
-                        <td className="py-1 px-2 align-middle w-[48%]">
-                          {l.item_id ? (
-                            <span className="inline-flex items-center">
-                              <span className="font-medium">{l.item_name}</span>
-                              {l.item_code && <CodeChip code={l.item_code} />}
-                              {(l.kind === "category" || l.kind === "hardware") && (
-                                <button
-                                  onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
-                                  className="ml-1.5 text-[#6b7280] hover:text-red-600"
-                                  title="clear"
-                                >
-                                  ×
-                                </button>
-                              )}
-                            </span>
-                          ) : l.kind === "category" || l.kind === "hardware" ? (
-                            <ScopedItemPicker
-                              categoryId={pickerCat(l)}
-                              placeholder={l.category_name ?? l.label ?? "category"}
-                              onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
-                            />
-                          ) : (
-                            <span className="text-xs text-[#6b7280]">—</span>
-                          )}
-                        </td>
-                        <td className="py-1 px-2 align-middle w-[12%]">
-                          <input
-                            type="number"
-                            min={0}
-                            value={String(l.qty ?? 0)}
-                            onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
-                            placeholder="QTY"
-                            className="w-full max-w-[90px] rounded border px-2 py-1 text-xs text-right"
-                            style={{ borderColor: C.line }}
-                          />
-                        </td>
-                        <td className="py-1 pl-2 align-middle w-[6%] text-right">
-                          <button onClick={() => delLine(pi, li)} className="p-1 rounded hover:bg-red-50 text-red-600" title="delete">
-                            <Trash2 size={13} />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="py-1 pl-2 align-middle w-[10%] text-right whitespace-nowrap">
+                            {canAdd && (
+                              <button
+                                onClick={() => addExtra(pi, li)}
+                                className="mr-1 rounded border border-dashed px-1.5 py-0.5 text-[11px] font-semibold"
+                                style={{ borderColor: C.acc, color: C.acc }}
+                                title="add another item from this category"
+                              >
+                                + Add
+                              </button>
+                            )}
+                            <button onClick={() => delLine(pi, li)} className="p-1 rounded hover:bg-red-50 text-red-600" title="delete">
+                              <Trash2 size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
