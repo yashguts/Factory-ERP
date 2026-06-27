@@ -2,7 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { getAllCategories } from "@/lib/actions/categories";
+import { getAllCategories, expandCategoryDescendants } from "@/lib/actions/categories";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import type { PackingLineKind } from "@/lib/supabase/types";
 
@@ -505,6 +505,37 @@ export async function saveR1List(
     .update({ status, updated_at: new Date().toISOString() })
     .eq("id", listId);
   return { ok: true };
+}
+
+/** Items inside a category (+ all descendants), optionally filtered — the
+ *  per-job builder's picker for a category/hardware line. */
+export interface R1CatItem {
+  id: string;
+  code: string;
+  name: string;
+  uom: string | null;
+}
+export async function itemsInCategory(categoryId: string, q?: string): Promise<R1CatItem[]> {
+  const ids = await expandCategoryDescendants([categoryId]);
+  if (ids.length === 0) return [];
+  const supabase = createCacheClient();
+  let query = supabase
+    .from("items")
+    .select("id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)")
+    .eq("is_active", true)
+    .in("category_id", ids)
+    .order("code")
+    .limit(100);
+  const s = (q ?? "").trim();
+  if (s) query = query.or(`code.ilike.%${s}%,name.ilike.%${s}%`);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map((it) => ({
+    id: it.id as string,
+    code: it.code as string,
+    name: it.name as string,
+    uom: relOne<{ abbreviation: string }>(it.uom)?.abbreviation ?? null,
+  }));
 }
 
 // ============================================================================
