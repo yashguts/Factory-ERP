@@ -129,6 +129,10 @@ export interface RunOutput {
   name: string;
   /** Units produced per ONE run (qty_per_run); the row multiplies by runs_count. */
   perRun: number;
+  /** 'component' = stocked item, posts to Main Store; 'cut_part' = loose phantom
+   *  child (cut & fitted, never stocked); 'tooling' = jig/template. Only
+   *  'component' affects inventory — the others are shown for completeness. */
+  role: "component" | "cut_part" | "tooling";
 }
 
 export interface DailyRunRow {
@@ -142,9 +146,9 @@ export interface DailyRunRow {
   runs_count: number;
   note: string | null;
   created_at: string;
-  /** Component outputs — the stocked items this program produces (what posts to
-   *  Main Store inventory). cut_part / tooling / scrap are excluded since they
-   *  never hit inventory. perRun × runs_count = units added to stock. */
+  /** All produced parts: stocked components (post to Main Store) PLUS loose
+   *  cut-parts and tooling (shown for completeness — they don't hit inventory).
+   *  scrap is excluded. perRun × runs_count = units produced. */
   outputs: RunOutput[];
 }
 
@@ -170,13 +174,12 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
   if (opIds.length) {
     const { data: outRows } = await supabase
       .from("operation_outputs")
-      .select("operation_id, item_id, qty_per_run, sort_order")
+      .select("operation_id, item_id, label, qty_per_run, role, sort_order")
       .in("operation_id", opIds)
-      .eq("role", "component")
-      .not("item_id", "is", null)
+      .in("role", ["component", "cut_part", "tooling"])
       .gt("qty_per_run", 0)
       .order("sort_order", { ascending: true });
-    const itemIds = [...new Set((outRows ?? []).map((o: any) => o.item_id as string))];
+    const itemIds = [...new Set((outRows ?? []).filter((o: any) => o.item_id).map((o: any) => o.item_id as string))];
     const itemById = new Map<string, { code: string | null; name: string }>();
     for (let i = 0; i < itemIds.length; i += 200) {
       const { data: items } = await supabase
@@ -186,12 +189,22 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
       for (const it of items ?? [])
         itemById.set(it.id as string, { code: (it.code as string) ?? null, name: (it.name as string) ?? "(item)" });
     }
+    const rank: Record<string, number> = { component: 0, cut_part: 1, tooling: 2 };
     for (const o of outRows ?? []) {
-      const it = itemById.get(o.item_id as string);
+      const it = o.item_id ? itemById.get(o.item_id as string) : null;
+      const name = it?.name ?? ((o.label as string | null) ?? "").trim();
+      if (!name) continue; // nothing to display (no mapped item, no label)
       const arr = outsByOp.get(o.operation_id as string) ?? [];
-      arr.push({ code: it?.code ?? null, name: it?.name ?? "(item)", perRun: Number(o.qty_per_run) || 0 });
+      arr.push({
+        code: it?.code ?? null,
+        name,
+        perRun: Number(o.qty_per_run) || 0,
+        role: (o.role as RunOutput["role"]) ?? "component",
+      });
       outsByOp.set(o.operation_id as string, arr);
     }
+    // stocked components first, then loose cut-parts, then tooling
+    for (const arr of outsByOp.values()) arr.sort((a, b) => (rank[a.role] ?? 0) - (rank[b.role] ?? 0));
   }
 
   return runs.map((r: any) => {

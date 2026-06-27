@@ -330,15 +330,26 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
               <span key={i} title={o.code ?? undefined}>
                 {i > 0 && " · "}
                 {o.name}{" "}
-                <span className="tabular-nums font-medium text-[var(--foreground)]/70">
+                <span
+                  className={`tabular-nums ${
+                    o.role === "component"
+                      ? "font-medium text-[var(--foreground)]/70"
+                      : "text-[var(--muted-foreground)]"
+                  }`}
+                >
                   ×{fmtQty(o.perRun * effCount)}
                 </span>
+                {o.role !== "component" && (
+                  <span className="ml-0.5 text-[9px] uppercase tracking-wide text-[var(--muted-foreground)]/55">
+                    {o.role === "cut_part" ? "loose" : "tool"}
+                  </span>
+                )}
               </span>
             ))}
           </div>
         ) : (
           <div className="mt-0.5 text-[10px] leading-tight font-normal text-[var(--muted-foreground)]/60 italic">
-            no stocked output
+            no outputs recorded
           </div>
         )}
       </TableCell>
