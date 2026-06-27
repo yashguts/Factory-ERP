@@ -1,14 +1,6 @@
-import { notFound } from "next/navigation";
-import { getCabinProgramDetail } from "@/lib/actions/cabin-programs";
-import { CabinProgramDetailClient } from "@/components/cabin/cabin-program-detail-client";
+import { redirect } from "next/navigation";
 
-interface Props {
-  params: Promise<{ id: string }>;
-}
-
-export default async function CabinProgramDetailPage({ params }: Props) {
-  const { id } = await params;
-  const program = await getCabinProgramDetail(id);
-  if (!program) notFound();
-  return <CabinProgramDetailClient program={program} />;
+// Retired: cabin programs now live in the main Programs catalogue.
+export default function CabinProgramDetailRetired() {
+  redirect("/programs");
 }

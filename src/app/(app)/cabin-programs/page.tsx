@@ -1,9 +1,8 @@
-import { getCabinPrograms } from "@/lib/actions/cabin-programs";
-import { CabinProgramsClient } from "@/components/cabin/cabin-programs-client";
+import { redirect } from "next/navigation";
 
-export const metadata = { title: "Cabin Programs" };
-
-export default async function CabinProgramsPage() {
-  const programs = await getCabinPrograms();
-  return <CabinProgramsClient programs={programs} />;
+// Cabin Programs were folded into the main Programs catalogue (program_label
+// "Cabin Items") so they can be logged in Program Runs. This page is retired —
+// send anyone landing here to Programs.
+export default function CabinProgramsRetired() {
+  redirect("/programs");
 }

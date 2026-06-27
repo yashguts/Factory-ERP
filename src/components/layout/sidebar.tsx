@@ -23,7 +23,6 @@ import {
   Truck,
   PackageSearch,
   Settings,
-  LayoutGrid,
   Activity,
   Sparkles,
   Network,
@@ -55,7 +54,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Production",
     items: [
       { href: "/programs", label: "Programs", icon: Cog },
-      { href: "/cabin-programs", label: "Cabin Programs", icon: LayoutGrid },
       { href: "/program-runs", label: "Program Runs", icon: PlayCircle },
     ],
   },
@@ -71,7 +69,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/mrp", label: "Make MRP", icon: Calculator },
       { href: "/mrp/trade", label: "Trade MRP", icon: Truck },
-      { href: "/mrp/cabin", label: "Cabin MRP", icon: LayoutGrid },
       { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
       { href: "/demand", label: "Demand Rules", icon: Network },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
