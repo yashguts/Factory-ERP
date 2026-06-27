@@ -254,6 +254,9 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
   const [count, setCount] = useState<number>(row.runs_count);
   const [busy, setBusy] = useState(false);
   const dirty = count !== row.runs_count && count > 0;
+  // Outputs preview multiplies by the live count (so editing runs updates the
+  // projected qty added to stock); fall back to the saved count while blank.
+  const effCount = count > 0 ? count : row.runs_count;
 
   // Pre-filled per-entry date: shows exactly which day this entry belongs to,
   // and changing it MOVES the entry to that day (it leaves the current list).
@@ -318,8 +321,26 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
       <TableCell className="font-mono text-xs text-[var(--muted-foreground)] max-w-44 truncate" title={row.code ?? undefined}>
         {row.code}
       </TableCell>
-      <TableCell className="text-sm font-medium max-w-[220px] truncate" title={row.name}>
-        {row.name}
+      <TableCell className="text-sm font-medium max-w-[340px] align-top">
+        <div className="truncate" title={row.name}>{row.name}</div>
+        {row.outputs.length > 0 ? (
+          <div className="mt-0.5 text-[10px] leading-tight font-normal text-[var(--muted-foreground)] whitespace-normal">
+            <span className="text-[var(--muted-foreground)]/70">cuts → </span>
+            {row.outputs.map((o, i) => (
+              <span key={i} title={o.code ?? undefined}>
+                {i > 0 && " · "}
+                {o.name}{" "}
+                <span className="tabular-nums font-medium text-[var(--foreground)]/70">
+                  ×{fmtQty(o.perRun * effCount)}
+                </span>
+              </span>
+            ))}
+          </div>
+        ) : (
+          <div className="mt-0.5 text-[10px] leading-tight font-normal text-[var(--muted-foreground)]/60 italic">
+            no stocked output
+          </div>
+        )}
       </TableCell>
       <TableCell className="text-xs text-[var(--muted-foreground)] italic max-w-[200px] truncate" title={row.note ?? undefined}>
         {row.note}
@@ -492,6 +513,11 @@ function ProgramSearch({ onPick }: { onPick: (p: AuditedProgramHit) => void }) {
       )}
     </div>
   );
+}
+
+/** Compact qty: integers as-is, else 2-dp without trailing zeros. */
+function fmtQty(v: number): string {
+  return Number.isInteger(v) ? String(v) : String(Math.round(v * 100) / 100);
 }
 
 function prettyDate(iso: string): string {

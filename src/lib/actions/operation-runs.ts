@@ -124,6 +124,13 @@ async function syncRunInventory(supabase: Db, runId: string, count: number): Pro
   }
 }
 
+export interface RunOutput {
+  code: string | null;
+  name: string;
+  /** Units produced per ONE run (qty_per_run); the row multiplies by runs_count. */
+  perRun: number;
+}
+
 export interface DailyRunRow {
   id: string;
   operation_id: string;
@@ -135,6 +142,10 @@ export interface DailyRunRow {
   runs_count: number;
   note: string | null;
   created_at: string;
+  /** Component outputs — the stocked items this program produces (what posts to
+   *  Main Store inventory). cut_part / tooling / scrap are excluded since they
+   *  never hit inventory. perRun × runs_count = units added to stock. */
+  outputs: RunOutput[];
 }
 
 export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
@@ -150,7 +161,40 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
     .order("created_at", { ascending: true });
   if (error) throw error;
 
-  return (data ?? []).map((r: any) => {
+  const runs = data ?? [];
+
+  // Per-program stocked outputs (role='component', mapped) — what each run adds
+  // to Main Store. One read for the day's programs, then resolve item names.
+  const opIds = [...new Set(runs.map((r: any) => r.operation_id as string))];
+  const outsByOp = new Map<string, RunOutput[]>();
+  if (opIds.length) {
+    const { data: outRows } = await supabase
+      .from("operation_outputs")
+      .select("operation_id, item_id, qty_per_run, sort_order")
+      .in("operation_id", opIds)
+      .eq("role", "component")
+      .not("item_id", "is", null)
+      .gt("qty_per_run", 0)
+      .order("sort_order", { ascending: true });
+    const itemIds = [...new Set((outRows ?? []).map((o: any) => o.item_id as string))];
+    const itemById = new Map<string, { code: string | null; name: string }>();
+    for (let i = 0; i < itemIds.length; i += 200) {
+      const { data: items } = await supabase
+        .from("items")
+        .select("id, code, name")
+        .in("id", itemIds.slice(i, i + 200));
+      for (const it of items ?? [])
+        itemById.set(it.id as string, { code: (it.code as string) ?? null, name: (it.name as string) ?? "(item)" });
+    }
+    for (const o of outRows ?? []) {
+      const it = itemById.get(o.item_id as string);
+      const arr = outsByOp.get(o.operation_id as string) ?? [];
+      arr.push({ code: it?.code ?? null, name: it?.name ?? "(item)", perRun: Number(o.qty_per_run) || 0 });
+      outsByOp.set(o.operation_id as string, arr);
+    }
+  }
+
+  return runs.map((r: any) => {
     const op = flatten<any>(r.operation);
     return {
       id: r.id as string,
@@ -163,6 +207,7 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
       runs_count: Number(r.runs_count),
       note: (r.note as string | null) ?? null,
       created_at: r.created_at as string,
+      outputs: outsByOp.get(r.operation_id as string) ?? [],
     };
   });
 }
