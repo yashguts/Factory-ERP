@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidateTag } from "next/cache";
 import type { ImportPreviewRow, ImportResult } from "@/lib/import/types";
+import { currentOperatorName } from "@/lib/actions/inventory";
 
 export async function validateImportData(rows: ImportPreviewRow[]): Promise<ImportPreviewRow[]> {
   const supabase = await createClient();
@@ -121,6 +122,7 @@ export async function executeImport(
             transaction_type: "adjustment",
             quantity: row.current_stock,
             notes: "Initial stock from import",
+            created_by_name: await currentOperatorName(),
           });
         }
       }

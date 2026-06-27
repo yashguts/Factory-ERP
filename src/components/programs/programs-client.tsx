@@ -49,6 +49,11 @@ import {
 } from "@/lib/actions/operations";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import {
+  auditBlockers,
+  isAuditable,
+  summaryFromCounts,
+} from "@/lib/operations/audit-eligibility";
+import {
   OPERATION_MACHINE_LABELS,
   OPERATION_MACHINES,
   type OperationMachine,
@@ -154,6 +159,13 @@ export function ProgramsClient({
     name: string;
   } | null>(null);
   const [auditBusy, setAuditBusy] = useState(false);
+  // Set when the user clicks the tick on a program that fails the audit rules —
+  // shows the specific missing items instead of the confirm dialog.
+  const [auditBlocked, setAuditBlocked] = useState<{
+    id: string;
+    name: string;
+    reasons: string[];
+  } | null>(null);
 
   const [auditedMap, setAuditedMap] = useState<Record<string, boolean>>(() => {
     const m: Record<string, boolean> = {};
@@ -325,18 +337,26 @@ export function ProgramsClient({
     const res = await setOperationAudited(id, next);
     if (!res.ok) {
       setAuditedMap((m) => ({ ...m, [id]: !next }));
-      toast.error("Could not update the audit status — try again.");
+      toast.error(res.error ?? "Could not update the audit status — try again.");
     } else {
       toast.success(next ? "Marked audited." : "Audit mark removed.");
     }
   };
 
-  // Clicking the tick: unmark immediately, but require confirmation before
-  // marking a program audited (it asserts every line was reviewed).
-  const requestAudit = (op: { id: string; name: string }) => {
+  // Clicking the tick: unmark immediately. To MARK audited, the program must pass
+  // the audit rules — if not, show exactly what's missing; otherwise confirm.
+  const requestAudit = (op: OperationListRow) => {
     const audited = auditedMap[op.id] ?? false;
-    if (audited) toggleAudit(op.id, false);
-    else setConfirmAudit({ id: op.id, name: op.name });
+    if (audited) {
+      toggleAudit(op.id, false);
+      return;
+    }
+    const reasons = auditBlockers(summaryFromCounts(op));
+    if (reasons.length > 0) {
+      setAuditBlocked({ id: op.id, name: op.name, reasons });
+      return;
+    }
+    setConfirmAudit({ id: op.id, name: op.name });
   };
 
   const confirmAuditYes = async () => {
@@ -396,6 +416,7 @@ export function ProgramsClient({
   function programRow(op: OperationListRow, opts?: { nested?: boolean }) {
     const audited = auditedMap[op.id] ?? false;
     const info = matchInfo(op);
+    const canAudit = audited || isAuditable(summaryFromCounts(op));
     const nested = opts?.nested ?? false;
     return (
       <TableRow
@@ -454,7 +475,13 @@ export function ProgramsClient({
             <button
               type="button"
               onClick={() => requestAudit(op)}
-              title={audited ? "Audited — click to unmark" : "Mark audited"}
+              title={
+                audited
+                  ? "Audited — click to unmark"
+                  : canAudit
+                    ? "Mark audited"
+                    : "Incomplete — click to see what's missing"
+              }
               className={cn(
                 "p-1 rounded cursor-pointer",
                 audited
@@ -765,6 +792,30 @@ export function ProgramsClient({
           busy={auditBusy}
           onConfirm={confirmAuditYes}
           onCancel={() => setConfirmAudit(null)}
+        />
+      )}
+
+      {auditBlocked && (
+        <ConfirmDialog
+          title="Can’t mark audited yet"
+          message={
+            <>
+              <span className="font-medium">{auditBlocked.name}</span> is missing:
+              <ul className="mt-2 list-disc pl-5 space-y-1 text-[var(--warning)]">
+                {auditBlocked.reasons.map((r, i) => (
+                  <li key={i}>{r}</li>
+                ))}
+              </ul>
+            </>
+          }
+          confirmLabel="Edit program"
+          cancelLabel="Close"
+          onConfirm={() => {
+            const id = auditBlocked.id;
+            setAuditBlocked(null);
+            open(id, "edit");
+          }}
+          onCancel={() => setAuditBlocked(null)}
         />
       )}
     </div>

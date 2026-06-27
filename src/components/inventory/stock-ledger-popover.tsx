@@ -137,6 +137,7 @@ export function StockLedgerPopover({
                     <th className="text-left font-medium px-3 py-1.5">Date</th>
                     <th className="text-left font-medium px-2 py-1.5">Type</th>
                     <th className="text-left font-medium px-2 py-1.5">Warehouse</th>
+                    <th className="text-left font-medium px-2 py-1.5">User</th>
                     <th className="text-right font-medium px-2 py-1.5">Qty</th>
                     <th className="text-right font-medium px-3 py-1.5">Balance</th>
                   </tr>
@@ -157,6 +158,9 @@ export function StockLedgerPopover({
                       </td>
                       <td className="px-2 py-1.5 text-[var(--muted-foreground)]">
                         {r.warehouse_name ?? "—"}
+                      </td>
+                      <td className="px-2 py-1.5 whitespace-nowrap text-[var(--muted-foreground)]">
+                        {r.created_by_name || "—"}
                       </td>
                       <td
                         className={`px-2 py-1.5 text-right tabular-nums font-medium ${

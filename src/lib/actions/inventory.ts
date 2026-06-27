@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag } from "next/cache";
+import { cookies } from "next/headers";
 import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource, DemandOverride, OperationMachine } from "@/lib/supabase/types";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
 import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
@@ -1404,6 +1405,20 @@ export async function updateItem(
   };
 }
 
+/**
+ * Operator name for the current request, read from the cookie mirrored from
+ * localStorage by use-operator. The actor for an inventory movement when not
+ * passed explicitly. Audit only (no auth); null if unset/unavailable.
+ */
+export async function currentOperatorName(): Promise<string | null> {
+  try {
+    const raw = (await cookies()).get("factory.operator")?.value;
+    return raw ? decodeURIComponent(raw).trim() || null : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function recordTransaction(data: {
   item_id: string;
   warehouse_id: string;
@@ -1413,8 +1428,17 @@ export async function recordTransaction(data: {
   /** Optional provenance — used by the change-log "undo" to tag reversals. */
   reference_type?: string;
   reference_id?: string;
+  /** Operator name (factory.operator) — who performed this movement (audit). */
+  created_by_name?: string | null;
 }) {
   const supabase = await createClient();
+
+  // Stamp WHO did this. Explicit param wins; otherwise fall back to the operator
+  // name mirrored to a cookie by use-operator — so every movement (receipts,
+  // dispatch, production, reversals, adjustments) gets an actor without threading
+  // the operator through each call. Audit only (no auth).
+  const createdByName = data.created_by_name ?? (await currentOperatorName());
+  const insertData = { ...data, created_by_name: createdByName };
 
   const isOutbound = ["production_out", "scrap", "dispatch_out"].includes(data.transaction_type);
   const isAdjustment = data.transaction_type === "adjustment";
@@ -1422,7 +1446,7 @@ export async function recordTransaction(data: {
 
   // Insert transaction record AND check existing inventory in parallel
   const [txnResult, existingResult] = await Promise.all([
-    supabase.from("inventory_transactions").insert(data),
+    supabase.from("inventory_transactions").insert(insertData),
     supabase
       .from("inventory")
       .select("id, quantity")
@@ -1465,6 +1489,8 @@ export interface ItemLedgerRow {
   note: string | null;
   reference_type: string | null;
   po_number: string | null;
+  /** Operator who performed the movement (null for pre-audit / system rows). */
+  created_by_name: string | null;
 }
 
 export interface ItemLedger {
@@ -1504,7 +1530,7 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
     supabase
       .from("inventory_transactions")
       .select(
-        `id, created_at, transaction_type, quantity, notes, reference_type, reference_id,
+        `id, created_at, transaction_type, quantity, notes, reference_type, reference_id, created_by_name,
          warehouse:warehouses(name)`,
       )
       .eq("item_id", itemId)
@@ -1567,6 +1593,7 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
         refType === "po_receipt" && t.reference_id
           ? poByReceipt.get(t.reference_id as string) ?? null
           : null,
+      created_by_name: (t.created_by_name as string | null) ?? null,
     };
   });
 

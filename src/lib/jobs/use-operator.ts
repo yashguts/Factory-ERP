@@ -11,11 +11,24 @@ export function readOperator(): string | null {
   return v && v.trim() ? v.trim() : null;
 }
 
+/**
+ * Mirror the chosen name into a cookie so SERVER actions can stamp it on the
+ * audit trail (e.g. inventory movements) without threading the operator through
+ * every call. JS-set + readable (not httpOnly) — an audit name, not security.
+ */
+function syncOperatorCookie(name: string | null): void {
+  if (typeof document === "undefined") return;
+  document.cookie = name
+    ? `${KEY}=${encodeURIComponent(name)}; path=/; max-age=31536000; samesite=lax`
+    : `${KEY}=; path=/; max-age=0; samesite=lax`;
+}
+
 function writeOperator(name: string | null): void {
   if (typeof window === "undefined") return;
   const v = name && name.trim() ? name.trim() : null;
   if (v) window.localStorage.setItem(KEY, v);
   else window.localStorage.removeItem(KEY);
+  syncOperatorCookie(v);
 }
 
 /**
@@ -36,7 +49,11 @@ export function useOperator(): {
   const [operator, setOp] = useState<string | null>(null);
 
   useEffect(() => {
-    setOp(readOperator());
+    const current = readOperator();
+    setOp(current);
+    // Backfill the cookie for users who already chose a name before this existed,
+    // so server-side stamping works without them re-entering it.
+    syncOperatorCookie(current);
   }, []);
 
   const setOperator = useCallback((name: string | null) => {

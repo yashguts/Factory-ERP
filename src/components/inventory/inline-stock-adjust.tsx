@@ -6,6 +6,7 @@ import { Input } from "@/components/ui/input";
 import { PackagePlus } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { recordTransaction } from "@/lib/actions/inventory";
+import { useOperator } from "@/lib/jobs/use-operator";
 import type { Warehouse } from "@/lib/supabase/types";
 
 interface InlineStockAdjustProps {
@@ -22,6 +23,7 @@ interface InlineStockAdjustProps {
 
 export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAdjustProps) {
   const toast = useToast();
+  const { ensureOperator } = useOperator();
   const [isOpen, setIsOpen] = useState(false);
   const [direction, setDirection] = useState<"add" | "remove">("add");
   const [quantity, setQuantity] = useState<number>(0);
@@ -96,6 +98,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
       return;
     }
     setError(null);
+    const operator = ensureOperator();
 
     startTransition(async () => {
       try {
@@ -105,6 +108,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
           transaction_type: direction === "add" ? "purchase_in" : "production_out",
           quantity,
           notes: notes || undefined,
+          created_by_name: operator,
         });
         setIsOpen(false);
         setQuantity(0);

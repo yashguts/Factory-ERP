@@ -7,6 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { useToast } from "@/components/ui/toast";
 import { recordTransaction } from "@/lib/actions/inventory";
+import { useOperator } from "@/lib/jobs/use-operator";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import type { TransactionType, Warehouse } from "@/lib/supabase/types";
 
@@ -205,6 +206,7 @@ export function StockAdjustModal({
   onSaved,
 }: StockAdjustModalProps) {
   const toast = useToast();
+  const { ensureOperator } = useOperator();
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
 
@@ -225,6 +227,7 @@ export function StockAdjustModal({
       return;
     }
 
+    const operator = ensureOperator();
     startTransition(async () => {
       try {
         await recordTransaction({
@@ -233,6 +236,7 @@ export function StockAdjustModal({
           transaction_type: form.transaction_type,
           quantity: form.quantity,
           notes: form.notes || undefined,
+          created_by_name: operator,
         });
         toast.success(
           `Stock adjustment recorded (${form.quantity.toLocaleString()}). Daily Changes keeps the full trail.`,
