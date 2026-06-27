@@ -318,8 +318,22 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
           {MACHINE[row.machine] ?? row.machine}
         </Badge>
       </TableCell>
-      <TableCell className="font-mono text-xs text-[var(--muted-foreground)] max-w-44 truncate" title={row.code ?? undefined}>
-        {row.code}
+      <TableCell className="font-mono text-xs text-[var(--muted-foreground)] max-w-[200px] align-top" title={row.code ?? undefined}>
+        <div className="truncate">{row.code}</div>
+        {row.inputs.length > 0 && (
+          <div className="mt-0.5 font-sans text-[10px] leading-tight font-normal text-[var(--muted-foreground)] whitespace-normal">
+            <span className="text-[var(--muted-foreground)]/70">uses → </span>
+            {row.inputs.map((inp, i) => (
+              <span key={i} title={inp.code ?? undefined}>
+                {i > 0 && " · "}
+                {inp.name}{" "}
+                <span className="tabular-nums font-medium text-[var(--foreground)]/70">
+                  ×{fmtQty(inp.perRun * effCount)}
+                </span>
+              </span>
+            ))}
+          </div>
+        )}
       </TableCell>
       <TableCell className="text-sm font-medium max-w-[340px] align-top">
         <div className="truncate" title={row.name}>{row.name}</div>

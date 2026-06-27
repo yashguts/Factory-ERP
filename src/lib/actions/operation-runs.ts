@@ -135,6 +135,13 @@ export interface RunOutput {
   role: "component" | "cut_part" | "tooling";
 }
 
+export interface RunInput {
+  code: string | null;
+  name: string;
+  /** Units (usually sheets) consumed per ONE run; the row multiplies by runs_count. */
+  perRun: number;
+}
+
 export interface DailyRunRow {
   id: string;
   operation_id: string;
@@ -150,6 +157,9 @@ export interface DailyRunRow {
    *  cut-parts and tooling (shown for completeness — they don't hit inventory).
    *  scrap is excluded. perRun × runs_count = units produced. */
   outputs: RunOutput[];
+  /** Raw inputs consumed (the sheets/material the program nests on). perRun ×
+   *  runs_count = units drawn from Raw Material Store. */
+  inputs: RunInput[];
 }
 
 export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
@@ -167,30 +177,46 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
 
   const runs = data ?? [];
 
-  // Per-program stocked outputs (role='component', mapped) — what each run adds
-  // to Main Store. One read for the day's programs, then resolve item names.
+  // Per-program inputs (sheets consumed → Raw Material Store) and outputs (parts
+  // produced). One read each for the day's programs, then resolve item names in
+  // a single shared lookup.
   const opIds = [...new Set(runs.map((r: any) => r.operation_id as string))];
   const outsByOp = new Map<string, RunOutput[]>();
+  const insByOp = new Map<string, RunInput[]>();
   if (opIds.length) {
-    const { data: outRows } = await supabase
-      .from("operation_outputs")
-      .select("operation_id, item_id, label, qty_per_run, role, sort_order")
-      .in("operation_id", opIds)
-      .in("role", ["component", "cut_part", "tooling"])
-      .gt("qty_per_run", 0)
-      .order("sort_order", { ascending: true });
-    const itemIds = [...new Set((outRows ?? []).filter((o: any) => o.item_id).map((o: any) => o.item_id as string))];
+    const [outRes, inRes] = await Promise.all([
+      supabase
+        .from("operation_outputs")
+        .select("operation_id, item_id, label, qty_per_run, role, sort_order")
+        .in("operation_id", opIds)
+        .in("role", ["component", "cut_part", "tooling"])
+        .gt("qty_per_run", 0)
+        .order("sort_order", { ascending: true }),
+      supabase
+        .from("operation_inputs")
+        .select("operation_id, item_id, label, qty_per_run, sort_order")
+        .in("operation_id", opIds)
+        .gt("qty_per_run", 0)
+        .order("sort_order", { ascending: true }),
+    ]);
+    const outRows = outRes.data ?? [];
+    const inRows = inRes.data ?? [];
+
+    const allItemIds = [
+      ...new Set([...outRows, ...inRows].filter((o: any) => o.item_id).map((o: any) => o.item_id as string)),
+    ];
     const itemById = new Map<string, { code: string | null; name: string }>();
-    for (let i = 0; i < itemIds.length; i += 200) {
+    for (let i = 0; i < allItemIds.length; i += 200) {
       const { data: items } = await supabase
         .from("items")
         .select("id, code, name")
-        .in("id", itemIds.slice(i, i + 200));
+        .in("id", allItemIds.slice(i, i + 200));
       for (const it of items ?? [])
         itemById.set(it.id as string, { code: (it.code as string) ?? null, name: (it.name as string) ?? "(item)" });
     }
+
     const rank: Record<string, number> = { component: 0, cut_part: 1, tooling: 2 };
-    for (const o of outRows ?? []) {
+    for (const o of outRows) {
       const it = o.item_id ? itemById.get(o.item_id as string) : null;
       const name = it?.name ?? ((o.label as string | null) ?? "").trim();
       if (!name) continue; // nothing to display (no mapped item, no label)
@@ -205,6 +231,15 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
     }
     // stocked components first, then loose cut-parts, then tooling
     for (const arr of outsByOp.values()) arr.sort((a, b) => (rank[a.role] ?? 0) - (rank[b.role] ?? 0));
+
+    for (const o of inRows) {
+      const it = o.item_id ? itemById.get(o.item_id as string) : null;
+      const name = it?.name ?? ((o.label as string | null) ?? "").trim();
+      if (!name) continue;
+      const arr = insByOp.get(o.operation_id as string) ?? [];
+      arr.push({ code: it?.code ?? null, name, perRun: Number(o.qty_per_run) || 0 });
+      insByOp.set(o.operation_id as string, arr);
+    }
   }
 
   return runs.map((r: any) => {
@@ -221,6 +256,7 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
       note: (r.note as string | null) ?? null,
       created_at: r.created_at as string,
       outputs: outsByOp.get(r.operation_id as string) ?? [],
+      inputs: insByOp.get(r.operation_id as string) ?? [],
     };
   });
 }
