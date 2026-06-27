@@ -624,6 +624,61 @@ export interface PackingListLine {
   updated_at: string;
 }
 
+// ---- Packing List R1 (editable, job-wise module — migration 050) -----------
+// A new, parallel packing-list module. A shared editable TEMPLATE (Parts, each
+// holding category/item/hardware/free lines) seeds each per-job R1 list.
+export type PackingLineKind = "category" | "item" | "hardware" | "free";
+
+export interface PackingTemplatePart {
+  id: string;
+  title: string;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackingTemplateLine {
+  id: string;
+  part_id: string;
+  kind: PackingLineKind;
+  category_id: string | null;
+  item_id: string | null;
+  label: string | null;
+  spec_hint: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackingR1List {
+  id: string;
+  job_id: string;
+  status: "draft" | "final";
+  note: string | null;
+  created_by_name: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PackingR1Line {
+  id: string;
+  list_id: string;
+  /** Denormalised part title so template edits never mutate saved job lines. */
+  part_title: string;
+  template_line_id: string | null;
+  kind: PackingLineKind;
+  category_id: string | null;
+  item_id: string | null;
+  label: string | null;
+  spec: string | null;
+  qty: number;
+  /** 'template' | 'auto' | 'manual'. */
+  source: string | null;
+  sort_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
 // Supabase Database type definition
 export interface Database {
   public: {
