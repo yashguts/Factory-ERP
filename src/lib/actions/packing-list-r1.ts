@@ -51,6 +51,8 @@ export interface R1Line {
   spec: string | null;
   qty: number;
   source: string | null;
+  /** Derived sub-group within the part (parent category name / Hardware / …). */
+  group: string | null;
   sort_order: number;
 }
 export interface R1ListPart {
@@ -407,6 +409,17 @@ async function readR1List(
 ): Promise<R1ListView> {
   const supabase = createCacheClient();
   const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle();
+  const cats = await getAllCategories();
+  const catById = new Map(cats.map((c) => [c.id, c]));
+  const groupOf = (kind: PackingLineKind, catId: string | null, catName: string | null): string => {
+    if (kind === "hardware") return "Hardware";
+    if (catId) {
+      const c = catById.get(catId);
+      if (c) return c.parent_id ? catById.get(c.parent_id)?.name ?? c.name : c.name;
+    }
+    if (kind === "item") return "Items";
+    return catName ?? "Other";
+  };
   const { data: lines, error } = await supabase
     .from("packing_r1_lines")
     .select(
@@ -439,6 +452,11 @@ async function readR1List(
       spec: (l.spec as string | null) ?? null,
       qty: Number(l.qty) || 0,
       source: (l.source as string | null) ?? null,
+      group: groupOf(
+        l.kind as PackingLineKind,
+        (l.category_id as string | null) ?? null,
+        cat?.name ?? (l.label as string | null),
+      ),
       sort_order: (l.sort_order as number) ?? 0,
     };
     let part = idx.get(row.part_title);
