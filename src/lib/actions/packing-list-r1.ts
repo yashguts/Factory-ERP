@@ -274,12 +274,16 @@ export async function reorderTemplateLines(orderedIds: string[]): Promise<{ ok: 
 // PER-JOB LIST
 // ============================================================================
 
-/** For a job, map every category_id (and its ancestors) → BOM items in it.
- *  So a template category line resolves to the job's BOM item(s) under that
- *  category subtree by an O(1) lookup. */
-async function buildJobBomByCategory(
-  jobId: string,
-): Promise<Map<string, { item_id: string; qty: number }[]>> {
+/** For a job, build two BOM lookups:
+ *  - byCat: category_id (and every ancestor) → the BOM item(s) under that subtree,
+ *    each with its summed required qty (so a template category line resolves by an
+ *    O(1) lookup).
+ *  - byItem: item_id → summed required qty (so a pinned item line can capture its
+ *    own BOM quantity directly). */
+async function buildJobBom(jobId: string): Promise<{
+  byCat: Map<string, { item_id: string; qty: number }[]>;
+  byItem: Map<string, number>;
+}> {
   const supabase = createCacheClient();
   // job → its BOM header(s) → lines (item_id + required_quantity)
   const { data: headers } = await supabase
@@ -287,8 +291,9 @@ async function buildJobBomByCategory(
     .select("id")
     .eq("job_id", jobId);
   const headerIds = (headers ?? []).map((h) => h.id as string);
-  const out = new Map<string, { item_id: string; qty: number }[]>();
-  if (headerIds.length === 0) return out;
+  const byCat = new Map<string, { item_id: string; qty: number }[]>();
+  const byItem = new Map<string, number>();
+  if (headerIds.length === 0) return { byCat, byItem };
 
   const { data: bomLines } = await supabase
     .from("job_bom_lines")
@@ -296,10 +301,14 @@ async function buildJobBomByCategory(
     .in("job_bom_id", headerIds)
     .not("item_id", "is", null);
   const lines = (bomLines ?? []) as { item_id: string; required_quantity: number }[];
-  if (lines.length === 0) return out;
+  if (lines.length === 0) return { byCat, byItem };
+
+  // per-item total qty (drives pinned-item lines)
+  for (const l of lines)
+    byItem.set(l.item_id, (byItem.get(l.item_id) ?? 0) + Number(l.required_quantity || 0));
 
   // each BOM item's direct category
-  const itemIds = [...new Set(lines.map((l) => l.item_id))];
+  const itemIds = [...byItem.keys()];
   const itemCat = new Map<string, string | null>();
   for (let i = 0; i < itemIds.length; i += 300) {
     const { data } = await supabase
@@ -329,12 +338,12 @@ async function buildJobBomByCategory(
     }
   }
   for (const [catId, m] of agg) {
-    out.set(
+    byCat.set(
       catId,
       [...m.entries()].map(([item_id, qty]) => ({ item_id, qty })),
     );
   }
-  return out;
+  return { byCat, byItem };
 }
 
 /** Load a job's R1 list, seeding it from the template (+ BOM auto-fill) on
@@ -362,35 +371,64 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
     status = "draft";
     // seed from template + BOM auto-fill
     const template = await getTemplate();
-    const bomByCat = await buildJobBomByCategory(jobId);
+    const { byCat, byItem } = await buildJobBom(jobId);
+
+    // A category used on more than one template line is "shared" — expanding its
+    // multi-match would duplicate the same BOM item across lines/parts (and so
+    // double-count demand), so shared categories keep the single-match-or-blank
+    // behaviour. Distinct categories (one template line) are safe to expand.
+    const catLineCount = new Map<string, number>();
+    for (const p of template)
+      for (const tl of p.lines)
+        if (tl.kind === "category" && tl.category_id)
+          catLineCount.set(tl.category_id, (catLineCount.get(tl.category_id) ?? 0) + 1);
+
     const seedRows: Record<string, unknown>[] = [];
     let so = 0;
+    const pushRow = (
+      part_title: string,
+      tl: R1TemplateLine,
+      item_id: string | null,
+      qty: number,
+      source: string,
+    ) =>
+      seedRows.push({
+        list_id: listId,
+        part_title,
+        template_line_id: tl.id,
+        kind: tl.kind,
+        category_id: tl.category_id,
+        item_id,
+        label: tl.label,
+        spec: null,
+        qty,
+        source,
+        sort_order: so++,
+      });
+
     for (const part of template) {
       for (const tl of part.lines) {
-        let item_id = tl.item_id;
-        let qty = 0;
-        let source = "template";
         if (tl.kind === "category" && tl.category_id) {
-          const matches = bomByCat.get(tl.category_id) ?? [];
-          if (matches.length === 1) {
-            item_id = matches[0].item_id;
-            qty = matches[0].qty;
-            source = "auto";
+          const matches = byCat.get(tl.category_id) ?? [];
+          const shared = (catLineCount.get(tl.category_id) ?? 0) > 1;
+          if (!shared && matches.length >= 2) {
+            // distinct category, several BOM items → one auto row per item
+            for (const m of matches) pushRow(part.title, tl, m.item_id, m.qty, "auto");
+          } else if (matches.length === 1) {
+            pushRow(part.title, tl, matches[0].item_id, matches[0].qty, "auto");
+          } else {
+            pushRow(part.title, tl, null, 0, "template");
           }
+          continue;
         }
-        seedRows.push({
-          list_id: listId,
-          part_title: part.title,
-          template_line_id: tl.id,
-          kind: tl.kind,
-          category_id: tl.category_id,
-          item_id,
-          label: tl.label,
-          spec: null,
-          qty,
-          source,
-          sort_order: so++,
-        });
+        if (tl.kind === "item") {
+          // pinned item → capture its BOM quantity when the job uses it
+          const q = tl.item_id ? byItem.get(tl.item_id) ?? 0 : 0;
+          pushRow(part.title, tl, tl.item_id, q, q > 0 ? "auto" : "template");
+          continue;
+        }
+        // hardware / free → blank
+        pushRow(part.title, tl, tl.item_id, 0, "template");
       }
     }
     for (let i = 0; i < seedRows.length; i += 200) {
