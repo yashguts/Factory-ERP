@@ -69,7 +69,7 @@ function ScopedItemPicker({
     <div className="relative max-w-[560px]" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full text-left rounded-md border bg-white px-2.5 py-1.5 text-xs text-[#6b7280] hover:border-[#2563eb]"
+        className="w-full text-left rounded border bg-white px-2 py-0.5 text-xs text-[#6b7280] hover:border-[#2563eb]"
         style={{ borderColor: C.line }}
       >
         — select from {placeholder} —
@@ -149,7 +149,7 @@ function GlobalItemPicker({ onPick }: { onPick: (i: SearchableItem) => void }) {
         }}
         onFocus={() => setOpen(true)}
         placeholder="+ add item by code / name…"
-        className="w-60 rounded-md border px-2.5 py-1.5 text-xs"
+        className="w-60 rounded-md border px-2.5 py-1 text-xs"
         style={{ borderColor: C.line }}
       />
       {open && res.length > 0 && (
@@ -195,7 +195,7 @@ function ToolbarBtn({
       onClick={onClick}
       disabled={disabled}
       className={
-        "inline-flex items-center gap-1.5 rounded-md px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50 " +
+        "inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold disabled:opacity-50 " +
         (primary
           ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
           : "border border-white/25 bg-white/10 text-white hover:bg-white/20")
@@ -382,17 +382,17 @@ export function R1BuilderClient({
   };
 
   return (
-    <div className="max-w-[1000px] mx-auto">
+    <div className="max-w-[920px] mx-auto">
       {/* Navy header + toolbar */}
-      <header className="rounded-[10px] px-5 py-3.5 mb-3 flex items-center justify-between" style={{ background: C.navy, color: "#fff" }}>
+      <header className="rounded-lg px-3.5 py-2 mb-2 flex items-center justify-between" style={{ background: C.navy, color: "#fff" }}>
         <div>
-          <button onClick={() => router.push("/packing-list-r1")} className="text-xs opacity-80 hover:opacity-100">
+          <button onClick={() => router.push("/packing-list-r1")} className="text-[11px] opacity-80 hover:opacity-100">
             ← Packing Lists
           </button>
-          <h1 className="text-[17px] font-semibold mt-0.5">
+          <h1 className="text-[13px] font-semibold leading-tight">
             Packing List R1 · <span className="font-mono">{list.jobNumber ?? ""}</span>
           </h1>
-          <p className="text-xs opacity-85 mt-0.5">
+          <p className="text-[10px] opacity-85 leading-tight">
             {status}
             {dirty ? " • unsaved" : ""} · {filled}/{totalLines} lines filled
           </p>
@@ -420,40 +420,40 @@ export function R1BuilderClient({
       </header>
 
       {/* Demand summary strip */}
-      <div className="grid grid-cols-3 gap-3 mb-1">
+      <div className="grid grid-cols-3 gap-2 mb-1">
         {[
           { l: "Demand items", v: demand.totals.items },
           { l: "Short of stock", v: demand.totals.shortfallItems, warn: demand.totals.shortfallItems > 0 },
           { l: "To buy (trade)", v: demand.trade.filter((r) => r.to_buy > 0).length },
         ].map((k) => (
-          <div key={k.l} className="rounded-lg border bg-white px-4 py-2.5" style={{ borderColor: C.line }}>
+          <div key={k.l} className="rounded-md border bg-white px-2.5 py-1.5 flex items-baseline justify-between" style={{ borderColor: C.line }}>
             <div className="text-[10px] uppercase tracking-wide text-[#6b7280]">{k.l}</div>
-            <div className={"text-xl font-semibold " + (k.warn ? "text-amber-600" : "")}>{k.v}</div>
+            <div className={"text-base font-semibold " + (k.warn ? "text-amber-600" : "")}>{k.v}</div>
           </div>
         ))}
       </div>
       {dirty && (
-        <p className="text-[11px] text-amber-600 mb-3">Demand reflects the last saved state — Save to refresh.</p>
+        <p className="text-[10px] text-amber-600 mb-2">Demand reflects the last saved state — Save to refresh.</p>
       )}
 
       {/* Parts */}
-      <div className="mt-3 space-y-3.5">
+      <div className="mt-2 space-y-2">
         {parts.map((part, pi) => (
-          <section key={part.title + pi} className="rounded-[10px] border bg-white overflow-hidden" style={{ borderColor: C.line }}>
-            <h2 className="flex items-center gap-2.5 px-4 py-2.5 text-sm font-semibold border-b" style={{ background: C.head, borderColor: C.line }}>
-              <span className="rounded px-1.5 py-0.5 text-[10px] tracking-wider text-white" style={{ background: C.navy }}>
+          <section key={part.title + pi} className="rounded-lg border bg-white overflow-hidden" style={{ borderColor: C.line }}>
+            <h2 className="flex items-center gap-2 px-3 py-1.5 text-[12px] font-semibold border-b" style={{ background: C.head, borderColor: C.line }}>
+              <span className="rounded px-1 py-px text-[9px] tracking-wider text-white" style={{ background: C.navy }}>
                 PART {pi + 1}
               </span>
               <span className="uppercase">{part.title}</span>
-              <span className="ml-auto text-[11px] font-normal text-[#6b7280]">
+              <span className="ml-auto text-[10px] font-normal text-[#6b7280]">
                 {part.lines.filter((l) => l.item_id).length}/{part.lines.length} filled
               </span>
             </h2>
 
             {buckets(part.lines).map(([gname, glines]) => (
-              <div key={gname} className="px-3.5 pt-1.5 pb-2">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#6b7280] mt-2 mb-1">{gname}</div>
-                <table className="w-full border-collapse">
+              <div key={gname} className="px-3 pt-1 pb-1.5">
+                <div className="text-[10px] font-bold uppercase tracking-wider text-[#6b7280] mt-1 mb-0.5">{gname}</div>
+                <table className="w-full border-collapse text-xs">
                   <tbody>
                     {glines.map(([li, l], gi) => {
                       const prev = gi > 0 ? glines[gi - 1][1] : null;
@@ -463,13 +463,13 @@ export function R1BuilderClient({
                       const pc = pickerCat(l);
                       return (
                         <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
-                          <td className={"py-1 pr-2 align-middle w-[32%] " + (isExtra ? "pl-5 font-normal text-[#6b7280]" : "font-medium")}>
+                          <td className={"py-0.5 pr-2 align-middle w-[32%] " + (isExtra ? "pl-4 font-normal text-[#6b7280]" : "font-medium")}>
                             {l.kind === "free" ? (
                               <input
                                 value={l.label ?? ""}
                                 onChange={(e) => setLine(pi, li, { label: e.target.value })}
                                 placeholder="free-text…"
-                                className="w-full rounded border px-2 py-1 text-xs"
+                                className="w-full rounded border px-2 py-0.5 text-xs"
                                 style={{ borderColor: C.line }}
                               />
                             ) : isExtra ? (
@@ -482,7 +482,7 @@ export function R1BuilderClient({
                             )}
                             {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
                           </td>
-                          <td className="py-1 px-2 align-middle w-[46%]">
+                          <td className="py-0.5 px-2 align-middle w-[46%]">
                             <div className="flex items-center gap-1.5 flex-wrap">
                               {l.item_id ? (
                                 <span className="inline-flex items-center">
@@ -520,18 +520,18 @@ export function R1BuilderClient({
                               )}
                             </div>
                           </td>
-                          <td className="py-1 px-2 align-middle w-[12%]">
+                          <td className="py-0.5 px-2 align-middle w-[12%]">
                             <input
                               type="number"
                               min={0}
                               value={String(l.qty ?? 0)}
                               onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
                               placeholder="QTY"
-                              className="w-full max-w-[90px] rounded border px-2 py-1 text-xs text-right"
+                              className="w-full max-w-[80px] rounded border px-2 py-0.5 text-xs text-right"
                               style={{ borderColor: C.line }}
                             />
                           </td>
-                          <td className="py-1 pl-2 align-middle w-[10%] text-right whitespace-nowrap">
+                          <td className="py-0.5 pl-2 align-middle w-[10%] text-right whitespace-nowrap">
                             {canAdd && (
                               <button
                                 onClick={() => addExtra(pi, li)}
@@ -554,9 +554,9 @@ export function R1BuilderClient({
               </div>
             ))}
 
-            <div className="flex items-center gap-2 px-3.5 py-2 border-t border-dashed" style={{ borderColor: C.line }}>
+            <div className="flex items-center gap-2 px-3 py-1.5 border-t border-dashed" style={{ borderColor: C.line }}>
               <GlobalItemPicker onPick={(i) => addItemLine(pi, i)} />
-              <button onClick={() => addFreeLine(pi)} className="rounded-md border border-dashed px-2.5 py-1.5 text-xs" style={{ borderColor: C.acc, color: C.acc }}>
+              <button onClick={() => addFreeLine(pi)} className="rounded-md border border-dashed px-2.5 py-1 text-xs" style={{ borderColor: C.acc, color: C.acc }}>
                 + free line
               </button>
             </div>
@@ -565,23 +565,23 @@ export function R1BuilderClient({
       </div>
 
       {/* Add a part */}
-      <div className="mt-3 flex items-center gap-2">
+      <div className="mt-2.5 flex items-center gap-2">
         <input
           value={newPart}
           onChange={(e) => setNewPart(e.target.value)}
           placeholder="New part…"
-          className="w-44 rounded-md border px-2.5 py-1.5 text-xs"
+          className="w-44 rounded-md border px-2.5 py-1 text-xs"
           style={{ borderColor: C.line }}
           onKeyDown={(e) => e.key === "Enter" && addPart()}
         />
-        <button onClick={addPart} disabled={!newPart.trim()} className="rounded-md border px-2.5 py-1.5 text-xs font-semibold disabled:opacity-50" style={{ borderColor: C.line }}>
+        <button onClick={addPart} disabled={!newPart.trim()} className="rounded-md border px-2.5 py-1 text-xs font-semibold disabled:opacity-50" style={{ borderColor: C.line }}>
           + Add Part
         </button>
       </div>
 
       <DemandTables demand={demand} />
 
-      <p className="text-[11px] text-center text-[#6b7280] my-6">
+      <p className="text-[10px] text-center text-[#6b7280] my-4">
         Packing List R1 · seeded from the shared template + this job&apos;s BOM · pick an item per line, set QTY, Save.
       </p>
     </div>
@@ -591,21 +591,21 @@ export function R1BuilderClient({
 function DemandTables({ demand }: { demand: R1Demand }) {
   const block = (title: string, rows: R1Demand["make"]) =>
     rows.length === 0 ? null : (
-      <div className="mt-5">
-        <div className="text-sm font-medium mb-2">
+      <div className="mt-3.5">
+        <div className="text-[13px] font-medium mb-1.5">
           {title} <span className="text-[#6b7280]">({rows.length})</span>
         </div>
         <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
           <table className="w-full text-xs">
             <thead className="bg-[#f1f5f9] text-[#6b7280]">
               <tr>
-                <th className="text-left font-medium px-2 py-1.5">Code</th>
-                <th className="text-left font-medium px-2 py-1.5">Item</th>
-                <th className="text-right font-medium px-2 py-1.5">Required</th>
-                <th className="text-right font-medium px-2 py-1.5">In stock</th>
-                <th className="text-right font-medium px-2 py-1.5">On order</th>
-                <th className="text-right font-medium px-2 py-1.5">Shortfall</th>
-                <th className="text-right font-medium px-2 py-1.5">To buy</th>
+                <th className="text-left font-medium px-2 py-1">Code</th>
+                <th className="text-left font-medium px-2 py-1">Item</th>
+                <th className="text-right font-medium px-2 py-1">Required</th>
+                <th className="text-right font-medium px-2 py-1">In stock</th>
+                <th className="text-right font-medium px-2 py-1">On order</th>
+                <th className="text-right font-medium px-2 py-1">Shortfall</th>
+                <th className="text-right font-medium px-2 py-1">To buy</th>
               </tr>
             </thead>
             <tbody className="divide-y" style={{ borderColor: "#e5e7eb" }}>
@@ -628,10 +628,10 @@ function DemandTables({ demand }: { demand: R1Demand }) {
       </div>
     );
   return (
-    <div className="mt-7">
-      <h2 className="text-base font-semibold">Demand list (vs current stock)</h2>
+    <div className="mt-5">
+      <h2 className="text-sm font-semibold">Demand list (vs current stock)</h2>
       {demand.totals.items === 0 ? (
-        <p className="text-sm text-[#6b7280] mt-2">No items with quantities yet — fill some lines and Save.</p>
+        <p className="text-xs text-[#6b7280] mt-1.5">No items with quantities yet — fill some lines and Save.</p>
       ) : (
         <>
           {block("Trade (to procure)", demand.trade)}
