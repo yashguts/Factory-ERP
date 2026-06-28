@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useEffect, useTransition, type ReactNode } from "react";
+import { Fragment, useRef, useState, useEffect, useTransition, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2 } from "lucide-react";
 import {
@@ -66,16 +66,16 @@ function ScopedItemPicker({
   if (!categoryId)
     return <span className="text-xs text-amber-600">⚠ unmapped — fix in Template</span>;
   return (
-    <div className="relative max-w-[560px]" ref={ref}>
+    <div className="relative w-full" ref={ref}>
       <button
         onClick={() => setOpen((o) => !o)}
-        className="w-full text-left rounded border bg-white px-2 py-0.5 text-xs text-[#6b7280] hover:border-[#2563eb]"
+        className="w-full text-left truncate rounded border bg-white px-2 py-1 text-xs text-[#6b7280] hover:border-[#2563eb]"
         style={{ borderColor: C.line }}
       >
         — select from {placeholder} —
       </button>
       {open && (
-        <div className="absolute z-30 mt-1 w-[360px] rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }}>
+        <div className="absolute z-30 mt-1 min-w-full w-[460px] max-w-[92vw] rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }}>
           <div className="p-1.5 border-b" style={{ borderColor: C.line }}>
             <input
               autoFocus
@@ -86,7 +86,7 @@ function ScopedItemPicker({
               style={{ borderColor: C.line }}
             />
           </div>
-          <div className="max-h-56 overflow-auto">
+          <div className="max-h-64 overflow-auto">
             {res.length === 0 ? (
               <div className="px-2.5 py-2 text-xs text-[#6b7280]">No items.</div>
             ) : (
@@ -98,10 +98,10 @@ function ScopedItemPicker({
                     setOpen(false);
                     setQ("");
                   }}
-                  className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[#f1f5f9]"
+                  className="flex w-full items-start gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-[#f1f5f9]"
                 >
-                  <span className="font-mono font-medium">{i.code}</span>
-                  <span className="truncate text-[#6b7280]">{i.name}</span>
+                  <span className="font-mono font-medium shrink-0">{i.code}</span>
+                  <span className="text-[#6b7280] whitespace-normal break-words leading-snug">{i.name}</span>
                 </button>
               ))
             )}
@@ -149,11 +149,11 @@ function GlobalItemPicker({ onPick }: { onPick: (i: SearchableItem) => void }) {
         }}
         onFocus={() => setOpen(true)}
         placeholder="+ add item by code / name…"
-        className="w-60 rounded-md border px-2.5 py-1 text-xs"
+        className="w-72 rounded-md border px-2.5 py-1 text-xs"
         style={{ borderColor: C.line }}
       />
       {open && res.length > 0 && (
-        <div className="absolute z-30 mt-1 w-96 max-h-56 overflow-auto rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }}>
+        <div className="absolute z-30 mt-1 w-[460px] max-w-[92vw] max-h-64 overflow-auto rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }}>
           {res.map((i) => (
             <button
               key={i.id}
@@ -163,10 +163,10 @@ function GlobalItemPicker({ onPick }: { onPick: (i: SearchableItem) => void }) {
                 setRes([]);
                 setOpen(false);
               }}
-              className="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs hover:bg-[#f1f5f9]"
+              className="flex w-full items-start gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-[#f1f5f9]"
             >
-              <span className="font-mono font-medium">{i.code}</span>
-              <span className="truncate text-[#6b7280]">{i.name}</span>
+              <span className="font-mono font-medium shrink-0">{i.code}</span>
+              <span className="text-[#6b7280] whitespace-normal break-words leading-snug">{i.name}</span>
             </button>
           ))}
         </div>
@@ -450,109 +450,131 @@ export function R1BuilderClient({
               </span>
             </h2>
 
-            {buckets(part.lines).map(([gname, glines]) => (
-              <div key={gname} className="px-3 pt-1 pb-1.5">
-                <div className="text-[10px] font-bold uppercase tracking-wider text-[#6b7280] mt-1 mb-0.5">{gname}</div>
-                <table className="w-full border-collapse text-xs">
-                  <tbody>
-                    {glines.map(([li, l], gi) => {
-                      const prev = gi > 0 ? glines[gi - 1][1] : null;
-                      const isExtra =
-                        !!prev && prev.label === l.label && prev.category_id === l.category_id && prev.kind === l.kind;
-                      const canAdd = l.kind === "category" || l.kind === "hardware";
-                      const pc = pickerCat(l);
-                      return (
-                        <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
-                          <td className={"py-0.5 pr-2 align-middle w-[32%] " + (isExtra ? "pl-4 font-normal text-[#6b7280]" : "font-medium")}>
-                            {l.kind === "free" ? (
+            <div className="px-3 py-1.5">
+              <table className="table-fixed w-full border-collapse text-xs">
+                <colgroup>
+                  <col style={{ width: "34%" }} />
+                  <col style={{ width: "46%" }} />
+                  <col style={{ width: "8%" }} />
+                  <col style={{ width: "12%" }} />
+                </colgroup>
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-[#9ca3af]">
+                    <th className="font-medium pb-1">Particular</th>
+                    <th className="font-medium pb-1">Item</th>
+                    <th className="font-medium pb-1 text-right pr-2">Qty</th>
+                    <th className="pb-1" />
+                  </tr>
+                </thead>
+                <tbody>
+                  {buckets(part.lines).map(([gname, glines]) => (
+                    <Fragment key={gname}>
+                      <tr>
+                        <td colSpan={4} className="pt-2 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#6b7280]">
+                          {gname}
+                        </td>
+                      </tr>
+                      {glines.map(([li, l], gi) => {
+                        const prev = gi > 0 ? glines[gi - 1][1] : null;
+                        const isExtra =
+                          !!prev && prev.label === l.label && prev.category_id === l.category_id && prev.kind === l.kind;
+                        const canAdd = l.kind === "category" || l.kind === "hardware";
+                        const pc = pickerCat(l);
+                        return (
+                          <tr key={l._k} className="border-b" style={{ borderColor: "#f1f5f9" }}>
+                            <td className={"py-1 pr-2 align-top " + (isExtra ? "pl-4 font-normal text-[#6b7280]" : "font-medium")}>
+                              {l.kind === "free" ? (
+                                <input
+                                  value={l.label ?? ""}
+                                  onChange={(e) => setLine(pi, li, { label: e.target.value })}
+                                  placeholder="free-text…"
+                                  className="w-full rounded border px-2 py-1 text-xs"
+                                  style={{ borderColor: C.line }}
+                                />
+                              ) : isExtra ? (
+                                <span className="text-xs">↳ also</span>
+                              ) : (
+                                <span className="break-words">{l.label ?? l.category_name ?? "—"}</span>
+                              )}
+                              {!isExtra && l.kind === "hardware" && (
+                                <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>+ Add hardware</span>
+                              )}
+                              {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
+                            </td>
+                            <td className="py-1 px-2 align-top">
+                              <div className="flex items-start gap-1.5">
+                                <div className="flex-1 min-w-0">
+                                  {l.item_id ? (
+                                    <span className="inline-flex items-center flex-wrap gap-y-0.5">
+                                      <span className="font-medium break-words">{l.item_name}</span>
+                                      {l.item_code && <CodeChip code={l.item_code} />}
+                                      {canAdd && (
+                                        <button
+                                          onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
+                                          className="ml-1.5 text-[#6b7280] hover:text-red-600"
+                                          title="clear"
+                                        >
+                                          ×
+                                        </button>
+                                      )}
+                                    </span>
+                                  ) : canAdd ? (
+                                    <ScopedItemPicker
+                                      categoryId={pc}
+                                      placeholder={l.category_name ?? l.label ?? "category"}
+                                      onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
+                                    />
+                                  ) : (
+                                    <span className="text-xs text-[#6b7280]">—</span>
+                                  )}
+                                </div>
+                                {canAdd && pc != null && (
+                                  <span
+                                    className={
+                                      "shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
+                                      ((counts[pc] ?? 0) === 0 ? "bg-red-100 text-red-700" : "bg-[#e0e7ff] text-[#3730a3]")
+                                    }
+                                    title="items available in this category"
+                                  >
+                                    {counts[pc] ?? 0}
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="py-1 px-2 align-top">
                               <input
-                                value={l.label ?? ""}
-                                onChange={(e) => setLine(pi, li, { label: e.target.value })}
-                                placeholder="free-text…"
-                                className="w-full rounded border px-2 py-0.5 text-xs"
+                                type="number"
+                                min={0}
+                                value={String(l.qty ?? 0)}
+                                onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
+                                placeholder="QTY"
+                                className="w-full rounded border px-2 py-1 text-xs text-right"
                                 style={{ borderColor: C.line }}
                               />
-                            ) : isExtra ? (
-                              <span className="text-xs">↳ also</span>
-                            ) : (
-                              <span>{l.label ?? l.category_name ?? "—"}</span>
-                            )}
-                            {!isExtra && l.kind === "hardware" && (
-                              <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>+ Add hardware</span>
-                            )}
-                            {l.source === "auto" && <span className="ml-1.5 text-[10px] italic" style={{ color: C.acc }}>auto</span>}
-                          </td>
-                          <td className="py-0.5 px-2 align-middle w-[46%]">
-                            <div className="flex items-center gap-1.5 flex-wrap">
-                              {l.item_id ? (
-                                <span className="inline-flex items-center">
-                                  <span className="font-medium">{l.item_name}</span>
-                                  {l.item_code && <CodeChip code={l.item_code} />}
-                                  {canAdd && (
-                                    <button
-                                      onClick={() => setLine(pi, li, { item_id: null, item_code: null, item_name: null, uom: null })}
-                                      className="ml-1.5 text-[#6b7280] hover:text-red-600"
-                                      title="clear"
-                                    >
-                                      ×
-                                    </button>
-                                  )}
-                                </span>
-                              ) : canAdd ? (
-                                <ScopedItemPicker
-                                  categoryId={pc}
-                                  placeholder={l.category_name ?? l.label ?? "category"}
-                                  onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
-                                />
-                              ) : (
-                                <span className="text-xs text-[#6b7280]">—</span>
-                              )}
-                              {canAdd && pc != null && (
-                                <span
-                                  className={
-                                    "rounded-full px-1.5 py-0.5 text-[10px] font-medium " +
-                                    ((counts[pc] ?? 0) === 0 ? "bg-red-100 text-red-700" : "bg-[#e0e7ff] text-[#3730a3]")
-                                  }
-                                  title="items available in this category"
+                            </td>
+                            <td className="py-1 pl-1 align-top text-right whitespace-nowrap">
+                              {canAdd && (
+                                <button
+                                  onClick={() => addExtra(pi, li)}
+                                  className="mr-1 rounded border border-dashed px-1.5 py-0.5 text-[11px] font-semibold"
+                                  style={{ borderColor: C.acc, color: C.acc }}
+                                  title="add another item from this category"
                                 >
-                                  {counts[pc] ?? 0}
-                                </span>
+                                  + Add
+                                </button>
                               )}
-                            </div>
-                          </td>
-                          <td className="py-0.5 px-2 align-middle w-[12%]">
-                            <input
-                              type="number"
-                              min={0}
-                              value={String(l.qty ?? 0)}
-                              onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
-                              placeholder="QTY"
-                              className="w-full max-w-[80px] rounded border px-2 py-0.5 text-xs text-right"
-                              style={{ borderColor: C.line }}
-                            />
-                          </td>
-                          <td className="py-0.5 pl-2 align-middle w-[10%] text-right whitespace-nowrap">
-                            {canAdd && (
-                              <button
-                                onClick={() => addExtra(pi, li)}
-                                className="mr-1 rounded border border-dashed px-1.5 py-0.5 text-[11px] font-semibold"
-                                style={{ borderColor: C.acc, color: C.acc }}
-                                title="add another item from this category"
-                              >
-                                + Add
+                              <button onClick={() => delLine(pi, li)} className="p-1 rounded hover:bg-red-50 text-red-600" title="delete">
+                                <Trash2 size={13} />
                               </button>
-                            )}
-                            <button onClick={() => delLine(pi, li)} className="p-1 rounded hover:bg-red-50 text-red-600" title="delete">
-                              <Trash2 size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            ))}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </Fragment>
+                  ))}
+                </tbody>
+              </table>
+            </div>
 
             <div className="flex items-center gap-2 px-3 py-1.5 border-t border-dashed" style={{ borderColor: C.line }}>
               <GlobalItemPicker onPick={(i) => addItemLine(pi, i)} />
