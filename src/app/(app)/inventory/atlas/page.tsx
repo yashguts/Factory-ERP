@@ -3,7 +3,14 @@ import AtlasClient from "./atlas-client";
 
 export const metadata = { title: "Inventory Atlas" };
 
-export type AtlasCat = { id: string; name: string; parent_id: string | null };
+export type Proc = "make" | "trade" | null;
+export type AtlasCat = {
+  id: string;
+  name: string;
+  parent_id: string | null;
+  /** Category default Make/Trade (null = inherits from parent at the app level). */
+  procurement_type: Proc;
+};
 export type AtlasItem = {
   id: string;
   code: string;
@@ -11,6 +18,8 @@ export type AtlasItem = {
   item_type: string;
   category_id: string;
   in_r1: boolean;
+  /** The item's OWN Make/Trade override (null = inherit from its category). */
+  procurement_type: Proc;
 };
 export type AtlasUnit = { id: string; name: string };
 
@@ -25,7 +34,7 @@ async function fetchData(): Promise<{
   // ── All categories (small) ──────────────────────────────────────────────
   const { data: cats } = await sb
     .from("item_categories")
-    .select("id, name, parent_id");
+    .select("id, name, parent_id, procurement_type");
   const allCats: AtlasCat[] = cats ?? [];
 
   // Cabin lives in its own surface — exclude its whole subtree here.
@@ -75,7 +84,7 @@ async function fetchData(): Promise<{
     Array.from({ length: 10 }, (_, i) => {
       let q: any = sb
         .from("items")
-        .select("id, code, name, item_type, category_id")
+        .select("id, code, name, item_type, category_id, procurement_type")
         .eq("is_active", true)
         .not("category_id", "is", null)
         .range(i * 1000, (i + 1) * 1000 - 1)

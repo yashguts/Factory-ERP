@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useEffect, useRef, useTransition } from "react";
+import { useMemo, useState, useEffect, useRef, useTransition, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import {
   Map as MapIcon,
@@ -20,6 +20,7 @@ import {
   SlidersHorizontal,
   AlertTriangle,
   Folder,
+  Check,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -37,7 +38,7 @@ import {
   bulkUpdateItems,
 } from "@/lib/actions/inventory-atlas";
 import { createItem } from "@/lib/actions/inventory";
-import type { AtlasCat, AtlasItem, AtlasUnit } from "./page";
+import type { AtlasCat, AtlasItem, AtlasUnit, Proc } from "./page";
 
 // Small worded "R1" pill — the tree's ONLY R1 signal (never a dot), so it can
 // never be confused with the item-level dot in the list.
@@ -135,8 +136,9 @@ export default function AtlasClient({
   useEffect(() => setCats(catProp), [catProp]);
   useEffect(() => setItems(itemProp), [itemProp]);
 
-  // Active Type lens ("" = all). Filters the tree counts + item list.
+  // Active lenses ("" = all). Both slice the tree counts + item list (ANDed).
   const [typeFilter, setTypeFilter] = useState("");
+  const [procFilter, setProcFilter] = useState<"" | "make" | "trade" | "none">("");
 
   // ── Derived tree structures ─────────────────────────────────────────────
   const { byId, childrenByParent, roots } = useMemo(() => {
@@ -161,10 +163,36 @@ export default function AtlasClient({
     return m;
   }, [items]);
 
-  // Items visible under the active Type filter ("" = all types).
+  // Effective Make/Trade — matches mrp.ts EXACTLY: the item's own override, else
+  // its DIRECT category's procurement_type. No walk to root (so items under a
+  // null sub-category resolve to null even if the top-level is set). This keeps
+  // Atlas counts identical to MRP / the inventory list.
+  const effectiveProc = useCallback(
+    (it: AtlasItem): Proc => it.procurement_type ?? (byId.get(it.category_id)?.procurement_type ?? null),
+    [byId],
+  );
+  const procBucket = useCallback(
+    (it: AtlasItem): "make" | "trade" | "none" => effectiveProc(it) ?? "none",
+    [effectiveProc],
+  );
+
+  // Make/Trade chip totals (full, unfiltered).
+  const procCounts = useMemo(() => {
+    const m = { make: 0, trade: 0, none: 0 };
+    for (const it of items) m[procBucket(it)]++;
+    return m;
+  }, [items, procBucket]);
+
+  // Items visible under BOTH active lenses (Type AND Make/Trade). Flows into the
+  // tree counts, the right pane, and search.
   const visibleItems = useMemo(
-    () => (typeFilter ? items.filter((i) => i.item_type === typeFilter) : items),
-    [items, typeFilter],
+    () =>
+      items.filter(
+        (i) =>
+          (!typeFilter || i.item_type === typeFilter) &&
+          (!procFilter || procBucket(i) === procFilter),
+      ),
+    [items, typeFilter, procFilter, procBucket],
   );
 
   // itemsByCat / stats reflect the Type filter (drive the tree counts + right
@@ -269,6 +297,9 @@ export default function AtlasClient({
   const [renameValue, setRenameValue] = useState("");
   const [menuFor, setMenuFor] = useState<string | null>(null);
   const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  // Inline Make/Trade editor popover (per item).
+  const [procMenuFor, setProcMenuFor] = useState<string | null>(null);
+  const [procMenuPos, setProcMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [deleteTarget, setDeleteTarget] = useState<AtlasCat | null>(null);
   const [showBulkEdit, setShowBulkEdit] = useState(false);
   const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
@@ -311,8 +342,8 @@ export default function AtlasClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, visibleItems, selectedCat, itemsByCat, childrenByParent]);
 
-  // Clear any selection when the Type lens changes (selected rows may hide).
-  useEffect(() => setChecked(new Set()), [typeFilter]);
+  // Clear any selection when a lens changes (selected rows may hide).
+  useEffect(() => setChecked(new Set()), [typeFilter, procFilter]);
 
   const shownIds = useMemo(() => rightItems.map((i) => i.id), [rightItems]);
   const allShownChecked = shownIds.length > 0 && shownIds.every((id) => checked.has(id));
@@ -451,6 +482,26 @@ export default function AtlasClient({
     });
   }
 
+  // Inline single-item Make/Trade change (value null = inherit from category).
+  function setItemProc(id: string, value: Proc) {
+    setProcMenuFor(null);
+    setItems((prev) =>
+      prev.map((it) => (it.id === id ? { ...it, procurement_type: value } : it)),
+    );
+    startTransition(async () => {
+      const r = await bulkUpdateItems([id], { procurement_type: value });
+      if (!r.ok) {
+        toast.error(r.error);
+        router.refresh();
+      } else {
+        toast.success(
+          value === null ? "Set to inherit from category" : `Set to ${value === "make" ? "Make" : "Trade"}`,
+        );
+        router.refresh();
+      }
+    });
+  }
+
   // ── Tree rendering ────────────────────────────────────────────────────────
   function TreeNode({ cat, depth }: { cat: AtlasCat; depth: number }) {
     const children = childrenByParent.get(cat.id) ?? [];
@@ -495,7 +546,7 @@ export default function AtlasClient({
               ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
               : "hover:bg-[var(--muted)]",
             isDrop && "ring-2 ring-[var(--primary)] ring-inset bg-[var(--accent)]",
-            typeFilter && st.total === 0 && !isSel && "opacity-40",
+            (typeFilter || procFilter) && st.total === 0 && !isSel && "opacity-40",
           )}
         >
           {hasChildren ? (
@@ -694,8 +745,35 @@ export default function AtlasClient({
         </span>
       </div>
 
+      {/* Make/Trade filter — ANDs with the Type lens */}
+      <div className="no-print flex flex-wrap items-center gap-1 mb-2">
+        <span className="text-[10px] font-semibold text-[var(--muted-foreground)] mr-1 uppercase tracking-wide">
+          Make / Trade
+        </span>
+        <TypeChip label="All" count={items.length} active={!procFilter} onClick={() => setProcFilter("")} />
+        <TypeChip
+          label="Make"
+          count={procCounts.make}
+          active={procFilter === "make"}
+          onClick={() => setProcFilter(procFilter === "make" ? "" : "make")}
+        />
+        <TypeChip
+          label="Trade"
+          count={procCounts.trade}
+          active={procFilter === "trade"}
+          onClick={() => setProcFilter(procFilter === "trade" ? "" : "trade")}
+        />
+        <TypeChip
+          label="Unset"
+          title="No Make/Trade — neither the item nor its category is set"
+          count={procCounts.none}
+          active={procFilter === "none"}
+          onClick={() => setProcFilter(procFilter === "none" ? "" : "none")}
+        />
+      </div>
+
       {/* Two-pane workbench */}
-      <div className="atlas-panes flex gap-2" style={{ height: "calc(100vh - 172px)" }}>
+      <div className="atlas-panes flex gap-2" style={{ height: "calc(100vh - 204px)" }}>
         {/* LEFT: category tree */}
         <aside className="atlas-tree card-surface flex flex-col overflow-hidden shrink-0 w-[340px]">
           <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border)] bg-[var(--muted)]/30">
@@ -729,6 +807,11 @@ export default function AtlasClient({
                 )}
                 {typeFilter && (
                   <Badge variant="purple">{TYPE_LABEL[typeFilter]} only</Badge>
+                )}
+                {procFilter && (
+                  <Badge variant={procFilter === "make" ? "blue" : procFilter === "trade" ? "amber" : "neutral"}>
+                    {procFilter === "make" ? "Make" : procFilter === "trade" ? "Trade" : "Unset"} only
+                  </Badge>
                 )}
               </div>
               {selStat && !q && (
@@ -786,6 +869,7 @@ export default function AtlasClient({
               <span className="w-28">Code</span>
               <span className="flex-1">Item</span>
               <span className="w-12 text-center">Type</span>
+              <span className="w-9 text-center" title="Make / Trade — click a cell to change">M/T</span>
               <span className="w-40 text-right pr-1">Category</span>
             </div>
           )}
@@ -854,6 +938,32 @@ export default function AtlasClient({
                     >
                       {TYPE_ABBR[it.item_type] ?? "?"}
                     </span>
+                    {/* Make/Trade — effective value, click to change */}
+                    {(() => {
+                      const eff = effectiveProc(it);
+                      const overridden = it.procurement_type !== null;
+                      const tip = `${eff ? (eff === "make" ? "Make" : "Trade") : "Unset"} · ${overridden ? "set on this item" : "inherited from category"} — click to change`;
+                      return (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                            setProcMenuPos({ x: r.right, y: r.bottom });
+                            setProcMenuFor((m) => (m === it.id ? null : it.id));
+                          }}
+                          className="w-9 shrink-0 flex items-center justify-center cursor-pointer"
+                          title={tip}
+                        >
+                          {eff === "make" ? (
+                            <Badge variant="blue" className={cn("text-[10px] px-1.5", !overridden && "opacity-60")}>M</Badge>
+                          ) : eff === "trade" ? (
+                            <Badge variant="amber" className={cn("text-[10px] px-1.5", !overridden && "opacity-60")}>T</Badge>
+                          ) : (
+                            <span className="text-[11px] text-[var(--muted-foreground)] hover:text-[var(--foreground)]">—</span>
+                          )}
+                        </button>
+                      );
+                    })()}
                     <span
                       className="w-40 shrink-0 text-right text-[11px] text-[var(--muted-foreground)] truncate pr-1"
                       title={pathLabel(it.category_id)}
@@ -1012,6 +1122,49 @@ export default function AtlasClient({
         </>
       )}
 
+      {/* Inline Make/Trade editor (per item) */}
+      {procMenuFor &&
+        (() => {
+          const it = items.find((x) => x.id === procMenuFor);
+          if (!it) return null;
+          const own = it.procurement_type; // explicit override (null = inherit)
+          const catProc = byId.get(it.category_id)?.procurement_type ?? null;
+          const inheritHint = catProc ? (catProc === "make" ? "Make" : "Trade") : "unset";
+          const rows: { val: Proc; label: string }[] = [
+            { val: "make", label: "Make" },
+            { val: "trade", label: "Trade" },
+            { val: null, label: `Inherit (→ ${inheritHint})` },
+          ];
+          const menuItem =
+            "w-full flex items-center justify-between gap-3 px-3 py-1.5 text-sm text-left cursor-pointer hover:bg-[var(--muted)]";
+          return (
+            <>
+              <div className="fixed inset-0 z-40" onClick={() => setProcMenuFor(null)} />
+              <div
+                className="fixed z-50 min-w-[184px] rounded-md border border-[var(--border)] bg-[var(--popover)] shadow-[var(--shadow-lg)] py-1 animate-scale-in"
+                style={{ top: procMenuPos.y + 4, left: Math.max(8, procMenuPos.x - 184) }}
+              >
+                <div className="px-3 py-1 text-[10px] uppercase tracking-wide text-[var(--muted-foreground)] border-b border-[var(--border)] mb-1 truncate">
+                  Make / Trade · {it.code}
+                </div>
+                {rows.map((r) => (
+                  <button
+                    key={r.label}
+                    className={menuItem}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setItemProc(it.id, r.val);
+                    }}
+                  >
+                    <span>{r.label}</span>
+                    {own === r.val && <Check size={14} className="text-[var(--primary)]" />}
+                  </button>
+                ))}
+              </div>
+            </>
+          );
+        })()}
+
       {/* Delete confirmation */}
       {deleteTarget && (
         <Modal title="Delete category" onClose={() => setDeleteTarget(null)} size="sm">
@@ -1139,7 +1292,7 @@ function NewCategoryModal({
       return;
     }
     toast.success(`Category “${r.name}” created`);
-    onCreated({ id: r.id, name: r.name, parent_id: r.parent_id });
+    onCreated({ id: r.id, name: r.name, parent_id: r.parent_id, procurement_type: null });
   }
 
   return (
@@ -1230,6 +1383,7 @@ function NewItemModal({
       item_type: type,
       category_id: cat,
       in_r1: false,
+      procurement_type: null,
     });
   }
 
