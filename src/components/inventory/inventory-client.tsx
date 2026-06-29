@@ -20,7 +20,7 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History, FileText, FileSpreadsheet, Loader2 } from "lucide-react";
+import { Plus, Search, Package, ChevronLeft, ChevronRight, ArrowUpDown, Copy, History, FileText, FileSpreadsheet, Loader2, Map } from "lucide-react";
 import { ItemFormModal } from "@/components/inventory/item-form-modal";
 import { StockAdjustModal } from "@/components/inventory/stock-adjust-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
@@ -475,6 +475,12 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
               )}
               Excel
             </Button>
+            <Link href="/inventory/print">
+              <Button variant="secondary" size="sm" title="Visual category map with R1 packing list coverage">
+                <Map size={16} className="mr-2" />
+                Atlas
+              </Button>
+            </Link>
             <Link href="/inventory/changes">
               <Button variant="secondary" size="sm" title="See what changed on a given day">
                 <History size={16} className="mr-2" />
