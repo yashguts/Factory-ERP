@@ -379,17 +379,15 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
 
     // How many template lines reference each category. A category on >1 line is
     // "shared" (e.g. two Guide Rail lines, or Stud Anchor across parts). For shared
-    // categories we DISTRIBUTE the job's matching BOM items across those lines —
-    // one item per line in order (claim-once via claimCursor) — so each line gets a
-    // distinct item instead of all blanking (multi-match) or all duplicating
-    // (single-match). A category on exactly one line ("distinct") expands to one
-    // row per match. Overflow (more items than lines) lands in Unmapped Items.
+    // categories the item-to-line assignment is ambiguous, so we DON'T auto-fill —
+    // the lines stay blank and the BOM items surface in Unmapped Items for manual
+    // placement. A category on exactly one line ("distinct") expands to one row per
+    // matching BOM item.
     const catLineCount = new Map<string, number>();
     for (const p of template)
       for (const tl of p.lines)
         if (tl.kind === "category" && tl.category_id)
           catLineCount.set(tl.category_id, (catLineCount.get(tl.category_id) ?? 0) + 1);
-    const claimCursor = new Map<string, number>(); // shared category_id -> next item index
 
     const seedRows: Record<string, unknown>[] = [];
     let so = 0;
@@ -420,14 +418,11 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
           const matches = byCat.get(tl.category_id) ?? [];
           const shared = (catLineCount.get(tl.category_id) ?? 0) > 1;
           if (shared) {
-            // claim-once: give this line the next unclaimed matching item
-            const idx = claimCursor.get(tl.category_id) ?? 0;
-            if (idx < matches.length) {
-              pushRow(part.title, tl, matches[idx].item_id, matches[idx].qty, "auto");
-              claimCursor.set(tl.category_id, idx + 1);
-            } else {
-              pushRow(part.title, tl, null, 0, "template");
-            }
+            // Shared category (e.g. Stud Anchor across 5 parts, or two Guide Rail
+            // lines): the correct item-to-line assignment is ambiguous, so we DON'T
+            // auto-fill. The lines stay blank and the job's BOM items in this
+            // category surface in the Unmapped Items section for manual placement.
+            pushRow(part.title, tl, null, 0, "template");
           } else if (matches.length >= 2) {
             // distinct category, several BOM items → one auto row per item
             for (const m of matches) pushRow(part.title, tl, m.item_id, m.qty, "auto");
