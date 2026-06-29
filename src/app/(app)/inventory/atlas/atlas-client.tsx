@@ -12,7 +12,6 @@ import {
   Printer,
   X,
   MoveRight,
-  Layers,
   PackageOpen,
   MoreHorizontal,
   Pencil,
@@ -40,15 +39,17 @@ import {
 import { createItem } from "@/lib/actions/inventory";
 import type { AtlasCat, AtlasItem, AtlasUnit } from "./page";
 
-// ── Touched-coverage tiers (light-theme palette): share of a category's
-//    sub-categories touched by R1 ────────────────────────────────────────────
-function covColor(pct: number) {
-  if (pct === 0) return "#94a3b8"; // slate-400 — none touched
-  if (pct < 20) return "#ef4444"; // red-500
-  if (pct < 40) return "#f97316"; // orange-500
-  if (pct < 60) return "#eab308"; // yellow-500
-  if (pct < 80) return "#3b82f6"; // blue-500
-  return "#22c55e"; // green-500 — all touched
+// Small worded "R1" pill — the tree's ONLY R1 signal (never a dot), so it can
+// never be confused with the item-level dot in the list.
+function R1Pill() {
+  return (
+    <span
+      className="rounded px-1 py-px text-[10px] font-semibold leading-none bg-emerald-50 text-emerald-700 border border-emerald-200"
+      title="On the R1 packing list"
+    >
+      R1
+    </span>
+  );
 }
 
 const TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -458,7 +459,6 @@ export default function AtlasClient({
     const isSel = selectedCat === cat.id && !q;
     const st = stats.get(cat.id) ?? { total: 0, r1: 0 };
     const t = touch.get(cat.id) ?? { self: false, subTouched: 0, subTotal: 0, anyTouched: false };
-    const touchPct = t.subTotal > 0 ? Math.round((t.subTouched * 100) / t.subTotal) : t.self ? 100 : 0;
     const isDrop = dropCat === cat.id;
 
     return (
@@ -467,10 +467,13 @@ export default function AtlasClient({
           onClick={() => {
             setSelectedCat(cat.id);
             setSearch("");
-            if (hasChildren)
+            // Selecting loads the category and reveals its children, but a row
+            // click never COLLAPSES (that surprised people). Collapse is the
+            // chevron's job.
+            if (hasChildren && !isOpen)
               setExpanded((prev) => {
                 const next = new Set(prev);
-                next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id);
+                next.add(cat.id);
                 return next;
               });
           }}
@@ -487,7 +490,7 @@ export default function AtlasClient({
           }}
           style={{ paddingLeft: 8 + depth * 14 }}
           className={cn(
-            "group flex items-center gap-1.5 pr-2 py-1.5 rounded-md cursor-pointer text-sm transition-colors select-none",
+            "group flex items-center gap-1.5 pr-2 py-1 rounded-md cursor-pointer text-[13px] transition-colors select-none",
             isSel
               ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
               : "hover:bg-[var(--muted)]",
@@ -495,16 +498,29 @@ export default function AtlasClient({
             typeFilter && st.total === 0 && !isSel && "opacity-40",
           )}
         >
-          <span className="shrink-0 w-4 flex items-center justify-center text-[var(--muted-foreground)]">
-            {hasChildren ? (
+          {hasChildren ? (
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setExpanded((prev) => {
+                  const next = new Set(prev);
+                  next.has(cat.id) ? next.delete(cat.id) : next.add(cat.id);
+                  return next;
+                });
+              }}
+              className="shrink-0 w-4 flex items-center justify-center text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer"
+              aria-label={isOpen ? "Collapse" : "Expand"}
+            >
               <ChevronRight
-                size={14}
+                size={13}
                 className={cn("transition-transform", isOpen && "rotate-90")}
               />
-            ) : (
-              depth > 0 && <CornerDownRight size={12} className="opacity-40" />
-            )}
-          </span>
+            </button>
+          ) : (
+            <span className="shrink-0 w-4 flex items-center justify-center text-[var(--muted-foreground)]">
+              {depth > 0 && <CornerDownRight size={12} className="opacity-40" />}
+            </span>
+          )}
 
           {renamingCat === cat.id ? (
             <input
@@ -517,7 +533,7 @@ export default function AtlasClient({
                 if (e.key === "Enter") saveRename(cat);
                 else if (e.key === "Escape") setRenamingCat(null);
               }}
-              className="flex-1 min-w-0 h-6 px-1.5 rounded border border-[var(--primary)] bg-[var(--background)] text-sm focus:outline-none"
+              className="flex-1 min-w-0 h-6 px-1.5 rounded border border-[var(--primary)] bg-[var(--background)] text-[13px] focus:outline-none"
             />
           ) : (
             <>
@@ -544,30 +560,32 @@ export default function AtlasClient({
               >
                 <MoreHorizontal size={14} />
               </button>
-              {/* R1 "touched" indicator: bar of touched sub-categories for
-                  parents; a dot for leaf sub-categories */}
+              {/* R1 indicator — words, never a dot: an "R1" pill on a
+                  sub-category that's on the R1 list; a plain n/m fraction on a
+                  parent (no rainbow, no covColor). */}
               {hasChildren ? (
                 <span
-                  className="shrink-0 w-9 h-1.5 rounded-full overflow-hidden bg-[var(--muted)]"
-                  title={`${t.subTouched} of ${t.subTotal} sub-categories touched by R1`}
+                  className="shrink-0 w-14 flex items-center justify-end gap-1"
+                  title={`${t.subTouched} of ${t.subTotal} sub-categories on the R1 list`}
                 >
+                  {t.self && <R1Pill />}
                   <span
-                    className="block h-full rounded-full"
-                    style={{ width: `${touchPct}%`, background: covColor(touchPct) }}
-                  />
+                    className={cn(
+                      "text-[10px] tabular-nums",
+                      t.subTouched === t.subTotal && t.subTotal > 0
+                        ? "text-emerald-600 font-medium"
+                        : "text-[var(--muted-foreground)]",
+                    )}
+                  >
+                    {t.subTouched}/{t.subTotal}
+                  </span>
                 </span>
               ) : (
-                <span
-                  className={cn(
-                    "shrink-0 w-9 text-center text-[10px] font-bold leading-none",
-                    t.self ? "text-emerald-500" : "text-slate-300",
-                  )}
-                  title={t.self ? "Touched by R1" : "Not touched by R1"}
-                >
-                  {t.self ? "●" : "○"}
+                <span className="shrink-0 w-14 flex items-center justify-end">
+                  {t.self && <R1Pill />}
                 </span>
               )}
-              <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)] w-9 text-right">
+              <span className="shrink-0 text-[11px] tabular-nums text-[var(--muted-foreground)] w-7 text-right">
                 {st.total.toLocaleString()}
               </span>
             </>
@@ -583,10 +601,6 @@ export default function AtlasClient({
       </div>
     );
   }
-
-  const touchedPct = subTouchedTotal.total
-    ? Math.round((subTouchedTotal.touched * 100) / subTouchedTotal.total)
-    : 0;
 
   const selectedName = q
     ? `Search: "${search.trim()}"`
@@ -614,12 +628,13 @@ export default function AtlasClient({
         title="Inventory Atlas"
         icon={<MapIcon size={18} />}
         meta={
-          <>
+          <span title="On the R1 list = referenced by the R1 packing list, via an item or a line's category.">
             {items.length.toLocaleString()} items · {rootsBySize.length} categories ·{" "}
-            <span style={{ color: covColor(touchedPct), fontWeight: 600 }}>
-              {subTouchedTotal.touched}/{subTouchedTotal.total} sub-categories touched by R1
-            </span>
-          </>
+            <span className="font-medium text-[var(--foreground)]">
+              {subTouchedTotal.touched}/{subTouchedTotal.total}
+            </span>{" "}
+            sub-categories on the R1 list
+          </span>
         }
         actions={
           <>
@@ -656,53 +671,36 @@ export default function AtlasClient({
         }
       />
 
-      {/* Legend */}
-      <div className="no-print flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3 text-xs text-[var(--muted-foreground)]">
-        <span className="inline-flex items-center gap-1.5 font-medium text-[var(--foreground)]">
-          <Layers size={13} /> R1 touched
-        </span>
-        <span className="inline-flex items-center gap-1">
-          <span className="text-emerald-500 font-bold">●</span> touched
-          <span className="text-slate-300 font-bold ml-2">○</span> not
-        </span>
-        <span className="text-[var(--muted-foreground)]">
-          — tree: a sub-category R1 references (an item <em>or</em> its category dropdown); list: the item itself
-        </span>
-        <span className="inline-flex items-center gap-1.5">
-          <span className="w-6 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden inline-block align-middle">
-            <span className="block h-full rounded-full" style={{ width: "60%", background: covColor(60) }} />
-          </span>
-          parent bars = share of sub-categories touched
-        </span>
-        <span className="ml-auto inline-flex items-center gap-1.5 text-[var(--muted-foreground)]">
-          <MoveRight size={13} /> Tip: drag selected items onto a category, or use “Move to”.
-        </span>
-      </div>
-
-      {/* Type filter — slices the tree counts AND the item list */}
-      <div className="no-print flex flex-wrap items-center gap-1.5 mb-3">
-        <span className="text-xs font-semibold text-[var(--muted-foreground)] mr-1 uppercase tracking-wide">
+      {/* Type filter — compact segmented control; slices tree counts + list.
+          (The old wordy legend is gone: the tree's "R1" pill, the list's "R1"
+          column, and the plain n/m fraction are self-explanatory.) */}
+      <div className="no-print flex flex-wrap items-center gap-1 mb-2">
+        <span className="text-[10px] font-semibold text-[var(--muted-foreground)] mr-1 uppercase tracking-wide">
           Type
         </span>
-        <TypeChip label="All types" count={items.length} active={!typeFilter} onClick={() => setTypeFilter("")} />
+        <TypeChip label="All" count={items.length} active={!typeFilter} onClick={() => setTypeFilter("")} />
         {TYPE_OPTIONS.map((t) => (
           <TypeChip
             key={t.value}
-            label={t.label}
+            label={TYPE_ABBR[t.value] ?? t.label}
+            title={t.label}
             count={typeCounts.get(t.value) ?? 0}
             active={typeFilter === t.value}
             onClick={() => setTypeFilter(typeFilter === t.value ? "" : t.value)}
           />
         ))}
+        <span className="ml-auto inline-flex items-center gap-1.5 text-[11px] text-[var(--muted-foreground)]">
+          <MoveRight size={13} /> Tip: drag items onto a category, or use “Move to”.
+        </span>
       </div>
 
       {/* Two-pane workbench */}
-      <div className="atlas-panes flex gap-3" style={{ height: "calc(100vh - 212px)" }}>
+      <div className="atlas-panes flex gap-2" style={{ height: "calc(100vh - 172px)" }}>
         {/* LEFT: category tree */}
         <aside className="atlas-tree card-surface flex flex-col overflow-hidden shrink-0 w-[340px]">
-          <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--muted)]/30">
-            <span className="text-sm font-semibold">Category › Sub-category</span>
-            <span className="text-xs text-[var(--muted-foreground)]">
+          <div className="flex items-center justify-between px-3 py-1.5 border-b border-[var(--border)] bg-[var(--muted)]/30">
+            <span className="text-[13px] font-semibold">Category › Sub-category</span>
+            <span className="text-[11px] text-[var(--muted-foreground)]">
               {rootsBySize.length} · {cats.length - rootsBySize.length} sub
             </span>
           </div>
@@ -716,10 +714,14 @@ export default function AtlasClient({
         {/* RIGHT: items in selected category / search */}
         <section className="card-surface flex flex-col overflow-hidden flex-1 min-w-0">
           {/* Pane header */}
-          <div className="atlas-toolbar flex items-center gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--muted)]/30">
+          <div className="atlas-toolbar flex items-center gap-3 px-3 py-1.5 border-b border-[var(--border)] bg-[var(--muted)]/30">
             <div className="min-w-0">
-              <div className="flex items-center gap-2 min-w-0">
-                <span className="text-sm font-semibold truncate">{selectedName}</span>
+              <div className="flex items-center gap-2 min-w-0 text-[13px]">
+                {q ? (
+                  <span className="font-semibold truncate">{selectedName}</span>
+                ) : (
+                  <Breadcrumb path={selectedName} />
+                )}
                 {!q && selectedCat && (
                   <Badge variant={byId.get(selectedCat)?.parent_id ? "neutral" : "blue"}>
                     {byId.get(selectedCat)?.parent_id ? "Sub-category" : "Category"}
@@ -730,17 +732,17 @@ export default function AtlasClient({
                 )}
               </div>
               {selStat && !q && (
-                <div className="text-xs text-[var(--muted-foreground)]">
+                <div className="text-[11px] text-[var(--muted-foreground)]">
                   {selStat.total.toLocaleString()} items
                   {selHasChildren
-                    ? ` · ${selTouch?.subTouched ?? 0}/${selTouch?.subTotal ?? 0} sub-categories touched by R1`
+                    ? ` · ${selTouch?.subTouched ?? 0}/${selTouch?.subTotal ?? 0} sub-categories on R1`
                     : selTouch?.self
-                      ? " · touched by R1"
-                      : " · not touched by R1"}
+                      ? " · on R1"
+                      : " · not on R1"}
                 </div>
               )}
               {q && (
-                <div className="text-xs text-[var(--muted-foreground)]">
+                <div className="text-[11px] text-[var(--muted-foreground)]">
                   {rightItems.length} match{rightItems.length === 1 ? "" : "es"}
                   {typeFilter ? ` in ${TYPE_LABEL[typeFilter]}` : " across all categories"}
                 </div>
@@ -772,7 +774,7 @@ export default function AtlasClient({
 
           {/* Column header */}
           {rightItems.length > 0 && (
-            <div className="atlas-toolbar flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] text-[11px] font-medium uppercase tracking-wide text-[var(--muted-foreground)]">
+            <div className="atlas-toolbar flex items-center gap-2 px-3 py-1 border-b border-[var(--border)] text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
               <input
                 type="checkbox"
                 checked={allShownChecked}
@@ -780,11 +782,11 @@ export default function AtlasClient({
                 className="cursor-pointer accent-[var(--primary)]"
                 title="Select all shown"
               />
-              <span className="w-5 text-center">R1</span>
+              <span className="w-5 text-center" title="On the R1 packing list">R1</span>
               <span className="w-28">Code</span>
               <span className="flex-1">Item</span>
               <span className="w-12 text-center">Type</span>
-              <span className="w-56 text-right pr-1">Category</span>
+              <span className="w-40 text-right pr-1">Category</span>
             </div>
           )}
 
@@ -823,7 +825,7 @@ export default function AtlasClient({
                     onDragEnd={() => (dragIds.current = [])}
                     onClick={() => toggleCheck(it.id)}
                     className={cn(
-                      "item-row flex items-center gap-2 px-3 py-1.5 border-b border-[var(--border)] text-sm cursor-pointer transition-colors",
+                      "item-row flex items-center gap-2 px-3 py-1 border-b border-[var(--border)] text-[13px] cursor-pointer transition-colors",
                       isChecked ? "bg-[var(--accent)]" : "hover:bg-[var(--muted)]/60",
                     )}
                   >
@@ -835,15 +837,12 @@ export default function AtlasClient({
                       className="cursor-pointer accent-[var(--primary)]"
                     />
                     <span
-                      className={cn(
-                        "w-5 text-center font-bold leading-none",
-                        it.in_r1 ? "text-emerald-500" : "text-slate-300",
-                      )}
-                      title={it.in_r1 ? "In R1 packing list" : "Not in R1"}
+                      className="w-5 text-center text-emerald-500 leading-none"
+                      title={it.in_r1 ? "On the R1 packing list" : ""}
                     >
-                      {it.in_r1 ? "●" : "○"}
+                      {it.in_r1 ? "●" : ""}
                     </span>
-                    <span className="w-28 shrink-0 font-mono text-xs text-[var(--muted-foreground)] truncate">
+                    <span className="w-28 shrink-0 font-mono text-[12px] text-[var(--foreground)] truncate">
                       {it.code}
                     </span>
                     <span className="flex-1 truncate" title={it.name}>
@@ -856,7 +855,7 @@ export default function AtlasClient({
                       {TYPE_ABBR[it.item_type] ?? "?"}
                     </span>
                     <span
-                      className="w-56 shrink-0 text-right text-xs text-[var(--muted-foreground)] truncate pr-1"
+                      className="w-40 shrink-0 text-right text-[11px] text-[var(--muted-foreground)] truncate pr-1"
                       title={pathLabel(it.category_id)}
                     >
                       {byId.get(it.category_id)?.name ?? "—"}
@@ -871,7 +870,7 @@ export default function AtlasClient({
           {checked.size > 0 && (
             <div className="no-print flex items-center gap-2 px-3 py-2 border-t border-[var(--border)] bg-[var(--background)] animate-slide-up">
               <Badge variant="blue">{checked.size} selected</Badge>
-              <span className="text-sm text-[var(--muted-foreground)]">Move to</span>
+              <span className="text-[11px] text-[var(--muted-foreground)]">Move to</span>
               <Select
                 size="sm"
                 value={moveTarget}
@@ -1066,17 +1065,20 @@ function TypeChip({
   count,
   active,
   onClick,
+  title,
 }: {
   label: string;
   count: number;
   active: boolean;
   onClick: () => void;
+  title?: string;
 }) {
   return (
     <button
       onClick={onClick}
+      title={title}
       className={cn(
-        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors",
+        "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[11px] font-medium cursor-pointer transition-colors",
         active
           ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
           : "bg-[var(--background)] border-[var(--border)] hover:bg-[var(--muted)] hover:border-[var(--border-strong)]",
@@ -1087,6 +1089,25 @@ function TypeChip({
         {count.toLocaleString()}
       </span>
     </button>
+  );
+}
+
+// Path rendered as "A › B › C" with the last segment emphasised — the single
+// clear "what am I looking at" statement in the right pane.
+function Breadcrumb({ path }: { path: string }) {
+  const segs = path.split("›").map((s) => s.trim()).filter(Boolean);
+  if (segs.length <= 1) return <span className="font-semibold">{path}</span>;
+  return (
+    <span className="inline-flex items-center gap-1 min-w-0">
+      {segs.map((s, i) => (
+        <span key={i} className="inline-flex items-center gap-1 min-w-0">
+          {i > 0 && <ChevronRight size={11} className="shrink-0 text-[var(--muted-foreground)]" />}
+          <span className={cn("truncate", i === segs.length - 1 ? "font-semibold" : "text-[var(--muted-foreground)]")}>
+            {s}
+          </span>
+        </span>
+      ))}
+    </span>
   );
 }
 
