@@ -12,6 +12,7 @@ import {
   ArrowRight,
   ShoppingCart,
   Layers3,
+  AlertTriangle,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
@@ -112,6 +113,16 @@ export function SubassembliesClient({ rows }: Props) {
                   <Badge variant="amber" className="shrink-0">
                     <ShoppingCart className="h-3 w-3 mr-1" />
                     bought?
+                  </Badge>
+                )}
+                {r.missing_program_children > 0 && (
+                  <Badge
+                    variant="red"
+                    className="shrink-0"
+                    title={`${r.missing_program_children} make part(s) here have no program that produces them. Add a cutting/assembly program for each, or the plan can't make them.`}
+                  >
+                    <AlertTriangle className="h-3 w-3 mr-1" />
+                    {r.missing_program_children} no program
                   </Badge>
                 )}
                 <div className="flex items-center gap-3 shrink-0 text-xs text-[var(--muted-foreground)]">

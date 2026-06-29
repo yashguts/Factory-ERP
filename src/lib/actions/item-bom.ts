@@ -46,6 +46,13 @@ export interface ItemBomLineDetail {
   child_item_finish: string | null;
   /** The child's stock behaviour — splits stocked sub-parts vs loose (phantom) parts. */
   child_stock_behaviour: StockBehaviour;
+  /**
+   * True when this child SHOULD be produced by a program but none does: it's a
+   * make piece (not bought), is not itself a sub-assembly, yet no operation
+   * outputs it. Drives the RED "missing program" warning. Bought/trade children
+   * (glass, PVC shoes) are never flagged.
+   */
+  child_missing_program: boolean;
 }
 
 export interface ItemBomResult {
@@ -69,6 +76,60 @@ function flatten<T>(rel: T | T[] | null | undefined): T | null {
   return (rel as T) ?? null;
 }
 
+type CacheDb = ReturnType<typeof createCacheClient>;
+
+/**
+ * Of the given item ids, which are produced by at least one (non-cabin)
+ * program — i.e. appear as any `operation_outputs` row. Cabin-migration
+ * programs are excluded to match the rest of the subassembly audit. Queries in
+ * chunks so a long id list never blows the request-URL length limit.
+ */
+async function producedItemIds(
+  supabase: CacheDb,
+  itemIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const CHUNK = 100;
+  for (let i = 0; i < itemIds.length; i += CHUNK) {
+    const batch = itemIds.slice(i, i + CHUNK);
+    if (batch.length === 0) continue;
+    const { data, error } = await supabase
+      .from("operation_outputs")
+      .select(`item_id, operation:operations(import_source)`)
+      .in("item_id", batch);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      const src =
+        (flatten<any>((r as any).operation)?.import_source as string | null) ??
+        null;
+      if (src === "cabin_migration") continue;
+      const id = (r as any).item_id as string | null;
+      if (id) out.add(id);
+    }
+  }
+  return out;
+}
+
+/** Of the given item ids, which are themselves sub-assemblies (parents in item_bom_lines). */
+async function subassemblyIdsAmong(
+  supabase: CacheDb,
+  itemIds: string[],
+): Promise<Set<string>> {
+  const out = new Set<string>();
+  const CHUNK = 100;
+  for (let i = 0; i < itemIds.length; i += CHUNK) {
+    const batch = itemIds.slice(i, i + CHUNK);
+    if (batch.length === 0) continue;
+    const { data, error } = await supabase
+      .from("item_bom_lines")
+      .select("parent_item_id")
+      .in("parent_item_id", batch);
+    if (error) throw error;
+    for (const r of data ?? []) out.add((r as any).parent_item_id as string);
+  }
+  return out;
+}
+
 const _getItemBomUncached = async (
   itemId: string,
 ): Promise<ItemBomResult | null> => {
@@ -90,11 +151,23 @@ const _getItemBomUncached = async (
     .from("item_bom_lines")
     .select(
       `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
-       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, procurement_type,
+         category:item_categories!items_category_id_fkey(procurement_type),
+         uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
     .eq("parent_item_id", itemId)
     .order("sort_order");
   if (lineErr) throw lineErr;
+
+  // Which children are make pieces that no program produces (and aren't
+  // sub-assemblies themselves) — those are genuine "missing program" gaps.
+  const childIds = (rows ?? [])
+    .map((r: any) => r.child_item_id as string | null)
+    .filter((id): id is string => !!id);
+  const [producedSet, childSubSet] = await Promise.all([
+    producedItemIds(supabase, childIds),
+    subassemblyIdsAmong(supabase, childIds),
+  ]);
 
   const itemPT = (item.procurement_type as "make" | "trade" | null) ?? null;
   const catPT =
@@ -106,9 +179,23 @@ const _getItemBomUncached = async (
   const lines: ItemBomLineDetail[] = (rows ?? []).map((r: any) => {
     const child = flatten<any>(r.child);
     const cuom = flatten<any>(child?.uom);
+    const childId = (r.child_item_id as string | null) ?? null;
+    const childPT =
+      (child?.procurement_type as "make" | "trade" | null) ??
+      (flatten<any>(child?.category)?.procurement_type as
+        | "make"
+        | "trade"
+        | null) ??
+      null;
+    // Make piece, not itself a sub-assembly, with no producing program = a gap.
+    const missingProgram =
+      !!childId &&
+      childPT !== "trade" &&
+      !childSubSet.has(childId) &&
+      !producedSet.has(childId);
     return {
       id: r.id as string,
-      child_item_id: (r.child_item_id as string | null) ?? null,
+      child_item_id: childId,
       child_family: (r.child_family as string | null) ?? null,
       qty: Number(r.qty ?? 0),
       finish_rule: (r.finish_rule as FinishRule) ?? "neutral",
@@ -121,6 +208,7 @@ const _getItemBomUncached = async (
       child_item_finish: (child?.finish as string | null) ?? null,
       child_stock_behaviour:
         ((child?.stock_behaviour as StockBehaviour | null) ?? "stocked"),
+      child_missing_program: missingProgram,
     };
   });
 
@@ -463,13 +551,22 @@ export interface SubassemblyRow {
   effective_procurement_type: "make" | "trade" | null;
   built_count: number;
   loose_count: number;
-}
+  /**
+   * How many of this sub-assembly's child parts are make pieces that NO program
+   * produces (and aren't sub-assemblies themselves). > 0 drives the RED
+   * "missing program" warning. Bought/trade children are never counted.
+   */
+  missing_program_children: number;
+};
 
 const _getSubassembliesUncached = async (): Promise<SubassemblyRow[]> => {
   const supabase = createCacheClient();
   const { data, error } = await supabase.from("item_bom_lines").select(
-    `parent_item_id,
-     child:items!item_bom_lines_child_item_id_fkey(stock_behaviour),
+    `parent_item_id, child_item_id,
+     child:items!item_bom_lines_child_item_id_fkey(
+       stock_behaviour, procurement_type,
+       category:item_categories!items_category_id_fkey(procurement_type)
+     ),
      parent:items!item_bom_lines_parent_item_id_fkey(
        id, code, name, family, finish, stock_behaviour, procurement_type,
        category:item_categories!items_category_id_fkey(procurement_type)
@@ -478,13 +575,28 @@ const _getSubassembliesUncached = async (): Promise<SubassemblyRow[]> => {
   if (error) throw error;
 
   const byParent = new Map<string, SubassemblyRow>();
+  // Per parent, its children as {id, make?} — used to count missing programs once
+  // we know which children a program produces.
+  const childrenOf = new Map<string, { id: string; isMake: boolean }[]>();
+  const parentSet = new Set<string>(); // every sub-assembly id (a child that is one is "covered")
+  const allChildIds = new Set<string>();
+
   for (const r of data ?? []) {
     const parent = flatten<any>((r as any).parent);
     if (!parent) continue;
     const id = parent.id as string;
+    parentSet.add(id);
+    const childRel = flatten<any>((r as any).child);
     const childBeh =
-      (flatten<any>((r as any).child)?.stock_behaviour as StockBehaviour) ??
-      "stocked";
+      (childRel?.stock_behaviour as StockBehaviour) ?? "stocked";
+    const childId = ((r as any).child_item_id as string | null) ?? null;
+    const childPT =
+      (childRel?.procurement_type as "make" | "trade" | null) ??
+      (flatten<any>(childRel?.category)?.procurement_type as
+        | "make"
+        | "trade"
+        | null) ??
+      null;
     let row = byParent.get(id);
     if (!row) {
       const itemPT = (parent.procurement_type as "make" | "trade" | null) ?? null;
@@ -504,12 +616,28 @@ const _getSubassembliesUncached = async (): Promise<SubassemblyRow[]> => {
         effective_procurement_type: itemPT ?? catPT,
         built_count: 0,
         loose_count: 0,
+        missing_program_children: 0,
       };
       byParent.set(id, row);
+      childrenOf.set(id, []);
     }
     if (childBeh === "phantom") row.loose_count++;
     else row.built_count++;
+    if (childId) {
+      allChildIds.add(childId);
+      childrenOf.get(id)!.push({ id: childId, isMake: childPT !== "trade" });
+    }
   }
+
+  // One coverage pass over every child, then tally per parent.
+  const producedSet = await producedItemIds(supabase, [...allChildIds]);
+  for (const [id, kids] of childrenOf) {
+    const row = byParent.get(id)!;
+    row.missing_program_children = kids.filter(
+      (k) => k.isMake && !parentSet.has(k.id) && !producedSet.has(k.id),
+    ).length;
+  }
+
   return [...byParent.values()].sort((a, b) => a.name.localeCompare(b.name));
 };
 

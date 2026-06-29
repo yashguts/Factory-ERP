@@ -18,6 +18,7 @@ import {
   ChevronDown,
   Layers,
   List,
+  AlertTriangle,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
@@ -440,13 +441,22 @@ export function ProgramsClient({
           {op.code ?? "—"}
         </TableCell>
         <TableCell>
-          {nested ? (
-            <span className="inline-flex items-center gap-2">
+          <span className="inline-flex items-center gap-2">
+            {nested ? (
               <Badge variant="neutral">{op.material_label ?? "—"}</Badge>
-            </span>
-          ) : (
-            <span className="font-medium">{op.name}</span>
-          )}
+            ) : (
+              <span className="font-medium">{op.name}</span>
+            )}
+            {op.outputs_subassembly && (
+              <Badge
+                variant="red"
+                title="This program lists a whole sub-assembly as a finished-part output. A program should output the cut pieces, not the assembled item. Open it and fix the output."
+              >
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                sub-assembly output
+              </Badge>
+            )}
+          </span>
         </TableCell>
         <TableCell>
           <Badge variant={MACHINE_BADGE_VARIANT[op.machine] ?? "neutral"}>
@@ -569,6 +579,16 @@ export function ProgramsClient({
                 </span>
               )}
             </span>
+          )}
+          {ops.some((o) => o.outputs_subassembly) && (
+            <Badge
+              variant="red"
+              className="ml-2 align-middle"
+              title="A variant in this family outputs a whole sub-assembly. Expand to find it and fix the output."
+            >
+              <AlertTriangle className="h-3 w-3 mr-1" />
+              sub-assembly output
+            </Badge>
           )}
         </TableCell>
         <TableCell>
