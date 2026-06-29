@@ -18,6 +18,7 @@ async function fetchData(): Promise<{
   categories: AtlasCat[];
   items: AtlasItem[];
   units: AtlasUnit[];
+  r1TouchedCats: string[];
 }> {
   const sb = createCacheClient();
 
@@ -40,26 +41,32 @@ async function fetchData(): Promise<{
   }
   const categories = allCats.filter((c) => !cabinIds.has(c.id));
 
-  // ── R1-touched item ids (paged past the 1000-row cap) ─────────────────────
+  // ── What R1 references, in one paged scan over all lines ──────────────────
+  // r1Set      = item ids picked on a line (specific item).
+  // r1CatSet   = category ids picked on a line (the category dropdown). A line
+  //              often has a category but NO specific item, so a sub-category
+  //              counts as "touched" even when no item slot was filled.
   const r1Set = new Set<string>();
+  const r1CatSet = new Set<string>();
   {
     const { count } = await sb
       .from("packing_r1_lines")
-      .select("item_id", { count: "exact", head: true })
-      .not("item_id", "is", null);
+      .select("id", { count: "exact", head: true });
     const pages = Math.max(1, Math.ceil((count ?? 0) / 1000));
     const results = await Promise.all(
       Array.from({ length: pages }, (_, i) =>
         sb
           .from("packing_r1_lines")
-          .select("item_id")
-          .not("item_id", "is", null)
+          .select("item_id, category_id")
           .range(i * 1000, (i + 1) * 1000 - 1),
       ),
     );
-    results.flatMap((r) => r.data ?? []).forEach((r) => {
-      if (r.item_id) r1Set.add(r.item_id);
-    });
+    for (const r of results) {
+      for (const row of (r.data ?? []) as { item_id: string | null; category_id: string | null }[]) {
+        if (row.item_id) r1Set.add(row.item_id);
+        if (row.category_id) r1CatSet.add(row.category_id);
+      }
+    }
   }
 
   // ── Non-cabin active items (10 parallel pages → up to 10k) ─────────────────
@@ -87,10 +94,17 @@ async function fetchData(): Promise<{
     .select("id, name")
     .order("name");
 
-  return { categories, items, units: units ?? [] };
+  return { categories, items, units: units ?? [], r1TouchedCats: [...r1CatSet] };
 }
 
 export default async function InventoryAtlasPage() {
-  const { categories, items, units } = await fetchData();
-  return <AtlasClient categories={categories} items={items} units={units} />;
+  const { categories, items, units, r1TouchedCats } = await fetchData();
+  return (
+    <AtlasClient
+      categories={categories}
+      items={items}
+      units={units}
+      r1TouchedCats={r1TouchedCats}
+    />
+  );
 }

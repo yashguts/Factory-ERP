@@ -40,22 +40,15 @@ import {
 import { createItem } from "@/lib/actions/inventory";
 import type { AtlasCat, AtlasItem, AtlasUnit } from "./page";
 
-// ── Coverage tiers (light-theme palette) ──────────────────────────────────────
+// ── Touched-coverage tiers (light-theme palette): share of a category's
+//    sub-categories touched by R1 ────────────────────────────────────────────
 function covColor(pct: number) {
-  if (pct === 0) return "#94a3b8"; // slate-400
+  if (pct === 0) return "#94a3b8"; // slate-400 — none touched
   if (pct < 20) return "#ef4444"; // red-500
   if (pct < 40) return "#f97316"; // orange-500
   if (pct < 60) return "#eab308"; // yellow-500
   if (pct < 80) return "#3b82f6"; // blue-500
-  return "#22c55e"; // green-500
-}
-function covLabel(pct: number) {
-  if (pct === 0) return "Unmapped";
-  if (pct < 20) return "Sparse";
-  if (pct < 40) return "Partial";
-  if (pct < 60) return "Moderate";
-  if (pct < 80) return "Good";
-  return "Excellent";
+  return "#22c55e"; // green-500 — all touched
 }
 
 const TYPE_OPTIONS: { value: string; label: string }[] = [
@@ -120,9 +113,16 @@ interface Props {
   categories: AtlasCat[];
   items: AtlasItem[];
   units: AtlasUnit[];
+  /** Category ids referenced by any R1 line's category dropdown. */
+  r1TouchedCats: string[];
 }
 
-export default function AtlasClient({ categories: catProp, items: itemProp, units }: Props) {
+export default function AtlasClient({
+  categories: catProp,
+  items: itemProp,
+  units,
+  r1TouchedCats,
+}: Props) {
   const router = useRouter();
   const toast = useToast();
   const [, startTransition] = useTransition();
@@ -169,15 +169,60 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
   // itemsByCat / stats reflect the Type filter (drive the tree counts + right
   // pane). statsAll is unfiltered — used only for STABLE tree ordering so
   // categories don't reshuffle when you pick a type.
+  const itemsByCatAll = useMemo(() => groupByCat(items), [items]);
   const itemsByCat = useMemo(() => groupByCat(visibleItems), [visibleItems]);
   const stats = useMemo(
     () => subtreeStats(itemsByCat, childrenByParent, roots),
     [itemsByCat, childrenByParent, roots],
   );
   const statsAll = useMemo(
-    () => subtreeStats(groupByCat(items), childrenByParent, roots),
-    [items, childrenByParent, roots],
+    () => subtreeStats(itemsByCatAll, childrenByParent, roots),
+    [itemsByCatAll, childrenByParent, roots],
   );
+
+  // ── R1 "touched" model (type-independent) ─────────────────────────────────
+  // A category is touched if R1 references it directly (its category dropdown)
+  // OR any item filed under it is in R1. Rolled up the tree: per node we track
+  // whether it's self-touched and how many of its descendant sub-categories
+  // are touched.
+  const r1CatSet = useMemo(() => new Set(r1TouchedCats), [r1TouchedCats]);
+  const touch = useMemo(() => {
+    const itemTouched = new Set<string>();
+    for (const [catId, list] of itemsByCatAll)
+      if (list.some((i) => i.in_r1)) itemTouched.add(catId);
+
+    const out = new Map<
+      string,
+      { self: boolean; subTouched: number; subTotal: number; anyTouched: boolean }
+    >();
+    const walk = (id: string) => {
+      const self = r1CatSet.has(id) || itemTouched.has(id);
+      let subTouched = 0,
+        subTotal = 0;
+      for (const ch of childrenByParent.get(id) ?? []) {
+        const c = walk(ch.id);
+        subTotal += 1 + c.subTotal;
+        subTouched += (c.self ? 1 : 0) + c.subTouched;
+      }
+      const rec = { self, subTouched, subTotal, anyTouched: self || subTouched > 0 };
+      out.set(id, rec);
+      return rec;
+    };
+    for (const r of roots) walk(r.id);
+    return out;
+  }, [itemsByCatAll, childrenByParent, roots, r1CatSet]);
+
+  // Sub-categories (depth ≥ 1) touched, for the header rollup.
+  const subTouchedTotal = useMemo(() => {
+    let touched = 0,
+      total = 0;
+    for (const c of cats) {
+      if (!c.parent_id) continue; // sub-categories only
+      total++;
+      if (touch.get(c.id)?.self) touched++;
+    }
+    return { touched, total };
+  }, [cats, touch]);
 
   // Full path label for a category id ("Hardware › Bull Dog Clips").
   const pathLabel = useMemo(() => {
@@ -412,7 +457,8 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
     const isOpen = expanded.has(cat.id);
     const isSel = selectedCat === cat.id && !q;
     const st = stats.get(cat.id) ?? { total: 0, r1: 0 };
-    const pct = st.total > 0 ? Math.round((st.r1 * 100) / st.total) : 0;
+    const t = touch.get(cat.id) ?? { self: false, subTouched: 0, subTotal: 0, anyTouched: false };
+    const touchPct = t.subTotal > 0 ? Math.round((t.subTouched * 100) / t.subTotal) : t.self ? 100 : 0;
     const isDrop = dropCat === cat.id;
 
     return (
@@ -498,16 +544,29 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               >
                 <MoreHorizontal size={14} />
               </button>
-              {/* coverage mini-bar */}
-              <span
-                className="shrink-0 w-9 h-1.5 rounded-full overflow-hidden bg-[var(--muted)]"
-                title={`${st.r1}/${st.total} in R1 — ${pct}% (${covLabel(pct)})`}
-              >
+              {/* R1 "touched" indicator: bar of touched sub-categories for
+                  parents; a dot for leaf sub-categories */}
+              {hasChildren ? (
                 <span
-                  className="block h-full rounded-full"
-                  style={{ width: `${pct}%`, background: covColor(pct) }}
-                />
-              </span>
+                  className="shrink-0 w-9 h-1.5 rounded-full overflow-hidden bg-[var(--muted)]"
+                  title={`${t.subTouched} of ${t.subTotal} sub-categories touched by R1`}
+                >
+                  <span
+                    className="block h-full rounded-full"
+                    style={{ width: `${touchPct}%`, background: covColor(touchPct) }}
+                  />
+                </span>
+              ) : (
+                <span
+                  className={cn(
+                    "shrink-0 w-9 text-center text-[10px] font-bold leading-none",
+                    t.self ? "text-emerald-500" : "text-slate-300",
+                  )}
+                  title={t.self ? "Touched by R1" : "Not touched by R1"}
+                >
+                  {t.self ? "●" : "○"}
+                </span>
+              )}
               <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)] w-9 text-right">
                 {st.total.toLocaleString()}
               </span>
@@ -525,8 +584,9 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
     );
   }
 
-  const totalR1 = useMemo(() => items.filter((i) => i.in_r1).length, [items]);
-  const overallPct = items.length ? Math.round((totalR1 * 100) / items.length) : 0;
+  const touchedPct = subTouchedTotal.total
+    ? Math.round((subTouchedTotal.touched * 100) / subTouchedTotal.total)
+    : 0;
 
   const selectedName = q
     ? `Search: "${search.trim()}"`
@@ -534,6 +594,10 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
       ? pathLabel(selectedCat)
       : "Select a category";
   const selStat = selectedCat ? stats.get(selectedCat) : undefined;
+  const selTouch = selectedCat ? touch.get(selectedCat) : undefined;
+  const selHasChildren = selectedCat
+    ? (childrenByParent.get(selectedCat)?.length ?? 0) > 0
+    : false;
 
   return (
     <>
@@ -552,8 +616,8 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
         meta={
           <>
             {items.length.toLocaleString()} items · {rootsBySize.length} categories ·{" "}
-            <span style={{ color: covColor(overallPct), fontWeight: 600 }}>
-              {totalR1} in R1 ({overallPct}%)
+            <span style={{ color: covColor(touchedPct), fontWeight: 600 }}>
+              {subTouchedTotal.touched}/{subTouchedTotal.total} sub-categories touched by R1
             </span>
           </>
         }
@@ -595,17 +659,20 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
       {/* Legend */}
       <div className="no-print flex flex-wrap items-center gap-x-4 gap-y-1.5 mb-3 text-xs text-[var(--muted-foreground)]">
         <span className="inline-flex items-center gap-1.5 font-medium text-[var(--foreground)]">
-          <Layers size={13} /> R1 coverage
+          <Layers size={13} /> R1 touched
         </span>
-        {[0, 10, 30, 50, 70, 90].map((p) => (
-          <span key={p} className="inline-flex items-center gap-1">
-            <span style={{ background: covColor(p), width: 8, height: 8, borderRadius: 9999, display: "inline-block" }} />
-            {covLabel(p)}
+        <span className="inline-flex items-center gap-1">
+          <span className="text-emerald-500 font-bold">●</span> touched
+          <span className="text-slate-300 font-bold ml-2">○</span> not
+        </span>
+        <span className="text-[var(--muted-foreground)]">
+          — tree: a sub-category R1 references (an item <em>or</em> its category dropdown); list: the item itself
+        </span>
+        <span className="inline-flex items-center gap-1.5">
+          <span className="w-6 h-1.5 rounded-full bg-[var(--muted)] overflow-hidden inline-block align-middle">
+            <span className="block h-full rounded-full" style={{ width: "60%", background: covColor(60) }} />
           </span>
-        ))}
-        <span className="ml-2 inline-flex items-center gap-1">
-          <span className="text-emerald-500 font-bold">●</span> in R1
-          <span className="text-slate-300 font-bold ml-2">○</span> not in R1
+          parent bars = share of sub-categories touched
         </span>
         <span className="ml-auto inline-flex items-center gap-1.5 text-[var(--muted-foreground)]">
           <MoveRight size={13} /> Tip: drag selected items onto a category, or use “Move to”.
@@ -664,8 +731,12 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               </div>
               {selStat && !q && (
                 <div className="text-xs text-[var(--muted-foreground)]">
-                  {selStat.total.toLocaleString()} items · {selStat.r1} in R1 ·{" "}
-                  {selStat.total ? Math.round((selStat.r1 * 100) / selStat.total) : 0}%
+                  {selStat.total.toLocaleString()} items
+                  {selHasChildren
+                    ? ` · ${selTouch?.subTouched ?? 0}/${selTouch?.subTotal ?? 0} sub-categories touched by R1`
+                    : selTouch?.self
+                      ? " · touched by R1"
+                      : " · not touched by R1"}
                 </div>
               )}
               {q && (
