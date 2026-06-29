@@ -24,7 +24,20 @@ import {
   PackageCheck, Pencil, Search, ChevronLeft, ChevronRight, ArrowUpDown, CheckCircle2,
 } from "lucide-react";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
+import type { BadgeVariant } from "@/components/ui/badge";
+import type { JobStatus } from "@/lib/supabase/types";
 import type { R1ListSummary } from "@/lib/actions/packing-list-r1";
+
+const STATUS_LABELS: Record<JobStatus, string> = {
+  new: "New",
+  in_production: "In Production",
+  hold: "Hold",
+};
+const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
+  new: "neutral",
+  in_production: "amber",
+  hold: "red",
+};
 
 interface SlimJob {
   id: string;
@@ -34,6 +47,8 @@ interface SlimJob {
   drive_type: string | null;
   spec_string: string | null;
   location: string | null;
+  status: JobStatus;
+  requirement_dispatch_date: string | null;
 }
 
 // A row = a job + the state of its R1 packing list. "none" = not started yet.
@@ -46,6 +61,8 @@ interface Row {
   drive_type: string | null;
   spec_string: string | null;
   location: string | null;
+  status: JobStatus;
+  reqDispatch: string | null;
   state: R1State;
   lineCount: number;
   updatedAt: string | null;
@@ -57,7 +74,7 @@ const STATE_LABEL: Record<R1State, string> = {
   final: "Final",
 };
 
-type SortKey = "job_number" | "customer" | "state" | "lines" | "updated";
+type SortKey = "job_number" | "customer" | "status" | "req_dispatch" | "state" | "lines" | "updated";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
 
@@ -84,6 +101,8 @@ export function LandingClient({
         drive_type: j.drive_type,
         spec_string: j.spec_string,
         location: j.location,
+        status: j.status,
+        reqDispatch: j.requirement_dispatch_date,
         state: (l ? l.status : "none") as R1State,
         lineCount: l?.lineCount ?? 0,
         updatedAt: l?.updatedAt ?? null,
@@ -95,10 +114,13 @@ export function LandingClient({
     () => readParam(sp, "view", "all", ["all", "draft", "final", "none"]) as "all" | "draft" | "final" | "none",
   );
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
+  const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
+    () => readParam(sp, "status", "all", ["all", "new", "in_production", "hold"]) as JobStatus | "all",
+  );
   const [driveTypeFilter, setDriveTypeFilter] = useState<string>(() => readParam(sp, "drive", "all"));
   const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
   const [sortKey, setSortKey] = useState<SortKey>(
-    () => readParam(sp, "sort", "updated", ["job_number", "customer", "state", "lines", "updated"]) as SortKey,
+    () => readParam(sp, "sort", "updated", ["job_number", "customer", "status", "req_dispatch", "state", "lines", "updated"]) as SortKey,
   );
   const [sortDir, setSortDir] = useState<SortDir>(
     () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
@@ -106,8 +128,8 @@ export function LandingClient({
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { view, q: search, drive: driveTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
-    { view: "all", q: "", drive: "all", brand: "all", sort: "updated", dir: "desc", page: 1 },
+    { view, q: search, status: statusFilter, drive: driveTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
+    { view: "all", q: "", status: "all", drive: "all", brand: "all", sort: "updated", dir: "desc", page: 1 },
   );
 
   // Tab buckets across ALL rows (independent of the other filters).
@@ -151,16 +173,28 @@ export function LandingClient({
           .toLowerCase();
         for (const t of searchTokens) if (!haystack.includes(t)) return false;
       }
+      if (statusFilter !== "all" && r.status !== statusFilter) return false;
       if (driveTypeFilter !== "all" && r.drive_type !== driveTypeFilter) return false;
       if (brandFilter !== "all" && r.brand !== brandFilter) return false;
       return true;
     });
-  }, [rows, view, searchTokens, driveTypeFilter, brandFilter]);
+  }, [rows, view, searchTokens, statusFilter, driveTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
     const stateRank: Record<R1State, number> = { none: 0, draft: 1, final: 2 };
     copy.sort((a, b) => {
+      // Req. Dispatch: undated jobs always sink to the bottom (same as Job
+      // Orders), so blanks never bury the soonest-due lists.
+      if (sortKey === "req_dispatch") {
+        const da = a.reqDispatch ?? "";
+        const db = b.reqDispatch ?? "";
+        if (!da && !db) return 0;
+        if (!da) return 1;
+        if (!db) return -1;
+        const cmp = da.localeCompare(db);
+        return sortDir === "asc" ? cmp : -cmp;
+      }
       let cmp = 0;
       switch (sortKey) {
         case "job_number":
@@ -168,6 +202,9 @@ export function LandingClient({
           break;
         case "customer":
           cmp = (a.customer_name ?? "").localeCompare(b.customer_name ?? "");
+          break;
+        case "status":
+          cmp = a.status.localeCompare(b.status);
           break;
         case "state":
           cmp = stateRank[a.state] - stateRank[b.state];
@@ -236,6 +273,8 @@ export function LandingClient({
                 { header: "Brand", field: (r) => r.brand ?? "" },
                 { header: "Spec", field: (r) => r.spec_string ?? "" },
                 { header: "Drive", field: (r) => (r.drive_type ? driveTypeLabel(r.drive_type) : "") },
+                { header: "Status", field: (r) => STATUS_LABELS[r.status] },
+                { header: "Req. Dispatch", field: (r) => r.reqDispatch ?? "" },
                 { header: "R1 Status", field: (r) => STATE_LABEL[r.state] },
                 { header: "Lines", field: (r) => r.lineCount },
                 { header: "Updated", field: (r) => (r.updatedAt ? new Date(r.updatedAt).toLocaleDateString() : "") },
@@ -271,6 +310,19 @@ export function LandingClient({
             className="pl-8"
           />
         </div>
+
+        <Select
+          size="sm"
+          value={statusFilter}
+          onChange={(e) => { setStatusFilter(e.target.value as JobStatus | "all"); resetPage(); }}
+          className="w-[150px]"
+          title="Filter by job status"
+        >
+          <option value="all">All Status</option>
+          {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
+            <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+          ))}
+        </Select>
 
         <Select
           size="sm"
@@ -317,6 +369,8 @@ export function LandingClient({
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
                 <TableHead>Drive</TableHead>
+                <SortHeader label="Status" sortField="status" />
+                <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
                 <SortHeader label="R1 Status" sortField="state" />
                 <SortHeader label="Lines" sortField="lines" className="text-right" />
                 <SortHeader label="Updated" sortField="updated" className="text-right" />
@@ -344,6 +398,16 @@ export function LandingClient({
                       <span className="text-xs">{driveTypeLabel(r.drive_type)}</span>
                     ) : (
                       <span className="text-xs text-[var(--muted-foreground)]">—</span>
+                    )}
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STATUS_BADGE[r.status]}>{STATUS_LABELS[r.status]}</Badge>
+                  </TableCell>
+                  <TableCell className="text-xs">
+                    {r.reqDispatch ? (
+                      new Date(r.reqDispatch).toLocaleDateString()
+                    ) : (
+                      <span className="text-[var(--muted-foreground)]">—</span>
                     )}
                   </TableCell>
                   <TableCell>
