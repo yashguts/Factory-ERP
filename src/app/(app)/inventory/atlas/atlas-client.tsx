@@ -14,6 +14,12 @@ import {
   MoveRight,
   Layers,
   PackageOpen,
+  MoreHorizontal,
+  Pencil,
+  Trash2,
+  RotateCcw,
+  SlidersHorizontal,
+  AlertTriangle,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -26,6 +32,9 @@ import { cn } from "@/lib/utils";
 import {
   moveItemsToCategory,
   createCategory,
+  renameCategory,
+  deleteCategory,
+  bulkUpdateItems,
 } from "@/lib/actions/inventory-atlas";
 import { createItem } from "@/lib/actions/inventory";
 import type { AtlasCat, AtlasItem, AtlasUnit } from "./page";
@@ -58,6 +67,16 @@ const TYPE_OPTIONS: { value: string; label: string }[] = [
 const TYPE_LABEL: Record<string, string> = Object.fromEntries(
   TYPE_OPTIONS.map((t) => [t.value, t.label]),
 );
+const TYPE_ABBR: Record<string, string> = {
+  raw_material: "RM",
+  sub_assembly: "SA",
+  finished_good: "FG",
+  mechanical_finished_stock: "MFS",
+  door_panel: "DP",
+};
+
+// One undone batch — items move back to wherever each came from.
+type UndoEntry = { entries: { id: string; from: string }[]; targetName: string };
 
 interface Props {
   categories: AtlasCat[];
@@ -163,6 +182,15 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
   const [dropCat, setDropCat] = useState<string | null>(null);
   const dragIds = useRef<string[]>([]);
 
+  // Category-management state
+  const [renamingCat, setRenamingCat] = useState<string | null>(null);
+  const [renameValue, setRenameValue] = useState("");
+  const [menuFor, setMenuFor] = useState<string | null>(null);
+  const [menuPos, setMenuPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
+  const [deleteTarget, setDeleteTarget] = useState<AtlasCat | null>(null);
+  const [showBulkEdit, setShowBulkEdit] = useState(false);
+  const [undoStack, setUndoStack] = useState<UndoEntry[]>([]);
+
   // Default to the biggest category on first load.
   useEffect(() => {
     if (!selectedCat && rootsBySize.length) {
@@ -204,28 +232,119 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
   const allShownChecked = shownIds.length > 0 && shownIds.every((id) => checked.has(id));
 
   // ── Mutations ───────────────────────────────────────────────────────────
-  function doMove(ids: string[], targetId: string) {
+  // `recordUndo`: when true (a fresh user move), capture where each item came
+  // from so it can be reverted. Undo itself passes false (no undo-of-undo).
+  function doMove(ids: string[], targetId: string, recordUndo = true) {
     if (!ids.length || !targetId) return;
     const targetName = pathLabel(targetId);
+    const fromById = new Map(items.map((i) => [i.id, i.category_id]));
+    // Don't record items already in the target (no-op move).
+    const before = ids
+      .filter((id) => fromById.get(id) !== targetId)
+      .map((id) => ({ id, from: fromById.get(id)! }));
+    if (before.length === 0) return;
+    const moveIds = before.map((b) => b.id);
+
     // Optimistic recategorise.
     setItems((prev) =>
-      prev.map((it) => (ids.includes(it.id) ? { ...it, category_id: targetId } : it)),
+      prev.map((it) => (moveIds.includes(it.id) ? { ...it, category_id: targetId } : it)),
     );
     setChecked(new Set());
     setMoveTarget("");
     startTransition(async () => {
-      const r = await moveItemsToCategory(ids, targetId);
+      const r = await moveItemsToCategory(moveIds, targetId);
       if (!r.ok) {
         toast.error(r.error);
         router.refresh(); // revert to server truth
       } else {
+        if (recordUndo)
+          setUndoStack((s) => [...s.slice(-9), { entries: before, targetName }]);
         toast.success(`Moved ${r.moved} item${r.moved > 1 ? "s" : ""} → ${targetName}`);
         router.refresh();
       }
     });
   }
 
+  function undoLastMove() {
+    const entry = undoStack[undoStack.length - 1];
+    if (!entry) return;
+    setUndoStack((s) => s.slice(0, -1));
+    // Items may have come from several source categories — revert per group.
+    const bySource = new Map<string, string[]>();
+    for (const e of entry.entries) {
+      (bySource.get(e.from) ?? bySource.set(e.from, []).get(e.from)!).push(e.id);
+    }
+    // Optimistic revert.
+    const target = new Map(entry.entries.map((e) => [e.id, e.from]));
+    setItems((prev) =>
+      prev.map((it) => (target.has(it.id) ? { ...it, category_id: target.get(it.id)! } : it)),
+    );
+    startTransition(async () => {
+      const results = await Promise.all(
+        [...bySource.entries()].map(([from, ids]) => moveItemsToCategory(ids, from)),
+      );
+      const failed = results.some((r) => !r.ok);
+      if (failed) toast.error("Some items could not be reverted.");
+      else toast.success(`Reverted ${entry.entries.length} item${entry.entries.length > 1 ? "s" : ""}`);
+      router.refresh();
+    });
+  }
+
+  function saveRename(cat: AtlasCat) {
+    const clean = renameValue.trim();
+    setRenamingCat(null);
+    if (!clean || clean === cat.name) return;
+    setCats((prev) => prev.map((c) => (c.id === cat.id ? { ...c, name: clean } : c)));
+    startTransition(async () => {
+      const r = await renameCategory(cat.id, clean);
+      if (!r.ok) {
+        toast.error(r.error);
+        router.refresh();
+      } else {
+        toast.success(`Renamed to “${r.name}”`);
+        router.refresh();
+      }
+    });
+  }
+
+  function requestDelete(cat: AtlasCat) {
+    const st = stats.get(cat.id) ?? { total: 0, r1: 0 };
+    if (st.total > 0) {
+      toast.error(
+        `“${cat.name}” still has ${st.total} item${st.total > 1 ? "s" : ""} in it (or its sub-categories). Move them out first.`,
+      );
+      return;
+    }
+    setDeleteTarget(cat);
+  }
+
+  function confirmDelete() {
+    const cat = deleteTarget;
+    if (!cat) return;
+    setDeleteTarget(null);
+    startTransition(async () => {
+      const r = await deleteCategory(cat.id);
+      if (!r.ok) {
+        toast.error(r.error);
+        return;
+      }
+      if (r.itemsBlocking > 0) {
+        toast.error(`“${cat.name}” still has ${r.itemsBlocking} item(s). Move them out first.`);
+        router.refresh();
+        return;
+      }
+      const removed = new Set(r.deletedIds);
+      setCats((prev) => prev.filter((c) => !removed.has(c.id)));
+      if (selectedCat && removed.has(selectedCat)) setSelectedCat(null);
+      toast.success(
+        `Deleted “${cat.name}”${r.deletedIds.length > 1 ? ` + ${r.deletedIds.length - 1} empty sub-categor${r.deletedIds.length - 1 > 1 ? "ies" : "y"}` : ""}`,
+      );
+      router.refresh();
+    });
+  }
+
   const [showNewCat, setShowNewCat] = useState(false);
+  const [newCatParent, setNewCatParent] = useState<string | null>(null);
   const [showNewItem, setShowNewItem] = useState(false);
 
   function toggleCheck(id: string) {
@@ -299,20 +418,55 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               depth > 0 && <CornerDownRight size={12} className="opacity-40" />
             )}
           </span>
-          <span className="flex-1 truncate">{cat.name}</span>
-          {/* coverage mini-bar */}
-          <span
-            className="shrink-0 w-9 h-1.5 rounded-full overflow-hidden bg-[var(--muted)]"
-            title={`${st.r1}/${st.total} in R1 — ${pct}% (${covLabel(pct)})`}
-          >
-            <span
-              className="block h-full rounded-full"
-              style={{ width: `${pct}%`, background: covColor(pct) }}
+
+          {renamingCat === cat.id ? (
+            <input
+              autoFocus
+              value={renameValue}
+              onClick={(e) => e.stopPropagation()}
+              onChange={(e) => setRenameValue(e.target.value)}
+              onBlur={() => saveRename(cat)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") saveRename(cat);
+                else if (e.key === "Escape") setRenamingCat(null);
+              }}
+              className="flex-1 min-w-0 h-6 px-1.5 rounded border border-[var(--primary)] bg-[var(--background)] text-sm focus:outline-none"
             />
-          </span>
-          <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)] w-9 text-right">
-            {st.total.toLocaleString()}
-          </span>
+          ) : (
+            <>
+              <span className="flex-1 truncate">{cat.name}</span>
+              {/* hover menu (rename / new sub / delete) */}
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect();
+                  setMenuPos({ x: r.right, y: r.bottom });
+                  setMenuFor((m) => (m === cat.id ? null : cat.id));
+                }}
+                className={cn(
+                  "shrink-0 p-0.5 rounded hover:bg-[var(--border)] text-[var(--muted-foreground)] hover:text-[var(--foreground)] cursor-pointer transition-opacity",
+                  menuFor === cat.id ? "opacity-100" : "opacity-0 group-hover:opacity-100",
+                )}
+                aria-label="Category actions"
+                title="Rename, add sub-category, delete"
+              >
+                <MoreHorizontal size={14} />
+              </button>
+              {/* coverage mini-bar */}
+              <span
+                className="shrink-0 w-9 h-1.5 rounded-full overflow-hidden bg-[var(--muted)]"
+                title={`${st.r1}/${st.total} in R1 — ${pct}% (${covLabel(pct)})`}
+              >
+                <span
+                  className="block h-full rounded-full"
+                  style={{ width: `${pct}%`, background: covColor(pct) }}
+                />
+              </span>
+              <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)] w-9 text-right">
+                {st.total.toLocaleString()}
+              </span>
+            </>
+          )}
         </div>
         {hasChildren && isOpen && (
           <div>
@@ -359,7 +513,25 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
         }
         actions={
           <>
-            <Button variant="secondary" size="sm" onClick={() => setShowNewCat(true)}>
+            {undoStack.length > 0 && (
+              <Button
+                variant="secondary"
+                size="sm"
+                onClick={undoLastMove}
+                title={`Undo: ${undoStack[undoStack.length - 1].entries.length} item(s) → ${undoStack[undoStack.length - 1].targetName}`}
+              >
+                <RotateCcw size={15} className="mr-1.5" />
+                Undo
+              </Button>
+            )}
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={() => {
+                setNewCatParent(selectedCat);
+                setShowNewCat(true);
+              }}
+            >
               <FolderPlus size={15} className="mr-1.5" />
               New Category
             </Button>
@@ -464,6 +636,7 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               <span className="w-5 text-center">R1</span>
               <span className="w-28">Code</span>
               <span className="flex-1">Item</span>
+              <span className="w-12 text-center">Type</span>
               <span className="w-56 text-right pr-1">Category</span>
             </div>
           )}
@@ -526,6 +699,12 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
                       {it.name}
                     </span>
                     <span
+                      className="w-12 shrink-0 text-center text-[10px] font-semibold text-[var(--muted-foreground)]"
+                      title={TYPE_LABEL[it.item_type] ?? it.item_type}
+                    >
+                      {TYPE_ABBR[it.item_type] ?? "?"}
+                    </span>
+                    <span
                       className="w-56 shrink-0 text-right text-xs text-[var(--muted-foreground)] truncate pr-1"
                       title={pathLabel(it.category_id)}
                     >
@@ -563,6 +742,11 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
                 <MoveRight size={15} className="mr-1.5" />
                 Move
               </Button>
+              <div className="w-px h-6 bg-[var(--border)] mx-1" />
+              <Button variant="secondary" size="sm" onClick={() => setShowBulkEdit(true)}>
+                <SlidersHorizontal size={15} className="mr-1.5" />
+                Edit fields
+              </Button>
               <Button variant="ghost" size="sm" onClick={() => setChecked(new Set())}>
                 Clear
               </Button>
@@ -574,7 +758,7 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
       {showNewCat && (
         <NewCategoryModal
           catOptions={catOptions}
-          defaultParent={selectedCat}
+          defaultParent={newCatParent}
           onClose={() => setShowNewCat(false)}
           onCreated={(c) => {
             setCats((prev) => [...prev, c]);
@@ -598,6 +782,127 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
             router.refresh();
           }}
         />
+      )}
+
+      {showBulkEdit && (
+        <BulkEditModal
+          count={checked.size}
+          units={units}
+          onClose={() => setShowBulkEdit(false)}
+          onApply={(patch) => {
+            const ids = [...checked];
+            // Optimistic: only item_type is visible in the table.
+            if (patch.item_type !== undefined) {
+              setItems((prev) =>
+                prev.map((it) =>
+                  ids.includes(it.id) ? { ...it, item_type: patch.item_type! } : it,
+                ),
+              );
+            }
+            setShowBulkEdit(false);
+            setChecked(new Set());
+            startTransition(async () => {
+              const r = await bulkUpdateItems(ids, patch);
+              if (!r.ok) toast.error(r.error);
+              else toast.success(`Updated ${r.updated} item${r.updated > 1 ? "s" : ""}`);
+              router.refresh();
+            });
+          }}
+        />
+      )}
+
+      {/* Category action menu (rename / new sub / delete) */}
+      {menuFor && byId.get(menuFor) && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuFor(null)} />
+          <div
+            className="fixed z-50 min-w-[184px] rounded-md border border-[var(--border)] bg-[var(--popover)] shadow-[var(--shadow-lg)] py-1 animate-scale-in"
+            style={{ top: menuPos.y + 4, left: Math.max(8, menuPos.x - 184) }}
+          >
+            {(() => {
+              const cat = byId.get(menuFor)!;
+              const menuItem =
+                "w-full flex items-center gap-2 px-3 py-1.5 text-sm text-left cursor-pointer hover:bg-[var(--muted)]";
+              return (
+                <>
+                  <button
+                    className={menuItem}
+                    onClick={() => {
+                      setRenameValue(cat.name);
+                      setRenamingCat(cat.id);
+                      setMenuFor(null);
+                    }}
+                  >
+                    <Pencil size={14} /> Rename
+                  </button>
+                  <button
+                    className={menuItem}
+                    onClick={() => {
+                      setNewCatParent(cat.id);
+                      setShowNewCat(true);
+                      setMenuFor(null);
+                    }}
+                  >
+                    <FolderPlus size={14} /> New sub-category
+                  </button>
+                  <div className="my-1 border-t border-[var(--border)]" />
+                  <button
+                    className={cn(menuItem, "text-[var(--destructive)] hover:bg-[var(--destructive-bg)]")}
+                    onClick={() => {
+                      setMenuFor(null);
+                      requestDelete(cat);
+                    }}
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </>
+              );
+            })()}
+          </div>
+        </>
+      )}
+
+      {/* Delete confirmation */}
+      {deleteTarget && (
+        <Modal title="Delete category" onClose={() => setDeleteTarget(null)} size="sm">
+          {(() => {
+            const subs: AtlasCat[] = [];
+            const queue = [deleteTarget.id];
+            while (queue.length) {
+              const c = queue.shift()!;
+              for (const ch of childrenByParent.get(c) ?? []) {
+                subs.push(ch);
+                queue.push(ch.id);
+              }
+            }
+            return (
+              <div className="space-y-4">
+                <div className="flex gap-3">
+                  <AlertTriangle size={20} className="text-[var(--warning)] shrink-0 mt-0.5" />
+                  <div className="text-sm">
+                    Delete <strong>“{deleteTarget.name}”</strong>
+                    {subs.length > 0 && (
+                      <>
+                        {" "}and its <strong>{subs.length}</strong> empty sub-categor
+                        {subs.length > 1 ? "ies" : "y"}
+                      </>
+                    )}
+                    ? It has no items. This can’t be undone.
+                  </div>
+                </div>
+                <div className="flex justify-end gap-2">
+                  <Button variant="secondary" size="sm" onClick={() => setDeleteTarget(null)}>
+                    Cancel
+                  </Button>
+                  <Button variant="destructive" size="sm" onClick={confirmDelete}>
+                    <Trash2 size={15} className="mr-1.5" />
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+        </Modal>
       )}
     </>
   );
@@ -792,6 +1097,97 @@ function NewItemModal({
           </Button>
           <Button size="sm" onClick={save} disabled={saving || !name.trim() || !cat || !uom}>
             {saving ? "Creating…" : "Create item"}
+          </Button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function BulkEditModal({
+  count,
+  units,
+  onClose,
+  onApply,
+}: {
+  count: number;
+  units: AtlasUnit[];
+  onClose: () => void;
+  onApply: (patch: {
+    item_type?: string;
+    procurement_type?: "make" | "trade" | null;
+    uom_id?: string;
+  }) => void;
+}) {
+  const [type, setType] = useState(""); // "" = leave unchanged
+  const [proc, setProc] = useState(""); // "" | make | trade | inherit
+  const [uom, setUom] = useState(""); // "" = leave unchanged
+  const nothing = !type && !proc && !uom;
+
+  function apply() {
+    if (nothing) return;
+    const patch: {
+      item_type?: string;
+      procurement_type?: "make" | "trade" | null;
+      uom_id?: string;
+    } = {};
+    if (type) patch.item_type = type;
+    if (uom) patch.uom_id = uom;
+    if (proc) patch.procurement_type = proc === "inherit" ? null : (proc as "make" | "trade");
+    onApply(patch);
+  }
+
+  const labelCls = "block text-sm font-medium mb-1";
+
+  return (
+    <Modal title={`Edit ${count} item${count > 1 ? "s" : ""}`} onClose={onClose} size="md">
+      <div className="space-y-3">
+        <p className="text-sm text-[var(--muted-foreground)]">
+          Only the fields you set will change — leave the rest on “unchanged”. Applies to
+          all {count} selected item{count > 1 ? "s" : ""}.
+        </p>
+        <div>
+          <label className={labelCls}>Item type</label>
+          <Select value={type} onChange={(e) => setType(e.target.value)}>
+            <option value="">— Leave unchanged —</option>
+            {TYPE_OPTIONS.map((t) => (
+              <option key={t.value} value={t.value}>
+                {t.label}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div>
+          <label className={labelCls}>Make / Trade</label>
+          <Select value={proc} onChange={(e) => setProc(e.target.value)}>
+            <option value="">— Leave unchanged —</option>
+            <option value="make">Make</option>
+            <option value="trade">Trade</option>
+            <option value="inherit">Inherit from category</option>
+          </Select>
+          {proc === "make" && (
+            <p className="text-xs text-[var(--muted-foreground)] mt-1">
+              Suppliers will be cleared (Make items have no suppliers).
+            </p>
+          )}
+        </div>
+        <div>
+          <label className={labelCls}>Unit</label>
+          <Select value={uom} onChange={(e) => setUom(e.target.value)}>
+            <option value="">— Leave unchanged —</option>
+            {units.map((u) => (
+              <option key={u.id} value={u.id}>
+                {u.name}
+              </option>
+            ))}
+          </Select>
+        </div>
+        <div className="flex justify-end gap-2 pt-1">
+          <Button variant="secondary" size="sm" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button size="sm" onClick={apply} disabled={nothing}>
+            Apply to {count} item{count > 1 ? "s" : ""}
           </Button>
         </div>
       </div>
