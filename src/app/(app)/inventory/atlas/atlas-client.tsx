@@ -20,6 +20,7 @@ import {
   RotateCcw,
   SlidersHorizontal,
   AlertTriangle,
+  Folder,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -78,6 +79,43 @@ const TYPE_ABBR: Record<string, string> = {
 // One undone batch — items move back to wherever each came from.
 type UndoEntry = { entries: { id: string; from: string }[]; targetName: string };
 
+// Group items by their (exact) category id.
+function groupByCat(items: AtlasItem[]): Map<string, AtlasItem[]> {
+  const m = new Map<string, AtlasItem[]>();
+  for (const it of items) {
+    const arr = m.get(it.category_id) ?? [];
+    arr.push(it);
+    m.set(it.category_id, arr);
+  }
+  return m;
+}
+
+// Aggregate {total, r1} over each category's whole subtree.
+function subtreeStats(
+  byCat: Map<string, AtlasItem[]>,
+  childrenByParent: Map<string | null, AtlasCat[]>,
+  roots: AtlasCat[],
+): Map<string, { total: number; r1: number }> {
+  const out = new Map<string, { total: number; r1: number }>();
+  const walk = (id: string): { total: number; r1: number } => {
+    let total = 0,
+      r1 = 0;
+    for (const it of byCat.get(id) ?? []) {
+      total++;
+      if (it.in_r1) r1++;
+    }
+    for (const ch of childrenByParent.get(id) ?? []) {
+      const s = walk(ch.id);
+      total += s.total;
+      r1 += s.r1;
+    }
+    out.set(id, { total, r1 });
+    return { total, r1 };
+  };
+  for (const r of roots) walk(r.id);
+  return out;
+}
+
 interface Props {
   categories: AtlasCat[];
   items: AtlasItem[];
@@ -96,6 +134,9 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
   useEffect(() => setCats(catProp), [catProp]);
   useEffect(() => setItems(itemProp), [itemProp]);
 
+  // Active Type lens ("" = all). Filters the tree counts + item list.
+  const [typeFilter, setTypeFilter] = useState("");
+
   // ── Derived tree structures ─────────────────────────────────────────────
   const { byId, childrenByParent, roots } = useMemo(() => {
     const byId = new Map<string, AtlasCat>();
@@ -112,37 +153,31 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
     return { byId, childrenByParent, roots };
   }, [cats]);
 
-  const itemsByCat = useMemo(() => {
-    const m = new Map<string, AtlasItem[]>();
-    for (const it of items) {
-      const arr = m.get(it.category_id) ?? [];
-      arr.push(it);
-      m.set(it.category_id, arr);
-    }
+  // Per-type totals for the filter chips (always the full, unfiltered counts).
+  const typeCounts = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const it of items) m.set(it.item_type, (m.get(it.item_type) ?? 0) + 1);
     return m;
   }, [items]);
 
-  // Subtree {total, r1} aggregated per category id.
-  const stats = useMemo(() => {
-    const out = new Map<string, { total: number; r1: number }>();
-    const walk = (id: string): { total: number; r1: number } => {
-      let total = 0,
-        r1 = 0;
-      for (const it of itemsByCat.get(id) ?? []) {
-        total++;
-        if (it.in_r1) r1++;
-      }
-      for (const ch of childrenByParent.get(id) ?? []) {
-        const s = walk(ch.id);
-        total += s.total;
-        r1 += s.r1;
-      }
-      out.set(id, { total, r1 });
-      return { total, r1 };
-    };
-    for (const r of roots) walk(r.id);
-    return out;
-  }, [itemsByCat, childrenByParent, roots]);
+  // Items visible under the active Type filter ("" = all types).
+  const visibleItems = useMemo(
+    () => (typeFilter ? items.filter((i) => i.item_type === typeFilter) : items),
+    [items, typeFilter],
+  );
+
+  // itemsByCat / stats reflect the Type filter (drive the tree counts + right
+  // pane). statsAll is unfiltered — used only for STABLE tree ordering so
+  // categories don't reshuffle when you pick a type.
+  const itemsByCat = useMemo(() => groupByCat(visibleItems), [visibleItems]);
+  const stats = useMemo(
+    () => subtreeStats(itemsByCat, childrenByParent, roots),
+    [itemsByCat, childrenByParent, roots],
+  );
+  const statsAll = useMemo(
+    () => subtreeStats(groupByCat(items), childrenByParent, roots),
+    [items, childrenByParent, roots],
+  );
 
   // Full path label for a category id ("Hardware › Bull Dog Clips").
   const pathLabel = useMemo(() => {
@@ -167,10 +202,11 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
     [cats, pathLabel],
   );
 
-  // Roots sorted by size for default selection / display.
+  // Roots sorted by (unfiltered) size — stable, so picking a Type doesn't
+  // reshuffle the tree.
   const rootsBySize = useMemo(
-    () => [...roots].sort((a, b) => (stats.get(b.id)?.total ?? 0) - (stats.get(a.id)?.total ?? 0)),
-    [roots, stats],
+    () => [...roots].sort((a, b) => (statsAll.get(b.id)?.total ?? 0) - (statsAll.get(a.id)?.total ?? 0)),
+    [roots, statsAll],
   );
 
   // ── Selection / navigation state ─────────────────────────────────────────
@@ -216,8 +252,9 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
   const rightItems = useMemo(() => {
     let list: AtlasItem[];
     if (q) {
+      // Search respects the Type filter too.
       const tokens = q.split(/\s+/);
-      list = items.filter((it) => {
+      list = visibleItems.filter((it) => {
         const hay = `${it.code} ${it.name}`.toLowerCase();
         return tokens.every((t) => hay.includes(t));
       });
@@ -226,7 +263,10 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
     }
     return list.slice().sort((a, b) => a.name.localeCompare(b.name));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, items, selectedCat, itemsByCat, childrenByParent]);
+  }, [q, visibleItems, selectedCat, itemsByCat, childrenByParent]);
+
+  // Clear any selection when the Type lens changes (selected rows may hide).
+  useEffect(() => setChecked(new Set()), [typeFilter]);
 
   const shownIds = useMemo(() => rightItems.map((i) => i.id), [rightItems]);
   const allShownChecked = shownIds.length > 0 && shownIds.every((id) => checked.has(id));
@@ -406,6 +446,7 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               ? "bg-[var(--accent)] text-[var(--accent-foreground)] font-medium"
               : "hover:bg-[var(--muted)]",
             isDrop && "ring-2 ring-[var(--primary)] ring-inset bg-[var(--accent)]",
+            typeFilter && st.total === 0 && !isSel && "opacity-40",
           )}
         >
           <span className="shrink-0 w-4 flex items-center justify-center text-[var(--muted-foreground)]">
@@ -434,7 +475,12 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
             />
           ) : (
             <>
-              <span className="flex-1 truncate">{cat.name}</span>
+              {depth === 0 && (
+                <Folder size={13} className="shrink-0 text-[var(--muted-foreground)]" />
+              )}
+              <span className={cn("flex-1 truncate", depth === 0 && "font-medium")}>
+                {cat.name}
+              </span>
               {/* hover menu (rename / new sub / delete) */}
               <button
                 onClick={(e) => {
@@ -566,13 +612,32 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
         </span>
       </div>
 
+      {/* Type filter — slices the tree counts AND the item list */}
+      <div className="no-print flex flex-wrap items-center gap-1.5 mb-3">
+        <span className="text-xs font-semibold text-[var(--muted-foreground)] mr-1 uppercase tracking-wide">
+          Type
+        </span>
+        <TypeChip label="All types" count={items.length} active={!typeFilter} onClick={() => setTypeFilter("")} />
+        {TYPE_OPTIONS.map((t) => (
+          <TypeChip
+            key={t.value}
+            label={t.label}
+            count={typeCounts.get(t.value) ?? 0}
+            active={typeFilter === t.value}
+            onClick={() => setTypeFilter(typeFilter === t.value ? "" : t.value)}
+          />
+        ))}
+      </div>
+
       {/* Two-pane workbench */}
-      <div className="atlas-panes flex gap-3" style={{ height: "calc(100vh - 168px)" }}>
+      <div className="atlas-panes flex gap-3" style={{ height: "calc(100vh - 212px)" }}>
         {/* LEFT: category tree */}
         <aside className="atlas-tree card-surface flex flex-col overflow-hidden shrink-0 w-[340px]">
           <div className="flex items-center justify-between px-3 py-2 border-b border-[var(--border)] bg-[var(--muted)]/30">
-            <span className="text-sm font-semibold">Categories</span>
-            <span className="text-xs text-[var(--muted-foreground)]">{rootsBySize.length} top-level</span>
+            <span className="text-sm font-semibold">Category › Sub-category</span>
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {rootsBySize.length} · {cats.length - rootsBySize.length} sub
+            </span>
           </div>
           <div className="overflow-y-auto flex-1 p-1.5">
             {rootsBySize.map((r) => (
@@ -586,7 +651,17 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
           {/* Pane header */}
           <div className="atlas-toolbar flex items-center gap-3 px-3 py-2 border-b border-[var(--border)] bg-[var(--muted)]/30">
             <div className="min-w-0">
-              <div className="text-sm font-semibold truncate">{selectedName}</div>
+              <div className="flex items-center gap-2 min-w-0">
+                <span className="text-sm font-semibold truncate">{selectedName}</span>
+                {!q && selectedCat && (
+                  <Badge variant={byId.get(selectedCat)?.parent_id ? "neutral" : "blue"}>
+                    {byId.get(selectedCat)?.parent_id ? "Sub-category" : "Category"}
+                  </Badge>
+                )}
+                {typeFilter && (
+                  <Badge variant="purple">{TYPE_LABEL[typeFilter]} only</Badge>
+                )}
+              </div>
               {selStat && !q && (
                 <div className="text-xs text-[var(--muted-foreground)]">
                   {selStat.total.toLocaleString()} items · {selStat.r1} in R1 ·{" "}
@@ -595,7 +670,8 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               )}
               {q && (
                 <div className="text-xs text-[var(--muted-foreground)]">
-                  {rightItems.length} match{rightItems.length === 1 ? "" : "es"} across all categories
+                  {rightItems.length} match{rightItems.length === 1 ? "" : "es"}
+                  {typeFilter ? ` in ${TYPE_LABEL[typeFilter]}` : " across all categories"}
                 </div>
               )}
             </div>
@@ -647,7 +723,11 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
               <div className="h-full flex flex-col items-center justify-center text-center text-[var(--muted-foreground)] gap-2 py-16">
                 <PackageOpen size={28} className="opacity-40" />
                 <p className="text-sm">
-                  {q ? "No items match your search." : "No items in this category yet."}
+                  {q
+                    ? "No items match your search."
+                    : typeFilter
+                      ? `No ${TYPE_LABEL[typeFilter]} items here.`
+                      : "No items in this category yet."}
                 </p>
                 {!q && selectedCat && (
                   <Button variant="secondary" size="sm" onClick={() => setShowNewItem(true)}>
@@ -905,6 +985,37 @@ export default function AtlasClient({ categories: catProp, items: itemProp, unit
         </Modal>
       )}
     </>
+  );
+}
+
+// ── Type filter chip ──────────────────────────────────────────────────────────
+
+function TypeChip({
+  label,
+  count,
+  active,
+  onClick,
+}: {
+  label: string;
+  count: number;
+  active: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs font-medium cursor-pointer transition-colors",
+        active
+          ? "bg-[var(--primary)] text-[var(--primary-foreground)] border-[var(--primary)]"
+          : "bg-[var(--background)] border-[var(--border)] hover:bg-[var(--muted)] hover:border-[var(--border-strong)]",
+      )}
+    >
+      {label}
+      <span className={cn("tabular-nums", active ? "opacity-80" : "text-[var(--muted-foreground)]")}>
+        {count.toLocaleString()}
+      </span>
+    </button>
   );
 }
 
