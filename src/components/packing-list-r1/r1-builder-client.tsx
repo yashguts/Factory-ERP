@@ -757,8 +757,6 @@ export function R1BuilderClient({
         />
       )}
 
-      <DemandTables demand={demand} />
-
       <p className="text-[10px] text-center text-[#6b7280] my-4">
         Packing List R1 · seeded from the shared template + this job&apos;s BOM · pick an item per line, set QTY, Save.
       </p>
@@ -827,57 +825,3 @@ function CabinPanelsBlock({ data, jobNumber }: { data: R1CabinPanels; jobNumber:
   );
 }
 
-function DemandTables({ demand }: { demand: R1Demand }) {
-  const block = (title: string, rows: R1Demand["make"]) =>
-    rows.length === 0 ? null : (
-      <div className="mt-3.5">
-        <div className="text-[13px] font-medium mb-1.5">
-          {title} <span className="text-[#6b7280]">({rows.length})</span>
-        </div>
-        <div className="rounded-lg border overflow-hidden" style={{ borderColor: "#e5e7eb" }}>
-          <table className="w-full text-xs">
-            <thead className="bg-[#f1f5f9] text-[#6b7280]">
-              <tr>
-                <th className="text-left font-medium px-2 py-1">Code</th>
-                <th className="text-left font-medium px-2 py-1">Item</th>
-                <th className="text-right font-medium px-2 py-1">Required</th>
-                <th className="text-right font-medium px-2 py-1">In stock</th>
-                <th className="text-right font-medium px-2 py-1">On order</th>
-                <th className="text-right font-medium px-2 py-1">Shortfall</th>
-                <th className="text-right font-medium px-2 py-1">To buy</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y" style={{ borderColor: "#e5e7eb" }}>
-              {rows.map((r) => (
-                <tr key={r.item_id} className={r.shortfall > 0 ? "bg-amber-50/40" : ""}>
-                  <td className="px-2 py-1 font-mono">{r.code}</td>
-                  <td className="px-2 py-1 truncate max-w-[260px]">{r.name}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{r.required}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{r.on_hand}</td>
-                  <td className="px-2 py-1 text-right tabular-nums">{r.on_order}</td>
-                  <td className="px-2 py-1 text-right tabular-nums font-medium">{r.shortfall > 0 ? r.shortfall : "—"}</td>
-                  <td className="px-2 py-1 text-right tabular-nums font-medium" style={{ color: "#2563eb" }}>
-                    {r.to_buy > 0 ? r.to_buy : "—"}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-    );
-  return (
-    <div className="mt-5">
-      <h2 className="text-sm font-semibold">Demand list (vs current stock)</h2>
-      {demand.totals.items === 0 ? (
-        <p className="text-xs text-[#6b7280] mt-1.5">No items with quantities yet — fill some lines and Save.</p>
-      ) : (
-        <>
-          {block("Trade (to procure)", demand.trade)}
-          {block("Make (to produce)", demand.make)}
-          {block("Unclassified", demand.unclassified)}
-        </>
-      )}
-    </div>
-  );
-}
