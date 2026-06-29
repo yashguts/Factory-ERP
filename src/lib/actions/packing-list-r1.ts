@@ -377,17 +377,24 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
     const template = await getTemplate();
     const { byCat, byItem } = await buildJobBom(jobId);
 
-    // How many template lines reference each category. A category on >1 line is
-    // "shared" (e.g. two Guide Rail lines, or Stud Anchor across parts). For shared
-    // categories the item-to-line assignment is ambiguous, so we DON'T auto-fill —
-    // the lines stay blank and the BOM items surface in Unmapped Items for manual
-    // placement. A category on exactly one line ("distinct") expands to one row per
-    // matching BOM item.
+    // Per category: how many template lines reference it, and across how many parts.
+    //  - distinct (1 line)           → expand: one row per matching BOM item.
+    //  - multiple lines in ONE part  → interchangeable slots (e.g. the two Guide Rail
+    //    lines): DISTRIBUTE the matching items one-per-slot, in order.
+    //  - lines across MULTIPLE parts → cross-part shared (e.g. Stud Anchor on 5 parts,
+    //    CI/PVC Pulley on Car+Counter): the item-to-line mapping is ambiguous, so we
+    //    DON'T auto-fill — the items surface in Unmapped Items for manual placement.
     const catLineCount = new Map<string, number>();
+    const catParts = new Map<string, Set<string>>();
     for (const p of template)
       for (const tl of p.lines)
-        if (tl.kind === "category" && tl.category_id)
+        if (tl.kind === "category" && tl.category_id) {
           catLineCount.set(tl.category_id, (catLineCount.get(tl.category_id) ?? 0) + 1);
+          const s = catParts.get(tl.category_id) ?? new Set<string>();
+          s.add(p.id);
+          catParts.set(tl.category_id, s);
+        }
+    const claimCursor = new Map<string, number>(); // same-part slot distribution cursor
 
     const seedRows: Record<string, unknown>[] = [];
     let so = 0;
@@ -416,13 +423,22 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
       for (const tl of part.lines) {
         if (tl.kind === "category" && tl.category_id) {
           const matches = byCat.get(tl.category_id) ?? [];
-          const shared = (catLineCount.get(tl.category_id) ?? 0) > 1;
-          if (shared) {
-            // Shared category (e.g. Stud Anchor across 5 parts, or two Guide Rail
-            // lines): the correct item-to-line assignment is ambiguous, so we DON'T
-            // auto-fill. The lines stay blank and the job's BOM items in this
-            // category surface in the Unmapped Items section for manual placement.
+          const lines = catLineCount.get(tl.category_id) ?? 1;
+          const partsSpan = catParts.get(tl.category_id)?.size ?? 1;
+          if (lines > 1 && partsSpan > 1) {
+            // cross-part shared (Stud Anchor, pulleys, …) — ambiguous, leave blank so
+            // the items show in Unmapped Items.
             pushRow(part.title, tl, null, 0, "template");
+          } else if (lines > 1) {
+            // interchangeable slots in ONE part (two Guide Rail lines) → distribute
+            // one matching item per slot, in order; extra items go to Unmapped.
+            const idx = claimCursor.get(tl.category_id) ?? 0;
+            if (idx < matches.length) {
+              pushRow(part.title, tl, matches[idx].item_id, matches[idx].qty, "auto");
+              claimCursor.set(tl.category_id, idx + 1);
+            } else {
+              pushRow(part.title, tl, null, 0, "template");
+            }
           } else if (matches.length >= 2) {
             // distinct category, several BOM items → one auto row per item
             for (const m of matches) pushRow(part.title, tl, m.item_id, m.qty, "auto");
