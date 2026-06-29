@@ -11,6 +11,7 @@ import {
   type R1Line,
   type R1Demand,
   type R1SaveLine,
+  type R1CabinPanels,
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import { exportRowsToXlsx } from "@/lib/export/xlsx";
@@ -294,11 +295,13 @@ export function R1BuilderClient({
   categories,
   demand,
   counts,
+  cabinPanels,
 }: {
   list: R1ListView;
   categories: CategoryNode[];
   demand: R1Demand;
   counts: Record<string, number>;
+  cabinPanels: R1CabinPanels;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -434,12 +437,22 @@ export function R1BuilderClient({
       } else alert(r.error ?? "Save failed");
     });
 
-  const exportRows = parts.flatMap((p) =>
-    p.lines.map((l) => ({
-      part: p.title, group: l.group ?? "", particular: l.label ?? l.category_name ?? "",
-      code: l.item_code ?? "", item: l.item_name ?? "", qty: l.qty, uom: l.uom ?? "",
-    })),
+  // Cabin Job items (read-only mirror) — emitted under the Cabin part in exports.
+  type ExportRow = {
+    part: string; group: string; particular: string; code: string; item: string; qty: number | string; uom: string;
+  };
+  const cabinExportRows: ExportRow[] = cabinPanels.groups.flatMap((g): ExportRow[] =>
+    g.lines.length
+      ? g.lines.map((l) => ({ part: "Cabin", group: g.type, particular: "", code: l.code ?? "", item: l.name, qty: l.qty, uom: l.uom ?? "" }))
+      : [{ part: "Cabin", group: g.type, particular: "", code: "", item: "", qty: "", uom: "" }],
   );
+  const exportRows = parts.flatMap((p) => {
+    const rows = p.lines.map((l) => ({
+      part: p.title, group: l.group ?? "", particular: l.label ?? l.category_name ?? "",
+      code: l.item_code ?? "", item: l.item_name ?? "", qty: l.qty as number | string, uom: l.uom ?? "",
+    }));
+    return p.title === "Cabin" ? [...cabinExportRows, ...rows] : rows;
+  });
   const exportExcel = () =>
     exportRowsToXlsx({
       rows: exportRows,
@@ -463,7 +476,17 @@ export function R1BuilderClient({
     doc.text(`Status: ${status}   |   ${new Date().toLocaleDateString()}`, 12, 22);
     let y = 28;
     parts.forEach((p, pi) => {
-      if (p.lines.length === 0) return;
+      const cabinBody =
+        p.title === "Cabin"
+          ? cabinPanels.groups.flatMap((g) =>
+              g.lines.length
+                ? g.lines.map((l) => [g.type, "", l.code ?? "", l.name, String(l.qty ?? "")])
+                : [[g.type, "", "", "—", ""]],
+            )
+          : [];
+      const lineBody = p.lines.map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty ?? "")]);
+      const body = [...cabinBody, ...lineBody];
+      if (body.length === 0) return;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text(`PART ${pi + 1}  ${p.title.toUpperCase()}`, 12, y);
@@ -471,7 +494,7 @@ export function R1BuilderClient({
         startY: y + 2, theme: "grid", styles: { fontSize: 8, cellPadding: 1.2 },
         headStyles: { fillColor: [34, 51, 68] },
         head: [["Group", "Particular", "Code", "Item", "Qty"]],
-        body: p.lines.map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty ?? "")]),
+        body,
         margin: { left: 12, right: 12 },
       });
       y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
@@ -569,6 +592,8 @@ export function R1BuilderClient({
                 {part.lines.filter((l) => l.item_id).length}/{part.lines.length} filled
               </span>
             </h2>
+
+            {part.title === "Cabin" && <CabinPanelsBlock data={cabinPanels} jobNumber={list.jobNumber} />}
 
             <div className="px-3 py-1.5">
               <table className="table-fixed w-full border-collapse text-xs">
@@ -737,6 +762,67 @@ export function R1BuilderClient({
       <p className="text-[10px] text-center text-[#6b7280] my-4">
         Packing List R1 · seeded from the shared template + this job&apos;s BOM · pick an item per line, set QTY, Save.
       </p>
+    </div>
+  );
+}
+
+// Read-only cabin items mirrored from the job's Cabin Job — the 15 cabin-type
+// headings, each with its items (or blank when the job has no Cabin Job).
+function CabinPanelsBlock({ data, jobNumber }: { data: R1CabinPanels; jobNumber: string | null }) {
+  const total = data.groups.reduce((s, g) => s + g.lines.length, 0);
+  return (
+    <div className="px-3 pt-1.5 pb-1 border-b" style={{ background: "#fafbfc", borderColor: C.line }}>
+      <div className="flex items-center gap-2 mb-0.5">
+        <span className="text-[10px] font-bold uppercase tracking-wider text-[#6b7280]">Cabin Panels</span>
+        {data.hasCabinJob ? (
+          <span className="text-[10px] text-[#6b7280]">
+            from Cabin Job · {total} item{total === 1 ? "" : "s"} · read-only
+          </span>
+        ) : (
+          <span className="text-[10px] text-amber-600">
+            no Cabin Job for {jobNumber ?? "this job"} — add one in Cabin Jobs to fill these
+          </span>
+        )}
+      </div>
+      <table className="table-fixed w-full border-collapse text-xs">
+        <colgroup>
+          <col style={{ width: "34%" }} />
+          <col style={{ width: "54%" }} />
+          <col style={{ width: "12%" }} />
+        </colgroup>
+        <tbody>
+          {data.groups.map((g) => (
+            <Fragment key={g.type}>
+              <tr>
+                <td colSpan={3} className="pt-1.5 pb-0.5 text-[10px] font-bold uppercase tracking-wider text-[#9ca3af]">
+                  {g.type}
+                </td>
+              </tr>
+              {g.lines.length === 0 ? (
+                <tr className="border-b" style={{ borderColor: "#f1f5f9" }}>
+                  <td className="py-1 pr-2 align-top text-[#cbd5e1]">—</td>
+                  <td className="py-1 px-2 align-top italic text-[#cbd5e1]">blank</td>
+                  <td className="py-1 px-2" />
+                </tr>
+              ) : (
+                g.lines.map((l, i) => (
+                  <tr key={i} className="border-b" style={{ borderColor: "#f1f5f9" }}>
+                    <td className="py-1 pr-2" />
+                    <td className="py-1 px-2 align-top">
+                      <span className="font-medium text-[#374151]">{l.name}</span>
+                      {l.code && <CodeChip code={l.code} />}
+                    </td>
+                    <td className="py-1 px-2 align-top text-right tabular-nums text-[#374151]">
+                      {l.qty}
+                      {l.uom ? ` ${l.uom}` : ""}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </Fragment>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }

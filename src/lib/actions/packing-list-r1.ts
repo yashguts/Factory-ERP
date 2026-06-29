@@ -6,6 +6,7 @@ import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { getAllCategories, expandCategoryDescendants } from "@/lib/actions/categories";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
+import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
 import type { PackingLineKind } from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ *
@@ -739,5 +740,76 @@ export async function getR1Demand(jobId: string): Promise<R1Demand> {
       shortfallItems: rows.filter((r) => r.shortfall > 0).length,
       toBuyItems: rows.filter((r) => r.to_buy > 0).length,
     },
+  };
+}
+
+// ============================================================================
+// CABIN PANELS (read-only mirror of the job's Cabin Job)
+// ============================================================================
+export interface R1CabinPanelLine {
+  code: string | null;
+  name: string;
+  qty: number;
+  uom: string | null;
+}
+export interface R1CabinPanelGroup {
+  type: string;
+  lines: R1CabinPanelLine[];
+}
+export interface R1CabinPanels {
+  /** A Cabin Job exists for this job number (otherwise the 15 headings show blank). */
+  hasCabinJob: boolean;
+  /** All 15 cabin types in display order; each carries its cabin-job items (or none). */
+  groups: R1CabinPanelGroup[];
+}
+
+/** The cabin items for a job, pulled live from its Cabin Job (matched by job number)
+ *  and grouped by the 15 cabin types in serial (sort_order) order. Read-only on the
+ *  packing list — the Cabin Job is the single source of truth. */
+export async function getCabinPanelsForJob(jobId: string): Promise<R1CabinPanels> {
+  const empty: R1CabinPanels = {
+    hasCabinJob: false,
+    groups: CABIN_TYPES.map((t) => ({ type: t, lines: [] })),
+  };
+  const supabase = createCacheClient();
+  const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle();
+  const jobNumber = ((job?.job_number as string) ?? "").trim();
+  if (!jobNumber) return empty;
+
+  // cabin job by number (case-insensitive)
+  const { data: cabs } = await supabase
+    .from("cabin_jobs")
+    .select("id, job_number")
+    .ilike("job_number", jobNumber);
+  const cab = (cabs ?? []).find(
+    (c) => ((c.job_number as string) ?? "").trim().toLowerCase() === jobNumber.toLowerCase(),
+  );
+  if (!cab) return empty;
+
+  const { data: lines } = await supabase
+    .from("cabin_job_lines")
+    .select(
+      `cabin_type, qty, sort_order,
+       item:items!cabin_job_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+    )
+    .eq("cabin_job_id", cab.id as string)
+    .order("sort_order");
+
+  const byType = new Map<string, R1CabinPanelLine[]>();
+  for (const l of lines ?? []) {
+    const it = relOne<{ code: string; name: string; uom: unknown }>(l.item);
+    const uom = it ? relOne<{ abbreviation: string }>(it.uom) : null;
+    const arr = byType.get(l.cabin_type as string) ?? [];
+    arr.push({
+      code: it?.code ?? null,
+      name: it?.name ?? "(item)",
+      qty: Number(l.qty) || 0,
+      uom: uom?.abbreviation ?? null,
+    });
+    byType.set(l.cabin_type as string, arr);
+  }
+  return {
+    hasCabinJob: true,
+    groups: CABIN_TYPES.map((t) => ({ type: t, lines: byType.get(t) ?? [] })),
   };
 }
