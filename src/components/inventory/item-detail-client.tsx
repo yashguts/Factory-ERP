@@ -113,6 +113,10 @@ export function ItemDetailClient({
   const [showCreateLoose, setShowCreateLoose] = useState(false);
 
   const isTrade = item.effective_procurement_type === "trade";
+
+  // Child parts that should be made by a program but aren't (computed server-side
+  // from the SAVED parts list — make pieces, not sub-assemblies, with no program).
+  const missingProgramChildren = bom.lines.filter((l) => l.child_missing_program);
   const hasBom = bom.lines.length > 0;
   const realBuilt = builtRows.filter((r) => r.item_id).length;
   const realLoose = looseRows.filter((r) => r.item_id).length;
@@ -222,6 +226,24 @@ export function ItemDetailClient({
 
       {!isTrade && (
         <>
+          {missingProgramChildren.length > 0 && (
+            <div className="mb-4 flex items-start gap-2 rounded-md border border-red-300 bg-red-50 px-3 py-2 text-sm text-red-800">
+              <TriangleAlert className="h-4 w-4 mt-0.5 shrink-0" />
+              <span>
+                <span className="font-medium">
+                  {missingProgramChildren.length} child part
+                  {missingProgramChildren.length === 1 ? "" : "s"} have no
+                  producing program:
+                </span>{" "}
+                {missingProgramChildren
+                  .map((l) => l.child_name || l.child_code || "(unnamed)")
+                  .join(", ")}
+                . Each is a make piece with no program that cuts/produces it, so
+                planning can&apos;t make this assembly. Add a program that outputs
+                each piece (or, if a piece is actually bought, set it to Trade).
+              </span>
+            </div>
+          )}
           {noProductionRoute && (
             <div className="mb-4 flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-800">
               <TriangleAlert className="h-4 w-4 mt-0.5 shrink-0" />

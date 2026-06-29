@@ -40,6 +40,12 @@ export interface OperationListRow {
   /** Output lines already linked to an inventory item (item_id not null). */
   output_matched: number;
   is_active: boolean;
+  /**
+   * True when a `component` (finished-part) output is itself a sub-assembly —
+   * a modeling error (a program should output the cut pieces, not the whole
+   * assembly). Drives the RED warning in the list/detail.
+   */
+  outputs_subassembly: boolean;
 }
 
 /**
@@ -58,6 +64,12 @@ export interface OperationLineDetail {
   sort_order: number;
   /** Outputs only: component | cut_part | tooling | scrap. Inputs are always 'component'. */
   role: OutputRole;
+  /**
+   * Outputs only: true when this `component` output is itself a sub-assembly
+   * (has its own parts list) — a modeling error flagged in RED. Undefined/false
+   * for inputs and for non-component outputs.
+   */
+  is_subassembly?: boolean;
 }
 
 /** Full operation with resolved input/output lines. */
@@ -150,6 +162,10 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
     offset += PAGE;
   }
 
+  // Set of every sub-assembly item id — a component output equal to one of these
+  // is the modeling error we flag in RED.
+  const subSet = await loadSubassemblyIds(supabase);
+
   return data.map((row: any) => {
     const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
     const outs = Array.isArray(row.operation_outputs) ? row.operation_outputs : [];
@@ -170,6 +186,9 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
       // true gaps that still need an inventory item. (Shared with the audit guard.)
       output_matched: outs.filter((r: any) => isOutputResolved(r)).length,
       is_active: row.is_active as boolean,
+      outputs_subassembly: outs.some(
+        (r: any) => r.role === "component" && r.item_id && subSet.has(r.item_id),
+      ),
     };
   });
 };
@@ -228,6 +247,18 @@ const _getOperationDetailUncached = async (
   if (error) throw error;
   if (!data) return null;
 
+  const outputs = mapLines(data.outputs);
+  // Flag any finished-part (component) output that is itself a sub-assembly.
+  const compIds = outputs
+    .filter((o) => o.role === "component" && o.item_id)
+    .map((o) => o.item_id as string);
+  if (compIds.length > 0) {
+    const subSet = await subassemblyIdSetAmong(supabase, compIds);
+    for (const o of outputs) {
+      if (o.item_id && subSet.has(o.item_id)) o.is_subassembly = true;
+    }
+  }
+
   return {
     id: data.id,
     code: data.code ?? null,
@@ -247,7 +278,7 @@ const _getOperationDetailUncached = async (
     created_at: data.created_at,
     updated_at: data.updated_at,
     inputs: mapLines(data.inputs),
-    outputs: mapLines(data.outputs),
+    outputs,
   };
 };
 
@@ -433,6 +464,11 @@ export async function createOperation(input: {
   if (!name) return { ok: false, error: "Program name is required." };
 
   const supabase = await createClient();
+
+  // Guard: a program can't output a whole sub-assembly as a finished part.
+  const outErr = await subassemblyOutputError(supabase, input.outputs);
+  if (outErr) return { ok: false, error: outErr };
+
   const machine = input.machine ?? "cnc_cutting";
   const code = await resolveCode(supabase, input.code, name, null, machine);
 
@@ -487,6 +523,11 @@ export async function updateOperation(
   if (!name) return { ok: false, error: "Program name is required." };
 
   const supabase = await createClient();
+
+  // Guard: a program can't output a whole sub-assembly as a finished part.
+  const outErr = await subassemblyOutputError(supabase, input.outputs);
+  if (outErr) return { ok: false, error: outErr };
+
   const machine = input.machine ?? "cnc_cutting";
   const code = await resolveCode(supabase, input.code, name, id, machine);
 
@@ -727,6 +768,115 @@ export async function deleteProgramSketch(operationId: string): Promise<void> {
 /* ----------------------------- helpers ----------------------------- */
 
 type Db = Awaited<ReturnType<typeof createClient>>;
+type CacheDb = ReturnType<typeof createCacheClient>;
+
+const CHILD_PROC_SELECT = `parent_item_id,
+  child:items!item_bom_lines_child_item_id_fkey(procurement_type,
+    category:item_categories!items_category_id_fkey(procurement_type))`;
+
+/** True when a joined child row is a MAKE piece (effective procurement != trade). */
+function childIsMake(r: any): boolean {
+  const child = flatten<any>(r.child);
+  const pt =
+    (child?.procurement_type as string | null) ??
+    (flatten<any>(child?.category)?.procurement_type as string | null) ??
+    null;
+  return pt !== "trade";
+}
+
+/**
+ * Every TRUE sub-assembly item id: a parent in item_bom_lines that has at least
+ * one MAKE child. A parent whose only children are bought/trade — e.g. a glass
+ * door panel with just a GLASS insert — is a made part with an add-on, NOT an
+ * assembly, and a program legitimately outputs it. Paged past the 1000 cap.
+ */
+async function loadSubassemblyIds(supabase: CacheDb): Promise<Set<string>> {
+  const hasMake = new Map<string, boolean>();
+  const PAGE = 1000;
+  let offset = 0;
+  for (;;) {
+    const { data, error } = await supabase
+      .from("item_bom_lines")
+      .select(CHILD_PROC_SELECT)
+      .range(offset, offset + PAGE - 1);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      const pid = (r as any).parent_item_id as string;
+      hasMake.set(pid, (hasMake.get(pid) ?? false) || childIsMake(r));
+    }
+    if (!data || data.length < PAGE) break;
+    offset += PAGE;
+  }
+  return new Set(
+    [...hasMake.entries()].filter(([, m]) => m).map(([id]) => id),
+  );
+}
+
+/**
+ * Of the given item ids, which are TRUE sub-assemblies (≥1 make child).
+ * Chunked to bound URL length.
+ */
+async function subassemblyIdSetAmong(
+  supabase: CacheDb | Db,
+  itemIds: string[],
+): Promise<Set<string>> {
+  const hasMake = new Map<string, boolean>();
+  const CHUNK = 100;
+  for (let i = 0; i < itemIds.length; i += CHUNK) {
+    const batch = itemIds.slice(i, i + CHUNK);
+    if (batch.length === 0) continue;
+    const { data, error } = await supabase
+      .from("item_bom_lines")
+      .select(CHILD_PROC_SELECT)
+      .in("parent_item_id", batch);
+    if (error) throw error;
+    for (const r of data ?? []) {
+      const pid = (r as any).parent_item_id as string;
+      hasMake.set(pid, (hasMake.get(pid) ?? false) || childIsMake(r));
+    }
+  }
+  return new Set(
+    [...hasMake.entries()].filter(([, m]) => m).map(([id]) => id),
+  );
+}
+
+/**
+ * Guard for #1: a program must not list a whole sub-assembly as a finished-part
+ * (`component`) output — a program outputs the cut pieces, not the assembled
+ * thing. Returns a user-facing error string when violated, else null. Validated
+ * BEFORE any insert/update so a rejected save never creates or wipes data.
+ */
+async function subassemblyOutputError(
+  supabase: Db,
+  outputs: OperationLineInput[] | undefined,
+): Promise<string | null> {
+  const compIds = [
+    ...new Set(
+      (outputs ?? [])
+        .filter((l) => {
+          const role: OutputRole =
+            l.role && VALID_OUTPUT_ROLES.includes(l.role) ? l.role : "component";
+          return role === "component" && !!l.item_id;
+        })
+        .map((l) => l.item_id as string),
+    ),
+  ];
+  if (compIds.length === 0) return null;
+
+  const subSet = await subassemblyIdSetAmong(supabase, compIds);
+  const offenders = compIds.filter((id) => subSet.has(id));
+  if (offenders.length === 0) return null;
+
+  const { data: items } = await supabase
+    .from("items")
+    .select("code, name")
+    .in("id", offenders);
+  const names =
+    (items ?? []).map((i: any) => `${i.name} (${i.code})`).join(", ") ||
+    "this item";
+  const plural = offenders.length > 1;
+  return `${names} ${plural ? "are sub-assemblies" : "is a sub-assembly"} (defined with their own child parts), so a program can't list ${plural ? "them" : "it"} as a finished part. Output the cut pieces as Loose parts instead, or remove ${plural ? "those outputs" : "that output"}.`;
+}
 
 function revalidateOperations(id?: string) {
   revalidateTag("operations");

@@ -25,7 +25,7 @@ import {
 } from "lucide-react";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import type { BadgeVariant } from "@/components/ui/badge";
-import type { JobStatus } from "@/lib/supabase/types";
+import type { JobStatus, JobStage } from "@/lib/supabase/types";
 import type { R1ListSummary } from "@/lib/actions/packing-list-r1";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
@@ -39,6 +39,19 @@ const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
   hold: "red",
 };
 
+// Stage labels mirror Job Orders: "Sent" = jobs.stage (phase dispatched),
+// "Required" = jobs.requirement_stage (phase the job needs prepared next).
+const STAGE_LABELS: Record<JobStage, string> = {
+  new: "New",
+  first_phase: "1st phase",
+  full_material: "2nd phase",
+};
+const STAGE_BADGE: Record<JobStage, BadgeVariant> = {
+  new: "neutral",
+  first_phase: "blue",
+  full_material: "green",
+};
+
 interface SlimJob {
   id: string;
   job_number: string;
@@ -48,6 +61,8 @@ interface SlimJob {
   spec_string: string | null;
   location: string | null;
   status: JobStatus;
+  stage: JobStage | null;
+  requirement_stage: JobStage | null;
   requirement_dispatch_date: string | null;
 }
 
@@ -62,6 +77,8 @@ interface Row {
   spec_string: string | null;
   location: string | null;
   status: JobStatus;
+  stage: JobStage;
+  reqStage: JobStage;
   reqDispatch: string | null;
   state: R1State;
   lineCount: number;
@@ -74,7 +91,7 @@ const STATE_LABEL: Record<R1State, string> = {
   final: "Final",
 };
 
-type SortKey = "job_number" | "customer" | "status" | "req_dispatch" | "state" | "lines" | "updated";
+type SortKey = "job_number" | "customer" | "status" | "sent_stage" | "req_stage" | "req_dispatch" | "state" | "lines" | "updated";
 type SortDir = "asc" | "desc";
 const PAGE_SIZE = 50;
 
@@ -102,6 +119,8 @@ export function LandingClient({
         spec_string: j.spec_string,
         location: j.location,
         status: j.status,
+        stage: (j.stage ?? "new") as JobStage,
+        reqStage: (j.requirement_stage ?? "new") as JobStage,
         reqDispatch: j.requirement_dispatch_date,
         state: (l ? l.status : "none") as R1State,
         lineCount: l?.lineCount ?? 0,
@@ -117,10 +136,15 @@ export function LandingClient({
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
     () => readParam(sp, "status", "all", ["all", "new", "in_production", "hold"]) as JobStatus | "all",
   );
+  // Filter targets "Required" stage (requirement_stage) — what the job needs
+  // prepared next, i.e. which packing lists are actually due to be filled.
+  const [stageFilter, setStageFilter] = useState<JobStage | "all">(
+    () => readParam(sp, "stage", "all", ["all", "new", "first_phase", "full_material"]) as JobStage | "all",
+  );
   const [driveTypeFilter, setDriveTypeFilter] = useState<string>(() => readParam(sp, "drive", "all"));
   const [brandFilter, setBrandFilter] = useState<string>(() => readParam(sp, "brand", "all"));
   const [sortKey, setSortKey] = useState<SortKey>(
-    () => readParam(sp, "sort", "updated", ["job_number", "customer", "status", "req_dispatch", "state", "lines", "updated"]) as SortKey,
+    () => readParam(sp, "sort", "updated", ["job_number", "customer", "status", "sent_stage", "req_stage", "req_dispatch", "state", "lines", "updated"]) as SortKey,
   );
   const [sortDir, setSortDir] = useState<SortDir>(
     () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
@@ -128,8 +152,8 @@ export function LandingClient({
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { view, q: search, status: statusFilter, drive: driveTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
-    { view: "all", q: "", status: "all", drive: "all", brand: "all", sort: "updated", dir: "desc", page: 1 },
+    { view, q: search, status: statusFilter, stage: stageFilter, drive: driveTypeFilter, brand: brandFilter, sort: sortKey, dir: sortDir, page },
+    { view: "all", q: "", status: "all", stage: "all", drive: "all", brand: "all", sort: "updated", dir: "desc", page: 1 },
   );
 
   // Tab buckets across ALL rows (independent of the other filters).
@@ -174,11 +198,12 @@ export function LandingClient({
         for (const t of searchTokens) if (!haystack.includes(t)) return false;
       }
       if (statusFilter !== "all" && r.status !== statusFilter) return false;
+      if (stageFilter !== "all" && r.reqStage !== stageFilter) return false;
       if (driveTypeFilter !== "all" && r.drive_type !== driveTypeFilter) return false;
       if (brandFilter !== "all" && r.brand !== brandFilter) return false;
       return true;
     });
-  }, [rows, view, searchTokens, statusFilter, driveTypeFilter, brandFilter]);
+  }, [rows, view, searchTokens, statusFilter, stageFilter, driveTypeFilter, brandFilter]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -205,6 +230,12 @@ export function LandingClient({
           break;
         case "status":
           cmp = a.status.localeCompare(b.status);
+          break;
+        case "sent_stage":
+          cmp = a.stage.localeCompare(b.stage);
+          break;
+        case "req_stage":
+          cmp = a.reqStage.localeCompare(b.reqStage);
           break;
         case "state":
           cmp = stateRank[a.state] - stateRank[b.state];
@@ -274,6 +305,8 @@ export function LandingClient({
                 { header: "Spec", field: (r) => r.spec_string ?? "" },
                 { header: "Drive", field: (r) => (r.drive_type ? driveTypeLabel(r.drive_type) : "") },
                 { header: "Status", field: (r) => STATUS_LABELS[r.status] },
+                { header: "Sent", field: (r) => STAGE_LABELS[r.stage] },
+                { header: "Required", field: (r) => STAGE_LABELS[r.reqStage] },
                 { header: "Req. Dispatch", field: (r) => r.reqDispatch ?? "" },
                 { header: "R1 Status", field: (r) => STATE_LABEL[r.state] },
                 { header: "Lines", field: (r) => r.lineCount },
@@ -326,6 +359,19 @@ export function LandingClient({
 
         <Select
           size="sm"
+          value={stageFilter}
+          onChange={(e) => { setStageFilter(e.target.value as JobStage | "all"); resetPage(); }}
+          className="w-[150px]"
+          title="Filter by Required stage (what the job needs prepared next)"
+        >
+          <option value="all">All Required</option>
+          {(Object.keys(STAGE_LABELS) as JobStage[]).map((s) => (
+            <option key={s} value={s}>{STAGE_LABELS[s]}</option>
+          ))}
+        </Select>
+
+        <Select
+          size="sm"
           value={driveTypeFilter}
           onChange={(e) => { setDriveTypeFilter(e.target.value); resetPage(); }}
           className="w-[160px]"
@@ -370,6 +416,8 @@ export function LandingClient({
                 <TableHead>Spec</TableHead>
                 <TableHead>Drive</TableHead>
                 <SortHeader label="Status" sortField="status" />
+                <SortHeader label="Sent" sortField="sent_stage" />
+                <SortHeader label="Required" sortField="req_stage" />
                 <SortHeader label="Req. Dispatch" sortField="req_dispatch" />
                 <SortHeader label="R1 Status" sortField="state" />
                 <SortHeader label="Lines" sortField="lines" className="text-right" />
@@ -402,6 +450,12 @@ export function LandingClient({
                   </TableCell>
                   <TableCell>
                     <Badge variant={STATUS_BADGE[r.status]}>{STATUS_LABELS[r.status]}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STAGE_BADGE[r.stage]}>{STAGE_LABELS[r.stage]}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={STAGE_BADGE[r.reqStage]}>{STAGE_LABELS[r.reqStage]}</Badge>
                   </TableCell>
                   <TableCell className="text-xs">
                     {r.reqDispatch ? (

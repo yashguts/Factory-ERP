@@ -187,6 +187,15 @@ export function ProgramDetailClient({
                 {operation.scrap_percent}% scrap
               </Badge>
             )}
+            {operation.outputs.some((o) => o.is_subassembly) && (
+              <Badge
+                variant="red"
+                title="A finished-part output below is a whole sub-assembly. A program should output the cut pieces, not the assembled item — fix the flagged output."
+              >
+                <AlertTriangle className="h-3 w-3 mr-1" />
+                sub-assembly output
+              </Badge>
+            )}
           </span>
         }
         subtitle={operation.description || undefined}
@@ -474,17 +483,28 @@ function LineTable({
               <TableRow key={l.id}>
                 <TableCell>
                   {l.item_id ? (
-                    <Link
-                      href={`/inventory?edit=${l.item_id}`}
-                      className="hover:underline"
-                    >
-                      <span className="font-medium">{l.item_name}</span>
-                      {l.item_code && (
-                        <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
-                          {l.item_code}
-                        </span>
+                    <span className="inline-flex items-center gap-2">
+                      <Link
+                        href={`/inventory?edit=${l.item_id}`}
+                        className="hover:underline"
+                      >
+                        <span className="font-medium">{l.item_name}</span>
+                        {l.item_code && (
+                          <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
+                            {l.item_code}
+                          </span>
+                        )}
+                      </Link>
+                      {l.is_subassembly && (
+                        <Badge
+                          variant="red"
+                          title="This is a sub-assembly (it has its own parts list). A program can't output the whole assembly — output its cut pieces as Loose parts instead."
+                        >
+                          <AlertTriangle className="h-3 w-3 mr-1" />
+                          sub-assembly
+                        </Badge>
                       )}
-                    </Link>
+                    </span>
                   ) : (
                     <span className="inline-flex items-center gap-2">
                       <span className="text-[var(--foreground)]">

@@ -15,6 +15,8 @@ export default async function PackingListR1Page() {
     spec_string: j.spec_string ?? null,
     location: j.location ?? null,
     status: j.status,
+    stage: j.stage ?? null,
+    requirement_stage: j.requirement_stage ?? null,
     requirement_dispatch_date: j.requirement_dispatch_date ?? null,
   }));
   return <LandingClient lists={lists} jobs={slim} />;
