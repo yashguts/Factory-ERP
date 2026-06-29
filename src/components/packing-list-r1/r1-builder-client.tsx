@@ -1,15 +1,15 @@
 "use client";
 
-import { Fragment, useRef, useState, useEffect, useTransition, type ReactNode } from "react";
+import { Fragment, useRef, useState, useEffect, useMemo, useCallback, useTransition, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2 } from "lucide-react";
+import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree } from "lucide-react";
+import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
   itemsInCategory,
   type R1ListView,
   type R1Line,
   type R1Demand,
-  type R1CatItem,
   type R1SaveLine,
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
@@ -31,20 +31,32 @@ const C = {
   mut: "#6b7280",
 };
 
-// select-styled trigger → scoped item picker (category / hardware lines)
-function ScopedItemPicker({
+// per-line item search — autocomplete with an "All categories" toggle.
+// Scoped by default (the line's category subtree, descendant-aware via
+// itemsInCategory); tick "All categories" to search the whole catalog
+// (searchItems). Mirrors the Job-Order ItemRow interaction (debounce +
+// keyboard nav + results dropdown).
+type RichPick = { id: string; code: string; name: string; uom: string | null };
+function RichItemPicker({
   categoryId,
   placeholder,
   onPick,
 }: {
   categoryId: string | null;
   placeholder: string;
-  onPick: (i: R1CatItem) => void;
+  onPick: (i: RichPick) => void;
 }) {
   const [q, setQ] = useState("");
-  const [res, setRes] = useState<R1CatItem[]>([]);
+  const [res, setRes] = useState<RichPick[]>([]);
   const [open, setOpen] = useState(false);
+  const [allCats, setAllCats] = useState(false);
+  const [hi, setHi] = useState(0);
+  const [loading, setLoading] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLDivElement>(null);
+  const seq = useRef(0);
+  const deb = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
@@ -52,53 +64,124 @@ function ScopedItemPicker({
     document.addEventListener("mousedown", h);
     return () => document.removeEventListener("mousedown", h);
   }, []);
+
+  const run = useCallback(
+    (query: string) => {
+      if (deb.current) clearTimeout(deb.current);
+      const delay = query ? 250 : 30;
+      deb.current = setTimeout(async () => {
+        const s = ++seq.current;
+        if (allCats && query.trim().length < 2) {
+          if (seq.current === s) {
+            setRes([]);
+            setLoading(false);
+          }
+          return;
+        }
+        setLoading(true);
+        try {
+          let out: RichPick[] = [];
+          if (allCats) {
+            const r = await searchItems(query.trim(), undefined, 40);
+            out = r.map((i) => ({ id: i.id, code: i.code, name: i.name, uom: i.uom_abbreviation ?? null }));
+          } else if (categoryId) {
+            const r = await itemsInCategory(categoryId, query);
+            out = r.map((i) => ({ id: i.id, code: i.code, name: i.name, uom: i.uom ?? null }));
+          }
+          if (seq.current === s) {
+            setRes(out);
+            setHi(0);
+          }
+        } catch {
+          if (seq.current === s) setRes([]);
+        } finally {
+          if (seq.current === s) setLoading(false);
+        }
+      }, delay);
+    },
+    [allCats, categoryId],
+  );
+
   useEffect(() => {
-    if (!open || !categoryId) return;
-    let alive = true;
-    const t = setTimeout(() => {
-      itemsInCategory(categoryId, q).then((r) => alive && setRes(r)).catch(() => {});
-    }, 180);
+    if (open) run(q);
     return () => {
-      alive = false;
-      clearTimeout(t);
+      if (deb.current) clearTimeout(deb.current);
     };
-  }, [q, open, categoryId]);
+  }, [open, q, allCats, categoryId, run]);
+
+  useEffect(() => {
+    if (!open || !listRef.current) return;
+    const el = listRef.current.querySelector(`[data-idx="${hi}"]`) as HTMLElement | null;
+    el?.scrollIntoView({ block: "nearest" });
+  }, [hi, open]);
+
+  const pick = (i: RichPick) => {
+    onPick(i);
+    setOpen(false);
+    setQ("");
+    setRes([]);
+  };
+  const onKey = (e: ReactKeyboardEvent) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setHi((h) => Math.min(h + 1, res.length - 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setHi((h) => Math.max(h - 1, 0));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      if (res[hi]) pick(res[hi]);
+    } else if (e.key === "Escape") {
+      setOpen(false);
+    }
+  };
+
   if (!categoryId)
     return <span className="text-xs text-amber-600">⚠ unmapped — fix in Template</span>;
+
   return (
     <div className="relative w-full" ref={ref}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="w-full text-left truncate rounded border bg-white px-2 py-1 text-xs text-[#6b7280] hover:border-[#2563eb]"
+      <input
+        value={q}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onFocus={() => setOpen(true)}
+        onKeyDown={onKey}
+        placeholder={allCats ? "search all items…" : `search ${placeholder}…`}
+        className="w-full rounded border px-2 py-1 text-xs"
         style={{ borderColor: C.line }}
-      >
-        — select from {placeholder} —
-      </button>
+      />
       {open && (
-        <div className="absolute z-30 mt-1 min-w-full w-[460px] max-w-[92vw] rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }}>
-          <div className="p-1.5 border-b" style={{ borderColor: C.line }}>
+        <div className="absolute z-30 mt-1 min-w-full w-[460px] max-w-[92vw] rounded-md border bg-white shadow-lg" style={{ borderColor: C.line }} ref={listRef}>
+          <label className="flex items-center gap-1.5 px-2 py-1 border-b text-[10px] text-[#6b7280] cursor-pointer select-none" style={{ borderColor: C.line }}>
             <input
-              autoFocus
-              value={q}
-              onChange={(e) => setQ(e.target.value)}
-              placeholder="filter…"
-              className="w-full rounded border px-2 py-1 text-xs"
-              style={{ borderColor: C.line }}
+              type="checkbox"
+              checked={allCats}
+              onChange={(e) => {
+                setAllCats(e.target.checked);
+                setHi(0);
+              }}
+              className="h-3 w-3"
             />
-          </div>
+            All categories
+          </label>
           <div className="max-h-64 overflow-auto">
-            {res.length === 0 ? (
-              <div className="px-2.5 py-2 text-xs text-[#6b7280]">No items.</div>
+            {loading ? (
+              <div className="px-2.5 py-2 text-xs text-[#6b7280]">Searching…</div>
+            ) : res.length === 0 ? (
+              <div className="px-2.5 py-2 text-xs text-[#6b7280]">
+                {allCats ? "Type 2+ characters to search all items." : "No items."}
+              </div>
             ) : (
-              res.map((i) => (
+              res.map((i, idx) => (
                 <button
                   key={i.id}
-                  onClick={() => {
-                    onPick(i);
-                    setOpen(false);
-                    setQ("");
-                  }}
-                  className="flex w-full items-start gap-2 px-2.5 py-1.5 text-xs text-left hover:bg-[#f1f5f9]"
+                  data-idx={idx}
+                  onMouseEnter={() => setHi(idx)}
+                  onClick={() => pick(i)}
+                  className={"flex w-full items-start gap-2 px-2.5 py-1.5 text-xs text-left " + (idx === hi ? "bg-[#f1f5f9]" : "hover:bg-[#f1f5f9]")}
                 >
                   <span className="font-mono font-medium shrink-0">{i.code}</span>
                   <span className="text-[#6b7280] whitespace-normal break-words leading-snug">{i.name}</span>
@@ -294,6 +377,43 @@ export function R1BuilderClient({
     setNewPart("");
     setDirty(true);
   };
+
+  // Ad-hoc section: pick ANY inventory category (reuses CategoryPickerModal)
+  // and add it as a new part with one category-scoped line ready to fill.
+  const [showCatModal, setShowCatModal] = useState(false);
+  const catIdByPath = useMemo(() => {
+    const byId = new Map(categories.map((c) => [c.id, c]));
+    const m = new Map<string, string>();
+    for (const c of categories) {
+      const segs: string[] = [];
+      let cur: CategoryNode | undefined = c;
+      while (cur) {
+        segs.unshift(cur.name);
+        cur = cur.parent_id ? byId.get(cur.parent_id) : undefined;
+      }
+      m.set(segs.join(" > "), c.id);
+    }
+    return m;
+  }, [categories]);
+  const addCategoryPart = (path: string, displayName: string) => {
+    const catId = catIdByPath.get(path) ?? null;
+    setParts((p) => [
+      ...p,
+      {
+        title: displayName,
+        lines: [
+          {
+            _k: nk(), id: nk(), part_title: displayName, template_line_id: null, kind: "category",
+            category_id: catId, category_name: displayName, item_id: null, item_code: null, item_name: null,
+            uom: null, label: displayName, spec: null, qty: 0, source: "manual", group: displayName, sort_order: 0,
+          },
+        ],
+      },
+    ]);
+    setDirty(true);
+    setShowCatModal(false);
+  };
+
   const pickerCat = (l: EditLine) => (l.kind === "hardware" ? hwCat[l.label ?? ""] ?? null : l.category_id);
 
   const flat = (): R1SaveLine[] =>
@@ -519,7 +639,7 @@ export function R1BuilderClient({
                                       )}
                                     </span>
                                   ) : canAdd ? (
-                                    <ScopedItemPicker
+                                    <RichItemPicker
                                       categoryId={pc}
                                       placeholder={l.category_name ?? l.label ?? "category"}
                                       onPick={(i) => setLine(pi, li, { item_id: i.id, item_code: i.code, item_name: i.name, uom: i.uom, source: "manual" })}
@@ -599,7 +719,18 @@ export function R1BuilderClient({
         <button onClick={addPart} disabled={!newPart.trim()} className="rounded-md border px-2.5 py-1 text-xs font-semibold disabled:opacity-50" style={{ borderColor: C.line }}>
           + Add Part
         </button>
+        <button onClick={() => setShowCatModal(true)} className="inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-xs font-semibold" style={{ borderColor: C.line }}>
+          <FolderTree size={13} /> Add Section From Inventory
+        </button>
       </div>
+
+      {showCatModal && (
+        <CategoryPickerModal
+          existingPaths={[]}
+          onPick={({ path, displayName }) => addCategoryPart(path, displayName)}
+          onClose={() => setShowCatModal(false)}
+        />
+      )}
 
       <DemandTables demand={demand} />
 
