@@ -10,6 +10,10 @@ export default async function PackingListR1Page() {
     id: j.id,
     job_number: j.job_number,
     customer_name: j.customer_name ?? null,
+    brand: j.brand ?? null,
+    drive_type: j.drive_type ?? null,
+    spec_string: j.spec_string ?? null,
+    location: j.location ?? null,
   }));
   return <LandingClient lists={lists} jobs={slim} />;
 }

@@ -6,7 +6,6 @@ import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, Folde
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
-  saveR1Section,
   itemsInCategory,
   type R1ListView,
   type R1Line,
@@ -443,26 +442,22 @@ export function R1BuilderClient({
       } else alert(r.error ?? "Save failed");
     });
 
-  // Save ONE section: persists just this part; other parts keep their last-saved
-  // (on-disk) state. Lets the operator checkpoint a section without committing
-  // half-filled work elsewhere.
-  const flatSection = (pi: number): R1SaveLine[] =>
-    parts[pi].lines.map((l) => ({
-      part_title: parts[pi].title, template_line_id: l.template_line_id, kind: l.kind as PackingLineKind,
-      category_id: l.category_id, item_id: l.item_id, label: l.label, spec: l.spec, qty: l.qty, source: l.source,
-    }));
+  // Section save = persist the ENTIRE list (like Job Orders BOM). Clicking any
+  // section's Save commits every section, so nothing filled elsewhere is lost;
+  // the clicked section just shows the saving/saved indicator.
   const saveSection = (pi: number) => {
     if (savingPart !== null) return;
     setSavingPart(pi);
     setSavedPart(null);
     void (async () => {
-      const r = await saveR1Section(list.jobId, parts.map((p) => p.title), parts[pi].title, flatSection(pi));
+      const r = await saveR1List(list.jobId, flat(), status);
       setSavingPart(null);
       if (r.ok) {
+        setDirty(false);
         setSavedPart(pi);
         router.refresh();
         window.setTimeout(() => setSavedPart((cur) => (cur === pi ? null : cur)), 2000);
-      } else alert(r.error ?? "Section save failed");
+      } else alert(r.error ?? "Save failed");
     })();
   };
 
