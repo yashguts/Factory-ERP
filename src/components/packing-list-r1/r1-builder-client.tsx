@@ -10,6 +10,7 @@ import {
   type R1ListView,
   type R1Line,
   type R1Demand,
+  type R1UnmappedItem,
   type R1SaveLine,
   type R1CabinPanels,
 } from "@/lib/actions/packing-list-r1";
@@ -296,12 +297,14 @@ export function R1BuilderClient({
   demand,
   counts,
   cabinPanels,
+  unmapped,
 }: {
   list: R1ListView;
   categories: CategoryNode[];
   demand: R1Demand;
   counts: Record<string, number>;
   cabinPanels: R1CabinPanels;
+  unmapped: R1UnmappedItem[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -755,6 +758,45 @@ export function R1BuilderClient({
           onPick={({ path, displayName }) => addCategoryPart(path, displayName)}
           onClose={() => setShowCatModal(false)}
         />
+      )}
+
+      {unmapped.length > 0 && (
+        <div className="mt-5">
+          <h2 className="text-sm font-semibold">
+            Unmapped Items{" "}
+            <span className="font-normal text-[#6b7280]">
+              ({unmapped.length}) — on this job&apos;s BOM but not captured above
+            </span>
+          </h2>
+          <div className="mt-1.5 rounded-lg border overflow-hidden" style={{ borderColor: C.line }}>
+            <table className="w-full text-xs">
+              <thead className="bg-[#f1f5f9] text-[#6b7280]">
+                <tr>
+                  <th className="text-left font-medium px-2 py-1">Code</th>
+                  <th className="text-left font-medium px-2 py-1">Item</th>
+                  <th className="text-left font-medium px-2 py-1">Category</th>
+                  <th className="text-right font-medium px-2 py-1">BOM Qty</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y" style={{ borderColor: C.line }}>
+                {unmapped.map((u) => (
+                  <tr key={u.item_id}>
+                    <td className="px-2 py-1 font-mono">{u.code}</td>
+                    <td className="px-2 py-1">{u.name}</td>
+                    <td className="px-2 py-1 text-[#6b7280]">{u.category ?? "—"}</td>
+                    <td className="px-2 py-1 text-right tabular-nums">
+                      {u.qty}
+                      {u.uom ? ` ${u.uom}` : ""}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="mt-1 text-[10px] text-[#6b7280]">
+            BOM items whose category isn&apos;t on the template (reflects the last saved list).
+          </p>
+        </div>
       )}
 
       <p className="text-[10px] text-center text-[#6b7280] my-4">

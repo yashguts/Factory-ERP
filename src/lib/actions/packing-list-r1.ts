@@ -813,3 +813,84 @@ export async function getCabinPanelsForJob(jobId: string): Promise<R1CabinPanels
     groups: CABIN_TYPES.map((t) => ({ type: t, lines: byType.get(t) ?? [] })),
   };
 }
+
+// ============================================================================
+// UNMAPPED BOM ITEMS (BOM items not captured anywhere on the R1 list)
+// ============================================================================
+export interface R1UnmappedItem {
+  item_id: string;
+  code: string;
+  name: string;
+  uom: string | null;
+  category: string | null;
+  qty: number;
+}
+
+/** A job's BOM items whose item_id does NOT appear on its saved R1 list — the
+ *  "carry-over" set so no BOM line is silently dropped. Computed live (BOM vs the
+ *  list's current item_ids), reflects the LAST SAVED state of the list. */
+export async function getUnmappedBomItems(jobId: string): Promise<R1UnmappedItem[]> {
+  const supabase = createCacheClient();
+
+  const { data: headers } = await supabase
+    .from("job_bom_headers")
+    .select("id")
+    .eq("job_id", jobId);
+  const headerIds = (headers ?? []).map((h) => h.id as string);
+  if (headerIds.length === 0) return [];
+
+  const { data: bomLines } = await supabase
+    .from("job_bom_lines")
+    .select("item_id, required_quantity")
+    .in("job_bom_id", headerIds)
+    .not("item_id", "is", null);
+  const bomQty = new Map<string, number>();
+  for (const l of bomLines ?? [])
+    bomQty.set(l.item_id as string, (bomQty.get(l.item_id as string) ?? 0) + (Number(l.required_quantity) || 0));
+  if (bomQty.size === 0) return [];
+
+  // item_ids already present on the job's R1 list
+  const onList = new Set<string>();
+  const { data: list } = await supabase
+    .from("packing_r1_lists")
+    .select("id")
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (list) {
+    const { data: r1 } = await supabase
+      .from("packing_r1_lines")
+      .select("item_id")
+      .eq("list_id", list.id as string)
+      .not("item_id", "is", null);
+    for (const r of r1 ?? []) onList.add(r.item_id as string);
+  }
+
+  const unmappedIds = [...bomQty.keys()].filter((id) => !onList.has(id));
+  if (unmappedIds.length === 0) return [];
+
+  const out: R1UnmappedItem[] = [];
+  for (let i = 0; i < unmappedIds.length; i += 300) {
+    const { data } = await supabase
+      .from("items")
+      .select(
+        `id, code, name,
+         category:item_categories!items_category_id_fkey(name),
+         uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
+      )
+      .in("id", unmappedIds.slice(i, i + 300));
+    for (const it of data ?? []) {
+      const cat = relOne<{ name: string }>(it.category);
+      const uom = relOne<{ abbreviation: string }>(it.uom);
+      out.push({
+        item_id: it.id as string,
+        code: (it.code as string) ?? "",
+        name: (it.name as string) ?? "",
+        uom: uom?.abbreviation ?? null,
+        category: cat?.name ?? null,
+        qty: bomQty.get(it.id as string) ?? 0,
+      });
+    }
+  }
+  out.sort((a, b) => (a.category ?? "").localeCompare(b.category ?? "") || a.code.localeCompare(b.code));
+  return out;
+}
