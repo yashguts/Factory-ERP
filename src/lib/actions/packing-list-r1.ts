@@ -341,7 +341,10 @@ async function buildJobBom(jobId: string): Promise<{
   for (const [catId, m] of agg) {
     byCat.set(
       catId,
-      [...m.entries()].map(([item_id, qty]) => ({ item_id, qty })),
+      [...m.entries()]
+        .map(([item_id, qty]) => ({ item_id, qty }))
+        // stable order so shared-category claim-once pairs items consistently
+        .sort((a, b) => a.item_id.localeCompare(b.item_id)),
     );
   }
   return { byCat, byItem };
@@ -374,15 +377,19 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
     const template = await getTemplate();
     const { byCat, byItem } = await buildJobBom(jobId);
 
-    // A category used on more than one template line is "shared" — expanding its
-    // multi-match would duplicate the same BOM item across lines/parts (and so
-    // double-count demand), so shared categories keep the single-match-or-blank
-    // behaviour. Distinct categories (one template line) are safe to expand.
+    // How many template lines reference each category. A category on >1 line is
+    // "shared" (e.g. two Guide Rail lines, or Stud Anchor across parts). For shared
+    // categories we DISTRIBUTE the job's matching BOM items across those lines —
+    // one item per line in order (claim-once via claimCursor) — so each line gets a
+    // distinct item instead of all blanking (multi-match) or all duplicating
+    // (single-match). A category on exactly one line ("distinct") expands to one
+    // row per match. Overflow (more items than lines) lands in Unmapped Items.
     const catLineCount = new Map<string, number>();
     for (const p of template)
       for (const tl of p.lines)
         if (tl.kind === "category" && tl.category_id)
           catLineCount.set(tl.category_id, (catLineCount.get(tl.category_id) ?? 0) + 1);
+    const claimCursor = new Map<string, number>(); // shared category_id -> next item index
 
     const seedRows: Record<string, unknown>[] = [];
     let so = 0;
@@ -412,7 +419,16 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
         if (tl.kind === "category" && tl.category_id) {
           const matches = byCat.get(tl.category_id) ?? [];
           const shared = (catLineCount.get(tl.category_id) ?? 0) > 1;
-          if (!shared && matches.length >= 2) {
+          if (shared) {
+            // claim-once: give this line the next unclaimed matching item
+            const idx = claimCursor.get(tl.category_id) ?? 0;
+            if (idx < matches.length) {
+              pushRow(part.title, tl, matches[idx].item_id, matches[idx].qty, "auto");
+              claimCursor.set(tl.category_id, idx + 1);
+            } else {
+              pushRow(part.title, tl, null, 0, "template");
+            }
+          } else if (matches.length >= 2) {
             // distinct category, several BOM items → one auto row per item
             for (const m of matches) pushRow(part.title, tl, m.item_id, m.qty, "auto");
           } else if (matches.length === 1) {
