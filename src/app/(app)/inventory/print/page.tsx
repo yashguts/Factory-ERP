@@ -109,7 +109,6 @@ async function fetchAtlasData() {
   const cabinFilter = cabinIds.size > 0 ? `(${[...cabinIds].join(',')})` : null
   const itemPages = await Promise.all(
     Array.from({ length: 10 }, (_, i) => {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
       let q: any = sb.from('items')
         .select('id, code, name, item_type, category_id')
         .eq('is_active', true)
