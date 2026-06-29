@@ -21,6 +21,21 @@ function safeName(s: string): string {
   return (s || "item").replace(/[^a-z0-9]+/gi, "_");
 }
 
+const REF_PREFIX: Record<"po" | "job" | "program", string> = {
+  po: "PO ",
+  job: "Job ",
+  program: "Prog ",
+};
+
+/** "PO 123 (Supplier)" / "Job RNLCHA-0057 (Customer)" / the note, for the Ref column. */
+function refText(r: ItemLedger["rows"][number]): string {
+  if (r.reference) {
+    const base = `${REF_PREFIX[r.reference.kind]}${r.reference.label}`;
+    return r.reference.sublabel ? `${base} (${r.reference.sublabel})` : base;
+  }
+  return r.note ?? "";
+}
+
 /**
  * Build + download a one-item stock ledger PDF. jsPDF is imported dynamically
  * so it stays out of the inventory list bundle (only loaded when a user clicks
@@ -71,11 +86,11 @@ export async function downloadStockLedgerPdf(ledger: ItemLedger): Promise<void> 
       fmtDateTime(r.created_at),
       TXN_LABELS[r.transaction_type] ?? r.transaction_type,
       r.warehouse_name ?? "—",
-      r.created_by_name || "—",
+      r.actor_name || "—",
       r.signed_qty > 0 ? fmtQty(r.signed_qty) : "",
       r.signed_qty < 0 ? fmtQty(Math.abs(r.signed_qty)) : "",
       fmtQty(r.running_balance),
-      r.po_number ? `PO ${r.po_number}` : r.note ?? "",
+      refText(r),
     ]),
     columnStyles: {
       4: { halign: "right" },

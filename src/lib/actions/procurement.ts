@@ -4,7 +4,7 @@ import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { recordTransaction } from "@/lib/actions/inventory";
+import { recordTransaction, currentOperatorName } from "@/lib/actions/inventory";
 import { getMrpData } from "@/lib/actions/mrp";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import {
@@ -391,7 +391,7 @@ export async function generateDraftPosFromShortfall(
     for (const [supplier, group] of bySupplier.entries()) {
       const { data: po, error: poErr } = await supabase
         .from("purchase_orders")
-        .insert({ supplier_name: supplier || null, status: "draft" })
+        .insert({ supplier_name: supplier || null, status: "draft", created_by_name: await currentOperatorName() })
         .select("id")
         .single();
       if (poErr || !po) throw poErr ?? new Error("Could not create PO");
@@ -518,6 +518,7 @@ export async function createPurchaseOrder(input: {
         expected_date: input.expected_date || null,
         note: input.note?.trim() || null,
         status: "draft",
+        created_by_name: await currentOperatorName(),
       })
       .select("id, po_number, supplier_name")
       .single();

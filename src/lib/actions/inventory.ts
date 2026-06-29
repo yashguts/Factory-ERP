@@ -1493,6 +1493,19 @@ export async function recordTransaction(data: {
   revalidateTag("inventory-stock");
 }
 
+/** Resolved source document a movement traces to, with a deep link. */
+export interface LedgerReference {
+  kind: "po" | "job" | "program";
+  /** The document number shown to the user (PO no / Job no / Program name). */
+  label: string;
+  /** Secondary context (supplier / customer / machine). */
+  sublabel: string | null;
+  /** In-app link to the source record; null if the parent id is missing. */
+  href: string | null;
+  /** Doc-level actor (PO creator) when it differs from the movement operator. */
+  by: string | null;
+}
+
 export interface ItemLedgerRow {
   id: string;
   created_at: string;
@@ -1504,8 +1517,13 @@ export interface ItemLedgerRow {
   warehouse_name: string | null;
   note: string | null;
   reference_type: string | null;
-  po_number: string | null;
-  /** Operator who performed the movement (null for pre-audit / system rows). */
+  /** Source document (PO / Job / Program) this movement traces to, resolved
+   *  from reference_type + reference_id. Null for import/adjustment/legacy. */
+  reference: LedgerReference | null;
+  /** Who is accountable: PO creator for purchase_in (the doc actor), else the
+   *  operator who performed the movement. Null when never captured. */
+  actor_name: string | null;
+  /** Raw operator on the movement (who physically moved stock); fallback. */
   created_by_name: string | null;
 }
 
@@ -1556,36 +1574,108 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
   if (txnRes.error) throw txnRes.error;
   const txns = (txnRes.data ?? []) as Array<Record<string, unknown>>;
 
-  // Resolve PO numbers for po_receipt movements (reference_id → receipt → PO).
-  const receiptIds = [
-    ...new Set(
-      txns
-        .filter((t) => t.reference_type === "po_receipt")
-        .map((t) => t.reference_id as string | null)
-        .filter((x): x is string => !!x),
-    ),
-  ];
-  const poByReceipt = new Map<string, string | null>();
-  if (receiptIds.length > 0) {
-    const { data: receipts } = await supabase
-      .from("purchase_order_receipts")
-      .select("id, po_id")
-      .in("id", receiptIds);
-    const poIds = [
-      ...new Set((receipts ?? []).map((r) => r.po_id as string).filter(Boolean)),
-    ];
-    const poNum = new Map<string, string | null>();
-    if (poIds.length > 0) {
-      const { data: pos } = await supabase
-        .from("purchase_orders")
-        .select("id, po_number")
-        .in("id", poIds);
-      for (const p of pos ?? [])
-        poNum.set(p.id as string, (p.po_number as string | null) ?? null);
-    }
-    for (const r of receipts ?? [])
-      poByReceipt.set(r.id as string, poNum.get(r.po_id as string) ?? null);
+  // Resolve each movement's source document (reference_id → PO / Job / Program),
+  // batched per kind. po_receipt → purchase_order_receipts → purchase_orders;
+  // dispatch → job_dispatches → jobs; program_run → operation_runs → operations.
+  // The *_undo markers point at the same parent, so they resolve identically.
+  const receiptIds = new Set<string>();
+  const dispatchIds = new Set<string>();
+  const runIds = new Set<string>();
+  for (const t of txns) {
+    const rt = t.reference_type as string | null;
+    const rid = t.reference_id as string | null;
+    if (!rid) continue;
+    if (rt === "po_receipt" || rt === "po_receipt_undo") receiptIds.add(rid);
+    else if (rt === "dispatch" || rt === "dispatch_undo") dispatchIds.add(rid);
+    else if (rt === "program_run") runIds.add(rid);
   }
+
+  const refByReceipt = new Map<string, LedgerReference>();
+  const refByDispatch = new Map<string, LedgerReference>();
+  const refByRun = new Map<string, LedgerReference>();
+
+  const [receiptRes, dispatchRes, runRes] = await Promise.all([
+    receiptIds.size
+      ? supabase.from("purchase_order_receipts").select("id, po_id").in("id", [...receiptIds])
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    dispatchIds.size
+      ? supabase.from("job_dispatches").select("id, job_id").in("id", [...dispatchIds])
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    runIds.size
+      ? supabase.from("operation_runs").select("id, operation_id").in("id", [...runIds])
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+  ]);
+
+  // PO chain: receipt → purchase_order (number, supplier, creator).
+  const receipts = (receiptRes.data ?? []) as Array<{ id: string; po_id: string | null }>;
+  const poIds = [...new Set(receipts.map((r) => r.po_id).filter((x): x is string => !!x))];
+  if (poIds.length) {
+    const { data: pos } = await supabase
+      .from("purchase_orders")
+      .select("id, po_number, supplier_name, created_by_name")
+      .in("id", poIds);
+    const poById = new Map((pos ?? []).map((p) => [p.id as string, p]));
+    for (const r of receipts) {
+      const po = r.po_id ? poById.get(r.po_id) : null;
+      refByReceipt.set(r.id, {
+        kind: "po",
+        label: (po?.po_number as string | null) || "(no PO no.)",
+        sublabel: (po?.supplier_name as string | null) ?? null,
+        href: r.po_id ? `/procurement/${r.po_id}` : null,
+        by: (po?.created_by_name as string | null) ?? null,
+      });
+    }
+  }
+
+  // Job chain: dispatch → job (number, customer).
+  const dispatches = (dispatchRes.data ?? []) as Array<{ id: string; job_id: string | null }>;
+  const jobIds = [...new Set(dispatches.map((d) => d.job_id).filter((x): x is string => !!x))];
+  if (jobIds.length) {
+    const { data: jobs } = await supabase
+      .from("jobs")
+      .select("id, job_number, customer_name")
+      .in("id", jobIds);
+    const jobById = new Map((jobs ?? []).map((j) => [j.id as string, j]));
+    for (const d of dispatches) {
+      const j = d.job_id ? jobById.get(d.job_id) : null;
+      refByDispatch.set(d.id, {
+        kind: "job",
+        label: (j?.job_number as string | null) || "(job)",
+        sublabel: (j?.customer_name as string | null) ?? null,
+        href: d.job_id ? `/jobs/${d.job_id}` : null,
+        by: null,
+      });
+    }
+  }
+
+  // Program chain: run → operation (program code/name, machine).
+  const runs = (runRes.data ?? []) as Array<{ id: string; operation_id: string | null }>;
+  const opIds = [...new Set(runs.map((r) => r.operation_id).filter((x): x is string => !!x))];
+  if (opIds.length) {
+    const { data: ops } = await supabase
+      .from("operations")
+      .select("id, code, name, machine")
+      .in("id", opIds);
+    const opById = new Map((ops ?? []).map((o) => [o.id as string, o]));
+    for (const r of runs) {
+      const o = r.operation_id ? opById.get(r.operation_id) : null;
+      refByRun.set(r.id, {
+        kind: "program",
+        label: (o?.name as string | null) || (o?.code as string | null) || "(program)",
+        sublabel: (o?.machine as string | null) ?? null,
+        href: r.operation_id ? `/programs/${r.operation_id}` : null,
+        by: null,
+      });
+    }
+  }
+
+  const resolveRef = (rt: string | null, rid: string | null): LedgerReference | null => {
+    if (!rid) return null;
+    if (rt === "po_receipt" || rt === "po_receipt_undo") return refByReceipt.get(rid) ?? null;
+    if (rt === "dispatch" || rt === "dispatch_undo") return refByDispatch.get(rid) ?? null;
+    if (rt === "program_run") return refByRun.get(rid) ?? null;
+    return null;
+  };
 
   const flatten = <T,>(rel: unknown): T | null =>
     Array.isArray(rel) ? ((rel[0] as T) ?? null) : ((rel as T) ?? null);
@@ -1596,6 +1686,12 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
     const signed = appliedDelta(type, Number(t.quantity));
     balance += signed;
     const refType = (t.reference_type as string | null) ?? null;
+    const reference = resolveRef(refType, (t.reference_id as string | null) ?? null);
+    const operator = (t.created_by_name as string | null) ?? null;
+    // For a Purchase In, the accountable person is the PO creator (per the
+    // traceability spec); fall back to the movement operator (the receiver) for
+    // historical POs that predate creator capture. Other types: the operator.
+    const actorName = type === "purchase_in" ? reference?.by ?? operator : operator;
     return {
       id: t.id as string,
       created_at: t.created_at as string,
@@ -1605,11 +1701,9 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
       warehouse_name: flatten<{ name: string }>(t.warehouse)?.name ?? null,
       note: (t.notes as string | null) ?? null,
       reference_type: refType,
-      po_number:
-        refType === "po_receipt" && t.reference_id
-          ? poByReceipt.get(t.reference_id as string) ?? null
-          : null,
-      created_by_name: (t.created_by_name as string | null) ?? null,
+      reference,
+      actor_name: actorName,
+      created_by_name: operator,
     };
   });
 

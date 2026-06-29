@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect, useCallback } from "react";
+import Link from "next/link";
 import { Loader2, Download, FileText } from "lucide-react";
 import { getItemLedger, type ItemLedger } from "@/lib/actions/inventory";
 import { TXN_LABELS } from "@/lib/inventory/transactions";
@@ -21,6 +22,13 @@ function fmtDate(iso: string): string {
 }
 
 const num = (n: number) => Number(n).toLocaleString("en-IN");
+
+/** Short prefix shown before a resolved source reference. */
+const REF_PREFIX: Record<"po" | "job" | "program", string> = {
+  po: "PO ",
+  job: "Job ",
+  program: "Prog ",
+};
 
 /**
  * Hover popover showing the full stock ledger for an item (every movement with
@@ -150,17 +158,46 @@ export function StockLedgerPopover({
                       </td>
                       <td className="px-2 py-1.5">
                         {TXN_LABELS[r.transaction_type] ?? r.transaction_type}
-                        {(r.po_number || r.note) && (
-                          <span className="block text-[10px] text-[var(--muted-foreground)] truncate max-w-[120px]">
-                            {r.po_number ? `PO ${r.po_number}` : r.note}
+                        {r.reference ? (
+                          <span className="block text-[10px] truncate max-w-[180px]">
+                            {r.reference.href ? (
+                              <Link
+                                href={r.reference.href}
+                                className="text-[var(--primary)] hover:underline"
+                                title={`${REF_PREFIX[r.reference.kind]}${r.reference.label}`}
+                              >
+                                {REF_PREFIX[r.reference.kind]}
+                                {r.reference.label}
+                              </Link>
+                            ) : (
+                              <span className="text-[var(--muted-foreground)]">
+                                {REF_PREFIX[r.reference.kind]}
+                                {r.reference.label}
+                              </span>
+                            )}
+                            {r.reference.sublabel && (
+                              <span className="text-[var(--muted-foreground)]">
+                                {" · "}
+                                {r.reference.sublabel}
+                              </span>
+                            )}
                           </span>
+                        ) : (
+                          r.note && (
+                            <span
+                              className="block text-[10px] text-[var(--muted-foreground)] truncate max-w-[180px]"
+                              title={r.note}
+                            >
+                              {r.note}
+                            </span>
+                          )
                         )}
                       </td>
                       <td className="px-2 py-1.5 text-[var(--muted-foreground)]">
                         {r.warehouse_name ?? "—"}
                       </td>
                       <td className="px-2 py-1.5 whitespace-nowrap text-[var(--muted-foreground)]">
-                        {r.created_by_name || "—"}
+                        {r.actor_name || "—"}
                       </td>
                       <td
                         className={`px-2 py-1.5 text-right tabular-nums font-medium ${
