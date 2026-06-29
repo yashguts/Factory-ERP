@@ -27,6 +27,36 @@ export const getAllCategories = unstable_cache(
 );
 
 /**
+ * Map every category id → its { category, subCategory } pair for the 2-level
+ * tree (Category = top-level, Sub-Category = its direct child):
+ *   category    = top-level (root) ancestor name
+ *   subCategory = the leaf's own name when it has a parent, else "" (it IS the
+ *                 top-level Category, so there is no sub-category)
+ * Walks to the root, so a stray deeper nesting still yields a sensible
+ * top-level. Backed by the cached getAllCategories (categories tag).
+ */
+export async function getCategoryLineageMap(): Promise<
+  Map<string, { category: string; subCategory: string }>
+> {
+  const all = await getAllCategories();
+  const byId = new Map(all.map((c) => [c.id, c]));
+  const out = new Map<string, { category: string; subCategory: string }>();
+  for (const c of all) {
+    let root = c;
+    while (root.parent_id) {
+      const p = byId.get(root.parent_id);
+      if (!p) break;
+      root = p;
+    }
+    out.set(c.id, {
+      category: root.name,
+      subCategory: root.id === c.id ? "" : c.name,
+    });
+  }
+  return out;
+}
+
+/**
  * Resolve a list of category PATH strings (e.g. "Large Purchased Items > Guide Rail")
  * to category IDs. Unknown paths are silently skipped.
  *

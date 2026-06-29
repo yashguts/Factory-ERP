@@ -69,7 +69,7 @@ export async function downloadInventoryPdf(
     styles: { fontSize: 7.5, cellPadding: 1.2, overflow: "linebreak" },
     headStyles: { fillColor: [34, 51, 68], textColor: 255 },
     head: [[
-      "Code", "Name", "Type", "M/T", "Demand", "Category", "Stock", "Cost (Rs.)", "Status",
+      "Code", "Name", "Type", "M/T", "Demand", "Category", "Sub-Category", "Stock", "Cost (Rs.)", "Status",
     ]],
     body: rows.map((r) => [
       r.code,
@@ -77,16 +77,17 @@ export async function downloadInventoryPdf(
       inventoryTypeLabel(r.item_type as ItemType),
       inventoryProcLabel(r.effective_procurement_type),
       inventoryDemandLabel(r.demand_source),
-      r.category_name ?? "",
+      r.parent_category_name ?? r.category_name ?? "",
+      r.parent_category_name ? (r.category_name ?? "") : "",
       `${fmtNum(r.total_stock)}${r.uom_abbreviation ? ` ${r.uom_abbreviation}` : ""}`,
       r.cost_price > 0 ? fmtNum(r.cost_price) : "",
       inventoryStatusLabel(r),
     ]),
     columnStyles: {
       0: { cellWidth: 26, fontStyle: "bold" },
-      6: { halign: "right" },
       7: { halign: "right" },
-      8: { halign: "center" },
+      8: { halign: "right" },
+      9: { halign: "center" },
     },
     margin: { left: margin, right: margin },
   });

@@ -6,7 +6,7 @@ import { unstable_cache, revalidateTag } from "next/cache";
 import { cookies } from "next/headers";
 import type { ItemType, TransactionType, FieldChange, StockBehaviour, DemandSource, DemandOverride, OperationMachine } from "@/lib/supabase/types";
 import { nextCodeInSeries } from "@/lib/inventory/next-code";
-import { expandCategoryDescendants, resolveCategoryPaths } from "@/lib/actions/categories";
+import { expandCategoryDescendants, resolveCategoryPaths, getCategoryLineageMap } from "@/lib/actions/categories";
 import { BOM_SECTIONS } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { appliedDelta } from "@/lib/inventory/transactions";
@@ -386,7 +386,11 @@ export interface InventoryRow {
   description: string | null;
   item_type: ItemType;
   category_id: string | null;
+  /** The item's DIRECT (leaf) category name = the Sub-Category in a 2-level tree. */
   category_name: string | null;
+  /** Top-level Category (the leaf's root ancestor). null when the item's category
+   *  is itself top-level / unmapped. Filled in only for the export path. */
+  parent_category_name: string | null;
   uom_abbreviation: string;
   total_stock: number;
   reorder_point: number;
@@ -530,6 +534,7 @@ function mapInventoryRow(r: Record<string, unknown>): InventoryRow {
     item_type: r.item_type as ItemType,
     category_id: (r.category_id as string | null) ?? null,
     category_name: (r.category_name as string | null) ?? null,
+    parent_category_name: null,
     uom_abbreviation: (r.uom_abbreviation as string | null) ?? "",
     total_stock: Number(r.total_stock ?? 0),
     reorder_point: Number(r.reorder_point ?? 0),
@@ -628,6 +633,17 @@ export async function getInventoryForExport(
     total = Number(rows[0].total_count);
     for (const r of rows) out.push(mapInventoryRow(r));
     offset += rows.length;
+  }
+
+  // The RPC returns only the item's DIRECT (leaf) category name. Resolve the
+  // 2-level lineage once (cached) so the export can split it into Category
+  // (top-level parent) and Sub-Category (leaf).
+  if (out.length > 0) {
+    const lineage = await getCategoryLineageMap();
+    for (const row of out) {
+      const lin = row.category_id ? lineage.get(row.category_id) : undefined;
+      row.parent_category_name = lin && lin.subCategory ? lin.category : null;
+    }
   }
   return out;
 }
