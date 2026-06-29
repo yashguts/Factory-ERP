@@ -21,6 +21,7 @@ import {
   AlertTriangle,
   Folder,
   Check,
+  Cpu,
 } from "lucide-react";
 import { PageHeader } from "@/components/ui/page-header";
 import { Button } from "@/components/ui/button";
@@ -870,6 +871,7 @@ export default function AtlasClient({
               <span className="flex-1">Item</span>
               <span className="w-12 text-center">Type</span>
               <span className="w-9 text-center" title="Make / Trade — click a cell to change">M/T</span>
+              <span className="w-16 text-right" title="On-hand stock">Stock</span>
               <span className="w-40 text-right pr-1">Category</span>
             </div>
           )}
@@ -929,8 +931,28 @@ export default function AtlasClient({
                     <span className="w-28 shrink-0 font-mono text-[12px] text-[var(--foreground)] truncate">
                       {it.code}
                     </span>
-                    <span className="flex-1 truncate" title={it.name}>
-                      {it.name}
+                    <span className="flex-1 min-w-0 flex items-center gap-1.5">
+                      <span className="truncate" title={it.name}>
+                        {it.name}
+                      </span>
+                      {it.programmed && (
+                        <Badge
+                          variant="green"
+                          className="shrink-0 gap-0.5 px-1 py-0 text-[9px] leading-tight"
+                          title="Produced by an audited program"
+                        >
+                          <Cpu size={9} /> Programmed
+                        </Badge>
+                      )}
+                      {it.bom_item && (
+                        <Badge
+                          variant="green"
+                          className="shrink-0 gap-0.5 px-1 py-0 text-[9px] leading-tight"
+                          title="BOM item — selectable in a Packing List R1 part"
+                        >
+                          <Check size={9} /> BOM Item
+                        </Badge>
+                      )}
                     </span>
                     <span
                       className="w-12 shrink-0 text-center text-[10px] font-semibold text-[var(--muted-foreground)]"
@@ -964,6 +986,15 @@ export default function AtlasClient({
                         </button>
                       );
                     })()}
+                    <span
+                      className={cn(
+                        "w-16 shrink-0 text-right text-[11px] tabular-nums pr-1",
+                        it.stock > 0 ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]",
+                      )}
+                      title="On-hand stock"
+                    >
+                      {it.stock.toLocaleString()}
+                    </span>
                     <span
                       className="w-40 shrink-0 text-right text-[11px] text-[var(--muted-foreground)] truncate pr-1"
                       title={pathLabel(it.category_id)}
@@ -1384,6 +1415,9 @@ function NewItemModal({
       category_id: cat,
       in_r1: false,
       procurement_type: null,
+      stock: 0,
+      programmed: false,
+      bom_item: false,
     });
   }
 
