@@ -475,8 +475,8 @@ export function InventoryClient({ initialRows, initialTotal, tabCounts, facets, 
               )}
               Excel
             </Button>
-            <Link href="/inventory/print">
-              <Button variant="secondary" size="sm" title="Visual category map with R1 packing list coverage">
+            <Link href="/inventory/atlas">
+              <Button variant="secondary" size="sm" title="Category workbench — recategorise items, see R1 coverage">
                 <Map size={16} className="mr-2" />
                 Atlas
               </Button>
