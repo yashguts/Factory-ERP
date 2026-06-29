@@ -98,13 +98,13 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Buffer Channel Main",
     phase: "Buffer & Channels",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
+    defaultItemCategories: ["Buffer Channel ISMC > Buffer Channel Main ISMC"],
   },
   {
     category: "Buffer Channel Counter",
     phase: "Buffer & Channels",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Buffer Channel"],
+    defaultItemCategories: ["Buffer Channel ISMC > Buffer Channel Counter ISMC"],
   },
 
   // ──────────────── DOOR SYSTEM ────────────────
@@ -114,13 +114,29 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Car Door Panel",
     phase: "Door System",
     gate: ALWAYS,
-    defaultItemCategories: ["Car Door Pannel"],
+    defaultItemCategories: [
+      "Centre Opening > ACO CAR",
+      "Auto Telescopic > AT CAR",
+      "Auto Four Fold > AFF CAR",
+      "Manual Telescopic > MT CAR",
+      "Collapsible Door",
+      "By Parting Door",
+      "Imperforated Door",
+    ],
   },
   {
     category: "Landing Door Panel",
     phase: "Door System",
     gate: ALWAYS,
-    defaultItemCategories: ["Landing Door Pannel"],
+    defaultItemCategories: [
+      "Centre Opening > ACO LANDING",
+      "Auto Telescopic > AT LANDING",
+      "Auto Four Fold > AFF LANDING",
+      "Manual Telescopic > MT LANDING",
+      "Collapsible Door",
+      "By Parting Door",
+      "Imperforated Door",
+    ],
   },
   {
     category: "Door Post / Frame",
@@ -135,10 +151,9 @@ export const BOM_SECTIONS: BomSection[] = [
     description:
       "Car header (CO, MT variants) and car hanging brackets.",
     defaultItemCategories: [
-      "Header Systems > Car Header System",
-      "Header Systems > Car Header System (Framater)",
-      "Header Systems > Manual Telescopic Car Header System",
-      "Header Systems > Car Header Hanging Bkt",
+      "Car Header System",
+      "Car Header System (Framater)",
+      "Manual Telescopic Car Header System",
     ],
   },
   {
@@ -147,8 +162,8 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     description: "Landing header (CO, MT variants).",
     defaultItemCategories: [
-      "Header Systems > Landing Header System",
-      "Header Systems > Manual Telescopic Landing Header System",
+      "Landing Header System",
+      "Manual Telescopic Landing Header System",
     ],
   },
   {
@@ -169,8 +184,8 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     description: "Door sill angle — split out of Door Sill.",
     defaultItemCategories: [
-      "Door Sill > Auto Door Sill Angle",
-      "Small Manufactured Items > Manual Telescopic Sill Angle",
+      "Sill Angle",
+      "Small Manufactured Items > Swing Door Sill Angle",
     ],
   },
   {
@@ -183,7 +198,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Gate Lock",
     phase: "Door System",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Purchased Items > Gate Lock Items"],
+    defaultItemCategories: ["Gate Lock Items"],
   },
 
   // ──────────────── SAFETY & COUNTER FRAME ────────────────
@@ -232,7 +247,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Counter Guard Net",
     phase: "Safety & Counter Frame",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Manufactured Items > Counter Guard Net"],
+    defaultItemCategories: ["Counter Guard Net"],
   },
   {
     category: "Pit Ladder",
@@ -254,7 +269,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Machine",
     phase: "Machine",
     gate: ALWAYS,
-    defaultItemCategories: ["Large Purchased Items > Machine Unit"],
+    defaultItemCategories: ["Machine Unit"],
   },
 
   // ──────────────── GOVERNOR (own phase) ────────────────
@@ -262,7 +277,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "Governor",
     phase: "Governor",
     gate: ALWAYS,
-    defaultItemCategories: ["Small Purchased Items > Speed Governor"],
+    defaultItemCategories: ["Speed Governor"],
   },
 
   // ──────────────── MISCELLANEOUS ITEMS ────────────────
@@ -289,7 +304,7 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "LIMIT SWITCH",
     phase: "Miscellaneous Items",
     gate: ALWAYS,
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "LIMIT SWITCH BRACKET",
@@ -297,28 +312,28 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     description:
       "Limit-switch mounting brackets. Same parent category as the switches themselves — pick the bracket items.",
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "LIMIT SWITCH CAM",
     phase: "Miscellaneous Items",
     gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
     description: "Limit-switch cam — Home Rope / Home Belt / Cantilever only.",
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "LIMIT SWITCH CAM BRACKET",
     phase: "Miscellaneous Items",
     gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
     description: "Limit-switch cam bracket — Home Rope / Home Belt / Cantilever only.",
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "LIMIT SWITCH CAM CHANNEL",
     phase: "Miscellaneous Items",
     gate: { kind: "driveType", drives: ["HOME", "BELT", "CANTI"] },
     description: "Limit-switch cam channel — Home Rope / Home Belt / Cantilever only.",
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "MAGNET WITH BRACKET",
@@ -459,14 +474,14 @@ export const BOM_SECTIONS: BomSection[] = [
     category: "SAFETY/CAR GATE SWT.",
     phase: "Cabin Add-on Items",
     gate: ALWAYS,
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "HOME SAFETY SWITCH",
     phase: "Cabin Add-on Items",
     gate: ALWAYS,
     description: "Home safety switch — pick from limit switch items.",
-    defaultItemCategories: ["Miscallaneous > Limit Switch Items"],
+    defaultItemCategories: ["Limit Switch Items"],
   },
   {
     category: "PVC CABLE HANGER",
@@ -533,6 +548,63 @@ export const BOM_SECTIONS: BomSection[] = [
     gate: ALWAYS,
     defaultItemCategories: ["Miscallaneous > Danger Plate"],
   },
+
+  // ──────────────── ELECTRICAL ────────────────
+  // Cabin electrical fit-out — controllers, panels (LOP/COP), boxes and their
+  // back covers. All mapped to the "Electrical" category: the picker lists every
+  // Electrical item and the row label + hint names the expected one (same pattern
+  // as Oil Pot / Mobil / Grease all sharing the Oil/Mobil category).
+  {
+    category: "Controller",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description: "Controller unit — MFS-023 (Wallmount) or MFS-024 (V3F).",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "TOCI Box",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description: "TOCI box — MFS-025.",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "Floor Announcer Box",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description: "Floor announcer box — MFS-026.",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "LOP",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description:
+      "Landing Operating Panel — MFS-009 (Double Button) or MFS-010 (Single Button).",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "LOP Back Cover",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description: "LOP back cover — MFS-030.",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "COP",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description:
+      "Car Operating Panel — COP G+1…G+12 (MFS-011–022). Final selection to be decided.",
+    defaultItemCategories: ["Electrical"],
+  },
+  {
+    category: "COP Back Cover",
+    phase: "Electrical",
+    gate: ALWAYS,
+    description: "COP back cover — MFS-029.",
+    defaultItemCategories: ["Electrical"],
+  },
 ];
 
 export const PHASE_ORDER = [
@@ -552,6 +624,7 @@ export const PHASE_ORDER = [
   "Filler Weight",
   "Cabin Rubber Pad",
   "Cabin Add-on Items",
+  "Electrical",
 ] as const;
 
 /* ------------------------------------------------------------------ *
