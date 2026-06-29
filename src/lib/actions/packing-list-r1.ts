@@ -593,6 +593,94 @@ export async function saveR1List(
   return { ok: true };
 }
 
+/**
+ * Save ONE section (part) without touching the rest. The target part takes the
+ * caller's edited lines; every OTHER part is preserved exactly as it sits on
+ * disk (the operator's unsaved edits elsewhere are NOT committed). The list is
+ * then rewritten in the caller's canonical part order so sort_order stays clean
+ * and contiguous — no partial-ordering surprises. Status is left unchanged.
+ */
+export async function saveR1Section(
+  jobId: string,
+  partTitles: string[],
+  targetTitle: string,
+  sectionLines: R1SaveLine[],
+): Promise<{ ok: boolean; error?: string }> {
+  const supabase = await createClient();
+  const { data: list, error: le } = await supabase
+    .from("packing_r1_lists")
+    .select("id")
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (le) return { ok: false, error: le.message };
+  if (!list) return { ok: false, error: "No R1 list for this job (open it first)." };
+  const listId = list.id as string;
+
+  // Pull on-disk lines for every OTHER part (kept verbatim; their unsaved
+  // client edits are intentionally not persisted by a section save).
+  const { data: disk, error: re } = await supabase
+    .from("packing_r1_lines")
+    .select("part_title, template_line_id, kind, category_id, item_id, label, spec, qty, source")
+    .eq("list_id", listId)
+    .order("sort_order");
+  if (re) return { ok: false, error: re.message };
+
+  const byPart = new Map<string, R1SaveLine[]>();
+  for (const r of disk ?? []) {
+    if ((r.part_title as string) === targetTitle) continue; // replaced by the edits
+    const arr = byPart.get(r.part_title as string) ?? [];
+    arr.push({
+      part_title: r.part_title as string,
+      template_line_id: (r.template_line_id as string | null) ?? null,
+      kind: r.kind as PackingLineKind,
+      category_id: (r.category_id as string | null) ?? null,
+      item_id: (r.item_id as string | null) ?? null,
+      label: (r.label as string | null) ?? null,
+      spec: (r.spec as string | null) ?? null,
+      qty: Number(r.qty) || 0,
+      source: (r.source as string | null) ?? "manual",
+    });
+    byPart.set(r.part_title as string, arr);
+  }
+  byPart.set(targetTitle, sectionLines.map((l) => ({ ...l, part_title: targetTitle })));
+
+  // Canonical order = the caller's part order, then any disk-only parts (safety).
+  const order = [...partTitles];
+  for (const t of byPart.keys()) if (!order.includes(t)) order.push(t);
+
+  const merged: R1SaveLine[] = [];
+  for (const t of order) {
+    const arr = byPart.get(t);
+    if (arr) merged.push(...arr);
+  }
+
+  const { error: de } = await supabase.from("packing_r1_lines").delete().eq("list_id", listId);
+  if (de) return { ok: false, error: de.message };
+
+  const rows = merged.map((l, i) => ({
+    list_id: listId,
+    part_title: l.part_title,
+    template_line_id: l.template_line_id ?? null,
+    kind: l.kind,
+    category_id: l.category_id ?? null,
+    item_id: l.item_id ?? null,
+    label: l.label ?? null,
+    spec: l.spec ?? null,
+    qty: l.qty ?? 0,
+    source: l.source ?? "manual",
+    sort_order: i,
+  }));
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error: ie } = await supabase.from("packing_r1_lines").insert(rows.slice(i, i + 200));
+    if (ie) return { ok: false, error: ie.message };
+  }
+  await supabase
+    .from("packing_r1_lists")
+    .update({ updated_at: new Date().toISOString() })
+    .eq("id", listId);
+  return { ok: true };
+}
+
 /** Items inside a category (+ all descendants), optionally filtered — the
  *  per-job builder's picker for a category/hardware line. */
 export interface R1CatItem {

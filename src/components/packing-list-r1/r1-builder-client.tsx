@@ -2,10 +2,11 @@
 
 import { Fragment, useRef, useState, useEffect, useMemo, useCallback, useTransition, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree } from "lucide-react";
+import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2 } from "lucide-react";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
+  saveR1Section,
   itemsInCategory,
   type R1ListView,
   type R1Line,
@@ -316,6 +317,8 @@ export function R1BuilderClient({
   );
   const [status, setStatus] = useState(list.status);
   const [dirty, setDirty] = useState(false);
+  const [savingPart, setSavingPart] = useState<number | null>(null);
+  const [savedPart, setSavedPart] = useState<number | null>(null);
   const [newPart, setNewPart] = useState("");
 
   const hw = categories.find((c) => c.name === "Hardware" && c.parent_id === null);
@@ -439,6 +442,29 @@ export function R1BuilderClient({
         router.refresh();
       } else alert(r.error ?? "Save failed");
     });
+
+  // Save ONE section: persists just this part; other parts keep their last-saved
+  // (on-disk) state. Lets the operator checkpoint a section without committing
+  // half-filled work elsewhere.
+  const flatSection = (pi: number): R1SaveLine[] =>
+    parts[pi].lines.map((l) => ({
+      part_title: parts[pi].title, template_line_id: l.template_line_id, kind: l.kind as PackingLineKind,
+      category_id: l.category_id, item_id: l.item_id, label: l.label, spec: l.spec, qty: l.qty, source: l.source,
+    }));
+  const saveSection = (pi: number) => {
+    if (savingPart !== null) return;
+    setSavingPart(pi);
+    setSavedPart(null);
+    void (async () => {
+      const r = await saveR1Section(list.jobId, parts.map((p) => p.title), parts[pi].title, flatSection(pi));
+      setSavingPart(null);
+      if (r.ok) {
+        setSavedPart(pi);
+        router.refresh();
+        window.setTimeout(() => setSavedPart((cur) => (cur === pi ? null : cur)), 2000);
+      } else alert(r.error ?? "Section save failed");
+    })();
+  };
 
   // Cabin Job items (read-only mirror) — emitted under the Cabin part in exports.
   type ExportRow = {
@@ -594,6 +620,28 @@ export function R1BuilderClient({
               <span className="ml-auto text-[10px] font-normal text-[#6b7280]">
                 {part.lines.filter((l) => l.item_id).length}/{part.lines.length} filled
               </span>
+              <button
+                type="button"
+                onClick={() => saveSection(pi)}
+                disabled={savingPart !== null}
+                title="Save just this section (other sections keep their last-saved state)"
+                className="inline-flex items-center gap-1 rounded border px-1.5 py-0.5 text-[10px] font-medium hover:bg-[#f3f4f6] disabled:opacity-50 disabled:cursor-not-allowed"
+                style={{ borderColor: C.line }}
+              >
+                {savingPart === pi ? (
+                  <>
+                    <Loader2 size={11} className="animate-spin" /> Saving…
+                  </>
+                ) : savedPart === pi ? (
+                  <>
+                    <CheckCircle2 size={11} className="text-emerald-600" /> Saved
+                  </>
+                ) : (
+                  <>
+                    <Save size={11} /> Save
+                  </>
+                )}
+              </button>
             </h2>
 
             {part.title === "Cabin" && <CabinPanelsBlock data={cabinPanels} jobNumber={list.jobNumber} />}
