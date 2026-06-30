@@ -867,12 +867,12 @@ export default function AtlasClient({
                 title="Select all shown"
               />
               <span className="w-5 text-center" title="On the R1 packing list">R1</span>
-              <span className="w-28">Code</span>
+              <span className="w-24">Code</span>
               <span className="flex-1">Item</span>
               <span className="w-12 text-center">Type</span>
-              <span className="w-9 text-center" title="Make / Trade — click a cell to change">M/T</span>
-              <span className="w-16 text-right" title="On-hand stock">Stock</span>
-              <span className="w-40 text-right pr-1">Category</span>
+              <span className="w-7 text-center" title="Make / Trade — click a cell to change">M/T</span>
+              <span className="w-12 text-right" title="On-hand stock">Stock</span>
+              <span className="w-32 text-right pr-1">Category</span>
             </div>
           )}
 
@@ -928,7 +928,7 @@ export default function AtlasClient({
                     >
                       {it.in_r1 ? "●" : ""}
                     </span>
-                    <span className="w-28 shrink-0 font-mono text-[12px] text-[var(--foreground)] truncate">
+                    <span className="w-24 shrink-0 font-mono text-[12px] text-[var(--foreground)] truncate">
                       {it.code}
                     </span>
                     <span className="flex-1 min-w-0 flex items-center gap-1.5">
@@ -973,7 +973,7 @@ export default function AtlasClient({
                             setProcMenuPos({ x: r.right, y: r.bottom });
                             setProcMenuFor((m) => (m === it.id ? null : it.id));
                           }}
-                          className="w-9 shrink-0 flex items-center justify-center cursor-pointer"
+                          className="w-7 shrink-0 flex items-center justify-center cursor-pointer"
                           title={tip}
                         >
                           {eff === "make" ? (
@@ -988,7 +988,7 @@ export default function AtlasClient({
                     })()}
                     <span
                       className={cn(
-                        "w-16 shrink-0 text-right text-[11px] tabular-nums pr-1",
+                        "w-12 shrink-0 text-right text-[11px] tabular-nums pr-1",
                         it.stock > 0 ? "text-[var(--foreground)]" : "text-[var(--muted-foreground)]",
                       )}
                       title="On-hand stock"
@@ -996,7 +996,7 @@ export default function AtlasClient({
                       {it.stock.toLocaleString()}
                     </span>
                     <span
-                      className="w-40 shrink-0 text-right text-[11px] text-[var(--muted-foreground)] truncate pr-1"
+                      className="w-32 shrink-0 text-right text-[11px] text-[var(--muted-foreground)] truncate pr-1"
                       title={pathLabel(it.category_id)}
                     >
                       {byId.get(it.category_id)?.name ?? "—"}
