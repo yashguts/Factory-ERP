@@ -34,6 +34,19 @@ const C = {
   mut: "#6b7280",
 };
 
+// Curated hardware quick-adds shown at the end of every section. `cat` MUST be
+// the exact Hardware sub-category name (it drives the scoped item picker via
+// hwCat); `display` is the button label.
+const HW_TYPES: { display: string; cat: string }[] = [
+  { display: "Stud Anchor", cat: "Stud Anchor" },
+  { display: "Brick", cat: "Brick Dasfastner" },
+  { display: "Screws", cat: "Screws" },
+  { display: "Nut-Bolts", cat: "Nut-Bolts" },
+  { display: "Bull Dog Clips", cat: "Bull Dog Clips" },
+  { display: "Rag Bolt", cat: "Rag Bolt" },
+  { display: "Rail Clip", cat: "Rail Clip" },
+];
+
 // per-line item search — autocomplete with an "All categories" toggle.
 // Scoped by default (the line's category subtree, descendant-aware via
 // itemsInCategory); tick "All categories" to search the whole catalog
@@ -55,6 +68,9 @@ function RichItemPicker({
   const [allCats, setAllCats] = useState(false);
   const [hi, setHi] = useState(0);
   const [loading, setLoading] = useState(false);
+  // True when the section-scoped search found nothing and we broadened to a
+  // global search (so the results shown are from other categories).
+  const [broadened, setBroadened] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
   const seq = useRef(0);
@@ -82,6 +98,7 @@ function RichItemPicker({
           return;
         }
         setLoading(true);
+        let broadenedNow = false;
         try {
           let out: RichPick[] = [];
           if (allCats) {
@@ -90,9 +107,18 @@ function RichItemPicker({
           } else if (categoryId) {
             const r = await itemsInCategory(categoryId, query);
             out = r.map((i) => ({ id: i.id, code: i.code, name: i.name, uom: i.uom ?? null }));
+            // Nothing in this section's category — broaden to a global search so
+            // a code/name that lives elsewhere (e.g. a Screw in Hardware) still
+            // turns up instead of looking like "no results".
+            if (out.length === 0 && query.trim().length >= 2) {
+              const g = await searchItems(query.trim(), undefined, 40);
+              out = g.map((i) => ({ id: i.id, code: i.code, name: i.name, uom: i.uom_abbreviation ?? null }));
+              broadenedNow = out.length > 0;
+            }
           }
           if (seq.current === s) {
             setRes(out);
+            setBroadened(broadenedNow);
             setHi(0);
           }
         } catch (e) {
@@ -100,7 +126,10 @@ function RichItemPicker({
           // the global StaleDeployGuard catches it and prompts a reload instead
           // of the search just looking empty.
           if (isStaleActionError(e)) throw e;
-          if (seq.current === s) setRes([]);
+          if (seq.current === s) {
+            setRes([]);
+            setBroadened(false);
+          }
         } finally {
           if (seq.current === s) setLoading(false);
         }
@@ -174,6 +203,14 @@ function RichItemPicker({
             />
             All categories
           </label>
+          {broadened && !allCats && (
+            <div
+              className="px-2 py-1 text-[10px] text-amber-700 bg-amber-50 border-b"
+              style={{ borderColor: C.line }}
+            >
+              Not in this category — showing matches from all items
+            </div>
+          )}
           <div className="max-h-64 overflow-auto">
             {loading ? (
               <div className="px-2.5 py-2 text-xs text-[#6b7280]">Searching…</div>
@@ -332,10 +369,11 @@ export function R1BuilderClient({
   const [newPart, setNewPart] = useState("");
 
   const hw = categories.find((c) => c.name === "Hardware" && c.parent_id === null);
-  const hwCat: Record<string, string | null> = {
-    "Nut-Bolts": categories.find((c) => c.name === "Nut-Bolts" && c.parent_id === hw?.id)?.id ?? null,
-    Screws: categories.find((c) => c.name === "Screws" && c.parent_id === hw?.id)?.id ?? null,
-  };
+  // Every Hardware sub-category name → its id, so any hardware line (the
+  // quick-add buttons below, or existing template hardware lines) resolves to
+  // its scoped item picker.
+  const hwCat: Record<string, string | null> = {};
+  for (const c of categories) if (hw && c.parent_id === hw.id) hwCat[c.name] = c.id;
 
   const mut = (fn: (d: EditPart[]) => void) => {
     setParts((prev) => {
@@ -368,6 +406,18 @@ export function R1BuilderClient({
         _k: nk(), id: nk(), part_title: d[pi].title, template_line_id: null, kind: "free",
         category_id: null, category_name: null, item_id: null, item_code: null, item_name: null,
         uom: null, label: "", spec: null, qty: 1, source: "manual", group: "Other",
+        sort_order: d[pi].lines.length,
+      });
+    });
+  // Hardware quick-add: append a hardware line scoped to a Hardware sub-category.
+  // The user then picks the exact item + qty in the line's scoped picker
+  // (pickerCat resolves hwCat[label]).
+  const addHardwareLine = (pi: number, catName: string) =>
+    mut((d) => {
+      d[pi].lines.push({
+        _k: nk(), id: nk(), part_title: d[pi].title, template_line_id: null, kind: "hardware",
+        category_id: null, category_name: catName, item_id: null, item_code: null, item_name: null,
+        uom: null, label: catName, spec: null, qty: 1, source: "manual", group: "Hardware",
         sort_order: d[pi].lines.length,
       });
     });
@@ -788,6 +838,31 @@ export function R1BuilderClient({
               <button onClick={() => addFreeLine(pi)} className="rounded-md border border-dashed px-2.5 py-1 text-xs" style={{ borderColor: C.acc, color: C.acc }}>
                 + free line
               </button>
+            </div>
+
+            {/* Hardware quick-adds — same set at the end of every section */}
+            <div
+              className="flex flex-wrap items-center gap-1.5 px-3 py-1.5 border-t border-dashed"
+              style={{ borderColor: C.line }}
+            >
+              <span className="text-[11px] font-semibold" style={{ color: C.mut }}>
+                Hardware:
+              </span>
+              {HW_TYPES.map((t) => {
+                const ok = !!hwCat[t.cat];
+                return (
+                  <button
+                    key={t.cat}
+                    onClick={() => addHardwareLine(pi, t.cat)}
+                    disabled={!ok}
+                    title={ok ? `Add a ${t.display} line` : `“${t.cat}” category not found`}
+                    className="rounded-md border px-2 py-0.5 text-[11px] font-medium disabled:opacity-40"
+                    style={{ borderColor: C.acc, color: C.acc }}
+                  >
+                    + {t.display}
+                  </button>
+                );
+              })}
             </div>
           </section>
         ))}
