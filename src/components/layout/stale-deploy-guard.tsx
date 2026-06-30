@@ -33,6 +33,16 @@ export function reloadOnceForStaleChunks(): boolean {
   return true;
 }
 
+/** True for the Next.js "Server Action X was not found on the server" error a
+ *  stale tab throws after a redeploy (action-id hashes changed). Exported so
+ *  call sites that would otherwise SWALLOW the rejection (e.g. a search picker's
+ *  `.catch`) can re-throw it instead, letting this guard's window listener fire
+ *  the reload prompt rather than failing silently. */
+export function isStaleActionError(val: unknown): boolean {
+  const msg = typeof val === "string" ? val : val instanceof Error ? val.message : "";
+  return /Server Action[^\n]*was not found on the server/i.test(msg);
+}
+
 /** True for errors caused by a redeploy deleting the old JS/CSS chunk files. */
 export function isStaleChunkError(msg: string): boolean {
   return /ChunkLoadError|Loading chunk [\w-]+ failed|Failed to fetch dynamically imported module|Importing a module script failed|error loading dynamically imported module|Failed to load resource: .*_next\/static/i.test(
@@ -46,11 +56,9 @@ export function StaleDeployGuard() {
   useEffect(() => {
     const msgOf = (val: unknown): string =>
       typeof val === "string" ? val : val instanceof Error ? val.message : "";
-    const isStaleAction = (val: unknown): boolean =>
-      /Server Action[^\n]*was not found on the server/i.test(msgOf(val));
 
     const handle = (val: unknown) => {
-      if (isStaleAction(val)) {
+      if (isStaleActionError(val)) {
         setStale(true);
         return;
       }

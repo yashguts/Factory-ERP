@@ -15,6 +15,7 @@ import {
   type R1CabinPanels,
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
+import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
 import { exportRowsToXlsx } from "@/lib/export/xlsx";
 import type { CategoryNode } from "@/lib/actions/categories";
 import type { PackingLineKind } from "@/lib/supabase/types";
@@ -94,7 +95,11 @@ function RichItemPicker({
             setRes(out);
             setHi(0);
           }
-        } catch {
+        } catch (e) {
+          // A stale tab's server-action call fails silently here — re-throw so
+          // the global StaleDeployGuard catches it and prompts a reload instead
+          // of the search just looking empty.
+          if (isStaleActionError(e)) throw e;
           if (seq.current === s) setRes([]);
         } finally {
           if (seq.current === s) setLoading(false);
@@ -217,7 +222,13 @@ function GlobalItemPicker({ onPick }: { onPick: (i: SearchableItem) => void }) {
     }
     let alive = true;
     const t = setTimeout(() => {
-      searchItems(q.trim(), undefined, 25).then((r) => alive && setRes(r)).catch(() => {});
+      searchItems(q.trim(), undefined, 25)
+        .then((r) => alive && setRes(r))
+        // Surface a stale-deploy "Server Action not found" to the global guard
+        // (a swallowed .catch would otherwise make the search look broken).
+        .catch((e) => {
+          if (isStaleActionError(e)) throw e;
+        });
     }, 220);
     return () => {
       alive = false;
