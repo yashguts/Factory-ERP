@@ -500,15 +500,20 @@ export function R1BuilderClient({
     doc.text(`Status: ${status}   |   ${new Date().toLocaleDateString()}`, 12, 22);
     let y = 28;
     parts.forEach((p, pi) => {
+      // PDF lists ONLY packed items (positive qty) so it stays short — zero/empty
+      // lines are dropped, and any part left with nothing is skipped below. The
+      // Excel export (exportRows) is unaffected and still includes every line.
       const cabinBody =
         p.title === "Cabin"
           ? cabinPanels.groups.flatMap((g) =>
-              g.lines.length
-                ? g.lines.map((l) => [g.type, "", l.code ?? "", l.name, String(l.qty ?? "")])
-                : [[g.type, "", "", "—", ""]],
+              g.lines
+                .filter((l) => Number(l.qty) > 0)
+                .map((l) => [g.type, "", l.code ?? "", l.name, String(l.qty)]),
             )
           : [];
-      const lineBody = p.lines.map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty ?? "")]);
+      const lineBody = p.lines
+        .filter((l) => Number(l.qty) > 0)
+        .map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty)]);
       const body = [...cabinBody, ...lineBody];
       if (body.length === 0) return;
       doc.setFont("helvetica", "bold");
