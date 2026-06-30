@@ -426,10 +426,13 @@ export default function AtlasClient({
   }
 
   function requestDelete(cat: AtlasCat) {
-    const st = stats.get(cat.id) ?? { total: 0, r1: 0 };
+    // Use statsAll (UNFILTERED active count), not stats — stats is lens-filtered,
+    // so with a Type/Make-Trade filter active it could hide real active items and
+    // the server would then refuse the delete with a contradictory message.
+    const st = statsAll.get(cat.id) ?? { total: 0, r1: 0 };
     if (st.total > 0) {
       toast.error(
-        `“${cat.name}” still has ${st.total} item${st.total > 1 ? "s" : ""} in it (or its sub-categories). Move them out first.`,
+        `“${cat.name}” still has ${st.total} active item${st.total > 1 ? "s" : ""} in it (or its sub-categories). Move them out first.`,
       );
       return;
     }
@@ -447,16 +450,22 @@ export default function AtlasClient({
         return;
       }
       if (r.itemsBlocking > 0) {
-        toast.error(`“${cat.name}” still has ${r.itemsBlocking} item(s). Move them out first.`);
+        toast.error(`“${cat.name}” still has ${r.itemsBlocking} active item(s). Move them out first.`);
         router.refresh();
         return;
       }
       const removed = new Set(r.deletedIds);
       setCats((prev) => prev.filter((c) => !removed.has(c.id)));
       if (selectedCat && removed.has(selectedCat)) setSelectedCat(null);
-      toast.success(
-        `Deleted “${cat.name}”${r.deletedIds.length > 1 ? ` + ${r.deletedIds.length - 1} empty sub-categor${r.deletedIds.length - 1 > 1 ? "ies" : "y"}` : ""}`,
-      );
+      const subNote =
+        r.deletedIds.length > 1
+          ? ` + ${r.deletedIds.length - 1} empty sub-categor${r.deletedIds.length - 1 > 1 ? "ies" : "y"}`
+          : "";
+      const inactiveNote =
+        r.inactiveCleared > 0
+          ? ` · uncategorised ${r.inactiveCleared} deleted item${r.inactiveCleared > 1 ? "s" : ""}`
+          : "";
+      toast.success(`Deleted “${cat.name}”${subNote}${inactiveNote}`);
       router.refresh();
     });
   }
@@ -1221,7 +1230,8 @@ export default function AtlasClient({
                         {subs.length > 1 ? "ies" : "y"}
                       </>
                     )}
-                    ? It has no items. This can’t be undone.
+                    ? It has no active items. Any soft-deleted (inactive) items
+                    under it will simply be uncategorised. This can’t be undone.
                   </div>
                 </div>
                 <div className="flex justify-end gap-2">

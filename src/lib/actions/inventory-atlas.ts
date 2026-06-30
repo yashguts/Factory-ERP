@@ -121,14 +121,18 @@ export async function renameCategory(
 }
 
 /**
- * Delete a category and its (empty) sub-categories. Refuses if ANY item in the
- * subtree still references a category — items would be orphaned (the FK would
- * block it anyway). Move the items out first. Returns the deleted ids so the
- * client can prune its tree optimistically.
+ * Delete a category and its sub-categories. Only ACTIVE items block — they're
+ * what the user can actually see and move in the Atlas; refuse and report the
+ * count if any exist. Inactive (soft-deleted) items are invisible in the Atlas,
+ * so blocking on them would strand the user. Instead we uncategorise them (null
+ * their category_id) so the items.category_id FK (NO ACTION) doesn't fail; the
+ * items keep existing (still referenced by BOMs/transactions), only their
+ * classification clears. Returns the deleted ids + how many inactive items were
+ * uncategorised.
  */
 export async function deleteCategory(
   id: string,
-): Promise<AtlasResult<{ deletedIds: string[]; itemsBlocking: number }>> {
+): Promise<AtlasResult<{ deletedIds: string[]; itemsBlocking: number; inactiveCleared: number }>> {
   const supabase = await createClient();
 
   // Build the subtree id set from the full (small) category list.
@@ -150,27 +154,36 @@ export async function deleteCategory(
     for (const ch of childrenOf.get(cur) ?? []) queue.push(ch);
   }
 
-  // Block if any item lives anywhere in the subtree.
-  const { count } = await supabase
+  // Only ACTIVE items block — they're the ones the user can see and move.
+  const { count: activeCount } = await supabase
     .from("items")
     .select("id", { count: "exact", head: true })
-    .in("category_id", subtree);
-  if (count && count > 0) {
-    return {
-      ok: true,
-      deletedIds: [],
-      itemsBlocking: count,
-    };
+    .in("category_id", subtree)
+    .eq("is_active", true);
+  if (activeCount && activeCount > 0) {
+    return { ok: true, deletedIds: [], itemsBlocking: activeCount, inactiveCleared: 0 };
   }
 
-  // Safe to delete the whole empty subtree in one statement (FK is NO ACTION,
-  // checked at statement end → parent+children together is fine).
+  // Inactive items still reference the category via the NO-ACTION FK, so the
+  // delete would fail unless we uncategorise them first.
+  const { data: cleared, error: clearErr } = await supabase
+    .from("items")
+    .update({ category_id: null })
+    .in("category_id", subtree)
+    .eq("is_active", false)
+    .select("id");
+  if (clearErr) return { ok: false, error: clearErr.message };
+  const inactiveCleared = cleared?.length ?? 0;
+
+  // Now delete the whole (active-empty) subtree in one statement (FK is NO
+  // ACTION, checked at statement end → parent+children together is fine).
   const { error } = await supabase.from("item_categories").delete().in("id", subtree);
   if (error) return { ok: false, error: error.message };
 
   revalidateTag("categories");
+  revalidateTag("items");
   revalidatePath("/inventory/atlas");
-  return { ok: true, deletedIds: subtree, itemsBlocking: 0 };
+  return { ok: true, deletedIds: subtree, itemsBlocking: 0, inactiveCleared };
 }
 
 /**
