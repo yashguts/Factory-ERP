@@ -432,6 +432,7 @@ export async function recordRun(input: {
     console.error("program run inventory post failed", data.id, e);
   }
   revalidatePath("/program-runs");
+  revalidatePath("/child-parts");
   return { ok: true, id: data.id as string };
 }
 
@@ -456,6 +457,7 @@ export async function updateRunCount(
     console.error("program run inventory re-sync failed", id, e);
   }
   revalidatePath("/program-runs");
+  revalidatePath("/child-parts");
   return { ok: true, id };
 }
 
@@ -483,6 +485,7 @@ export async function updateRunDate(
   // trusted physical baseline. Only record / count-edit / delete move stock, each
   // gated on run_date in syncRunInventory. To post a re-dated run, delete + re-add.
   revalidatePath("/program-runs");
+  revalidatePath("/child-parts");
   return { ok: true, id };
 }
 
@@ -498,5 +501,6 @@ export async function deleteRun(id: string): Promise<{ ok: boolean; error?: stri
   const { error } = await supabase.from("operation_runs").delete().eq("id", id);
   if (error) return { ok: false, error: error.message };
   revalidatePath("/program-runs");
+  revalidatePath("/child-parts");
   return { ok: true };
 }
