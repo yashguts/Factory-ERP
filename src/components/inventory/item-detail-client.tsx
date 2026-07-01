@@ -101,11 +101,14 @@ export function ItemDetailClient({
     const rows = bom.lines.filter(filter).map(lineToRow);
     return rows.length ? rows : [emptyRow()];
   };
+  // "Built from" = the main make/trade inventory items (NOT child parts);
+  // "Assembled from" = the child parts (cut pieces flagged is_child_part). The
+  // split keys on is_child_part, NOT stock_behaviour — child parts are stocked now.
   const [builtRows, setBuiltRows] = useState<BomRow[]>(() =>
-    seedRows((l) => l.child_stock_behaviour !== "phantom"),
+    seedRows((l) => !l.child_is_child_part),
   );
   const [looseRows, setLooseRows] = useState<BomRow[]>(() =>
-    seedRows((l) => l.child_stock_behaviour === "phantom"),
+    seedRows((l) => l.child_is_child_part),
   );
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -266,7 +269,7 @@ export function ItemDetailClient({
           {/* Stocked sub-parts */}
           <PartsSection
             title="Built from"
-            subtitle="stocked sub-parts this item is assembled from"
+            subtitle="the main make/trade inventory items this is built from"
             icon={<Boxes className="h-4 w-4" />}
             rows={builtRows}
             onUpdate={updater(setBuiltRows)}
@@ -279,7 +282,7 @@ export function ItemDetailClient({
             error={error}
           />
 
-          {/* Loose parts (phantoms) cut on programs and fitted in */}
+          {/* Child parts (cut on programs) assembled into this item */}
           <div className="mt-4">
             <LoosePartsSection
               rows={looseRows}
@@ -485,9 +488,9 @@ function PartsSection({
 }
 
 /**
- * Assembly-parts section. Same card chrome as PartsSection, but each row uses
- * the LoosePartPicker (searches only loose parts — phantom items + program
- * cut_part labels — never the full inventory). No finish-rule column: a loose
+ * "Assembled from" section. Same card chrome as PartsSection, but each row uses
+ * the LoosePartPicker (searches only child parts — is_child_part items + program
+ * cut_part labels — never the main inventory). No finish-rule column: a child
  * part is a concrete cut piece (neutral).
  */
 function LoosePartsSection({
@@ -517,9 +520,9 @@ function LoosePartsSection({
         title={
           <span className="inline-flex items-center gap-2">
             <Puzzle className="h-4 w-4" />
-            Assembly parts
+            Assembled from
             <span className="text-xs font-normal text-[var(--muted-foreground)]">
-              · loose parts (cut on programs, never stocked) fitted into this item
+              · child parts (cut on programs) assembled into this item
             </span>
           </span>
         }

@@ -47,8 +47,11 @@ export interface ItemBomLineDetail {
   /** The child item's own family/finish (lets the editor rebuild the row). */
   child_item_family: string | null;
   child_item_finish: string | null;
-  /** The child's stock behaviour — splits stocked sub-parts vs loose (phantom) parts. */
+  /** The child's stock behaviour. */
   child_stock_behaviour: StockBehaviour;
+  /** True if the child is a child/cut part — splits "Built from" (false, main
+   *  make/trade items) vs "Assembled from" (true, child parts). */
+  child_is_child_part: boolean;
   /**
    * True when this child SHOULD be produced by a program but none does: it's a
    * make piece (not bought), is not itself a sub-assembly, yet no operation
@@ -154,7 +157,7 @@ const _getItemBomUncached = async (
     .from("item_bom_lines")
     .select(
       `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
-       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, procurement_type,
+       child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, is_child_part, procurement_type,
          category:item_categories!items_category_id_fkey(procurement_type),
          uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
     )
@@ -211,6 +214,7 @@ const _getItemBomUncached = async (
       child_item_finish: (child?.finish as string | null) ?? null,
       child_stock_behaviour:
         ((child?.stock_behaviour as StockBehaviour | null) ?? "stocked"),
+      child_is_child_part: (child?.is_child_part as boolean) ?? false,
       child_missing_program: missingProgram,
     };
   });
@@ -321,23 +325,24 @@ export async function saveItemBom(
 }
 
 /* ------------------------------------------------------------------ *
- * Loose parts (Assembly parts section).
+ * Child parts (the "Assembled from" section).
  *
- * A loose part is a cut piece that is never stocked — it lives only as a
- * program output (`operation_outputs.role = 'cut_part'`). Two states:
- *   - a real phantom item (stock_behaviour='phantom'), already promoted, or
+ * A child part is a cut piece a program makes and the sub-assembly is assembled
+ * from — flagged `items.is_child_part`. We now maintain stock of them (so most
+ * are stock_behaviour='stocked', a few legacy ones still 'phantom'), but they
+ * stay OUT of the main inventory list. Two states in the picker:
+ *   - a real child-part item (is_child_part=true, or a legacy phantom), or
  *   - a plain label on one-or-more program outputs (item_id IS NULL).
- * The Assembly-parts picker searches ONLY this universe (never all stock).
- * To attach a label to an assembly it must first become a phantom item;
- * promoting also relinks every program output that shares the label, so the
- * /mrp/plan explode can route the assembly through the cutting program.
+ * The picker searches ONLY this universe (never the main make/trade stock, which
+ * belongs under "Built from"). Promoting a label creates/reuses a child-part
+ * item and relinks every program output sharing the label.
  * ------------------------------------------------------------------ */
 
 export type LoosePartCandidate =
   | { kind: "item"; id: string; code: string; name: string; uom: string }
   | { kind: "label"; label: string; programs: number };
 
-/** Search loose parts: phantom loose-part items + unlinked cut_part labels. */
+/** Search child parts: is_child_part (or legacy phantom) items + unlinked cut_part labels. */
 export async function searchLooseParts(
   query: string,
   limit = 30,
@@ -345,12 +350,12 @@ export async function searchLooseParts(
   const supabase = createCacheClient();
   const tokens = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
 
-  // (a) phantom loose-part items already created
+  // (a) child-part items already created (is_child_part, incl. legacy phantoms)
   let pq = supabase
     .from("items")
     .select(`id, code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`)
     .eq("is_active", true)
-    .eq("stock_behaviour", "phantom");
+    .or("is_child_part.eq.true,stock_behaviour.eq.phantom");
   for (const t of tokens) {
     const safe = t.replace(/[%,]/g, "");
     pq = pq.or(`name.ilike.%${safe}%,code.ilike.%${safe}%`);
@@ -421,7 +426,7 @@ export async function promoteLoosePartLabel(
   const { data: existing, error: exErr } = await supabase
     .from("items")
     .select(
-      `id, code, name, stock_behaviour, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
+      `id, code, name, stock_behaviour, is_child_part, uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
     )
     .eq("is_active", true)
     .ilike("name", label)
@@ -435,10 +440,12 @@ export async function promoteLoosePartLabel(
   let item: { id: string; code: string; name: string; uom: string };
 
   if (match) {
-    if ((match as any).stock_behaviour !== "phantom") {
+    // Reuse a child part (now stocked) or a legacy phantom. A real main-inventory
+    // item (make/trade, not a child part) belongs under "Built from" instead.
+    if (!(match as any).is_child_part && (match as any).stock_behaviour !== "phantom") {
       return {
         ok: false,
-        error: `An item named "${label}" already exists in inventory as a ${(match as any).stock_behaviour} item. Add it under "Built from" instead of Assembly parts.`,
+        error: `An item named "${label}" already exists in inventory as a ${(match as any).stock_behaviour} item. Add it under "Built from" instead of Assembled from.`,
       };
     }
     item = {
