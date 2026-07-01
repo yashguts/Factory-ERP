@@ -96,6 +96,40 @@ async function syncRunInventory(supabase: Db, runId: string, count: number): Pro
   for (const i of ins ?? []) addDesired(i.item_id as string, stores.raw, -(Number(i.qty_per_run) || 0) * count);
   for (const o of outs ?? []) addDesired(o.item_id as string, stores.main, +(Number(o.qty_per_run) || 0) * count);
 
+  // Consume the TRADE children fitted INTO produced items (e.g. glass in a panel).
+  // These panels are output WHOLE by the program — they're glass-only "sub-
+  // assemblies" (no make child) that never go through the assembly/Build flow, so
+  // their bought children have no other consumption point. Deduct child.qty x
+  // produced.qty x count from Main Store. Only TRADE children: make children mean
+  // it's a real sub-assembly (guard-blocked from being output whole, built instead).
+  const producedByItem = new Map<string, number>();
+  for (const o of rawOuts ?? []) {
+    const id = o.item_id as string;
+    producedByItem.set(id, (producedByItem.get(id) ?? 0) + (Number(o.qty_per_run) || 0));
+  }
+  const producedIds = [...producedByItem.keys()];
+  if (producedIds.length) {
+    const { data: kids } = await supabase
+      .from("item_bom_lines")
+      .select(
+        `parent_item_id, qty,
+         child:items!item_bom_lines_child_item_id_fkey(id, procurement_type,
+           category:item_categories!items_category_id_fkey(procurement_type))`,
+      )
+      .in("parent_item_id", producedIds)
+      .not("child_item_id", "is", null);
+    for (const b of kids ?? []) {
+      const child = flatten<{ id: string; procurement_type: string | null; category: unknown }>(b.child);
+      if (!child) continue;
+      const eff =
+        (child.procurement_type as string | null) ??
+        (flatten<{ procurement_type: string | null }>(child.category)?.procurement_type ?? null);
+      if (eff !== "trade") continue;
+      const producedQty = producedByItem.get(b.parent_item_id as string) ?? 0;
+      addDesired(child.id, stores.main, -(Number(b.qty) || 0) * producedQty * count);
+    }
+  }
+
   // Already-applied net per key from this run's prior program_run txns.
   const { data: posted } = await supabase
     .from("inventory_transactions")
