@@ -16,6 +16,18 @@ import { selectRuns, type OpOuts } from "@/lib/actions/make-plan-core";
 import { sheetThicknessMm, CABIN_PROGRAM_FINISHES } from "@/lib/cabin/cabin-program-meta";
 import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
+/** Cabin jobs flagged "ready" are already built — excluded from all cabin
+ *  requirement / cutting-demand readers below. Returns the ids to filter out. */
+async function readyCabinJobIds(
+  supabase: ReturnType<typeof createCacheClient>,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("cabin_jobs")
+    .select("id")
+    .not("marked_ready_at", "is", null);
+  return (data ?? []).map((r: any) => r.id as string);
+}
+
 export interface CabinPlanInput {
   code: string;
   name: string;
@@ -96,14 +108,17 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
   const supabase = createCacheClient();
   const excludeSet = new Set(excludeKeys);
 
-  /* 1. Cabin demand: net cabin-job line qty against stock -> shortfall per item. */
-  const lines = await fetchAllRanged<{ item_id: string | null; qty: number }>((from, to, withCount) =>
-    supabase
+  /* 1. Cabin demand: net cabin-job line qty against stock -> shortfall per item.
+   *    Ready jobs are already built — their lines are excluded. */
+  const readyIds = await readyCabinJobIds(supabase);
+  const lines = await fetchAllRanged<{ item_id: string | null; qty: number }>((from, to, withCount) => {
+    const base = supabase
       .from("cabin_job_lines")
       .select("item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null)
-      .range(from, to),
-  );
+      .not("item_id", "is", null);
+    const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
+    return q.range(from, to);
+  });
   const demandByItem = new Map<string, number>();
   for (const l of lines) {
     if (!l.item_id) continue;
@@ -390,13 +405,16 @@ export interface CabinReqRow {
 
 const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
   const supabase = createCacheClient();
+  const readyIds = await readyCabinJobIds(supabase);
   const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
-    (from, to, withCount) =>
-      supabase
+    (from, to, withCount) => {
+      const base = supabase
         .from("cabin_job_lines")
         .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
-        .not("item_id", "is", null)
-        .range(from, to),
+        .not("item_id", "is", null);
+      const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
+      return q.range(from, to);
+    },
   );
   if (lines.length === 0) return [];
 
@@ -535,9 +553,13 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
     return { pos: w + 1, later: false, undated: false };
   };
 
+  const readyIds = await readyCabinJobIds(supabase);
   const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
-    (from, to, withCount) =>
-      supabase.from("cabin_job_lines").select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {}).not("item_id", "is", null).range(from, to),
+    (from, to, withCount) => {
+      const base = supabase.from("cabin_job_lines").select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {}).not("item_id", "is", null);
+      const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
+      return q.range(from, to);
+    },
   );
 
   const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();

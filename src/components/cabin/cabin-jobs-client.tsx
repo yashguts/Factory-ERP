@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -24,8 +24,11 @@ import {
 } from "@/components/ui/table";
 import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
 import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
+import { setCabinJobReady } from "@/lib/actions/cabin-jobs";
 import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
 import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
+import { useToast } from "@/components/ui/toast";
+import { cn } from "@/lib/utils";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
 // "CC 1000X1000", "AT 1000X2200_3MM", "AFFG 2000X2550…", "SWG_1000X700…").
@@ -93,6 +96,22 @@ export function CabinJobsClient({
   weeklyPlan: CabinWeeklyPlan;
 }) {
   const router = useRouter();
+  const toast = useToast();
+  // Optimistic ready state overlay — reflects a toggle instantly over the server prop.
+  const [readyOverride, setReadyOverride] = useState<Record<string, boolean>>({});
+  const isReady = (j: CabinJobListRow) => readyOverride[j.id] ?? j.marked_ready_at != null;
+  async function toggleReady(j: CabinJobListRow) {
+    const next = !isReady(j);
+    setReadyOverride((m) => ({ ...m, [j.id]: next }));
+    const res = await setCabinJobReady(j.id, next);
+    if (!res.ok) {
+      setReadyOverride((m) => ({ ...m, [j.id]: !next }));
+      toast.error(res.error);
+      return;
+    }
+    toast.success(next ? `${j.job_number} marked ready` : `${j.job_number} reopened`);
+    router.refresh();
+  }
   const sp = useSearchParams();
   const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category", "weekly"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
@@ -424,7 +443,7 @@ export function CabinJobsClient({
                   {sorted.map((j) => (
                     <TableRow
                       key={j.id}
-                      className="cursor-pointer hover:bg-[var(--muted)]"
+                      className={cn("cursor-pointer hover:bg-[var(--muted)]", isReady(j) && "opacity-60")}
                       onClick={() => router.push(`/cabin-jobs/${j.id}`)}
                     >
                       <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
@@ -436,17 +455,36 @@ export function CabinJobsClient({
                         {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="secondary"
-                          title={`Clone ${j.job_number} into a new job`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            router.push(`/cabin-jobs/new?from=${j.id}`);
-                          }}
-                        >
-                          <Copy size={14} className="mr-1.5" /> Clone
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          <Button
+                            size="sm"
+                            variant={isReady(j) ? "secondary" : "primary"}
+                            className="cursor-pointer"
+                            title={
+                              isReady(j)
+                                ? "Ready — its items are excluded from the cabin requirement. Click to reopen."
+                                : "Mark ready — stop counting its items in the cabin requirement"
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleReady(j);
+                            }}
+                          >
+                            <Check size={14} className="mr-1.5" /> {isReady(j) ? "Ready" : "Mark Ready"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className="cursor-pointer"
+                            title={`Clone ${j.job_number} into a new job`}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              router.push(`/cabin-jobs/new?from=${j.id}`);
+                            }}
+                          >
+                            <Copy size={14} className="mr-1.5" /> Clone
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}

@@ -288,13 +288,16 @@ export interface CabinJobListRow {
   /** Distinct Side Panel finishes for the job, e.g. "SS 430" or "MS + Golden". */
   side_panel_material: string | null;
   created_at: string;
+  /** Non-null ISO timestamp when marked ready; ready jobs are excluded from the
+   *  cabin requirement (their items are already built). null = still counts. */
+  marked_ready_at: string | null;
 }
 
 export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   const supabase = createCacheClient();
   const { data: jobs } = await supabase
     .from("cabin_jobs")
-    .select("id, job_number, customer_name, created_at")
+    .select("id, job_number, customer_name, created_at, marked_ready_at")
     .order("created_at", { ascending: false });
   const ids = (jobs ?? []).map((j: any) => j.id as string);
   const countByJob = new Map<string, number>();
@@ -332,8 +335,21 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       platform: platformByJob.get(j.id as string) ?? null,
       side_panel_material: fset ? [...fset].sort().join(" + ") : null,
       created_at: j.created_at as string,
+      marked_ready_at: (j.marked_ready_at as string | null) ?? null,
     };
   });
+}
+
+/** Cabin jobs flagged "ready" — their items are excluded from every cabin
+ *  requirement/demand reader (already built). Used to filter cabin_job_lines. */
+async function readyCabinJobIds(
+  supabase: ReturnType<typeof createCacheClient>,
+): Promise<string[]> {
+  const { data } = await supabase
+    .from("cabin_jobs")
+    .select("id")
+    .not("marked_ready_at", "is", null);
+  return (data ?? []).map((r: any) => r.id as string);
 }
 
 /* ------------------------------------------------------------------ *
@@ -371,18 +387,21 @@ export interface CabinFinishGroup {
 export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
   const supabase = createCacheClient();
 
+  // Ready jobs are already built — their items don't count toward the requirement.
+  const readyIds = await readyCabinJobIds(supabase);
   const lines = await fetchAllRanged<{
     cabin_job_id: string;
     cabin_type: string;
     item_id: string | null;
     qty: number;
-  }>((from, to, withCount) =>
-    supabase
+  }>((from, to, withCount) => {
+    const base = supabase
       .from("cabin_job_lines")
       .select("cabin_job_id, cabin_type, item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null)
-      .range(from, to),
-  );
+      .not("item_id", "is", null);
+    const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
+    return q.range(from, to);
+  });
   if (lines.length === 0) return [];
 
   const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))];
@@ -774,4 +793,35 @@ export async function deleteCabinJob(
   revalidateTag("cabin-jobs");
   revalidatePath("/jobs");
   return { ok: true };
+}
+
+/**
+ * Toggle a cabin job's "ready" flag. A ready job's items are EXCLUDED from every
+ * cabin requirement / cutting-demand reader (they're already built). Reversible —
+ * ready=false clears the timestamp and the job counts again. Busts the cabin-jobs
+ * + cabin requirement/MRP/weekly caches so all surfaces agree.
+ */
+export async function setCabinJobReady(
+  id: string,
+  ready: boolean,
+): Promise<CabinJobResult> {
+  if (!id) return { ok: false, error: "Missing cabin job id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cabin_jobs")
+    .update({
+      marked_ready_at: ready ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/cabin-jobs");
+  revalidateTag("cabin-jobs");
+  // Requirement / cabin-MRP / weekly demand all key off cabin_job_lines; their
+  // caches carry these tags (cabin-program-plan.ts).
+  revalidateTag("cabin-programs");
+  revalidateTag("cabin-requirements");
+  revalidatePath("/jobs");
+  return { ok: true, id };
 }
