@@ -105,22 +105,23 @@ Copy this pattern for any new posting flow.
   unmoved); a count-edit only re-syncs if the run was already posted; no
   scrap/yield variance (assumes exact `qty_per_run × count`).
 
-### Stage D — Assembled-from (building the sub-assembly)  ❌ NOT ON MAIN — THE BIG GAP
-- **What SHOULD happen:** building a sub-assembly **consumes its cut pieces**
-  (phantom children) and **produces the parent** into stock.
-- **Reality on `main`:** nothing. The assembly-run flow exists ONLY on the
-  unmerged branch **`feature/assembly-runs`** (migration 051 + `assembly-runs.ts`,
-  Phase-1 backend done; UI + cutover-gated stocking + MRP netting TODO). See
-  `docs/assembly-runs-handoff.md` and memory `project_assembly_runs`.
-- **Why it's THE gap:** the chain is broken in the middle —
+### Stage D — Assembled-from (building the sub-assembly)  ✅ CLOSED 2026-07-01 (Child Parts)
+- **Shipped as the Child Parts feature** (`/child-parts`, merge `50f23ef`). The
+  chain is now whole:
   ```
-  sheets ─(run)─▶ cut pieces ─(ASSEMBLY: nothing)─▶ sub-assembly ─(dispatch)─▶ deducted
-     ✅ consumed     ✅ produced        ❌                  ❌ never made        ✅ (→ negative)
+  sheets ─(run)─▶ CHILD PARTS in stock ─(BUILD on /child-parts)─▶ sub-assembly ─(dispatch)─▶ out
+     ✅ consumed        ✅ produced & stocked        ✅ consumed→produced        ✅ deducted
   ```
-  Cut `component` pieces pile up in Main Store and are never consumed; assembled
-  items sit at zero and go negative when dispatched. **Removing the old (wrong)
-  "program outputs the whole sub-assembly" shortcut (done 2026-06-30) made this
-  gap fully visible — closing it needs the assembly-run flow.**
+- **How:** (1) the 64 phantom items that are children of a sub-assembly were
+  reclassified `phantom→stocked` (migration `052`); program runs now post their
+  `cut_part` outputs to Main Store (still 30-Jun cutover-gated). (2) `/child-parts`
+  groups the cut pieces by the sub-assembly they build, with hand-correct-quantity
+  and **Build** (consume children → produce parent, WARN-BUT-ALLOW). (3) MRP
+  netting came free — the make-plan keys on `procurement_type`, not
+  `stock_behaviour`, so the locked optimiser was untouched. See memory
+  `project_assembly_runs`.
+- The unmerged `feature/assembly-runs` branch's date-logbook page + the
+  `/inventory/[id]` Build button were NOT built — the Child Parts page is the surface.
 
 ### Stage E — Inventory updation (manual)  ✅ CHANGES INVENTORY
 - **What:** stock-adjust widget → `adjustment` (signed); Excel import →
@@ -175,20 +176,18 @@ Copy this pattern for any new posting flow.
 
 ---
 
-## 4. OPEN DECISIONS for the owner (resolve before building)
+## 4. OWNER DECISIONS (answered 2026-07-01)
 
-These were raised and the owner deferred — get answers first, in the owner's
-own words rather than forced multiple-choice:
-
-- **Opening baseline:** physical count → freeze tomorrow, or trust current
-  system balances, or count key items only?
-- **"Track every change personally" means:** a reviewable feed + daily digest
-  (attributable, no bottleneck), or approve-before-commit (owner signs off), or
-  a daily digest only?
-- **Entry strictness:** hard guards (block negative, require operator + reason,
-  surface failures) vs warn-but-allow?
-- **Assembly gap now or later:** finish `feature/assembly-runs` as part of this,
-  or lock guards + traceability first?
+- **Opening baseline:** ✅ **Trust current system balances** (no physical count).
+  Everything after the 30-Jun cutover is delta-tracked from where the ERP stands.
+- **Entry strictness:** ✅ **Warn but allow** — surface the warning (e.g. going
+  negative) but never block the entry.
+- **Assembly gap now or later:** ✅ **Close it first** — done (Stage D above).
+- **"Track every change personally" means:** ⏳ owner answered "Something else" —
+  STILL OPEN, get their words. Already captured: `created_by_name` on every move +
+  per-item Stock Ledger (source doc + actor). Missing piece = the owner-facing
+  review surface (one feed of all moves? pushed digest? flag only negatives/big
+  adjusts?). This is the likely next build.
 
 ---
 
