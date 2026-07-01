@@ -37,7 +37,7 @@ interface Props {
 
 const ROLE_OPTIONS: { value: OutputRole; label: string }[] = [
   { value: "component", label: "Finished part" },
-  { value: "cut_part", label: "Loose part" },
+  { value: "cut_part", label: "Cut part" },
   { value: "tooling", label: "Tool" },
   { value: "scrap", label: "Scrap" },
 ];
