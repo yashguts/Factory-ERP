@@ -263,11 +263,16 @@ export async function _getMrpDataUncached(
   // BOM directly, so the direct sum above misses them (the item shows as "No
   // link"). Walk each demanded MAKE item down its parts list and add any TRADE
   // leaves to demand, attributed to the same jobs. Make sub-parts are left to the
-  // production plan — this only surfaces things to BUY. Mirrors getProductionPlan's
-  // explode: based on REQUIRED (not shortfall, so it agrees with /mrp/plan's
-  // purchased list), and resolves children by the stored representative
-  // (child_item_id) — exact for the current data (all 'neutral'); revisit to share
-  // getProductionPlan's finish resolution if finish-banded trade sub-parts appear.
+  // production plan — this only surfaces things to BUY. SHORTFALL-cascade: each
+  // make level's on-hand stock is netted before its trade children are demanded
+  // (owner's rule 2026-07-01 — a panel already in stock doesn't re-demand its
+  // glass), matching the make-plan's stock-netting explosion. NOTE the sheet
+  // buy-list (getProductionPlan) still explodes gross REQUIRED and does NOT net
+  // stock — same class of issue for raw sheets, deliberately left untouched here
+  // (separate surface, next to the locked make-plan). Resolves children by the
+  // stored representative (child_item_id) — exact for the current data (all
+  // 'neutral'); revisit to share getProductionPlan's finish resolution if
+  // finish-banded trade sub-parts appear.
   // Component-demand rules (e.g. guide shoes per safety frame) are REAL make/trade
   // demand that no parts-list explosion will ever re-derive (by design they don't
   // touch the production plan), so they apply to EVERY consumer — crucially the
@@ -438,9 +443,23 @@ async function buildTopCategoryResolver(
 /**
  * Folds TRADE parts that sit under demanded MAKE items (via item_bom_lines) into
  * `reqMap`, attributed to the parent's jobs. Mutates reqMap in place. Trade leaves
- * only — make sub-assemblies are recursed through but not themselves added (the
- * production plan handles manufacturing). Required-based, representative-child
- * resolution, depth-capped + cycle-guarded. See the call site for the rationale.
+ * only — make sub-assemblies are walked through but not themselves added (the
+ * production plan handles manufacturing).
+ *
+ * SHORTFALL-cascade (owner's rule, 2026-07-01): a derived item's requirement is
+ * driven by the mother part's LIVE SHORTFALL, not its gross demand. At every MAKE
+ * level we net that level's on-hand stock — `net = max(0, demand − stock)` — and
+ * only that shortfall flows down to the children. So if you already hold panels in
+ * stock you don't re-demand their glass. (The trade leaf's OWN stock is netted
+ * later at the MRP-row level: shortfall = required − stock.) This matches how the
+ * make-plan already explodes (make-plan-core `explodeToLeaves`), so the buy figure
+ * and the production plan agree.
+ *
+ * Netting is done in TOPOLOGICAL order (parents before children) so a node shared
+ * by several parents has its full demand accumulated before its stock is netted
+ * once — a per-path recursion would over-net a shared/nested node. Representative-
+ * child resolution (child_item_id), cycle-safe (cyclic nodes never reach indeg 0
+ * and are dropped — a data error; none exist today).
  */
 async function addTradeLeafDemand(
   supabase: ReturnType<typeof createCacheClient>,
@@ -467,32 +486,85 @@ async function addTradeLeafDemand(
     bomByParent.set(b.parent_item_id, arr);
   }
 
-  const effProc = await effectiveProcurement(supabase, [...participantIds]);
+  const partArr = [...participantIds];
+  // Effective procurement + on-hand stock for every parts-list participant. Stock
+  // is what makes this shortfall-based rather than demand-based.
+  const [effProc, stock] = await Promise.all([
+    effectiveProcurement(supabase, partArr),
+    (async () => {
+      const s = new Map<string, number>();
+      const batches = [];
+      for (let i = 0; i < partArr.length; i += 200)
+        batches.push(supabase.from("inventory").select("item_id, quantity").in("item_id", partArr.slice(i, i + 200)));
+      const results = await Promise.all(batches);
+      for (const r of results) {
+        if (r.error) throw r.error;
+        for (const v of r.data ?? [])
+          s.set(v.item_id as string, (s.get(v.item_id as string) ?? 0) + Number(v.quantity || 0));
+      }
+      return s;
+    })(),
+  ]);
+  const isMake = (id: string) => effProc.get(id) !== "trade"; // null (inherit) counts as make
 
+  // Seed gross demand + job attribution from the top-level demanded MAKE items that
+  // have a parts list. (A bought item isn't "made"; no parts list → nothing to explode.)
+  const gross = new Map<string, number>();
+  const bomIdsByItem = new Map<string, Set<string>>();
+  for (const [itemId, req] of reqMap) {
+    if (!bomByParent.has(itemId) || !isMake(itemId)) continue;
+    gross.set(itemId, (gross.get(itemId) ?? 0) + req.total);
+    const s = bomIdsByItem.get(itemId) ?? new Set<string>();
+    for (const b of req.bomIds) s.add(b);
+    bomIdsByItem.set(itemId, s);
+  }
+  if (gross.size === 0) return;
+
+  // Reachable MAKE nodes (trade children are leaves — we don't walk past them).
+  const reach = new Set<string>(gross.keys());
+  const stack = [...reach];
+  while (stack.length) {
+    const it = stack.pop() as string;
+    for (const { child } of bomByParent.get(it) ?? [])
+      if (isMake(child) && !reach.has(child)) { reach.add(child); stack.push(child); }
+  }
+
+  // Topological order over the make DAG (parents before children).
+  const indeg = new Map<string, number>();
+  for (const it of reach) indeg.set(it, 0);
+  for (const it of reach)
+    for (const { child } of bomByParent.get(it) ?? [])
+      if (reach.has(child)) indeg.set(child, (indeg.get(child) ?? 0) + 1);
+  const queue = [...reach].filter((it) => (indeg.get(it) ?? 0) === 0);
+  const topo: string[] = [];
+  while (queue.length) {
+    const it = queue.shift() as string;
+    topo.push(it);
+    for (const { child } of bomByParent.get(it) ?? [])
+      if (reach.has(child)) { indeg.set(child, indeg.get(child)! - 1); if (indeg.get(child) === 0) queue.push(child); }
+  }
+
+  // Net-down: each MAKE node's SHORTFALL (max(0, demand − stock)) drives its
+  // children. Trade children accumulate their gross demand into `derived`.
   const derived = new Map<string, { total: number; bomIds: Set<string> }>();
-  const explode = (itemId: string, qty: number, bomIds: Set<string>, visited: Set<string>, depth: number) => {
-    if (qty <= 0 || depth > 12 || visited.has(itemId)) return;
-    const lines = bomByParent.get(itemId);
-    if (!lines) return;
-    const nv = new Set(visited);
-    nv.add(itemId);
-    for (const ln of lines) {
-      const childQty = qty * ln.qty;
-      if (childQty <= 0) continue;
-      if (effProc.get(ln.child) === "trade") {
-        const ex = derived.get(ln.child);
-        if (ex) { ex.total += childQty; for (const b of bomIds) ex.bomIds.add(b); }
-        else derived.set(ln.child, { total: childQty, bomIds: new Set(bomIds) });
+  for (const it of topo) {
+    const net = Math.max(0, (gross.get(it) ?? 0) - (stock.get(it) ?? 0));
+    if (net <= 0) continue;
+    const ids = bomIdsByItem.get(it) ?? new Set<string>();
+    for (const { child, qty } of bomByParent.get(it) ?? []) {
+      const childDemand = net * qty;
+      if (childDemand <= 0) continue;
+      const cs = bomIdsByItem.get(child) ?? new Set<string>();
+      for (const b of ids) cs.add(b);
+      bomIdsByItem.set(child, cs);
+      if (isMake(child)) {
+        gross.set(child, (gross.get(child) ?? 0) + childDemand);
       } else {
-        explode(ln.child, childQty, bomIds, nv, depth + 1); // make sub-assembly → keep walking
+        const ex = derived.get(child);
+        if (ex) { ex.total += childDemand; for (const b of ids) ex.bomIds.add(b); }
+        else derived.set(child, { total: childDemand, bomIds: new Set(ids) });
       }
     }
-  };
-
-  for (const [itemId, req] of Array.from(reqMap.entries())) {
-    if (!bomByParent.has(itemId)) continue; // no parts list → nothing to explode
-    if (effProc.get(itemId) === "trade") continue; // a bought item isn't "made"
-    explode(itemId, req.total, req.bomIds, new Set(), 0);
   }
 
   for (const [leaf, d] of derived) {
