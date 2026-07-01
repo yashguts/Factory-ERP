@@ -22,8 +22,6 @@ import {
   PackageCheck,
   Truck,
   PackageSearch,
-  Settings,
-  Activity,
   Network,
   UserRound,
   LucideIcon,
@@ -46,7 +44,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/cabin-inventory", label: "Cabin Inventory", icon: Container },
       { href: "/subassemblies", label: "Sub-assemblies", icon: Boxes },
       { href: "/inventory/changes", label: "Daily Changes", icon: History },
-      { href: "/inventory/health", label: "Inventory Health", icon: Activity },
     ],
   },
   {
@@ -72,12 +69,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/demand", label: "Demand Rules", icon: Network },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
       { href: "/packing-list-r1", label: "Packing List R1", icon: PackageCheck },
-    ],
-  },
-  {
-    label: "Admin",
-    items: [
-      { href: "/settings", label: "Settings", icon: Settings },
     ],
   },
 ];
