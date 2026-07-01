@@ -995,69 +995,106 @@ async function _getProductionPlanUncached(
     return line.child_item_id; // fall back to the representative child
   };
 
-  const explode = (
-    itemId: string,
-    qty: number,
-    parentFinish: string | null,
-    visited: Set<string>,
-    depth: number,
-  ): void => {
-    const it = itemById.get(itemId);
-    if (!it) return; // inactive/unknown — ignore
-    if (depth > 12 || visited.has(itemId)) {
-      unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
-      return;
-    }
-    if (it.effective_procurement_type === "trade") {
-      purchased.set(itemId, (purchased.get(itemId) ?? 0) + qty);
-      return;
-    }
-    const bom = bomByParent.get(itemId);
-    if (bom && bom.length > 0) {
-      const nv = new Set(visited);
-      nv.add(itemId);
-      let hasMakeChild = false;
-      for (const line of bom) {
-        const childId = resolveChild(line, it.finish);
-        if (!childId) continue;
-        const child = itemById.get(childId);
-        if (child && child.effective_procurement_type !== "trade") hasMakeChild = true;
-        explode(childId, qty * (Number(line.qty) || 0), it.finish, nv, depth + 1);
-      }
-      // A real assembly (has MADE sub-parts) is fully covered by exploding those.
-      // But an item whose only children are BOUGHT (e.g. a door panel + glass) is
-      // itself cut WHOLE by its own program — fall through and route it through
-      // that program so its sheet reaches the buy list (previously this returned
-      // early and the panel's sheet silently vanished).
-      if (hasMakeChild) return;
-      const prog = itemToProgram.get(itemId);
-      if (prog) {
-        const runs = qty / (prog.outQty || 1);
-        programRuns.set(prog.programId, Math.max(programRuns.get(prog.programId) ?? 0, runs));
-        programIdsUsed.add(prog.programId);
-        return;
-      }
-      if (it.item_type === "raw_material") rawLeaf.set(itemId, (rawLeaf.get(itemId) ?? 0) + qty);
-      else unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
-      return;
-    }
-    const prog = itemToProgram.get(itemId);
-    if (prog) {
-      const runs = qty / (prog.outQty || 1);
-      programRuns.set(prog.programId, Math.max(programRuns.get(prog.programId) ?? 0, runs));
-      programIdsUsed.add(prog.programId);
-      return;
-    }
-    // make/unset with no recipe: raw material -> buy it; otherwise flag.
-    if (it.item_type === "raw_material") {
-      rawLeaf.set(itemId, (rawLeaf.get(itemId) ?? 0) + qty);
-    } else {
-      unresolved.set(itemId, (unresolved.get(itemId) ?? 0) + qty);
-    }
+  // SHORTFALL-cascade (owner's rule 2026-07-01): net each MAKE level's on-hand
+  // stock before its demand flows down to children / programs / sheets — so a
+  // panel already sitting in stock doesn't generate sheet demand to re-cut it.
+  // Done as an AGGREGATE topological net-down (not per-path recursion): a part
+  // reached from several parents has its full demand summed BEFORE its stock is
+  // netted once. A per-path net would UNDER-order a shared part — dangerous for a
+  // buy list — so this is the safe as well as the correct shape. Mirrors
+  // make-plan-core's explodeToLeaves. (The sheet's / trade leaf's OWN stock is
+  // still netted at the leaf in toLeaf: shortfall = qty − in_stock.)
+  const isMake = (id: string): boolean => {
+    const it = itemById.get(id);
+    return !!it && it.effective_procurement_type !== "trade";
   };
+  // Finish-resolved parts list per parent (resolveChild is a no-op for the
+  // current all-'neutral' data; kept so finish-banded sub-parts still resolve).
+  const partsOf = new Map<string, { child: string; qty: number }[]>();
+  for (const [pid, lines] of bomByParent) {
+    const pf = itemById.get(pid)?.finish ?? null;
+    const arr: { child: string; qty: number }[] = [];
+    for (const line of lines) {
+      const child = resolveChild(line, pf);
+      if (child) arr.push({ child, qty: Number(line.qty) || 0 });
+    }
+    partsOf.set(pid, arr);
+  }
 
+  // Gross demand seeded from top-level MAKE demand; TRADE top-level demand goes
+  // straight to `purchased` (its own stock nets later in toLeaf).
+  const gross = new Map<string, number>();
   for (const d of demand) {
-    explode(d.item_id, d.total_required, itemById.get(d.item_id)?.finish ?? null, new Set(), 0);
+    if (isMake(d.item_id)) gross.set(d.item_id, (gross.get(d.item_id) ?? 0) + d.total_required);
+    else purchased.set(d.item_id, (purchased.get(d.item_id) ?? 0) + d.total_required);
+  }
+
+  // Reachable make nodes (trade children are leaves — we don't walk past them).
+  const reach = new Set<string>(gross.keys());
+  {
+    const stack = [...reach];
+    while (stack.length) {
+      const it = stack.pop() as string;
+      for (const { child } of partsOf.get(it) ?? [])
+        if (isMake(child) && !reach.has(child)) { reach.add(child); stack.push(child); }
+    }
+  }
+  // Topological order over the make DAG (parents before children).
+  const indeg = new Map<string, number>();
+  for (const it of reach) indeg.set(it, 0);
+  for (const it of reach)
+    for (const { child } of partsOf.get(it) ?? [])
+      if (reach.has(child)) indeg.set(child, (indeg.get(child) ?? 0) + 1);
+  const queue = [...reach].filter((it) => (indeg.get(it) ?? 0) === 0);
+  const topo: string[] = [];
+  while (queue.length) {
+    const it = queue.shift() as string;
+    topo.push(it);
+    for (const { child } of partsOf.get(it) ?? [])
+      if (reach.has(child)) { indeg.set(child, indeg.get(child)! - 1); if (indeg.get(child) === 0) queue.push(child); }
+  }
+  // Cyclic parts-list nodes never reach indeg 0 → flag them (data error; none today).
+  if (topo.length < reach.size) {
+    const seen = new Set(topo);
+    for (const it of reach) if (!seen.has(it)) unresolved.set(it, (unresolved.get(it) ?? 0) + (gross.get(it) ?? 0));
+  }
+
+  // Net-down: need[it] = max(0, gross demand − stock) — the SHORTFALL to produce.
+  const need = new Map<string, number>();
+  for (const it of topo) {
+    const net = Math.max(0, (gross.get(it) ?? 0) - (itemById.get(it)?.total_stock ?? 0));
+    need.set(it, net);
+    if (net <= 0) continue;
+    for (const { child, qty } of partsOf.get(it) ?? []) {
+      const cd = net * qty;
+      if (cd <= 0) continue;
+      const cit = itemById.get(child);
+      if (!cit) continue; // inactive/unknown — ignore
+      if (cit.effective_procurement_type === "trade") purchased.set(child, (purchased.get(child) ?? 0) + cd);
+      else gross.set(child, (gross.get(child) ?? 0) + cd);
+    }
+  }
+
+  // Route make TERMINALS (no made sub-parts) through their program / raw material.
+  // An item WITH made children is an assembly — carried by its children above. An
+  // item whose only children are bought (e.g. a door panel + glass insert) IS a
+  // terminal — cut whole by its own program, so its sheet reaches the buy list.
+  for (const it of topo) {
+    const p = need.get(it) ?? 0;
+    if (p <= 0) continue;
+    const hasMakeChild = (partsOf.get(it) ?? []).some((k) => {
+      const c = itemById.get(k.child);
+      return !!c && c.effective_procurement_type !== "trade";
+    });
+    if (hasMakeChild) continue;
+    const prog = itemToProgram.get(it);
+    if (prog) {
+      programRuns.set(prog.programId, Math.max(programRuns.get(prog.programId) ?? 0, p / (prog.outQty || 1)));
+      programIdsUsed.add(prog.programId);
+      continue;
+    }
+    if (itemById.get(it)?.item_type === "raw_material") rawLeaf.set(it, (rawLeaf.get(it) ?? 0) + p);
+    else unresolved.set(it, (unresolved.get(it) ?? 0) + p);
   }
 
   // Roll up program input sheets at whole runs. Program inputs are the raw stock a
