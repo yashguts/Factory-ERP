@@ -18,6 +18,7 @@ import {
   ClipboardCheck,
   Search,
   PlayCircle,
+  Blocks,
   ShoppingCart,
   PackageCheck,
   Truck,
@@ -51,6 +52,7 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/programs", label: "Programs", icon: Cog },
       { href: "/program-runs", label: "Program Runs", icon: PlayCircle },
+      { href: "/child-parts", label: "Child Parts", icon: Blocks },
     ],
   },
   {
