@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { recordTransaction, currentOperatorName } from "@/lib/actions/inventory";
+import { postsInventory } from "@/lib/inventory/cutover";
 import { getMrpData } from "@/lib/actions/mrp";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import {
@@ -1083,9 +1084,14 @@ export async function recordReceipt(input: {
         invoice_number: input.invoiceNumber?.trim() || null,
         note: input.note?.trim() || null,
       })
-      .select("id")
+      .select("id, receipt_date")
       .single();
     if (rErr || !receipt) throw rErr ?? new Error("Could not create the receipt");
+    // Inventory go-live cutover: a receipt only moves stock when its own date is
+    // on/after the cutover. Pre-cutover receipts still close out the PO line
+    // (received_qty below) but post NO purchase_in — that stock is already in
+    // the matched baseline. See src/lib/inventory/cutover.ts.
+    const receiptPostsInventory = postsInventory(receipt.receipt_date as string);
 
     // 2. Receipt lines — qty in the order unit + the actual stock qty counted +
     //    a snapshot of the tax and landed unit cost that were applied.
@@ -1145,15 +1151,18 @@ export async function recordReceipt(input: {
     for (let i = 0; i < valid.length; i++) {
       const l = valid[i];
       // The ONE conversion point: inventory always gets the actual stock qty.
-      await recordTransaction({
-        item_id: l.itemId,
-        warehouse_id: MAIN_STORE,
-        transaction_type: "purchase_in",
-        quantity: l.stockQtyResolved,
-        notes: `PO receipt${input.invoiceNumber ? ` · inv ${input.invoiceNumber.trim()}` : ""}`,
-        reference_type: "po_receipt",
-        reference_id: receipt.id,
-      });
+      // Gated by the go-live cutover — pre-cutover receipts skip the post.
+      if (receiptPostsInventory) {
+        await recordTransaction({
+          item_id: l.itemId,
+          warehouse_id: MAIN_STORE,
+          transaction_type: "purchase_in",
+          quantity: l.stockQtyResolved,
+          notes: `PO receipt${input.invoiceNumber ? ` · inv ${input.invoiceNumber.trim()}` : ""}`,
+          reference_type: "po_receipt",
+          reference_id: receipt.id,
+        });
+      }
       if (l.poLineId) {
         const next = (recvByLine.get(l.poLineId) ?? 0) + Number(l.qty);
         const nextStock = (recvStockByLine.get(l.poLineId) ?? 0) + l.stockQtyResolved;
@@ -1393,6 +1402,17 @@ export async function deletePoDocument(poId: string): Promise<SaveResult> {
 export async function deleteReceipt(receiptId: string, poId: string): Promise<SaveResult> {
   try {
     const supabase = await createClient();
+    // Cutover: only receipts dated on/after the go-live posted stock, so only
+    // those get an inventory reversal on delete. A pre-cutover receipt never
+    // added stock (it's in the matched baseline), so undoing it must NOT post a
+    // negative adjustment. The received_qty roll-back below stays unconditional.
+    const { data: recHead } = await supabase
+      .from("purchase_order_receipts")
+      .select("receipt_date")
+      .eq("id", receiptId)
+      .maybeSingle();
+    const reverseInventory = postsInventory(recHead?.receipt_date as string);
+
     const { data: lines, error } = await supabase
       .from("purchase_order_receipt_lines")
       .select("po_line_id, item_id, qty")
@@ -1401,15 +1421,17 @@ export async function deleteReceipt(receiptId: string, poId: string): Promise<Sa
 
     const decByLine = new Map<string, number>();
     for (const l of lines ?? []) {
-      await recordTransaction({
-        item_id: l.item_id,
-        warehouse_id: MAIN_STORE,
-        transaction_type: "adjustment",
-        quantity: -(Number(l.qty) || 0),
-        notes: "PO receipt undone",
-        reference_type: "po_receipt_undo",
-        reference_id: receiptId,
-      });
+      if (reverseInventory) {
+        await recordTransaction({
+          item_id: l.item_id,
+          warehouse_id: MAIN_STORE,
+          transaction_type: "adjustment",
+          quantity: -(Number(l.qty) || 0),
+          notes: "PO receipt undone",
+          reference_type: "po_receipt_undo",
+          reference_id: receiptId,
+        });
+      }
       if (l.po_line_id)
         decByLine.set(l.po_line_id, (decByLine.get(l.po_line_id) ?? 0) + (Number(l.qty) || 0));
     }

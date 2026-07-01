@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath } from "next/cache";
 import { recordTransaction } from "@/lib/actions/inventory";
+import { CUTOVER_DATE } from "@/lib/inventory/cutover";
 import type { TransactionType } from "@/lib/supabase/types";
 
 /* ------------------------------------------------------------------ *
@@ -54,10 +55,14 @@ async function runHasInventory(supabase: Db, runId: string): Promise<boolean> {
 async function syncRunInventory(supabase: Db, runId: string, count: number): Promise<void> {
   const { data: run } = await supabase
     .from("operation_runs")
-    .select("operation_id")
+    .select("operation_id, run_date")
     .eq("id", runId)
     .maybeSingle();
   if (!run) return;
+  // Cutover: a run dated before the go-live baseline never touches stock (it's
+  // already reflected). Return BEFORE reading/reconciling so an existing
+  // pre-cutover run's baseline postings are never disturbed on edit/delete.
+  if ((run.run_date as string) < CUTOVER_DATE) return;
   const operationId = run.operation_id as string;
   const stores = await resolveStores(supabase);
   if (!stores.raw || !stores.main) return;
@@ -425,6 +430,11 @@ export async function updateRunDate(
         : error.message;
     return { ok: false, error: msg };
   }
+  // A date edit is PURE metadata — it never moves stock. Auto-posting on a date
+  // change is ambiguous (can't tell "correcting a genuine post-cutover run" from
+  // "re-dating a pre-cutover baseline run") and could double-count against the
+  // trusted physical baseline. Only record / count-edit / delete move stock, each
+  // gated on run_date in syncRunInventory. To post a re-dated run, delete + re-add.
   revalidatePath("/program-runs");
   return { ok: true, id };
 }

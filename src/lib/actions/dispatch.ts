@@ -6,6 +6,7 @@ import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { recordTransaction } from "@/lib/actions/inventory";
+import { postsInventory } from "@/lib/inventory/cutover";
 
 /* ------------------------------------------------------------------ *
  * Job dispatch.
@@ -55,6 +56,15 @@ async function resolveStores(supabase: Db): Promise<{ finished: string | null; m
  *  actually stocked in (prefer Finished Goods → Main Store → Raw → default
  *  Finished Goods, letting it go negative). No-op if already posted. */
 async function postDispatchInventory(supabase: Db, dispatchId: string): Promise<void> {
+  // Cutover: a dispatch dated before go-live never moves stock (already in the
+  // baseline). Gate INSIDE the helper so no caller can bypass it.
+  const { data: head } = await supabase
+    .from("job_dispatches")
+    .select("dispatch_date")
+    .eq("id", dispatchId)
+    .maybeSingle();
+  if (!postsInventory(head?.dispatch_date as string)) return;
+
   const { data: existing } = await supabase
     .from("inventory_transactions")
     .select("id")
@@ -119,6 +129,15 @@ async function postDispatchInventory(supabase: Db, dispatchId: string): Promise<
 
 /** Reverse a dispatch's stock deductions (undo). No-op if already reversed. */
 async function reverseDispatchInventory(supabase: Db, dispatchId: string): Promise<void> {
+  // Cutover: a pre-cutover dispatch's stock effect is part of the locked
+  // baseline — never reverse it (even on delete/undo of an old record).
+  const { data: head } = await supabase
+    .from("job_dispatches")
+    .select("dispatch_date")
+    .eq("id", dispatchId)
+    .maybeSingle();
+  if (!postsInventory(head?.dispatch_date as string)) return;
+
   const { data: undone } = await supabase
     .from("inventory_transactions")
     .select("id")
