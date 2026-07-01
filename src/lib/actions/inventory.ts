@@ -970,6 +970,9 @@ export async function createItem(data: {
       cost_price: data.cost_price,
       procurement_type: data.procurement_type ?? null,
       stock_behaviour: data.stock_behaviour ?? "stocked",
+      // Loose parts (phantom) are child/cut parts — flag them so they stay out of
+      // the main /inventory list (and labelled) even if later reclassified stocked.
+      is_child_part: (data.stock_behaviour ?? "stocked") === "phantom",
       suppliers: normalizeSuppliers(data.suppliers),
       purchase_uom_id: data.purchase_uom_id ?? null,
       purchase_conversion: data.purchase_conversion ?? null,

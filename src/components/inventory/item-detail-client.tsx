@@ -218,6 +218,11 @@ export function ItemDetailClient({
             {item.stock_behaviour}
           </Badge>
         )}
+        {item.is_child_part && (
+          <Badge variant="cyan" title="Child part — a piece a program cuts; managed on the Child Parts page, hidden from the main inventory list">
+            Child part
+          </Badge>
+        )}
       </div>
 
       {producedBy.length > 0 && (

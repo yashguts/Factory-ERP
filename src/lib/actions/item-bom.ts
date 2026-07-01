@@ -21,6 +21,9 @@ export interface ItemForBom {
   code: string;
   name: string;
   stock_behaviour: StockBehaviour;
+  /** Cut piece a program makes (hidden from the main /inventory list; shown on
+   *  /child-parts). Orthogonal to stock_behaviour. */
+  is_child_part: boolean;
   procurement_type: "make" | "trade" | null;
   category_procurement_type: "make" | "trade" | null;
   effective_procurement_type: "make" | "trade" | null;
@@ -138,7 +141,7 @@ const _getItemBomUncached = async (
   const { data: item, error: itemErr } = await supabase
     .from("items")
     .select(
-      `id, code, name, stock_behaviour, procurement_type, family, finish,
+      `id, code, name, stock_behaviour, is_child_part, procurement_type, family, finish,
        category:item_categories!items_category_id_fkey(procurement_type),
        uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
     )
@@ -218,6 +221,7 @@ const _getItemBomUncached = async (
       code: item.code as string,
       name: item.name as string,
       stock_behaviour: (item.stock_behaviour as StockBehaviour) ?? "stocked",
+      is_child_part: (item.is_child_part as boolean) ?? false,
       procurement_type: itemPT,
       category_procurement_type: catPT,
       effective_procurement_type: itemPT ?? catPT,
@@ -480,6 +484,7 @@ export async function promoteLoosePartLabel(
         lookup_key: label,
         item_type: "sub_assembly",
         stock_behaviour: "phantom",
+        is_child_part: true,
         procurement_type: "make",
         uom_id: (nos as any).id,
         is_active: true,
