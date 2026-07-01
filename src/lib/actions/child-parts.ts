@@ -6,19 +6,24 @@ import { revalidatePath } from "next/cache";
 import { recordTransaction } from "@/lib/actions/inventory";
 
 /* ------------------------------------------------------------------ *
- * Child Parts — the workbench for the loose pieces programs cut, grouped by
- * the sub-assembly they build.
+ * Child Parts — the workbench for building sub-assemblies from their parts.
  *
- *   raw sheet --[program run]--> CHILD PARTS in stock --[BUILD]--> sub-assembly.
+ *   raw sheet --[program run]--> child parts in stock --[BUILD]--> sub-assembly.
  *
- * A "child part" = an item_bom_lines child that a program CUTS (a `cut_part`
- * output). That set is exactly the pieces created by program runs, and it never
- * includes trade/bought sub-parts (they are never cut). Program runs from the
- * cutover onward stock these automatically; here the operator can eyeball the
- * stock per sub-assembly, hand-correct a quantity, and build the parent.
+ * A group = a "true sub-assembly" (an item_bom_lines parent with >=1 MAKE child;
+ * glass-only door panels, whose children are all trade, are NOT assemblies). Each
+ * group shows its FULL parts list, every child labelled by kind:
+ *   - cut   : a piece a program cuts (a `cut_part` output) — stocked by runs.
+ *   - made  : a made sub-part produced by a program `component` output.
+ *   - trade : a bought/procured part (effective procurement = 'trade').
+ * Building CONSUMES every child from Main Store and produces the parent, so all
+ * three kinds net into inventory + Make/Trade MRP. The operator can also hand-
+ * correct any child's count.
  * ------------------------------------------------------------------ */
 
 type Db = Awaited<ReturnType<typeof createClient>>;
+
+export type ChildKind = "cut" | "made" | "trade";
 
 export interface ChildPartRow {
   item_id: string;
@@ -28,6 +33,8 @@ export interface ChildPartRow {
   perBuild: number;
   /** Current Main Store stock. */
   stock: number;
+  /** cut piece / made sub-part / trade (bought) part. */
+  kind: ChildKind;
 }
 
 export interface ChildPartGroup {
@@ -61,71 +68,111 @@ async function mainStock(supabase: Db, itemIds: string[], main: string): Promise
   return out;
 }
 
+/** Fetch a column set for many item ids, chunked to dodge URL-length + row caps. */
+async function fetchItemsChunked(
+  supabase: Db,
+  ids: string[],
+): Promise<Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>> {
+  const out = new Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>();
+  for (let i = 0; i < ids.length; i += 300) {
+    const { data } = await supabase
+      .from("items")
+      .select("id, code, name, procurement_type, category_id")
+      .in("id", ids.slice(i, i + 300));
+    for (const it of data ?? [])
+      out.set(it.id as string, {
+        code: (it.code as string) ?? null,
+        name: (it.name as string) ?? "(item)",
+        procurement_type: (it.procurement_type as string | null) ?? null,
+        category_id: (it.category_id as string | null) ?? null,
+      });
+  }
+  return out;
+}
+
+const KIND_RANK: Record<ChildKind, number> = { cut: 0, made: 1, trade: 2 };
+
 /**
- * Every sub-assembly that is built from cut child parts, with each child's
- * per-build qty + current stock, sorted by sub-assembly name. Always live (not
- * cached) — stock moves constantly and the set is small (~30 groups).
+ * Every true sub-assembly (item_bom_lines parent with >=1 MAKE child), with its
+ * FULL parts list — each child labelled cut/made/trade + per-build qty + live
+ * Main Store stock — sorted by sub-assembly name. Always live (not cached) —
+ * stock moves constantly and the set is small (~60 groups).
  */
 export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   const supabase = createCacheClient();
 
-  // 1. The cut-piece children (items a program outputs as cut_part).
-  const { data: cutOut } = await supabase
-    .from("operation_outputs")
-    .select("item_id")
-    .eq("role", "cut_part")
-    .not("item_id", "is", null);
-  const cutIds = new Set((cutOut ?? []).map((o) => o.item_id as string));
-  if (cutIds.size === 0) return [];
-
-  // 2. Parts lines whose child is a cut piece → group by parent.
-  const { data: lines } = await supabase
-    .from("item_bom_lines")
-    .select("parent_item_id, child_item_id, qty")
-    .in("child_item_id", [...cutIds]);
-  type Agg = { parent_id: string; children: Map<string, number> };
-  const byParent = new Map<string, Agg>();
-  for (const l of lines ?? []) {
-    const pid = l.parent_item_id as string;
-    const cid = l.child_item_id as string;
-    const g = byParent.get(pid) ?? { parent_id: pid, children: new Map<string, number>() };
-    g.children.set(cid, (g.children.get(cid) ?? 0) + (Number(l.qty) || 0));
-    byParent.set(pid, g);
+  // 1. Full parts list (paged past the 1000-row cap). Group children per parent.
+  const byParent = new Map<string, Map<string, number>>();
+  for (let off = 0; ; off += 1000) {
+    const { data } = await supabase
+      .from("item_bom_lines")
+      .select("parent_item_id, child_item_id, qty")
+      .not("child_item_id", "is", null)
+      .range(off, off + 999);
+    const batch = data ?? [];
+    for (const l of batch) {
+      const pid = l.parent_item_id as string;
+      const cid = l.child_item_id as string;
+      const kids = byParent.get(pid) ?? new Map<string, number>();
+      kids.set(cid, (kids.get(cid) ?? 0) + (Number(l.qty) || 0));
+      byParent.set(pid, kids);
+    }
+    if (batch.length < 1000) break;
   }
   if (byParent.size === 0) return [];
 
-  // 3. Item identities + Main Store stock for every parent and child.
+  // 2. Item identities + effective procurement (item.procurement_type ??
+  //    category.procurement_type) + cut-piece set (for the kind label) + stock.
   const parentIds = [...byParent.keys()];
-  const childIds = [...new Set([...byParent.values()].flatMap((g) => [...g.children.keys()]))];
+  const childIds = [...new Set([...byParent.values()].flatMap((k) => [...k.keys()]))];
   const allIds = [...new Set([...parentIds, ...childIds])];
-  const { data: items } = await supabase.from("items").select("id, code, name").in("id", allIds);
-  const meta = new Map((items ?? []).map((i) => [i.id as string, { code: (i.code as string) ?? null, name: (i.name as string) ?? "(item)" }]));
-  const main = await mainStoreId(supabase);
+  const [meta, { data: cats }, { data: cutOut }, main] = await Promise.all([
+    fetchItemsChunked(supabase, allIds),
+    supabase.from("item_categories").select("id, procurement_type"),
+    supabase.from("operation_outputs").select("item_id").eq("role", "cut_part").not("item_id", "is", null),
+    mainStoreId(supabase),
+  ]);
+  const catProc = new Map((cats ?? []).map((c) => [c.id as string, (c.procurement_type as string | null) ?? null]));
+  const cutIds = new Set((cutOut ?? []).map((o) => o.item_id as string));
   const stock = main ? await mainStock(supabase, allIds, main) : new Map<string, number>();
+  const effProc = (id: string): string | null => {
+    const it = meta.get(id);
+    return it?.procurement_type ?? (it?.category_id ? catProc.get(it.category_id) ?? null : null);
+  };
 
-  const groups: ChildPartGroup[] = parentIds.map((pid) => {
-    const g = byParent.get(pid)!;
-    const children: ChildPartRow[] = [...g.children.entries()].map(([cid, perBuild]) => ({
-      item_id: cid,
-      code: meta.get(cid)?.code ?? null,
-      name: meta.get(cid)?.name ?? "(item)",
-      perBuild,
-      stock: stock.get(cid) ?? 0,
-    }));
-    children.sort((a, b) => a.name.localeCompare(b.name));
+  const groups: ChildPartGroup[] = [];
+  for (const pid of parentIds) {
+    const kids = byParent.get(pid)!;
+    // A "true sub-assembly" has >=1 make (non-trade) child — skip glass-only /
+    // trade-only panels (not assembled in-house).
+    if (![...kids.keys()].some((cid) => effProc(cid) !== "trade")) continue;
+
+    const children: ChildPartRow[] = [...kids.entries()].map(([cid, perBuild]) => {
+      const ep = effProc(cid);
+      const kind: ChildKind = ep === "trade" ? "trade" : cutIds.has(cid) ? "cut" : "made";
+      return {
+        item_id: cid,
+        code: meta.get(cid)?.code ?? null,
+        name: meta.get(cid)?.name ?? "(item)",
+        perBuild,
+        stock: stock.get(cid) ?? 0,
+        kind,
+      };
+    });
+    children.sort((a, b) => KIND_RANK[a.kind] - KIND_RANK[b.kind] || a.name.localeCompare(b.name));
     const maxBuildable = children.reduce((min, c) => {
       const canMake = c.perBuild > 0 ? Math.floor((c.stock < 0 ? 0 : c.stock) / c.perBuild) : Infinity;
       return Math.min(min, canMake);
     }, Infinity);
-    return {
+    groups.push({
       parent_id: pid,
       parent_code: meta.get(pid)?.code ?? null,
       parent_name: meta.get(pid)?.name ?? "(item)",
       parent_stock: stock.get(pid) ?? 0,
       children,
       maxBuildable: Number.isFinite(maxBuildable) ? maxBuildable : 0,
-    };
-  });
+    });
+  }
   groups.sort((a, b) => a.parent_name.localeCompare(b.parent_name));
   return groups;
 }

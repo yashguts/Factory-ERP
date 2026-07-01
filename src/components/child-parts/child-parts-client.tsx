@@ -14,6 +14,17 @@ import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { recordAssemblyRun } from "@/lib/actions/assembly-runs";
 import { adjustChildPartStock, type ChildPartGroup } from "@/lib/actions/child-parts";
 
+const KIND_STYLE: Record<string, string> = {
+  cut: "bg-blue-500/10 text-blue-600 dark:text-blue-400",
+  made: "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400",
+  trade: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
+};
+const KIND_TITLE: Record<string, string> = {
+  cut: "Cut piece — a program cuts this; stocks automatically as programs run.",
+  made: "Made sub-part — produced by a program; stocks automatically as programs run.",
+  trade: "Bought (trade) part — procured. Consuming it in a build lowers stock and raises Trade MRP to-buy.",
+};
+
 interface Props {
   groups: ChildPartGroup[];
   today: string;
@@ -51,7 +62,7 @@ export function ChildPartsClient({ groups, today }: Props) {
         title="Child Parts"
         icon={<Blocks size={18} />}
         meta={`${groups.length} sub-assemblies · ${totalChildren} parts`}
-        subtitle="The loose pieces programs cut, grouped by the sub-assembly they build. Stock builds up automatically as programs run (from 30 Jun). Correct a count if it drifts, or build a sub-assembly to consume its pieces and stock the finished item."
+        subtitle="Each sub-assembly with its full parts list — cut pieces, made sub-parts and bought (trade) parts. Cut/made pieces stock automatically as programs run; correct any count if it drifts, or build a sub-assembly to consume its parts and stock the finished item. Building past what's in stock is allowed (the short part goes negative and shows up in MRP to buy/make)."
       />
 
       <div className="mb-4 max-w-sm">
@@ -66,7 +77,7 @@ export function ChildPartsClient({ groups, today }: Props) {
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
           {groups.length === 0
-            ? "No child parts yet. Once a program with cut-part outputs runs (dated 30 Jun or later), its pieces show up here."
+            ? "No sub-assemblies yet. Once an item has a parts list with at least one made part, it shows up here to build."
             : "No sub-assemblies match your search."}
         </div>
       ) : (
@@ -193,6 +204,15 @@ function ChildRow({
 
   return (
     <div className="flex items-center gap-2 px-3 py-1.5 text-sm">
+      <span
+        className={cn(
+          "shrink-0 rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide",
+          KIND_STYLE[child.kind],
+        )}
+        title={KIND_TITLE[child.kind]}
+      >
+        {child.kind}
+      </span>
       <Link
         href={`/inventory/${child.item_id}`}
         className="min-w-0 flex-1 truncate hover:text-[var(--primary)] hover:underline"

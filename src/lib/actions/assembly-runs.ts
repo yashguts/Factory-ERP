@@ -26,38 +26,25 @@ async function mainStoreId(supabase: Db): Promise<string | null> {
   return (data?.id as string) ?? null;
 }
 
-/** Item ids that a program CUTS (appear as a `cut_part` output). These are the
- *  "child parts" a sub-assembly is built from — the pieces the Child Parts page
- *  tracks. Trade/bought sub-parts are never cut_part outputs, so this naturally
- *  excludes them (the owner: "no trade items need to be here"). */
-async function cutPieceChildIds(supabase: Db): Promise<Set<string>> {
-  const { data } = await supabase
-    .from("operation_outputs")
-    .select("item_id")
-    .eq("role", "cut_part")
-    .not("item_id", "is", null);
-  return new Set((data ?? []).map((o) => o.item_id as string));
-}
-
-/** The parent's child parts (item_bom_lines), restricted to the CUT pieces a
- *  program makes (see cutPieceChildIds). All rows are 'neutral' today, so
- *  child_item_id is the exact item to consume; summed per child. */
+/** The parent's child parts (item_bom_lines) — the FULL parts list: cut pieces
+ *  + made sub-parts + trade/bought parts. Building CONSUMES every child from Main
+ *  Store, so each sub-part's on-hand drops for real and nets into Make/Trade MRP
+ *  (a bought bracket used in a build lowers its stock → Trade MRP buys more).
+ *  All rows are 'neutral' today, so child_item_id is the exact item to consume;
+ *  summed per child. Single-level BY DESIGN — a child that is itself a sub-
+ *  assembly is consumed as finished stock, NOT exploded into its own children. */
 async function getChildren(
   supabase: Db,
   parentId: string,
 ): Promise<{ item_id: string; qty: number }[]> {
-  const cut = await cutPieceChildIds(supabase);
   const { data } = await supabase
     .from("item_bom_lines")
     .select("child_item_id, qty")
     .eq("parent_item_id", parentId)
     .not("child_item_id", "is", null);
   const m = new Map<string, number>();
-  for (const r of data ?? []) {
-    const id = r.child_item_id as string;
-    if (!cut.has(id)) continue;
-    m.set(id, (m.get(id) ?? 0) + (Number(r.qty) || 0));
-  }
+  for (const r of data ?? [])
+    m.set(r.child_item_id as string, (m.get(r.child_item_id as string) ?? 0) + (Number(r.qty) || 0));
   return [...m.entries()].map(([item_id, qty]) => ({ item_id, qty }));
 }
 
