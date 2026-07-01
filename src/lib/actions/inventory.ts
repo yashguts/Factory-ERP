@@ -970,9 +970,15 @@ export async function createItem(data: {
       cost_price: data.cost_price,
       procurement_type: data.procurement_type ?? null,
       stock_behaviour: data.stock_behaviour ?? "stocked",
-      // Loose parts (phantom) are child/cut parts — flag them so they stay out of
-      // the main /inventory list (and labelled) even if later reclassified stocked.
-      is_child_part: (data.stock_behaviour ?? "stocked") === "phantom",
+      // Structural kind. A phantom created here is a cut part (kept out of the main
+      // /inventory list, shown on /child-parts); a raw material stays raw; else it's
+      // a finished good. Cut parts stay cut parts even once reclassified stocked.
+      part_role:
+        (data.stock_behaviour ?? "stocked") === "phantom"
+          ? "cut_part"
+          : data.item_type === "raw_material"
+            ? "raw_material"
+            : "finished_good",
       suppliers: normalizeSuppliers(data.suppliers),
       purchase_uom_id: data.purchase_uom_id ?? null,
       purchase_conversion: data.purchase_conversion ?? null,

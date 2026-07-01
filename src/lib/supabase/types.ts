@@ -7,6 +7,20 @@ export type ItemType = "raw_material" | "sub_assembly" | "finished_good" | "mech
  * - tooling: jigs/templates; excluded from product BOM + MRP
  */
 export type StockBehaviour = "stocked" | "phantom" | "tooling";
+
+/**
+ * The item's STRUCTURAL kind — what it IS in the build hierarchy. Orthogonal to
+ * stock_behaviour (stocked vs phantom) and procurement_type (make vs trade): a
+ * `cut_part` can be stocked or not. The program picker + the sub-assembly
+ * sections key on this, so "cut part" is identified by ROLE, not by
+ * stock_behaviour='phantom' (which broke once child parts became stocked).
+ */
+export type PartRole =
+  | "raw_material"
+  | "cut_part"
+  | "sub_assembly"
+  | "finished_good"
+  | "tooling";
 /**
  * How an item gets its material requirement (computed by search_inventory,
  * never stored):

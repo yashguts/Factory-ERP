@@ -101,14 +101,14 @@ export function ItemDetailClient({
     const rows = bom.lines.filter(filter).map(lineToRow);
     return rows.length ? rows : [emptyRow()];
   };
-  // "Built from" = the main make/trade inventory items (NOT child parts);
-  // "Assembled from" = the child parts (cut pieces flagged is_child_part). The
-  // split keys on is_child_part, NOT stock_behaviour — child parts are stocked now.
+  // "Built from" = the main make/trade inventory items (NOT cut parts);
+  // "Assembled from" = the cut parts (part_role='cut_part'). The split keys on
+  // part_role, NOT stock_behaviour — cut parts are stocked now.
   const [builtRows, setBuiltRows] = useState<BomRow[]>(() =>
-    seedRows((l) => !l.child_is_child_part),
+    seedRows((l) => l.child_part_role !== "cut_part"),
   );
   const [looseRows, setLooseRows] = useState<BomRow[]>(() =>
-    seedRows((l) => l.child_is_child_part),
+    seedRows((l) => l.child_part_role === "cut_part"),
   );
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
@@ -221,9 +221,9 @@ export function ItemDetailClient({
             {item.stock_behaviour}
           </Badge>
         )}
-        {item.is_child_part && (
-          <Badge variant="cyan" title="Child part — a piece a program cuts; managed on the Child Parts page, hidden from the main inventory list">
-            Child part
+        {item.part_role === "cut_part" && (
+          <Badge variant="cyan" title="Cut part — a piece a program cuts; managed on the Child Parts page, hidden from the main inventory list">
+            Cut part
           </Badge>
         )}
       </div>
@@ -489,7 +489,7 @@ function PartsSection({
 
 /**
  * "Assembled from" section. Same card chrome as PartsSection, but each row uses
- * the LoosePartPicker (searches only child parts — is_child_part items + program
+ * the LoosePartPicker (searches only cut parts — part_role='cut_part' items + program
  * cut_part labels — never the main inventory). No finish-rule column: a child
  * part is a concrete cut piece (neutral).
  */
