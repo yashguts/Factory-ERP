@@ -553,13 +553,134 @@ export function R1BuilderClient({
     const { jsPDF } = await import("jspdf");
     const autoTable = (await import("jspdf-autotable")).default;
     const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(15);
-    doc.text(`Packing List R1 - ${list.jobNumber ?? ""}`, 12, 16);
-    doc.setFont("helvetica", "normal");
-    doc.setFontSize(9);
-    doc.text(`Status: ${status}   |   ${new Date().toLocaleDateString()}`, 12, 22);
-    let y = 28;
+    const pageW = doc.internal.pageSize.getWidth();
+    const pageH = doc.internal.pageSize.getHeight();
+    const M = 12;
+    const HEADER_H = 40; // top band reserved for the client + company letterhead
+    const FOOTER_H = 32; // bottom band reserved for the company footer
+
+    // Company logo — text-only fallback if the asset is missing (export never fails).
+    let logo: { dataUrl: string; w: number; h: number } | null = null;
+    try {
+      const res = await fetch("/lt-elevator-logo.png");
+      if (res.ok) {
+        const blob = await res.blob();
+        const dataUrl = await new Promise<string>((resolve, reject) => {
+          const fr = new FileReader();
+          fr.onload = () => resolve(fr.result as string);
+          fr.onerror = reject;
+          fr.readAsDataURL(blob);
+        });
+        const dim = await new Promise<{ w: number; h: number }>((resolve) => {
+          const img = new Image();
+          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => resolve({ w: 0, h: 0 });
+          img.src = dataUrl;
+        });
+        if (dim.w > 0) logo = { dataUrl, w: dim.w, h: dim.h };
+      }
+    } catch {
+      logo = null;
+    }
+
+    const drawHeader = () => {
+      doc.setTextColor(0);
+      // Left: client party details.
+      let ly = M + 2;
+      const label = (k: string, v: string | null) => {
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(9);
+        doc.text(k, M, ly);
+        const kw = doc.getTextWidth(k) + 1.5;
+        doc.setFont("helvetica", "normal");
+        const wrapped = doc.splitTextToSize(v || "—", pageW / 2 - M - kw) as string[];
+        doc.text(wrapped, M + kw, ly);
+        ly += Math.max(1, wrapped.length) * 4.2;
+      };
+      label("Client Name:", list.customerName);
+      label("Contact No.:", list.mobileNumber);
+      label("Address:", list.address);
+
+      // Right: logo, then company name + CIN (right-aligned).
+      const rx = pageW - M;
+      let ry = M;
+      if (logo) {
+        const lw = 50;
+        const lh = (logo.h / logo.w) * lw;
+        doc.addImage(logo.dataUrl, "PNG", rx - lw, ry, lw, lh);
+        ry += lh + 3.5;
+      } else {
+        ry += 4;
+      }
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.text("L.T. ELEVATOR LIMITED", rx, ry, { align: "right" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(7.5);
+      doc.text("CIN: L31909WB2008PLC128871", rx, ry + 4.2, { align: "right" });
+
+      // Centered title (below both blocks) + divider.
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(12);
+      doc.text(`PACKING LIST R1  —  ${list.jobNumber ?? ""}`, pageW / 2, HEADER_H - 5.5, { align: "center" });
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(8);
+      doc.setTextColor(90);
+      doc.text(`Status: ${status}   |   ${new Date().toLocaleDateString()}`, pageW / 2, HEADER_H - 1.5, { align: "center" });
+      doc.setTextColor(0);
+      doc.setDrawColor(34, 51, 68);
+      doc.setLineWidth(0.4);
+      doc.line(M, HEADER_H, pageW - M, HEADER_H);
+    };
+
+    const drawFooter = (pageNum: number, pageCount: number) => {
+      const fy = pageH - FOOTER_H;
+      doc.setDrawColor(34, 51, 68);
+      doc.setLineWidth(0.4);
+      doc.line(M, fy, pageW - M, fy);
+      const col = (x: number, title: string, lines: string[]) => {
+        let cy = fy + 4;
+        doc.setTextColor(40);
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(7);
+        doc.text(title, x, cy);
+        cy += 3.2;
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(6.3);
+        doc.setTextColor(70);
+        for (const ln of lines) {
+          if (ln) doc.text(ln, x, cy);
+          cy += 2.8;
+        }
+      };
+      col(M, "REGISTERED OFFICE:", [
+        "Capricorn Nest, 3 Gobinda Auddy Road,",
+        "P.O.: Alipore Kolkata – 700027,",
+        "West Bengal India, Phone: 033-2448-0447",
+        "Email: govtender.ltelevator@gmail.com",
+        "Email: sales@ltelevator.com",
+        "Web: www.ltelevator.com",
+      ]);
+      col(85, "WORKS:", [
+        "Works – 1 Vill: Chak Chata, PO.: Raipur",
+        "Maheshtala, Kolkata – 700141",
+        "",
+        "Works – 2 P-2, Gangarampur Road, Jhoutala,",
+        "P.O. – Raipur, Maheshtala, Kolkata - 700141",
+      ]);
+      col(150, "BSE:", [
+        "Security Name: LTELEVATOR",
+        "Code: 544518",
+        "ISIN: INE0TJ801010",
+      ]);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(6.3);
+      doc.setTextColor(120);
+      doc.text(`Page ${pageNum} of ${pageCount}`, pageW - M, pageH - 3, { align: "right" });
+      doc.setTextColor(0);
+    };
+
+    let y = HEADER_H + 4;
     parts.forEach((p, pi) => {
       // PDF lists ONLY packed items (positive qty) so it stays short — zero/empty
       // lines are dropped, and any part left with nothing is skipped below. The
@@ -577,22 +698,32 @@ export function R1BuilderClient({
         .map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty)]);
       const body = [...cabinBody, ...lineBody];
       if (body.length === 0) return;
+      // Keep a part heading off the footer zone.
+      if (y > pageH - FOOTER_H - 14) {
+        doc.addPage();
+        y = HEADER_H + 4;
+      }
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
-      doc.text(`PART ${pi + 1}  ${p.title.toUpperCase()}`, 12, y);
+      doc.setTextColor(0);
+      doc.text(`PART ${pi + 1}  ${p.title.toUpperCase()}`, M, y);
       autoTable(doc, {
         startY: y + 2, theme: "grid", styles: { fontSize: 8, cellPadding: 1.2 },
         headStyles: { fillColor: [34, 51, 68] },
         head: [["Group", "Particular", "Code", "Item", "Qty"]],
         body,
-        margin: { left: 12, right: 12 },
+        margin: { top: HEADER_H + 4, bottom: FOOTER_H + 4, left: M, right: M },
       });
       y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
-      if (y > 270) {
-        doc.addPage();
-        y = 16;
-      }
     });
+
+    // Stamp the letterhead on every page (fixed top/bottom bands).
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      drawHeader();
+      drawFooter(i, pageCount);
+    }
     doc.save(`PackingList_R1_${list.jobNumber ?? list.jobId}.pdf`);
   };
 

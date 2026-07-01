@@ -66,6 +66,10 @@ export interface R1ListView {
   listId: string;
   jobId: string;
   jobNumber: string | null;
+  /** Job party details — shown as the PDF letterhead header. */
+  customerName: string | null;
+  mobileNumber: string | null;
+  address: string | null;
   status: "draft" | "final";
   parts: R1ListPart[];
 }
@@ -476,7 +480,11 @@ async function readR1List(
   status: "draft" | "final",
 ): Promise<R1ListView> {
   const supabase = createCacheClient();
-  const { data: job } = await supabase.from("jobs").select("job_number").eq("id", jobId).maybeSingle();
+  const { data: job } = await supabase
+    .from("jobs")
+    .select("job_number, customer_name, mobile_number, location")
+    .eq("id", jobId)
+    .maybeSingle();
   const cats = await getAllCategories();
   const catById = new Map(cats.map((c) => [c.id, c]));
   const groupOf = (kind: PackingLineKind, catId: string | null, catName: string | null): string => {
@@ -535,7 +543,16 @@ async function readR1List(
     }
     part.lines.push(row);
   }
-  return { listId, jobId, jobNumber: (job?.job_number as string) ?? null, status, parts };
+  return {
+    listId,
+    jobId,
+    jobNumber: (job?.job_number as string) ?? null,
+    customerName: (job?.customer_name as string | null) ?? null,
+    mobileNumber: (job?.mobile_number as string | null) ?? null,
+    address: (job?.location as string | null) ?? null,
+    status,
+    parts,
+  };
 }
 
 export interface R1SaveLine {
