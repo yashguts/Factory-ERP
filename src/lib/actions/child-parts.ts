@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath } from "next/cache";
 import { recordTransaction } from "@/lib/actions/inventory";
+import { CUTOVER_DATE } from "@/lib/inventory/cutover";
 
 /* ------------------------------------------------------------------ *
  * Child Parts — the workbench for building sub-assemblies from their parts.
@@ -93,10 +94,11 @@ async function fetchItemsChunked(
 const KIND_RANK: Record<ChildKind, number> = { cut: 0, made: 1, trade: 2 };
 
 /**
- * Every true sub-assembly (item_bom_lines parent with >=1 MAKE child), with its
- * FULL parts list — each child labelled cut/made/trade + per-build qty + live
- * Main Store stock — sorted by sub-assembly name. Always live (not cached) —
- * stock moves constantly and the set is small (~60 groups).
+ * The sub-assemblies whose child parts have been cut by a program run ON/AFTER
+ * the cutover (CUTOVER_DATE) — the page starts there and grows as more runs
+ * happen. Each qualifying sub-assembly shows its FULL parts list, every child
+ * labelled cut/made/trade + per-build qty + live Main Store stock, sorted by
+ * name. Always live (not cached) — stock moves constantly, the set is small.
  */
 export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   const supabase = createCacheClient();
@@ -126,11 +128,12 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   const parentIds = [...byParent.keys()];
   const childIds = [...new Set([...byParent.values()].flatMap((k) => [...k.keys()]))];
   const allIds = [...new Set([...parentIds, ...childIds])];
-  const [meta, { data: cats }, { data: cutOut }, main] = await Promise.all([
+  const [meta, { data: cats }, { data: cutOut }, main, { data: recentRuns }] = await Promise.all([
     fetchItemsChunked(supabase, allIds),
     supabase.from("item_categories").select("id, procurement_type"),
     supabase.from("operation_outputs").select("item_id").eq("role", "cut_part").not("item_id", "is", null),
     mainStoreId(supabase),
+    supabase.from("operation_runs").select("operation_id").gte("run_date", CUTOVER_DATE),
   ]);
   const catProc = new Map((cats ?? []).map((c) => [c.id as string, (c.procurement_type as string | null) ?? null]));
   const cutIds = new Set((cutOut ?? []).map((o) => o.item_id as string));
@@ -140,12 +143,30 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
     return it?.procurement_type ?? (it?.category_id ? catProc.get(it.category_id) ?? null : null);
   };
 
+  // Cutover gate: a sub-assembly appears only once at least one of its child
+  // parts has been CUT by a program run on/after the cutover (CUTOVER_DATE). The
+  // page starts from the cutover and grows as more runs happen — older / never-run
+  // sub-assemblies are omitted for now (owner: "only going forward we'll keep
+  // adding here"). producedSince = cut_part outputs of the post-cutover runs.
+  const recentOpIds = [...new Set((recentRuns ?? []).map((r) => r.operation_id as string))];
+  const producedSince = new Set<string>();
+  for (let i = 0; i < recentOpIds.length; i += 300) {
+    const { data } = await supabase
+      .from("operation_outputs")
+      .select("item_id")
+      .eq("role", "cut_part")
+      .not("item_id", "is", null)
+      .in("operation_id", recentOpIds.slice(i, i + 300));
+    for (const o of data ?? []) producedSince.add(o.item_id as string);
+  }
+
   const groups: ChildPartGroup[] = [];
   for (const pid of parentIds) {
     const kids = byParent.get(pid)!;
-    // A "true sub-assembly" has >=1 make (non-trade) child — skip glass-only /
-    // trade-only panels (not assembled in-house).
-    if (![...kids.keys()].some((cid) => effProc(cid) !== "trade")) continue;
+    // Only sub-assemblies whose child parts have been cut by a >= cutover program
+    // run (this also implies a make child, since cut parts are make). Others are
+    // omitted for now and appear as their programs run going forward.
+    if (![...kids.keys()].some((cid) => producedSince.has(cid))) continue;
 
     const children: ChildPartRow[] = [...kids.entries()].map(([cid, perBuild]) => {
       const ep = effProc(cid);

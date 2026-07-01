@@ -77,7 +77,7 @@ export function ChildPartsClient({ groups, today }: Props) {
       {filtered.length === 0 ? (
         <div className="rounded-lg border border-dashed border-[var(--border)] p-8 text-center text-sm text-[var(--muted-foreground)]">
           {groups.length === 0
-            ? "No sub-assemblies yet. Once an item has a parts list with at least one made part, it shows up here to build."
+            ? "No sub-assemblies yet. As programs cut child parts (30 Jun onwards), their sub-assemblies appear here to build."
             : "No sub-assemblies match your search."}
         </div>
       ) : (
