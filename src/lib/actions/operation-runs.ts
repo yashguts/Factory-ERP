@@ -16,8 +16,9 @@ import type { TransactionType } from "@/lib/supabase/types";
  * outputs (production_in to Main Store), scaled by the run count. FORWARD-ONLY:
  * the 06-15 manual batch used reference_id=NULL, so it never collides; edits/
  * deletes only post for runs THIS system already posted (a legacy run with no
- * reference_id=run_id txn is left untouched). cut_part / tooling / scrap and
- * unmapped (null item_id) lines are skipped.
+ * reference_id=run_id txn is left untouched). Stocked outputs (component parts
+ * AND cut_part child parts reclassified to 'stocked') post; non-stocked phantoms,
+ * tooling, scrap and unmapped (null item_id) lines are skipped.
  * ------------------------------------------------------------------ */
 
 function flatten<T>(rel: unknown): T | null {
@@ -67,10 +68,22 @@ async function syncRunInventory(supabase: Db, runId: string, count: number): Pro
   const stores = await resolveStores(supabase);
   if (!stores.raw || !stores.main) return;
 
-  const [{ data: ins }, { data: outs }] = await Promise.all([
+  const [{ data: ins }, { data: rawOuts }] = await Promise.all([
     supabase.from("operation_inputs").select("item_id, qty_per_run").eq("operation_id", operationId).not("item_id", "is", null),
-    supabase.from("operation_outputs").select("item_id, qty_per_run").eq("operation_id", operationId).eq("role", "component").not("item_id", "is", null),
+    supabase.from("operation_outputs").select("item_id, qty_per_run").eq("operation_id", operationId).in("role", ["component", "cut_part"]).not("item_id", "is", null),
   ]);
+
+  // Only STOCKED outputs post to Main Store. `component` outputs are stocked by
+  // definition; `cut_part` (loose child parts) now post too, once reclassified to
+  // 'stocked' (Child Parts / Stage 1) — this is what makes cut pieces accumulate
+  // stock as programs run. Non-stocked phantoms, tooling and scrap stay skipped.
+  const outItemIds = [...new Set((rawOuts ?? []).map((o) => o.item_id as string))];
+  const stocked = new Set<string>();
+  if (outItemIds.length) {
+    const { data: si } = await supabase.from("items").select("id, stock_behaviour").in("id", outItemIds);
+    for (const it of si ?? []) if ((it.stock_behaviour as string) === "stocked") stocked.add(it.id as string);
+  }
+  const outs = (rawOuts ?? []).filter((o) => stocked.has(o.item_id as string));
 
   // Desired signed net per `${item}|${warehouse}`.
   const desired = new Map<string, { item_id: string; warehouse_id: string; net: number }>();
