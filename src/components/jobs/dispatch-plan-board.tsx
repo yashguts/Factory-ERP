@@ -96,6 +96,8 @@ interface PlanJob {
   hasDrawing: boolean;
   hasBom: boolean;
   hasCabin: boolean;
+  /** Cabin job marked Ready on /cabin-jobs — the C chip turns blue. */
+  cabinReady: boolean;
   /** GAD changed after the BOM was defined and not yet re-audited. */
   gadDrift: boolean;
 }
@@ -145,13 +147,13 @@ interface Bucket {
 interface Props {
   jobs: Job[];
   dispatchStatus: Record<string, DispatchStatus>;
-  readiness?: { bomJobIds: string[]; cabinJobNumbers: string[] };
+  readiness?: { bomJobIds: string[]; cabinJobNumbers: string[]; cabinReadyJobNumbers: string[] };
 }
 
 export function DispatchPlanBoard({
   jobs,
   dispatchStatus,
-  readiness = { bomJobIds: [], cabinJobNumbers: [] },
+  readiness = { bomJobIds: [], cabinJobNumbers: [], cabinReadyJobNumbers: [] },
 }: Props) {
   const { buckets, chartBuckets, maxTotal, totals } = useMemo(() => {
     const now = new Date();
@@ -161,6 +163,7 @@ export function DispatchPlanBoard({
     // Readiness lookups — Job BOM keyed by job id, Cabin BOM by normalised number.
     const bomSet = new Set(readiness.bomJobIds);
     const cabinSet = new Set(readiness.cabinJobNumbers);
+    const cabinReadySet = new Set(readiness.cabinReadyJobNumbers);
 
     const overdue: PlanJob[] = [];
     const unscheduled: PlanJob[] = [];
@@ -186,6 +189,7 @@ export function DispatchPlanBoard({
         hasDrawing: !!job.gad_drawing_url,
         hasBom: bomSet.has(job.id),
         hasCabin: cabinSet.has(job.job_number.trim().toLowerCase()),
+        cabinReady: cabinReadySet.has(job.job_number.trim().toLowerCase()),
         gadDrift: gadAlert(job),
       };
 
@@ -334,6 +338,9 @@ export function DispatchPlanBoard({
           </span>
           <span className="inline-flex items-center gap-1.5">
             <ReadyChip letter="C" on /> Cabin BOM
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <ReadyChip letter="C" on tone="blue" /> Cabin ready
           </span>
           <span className="inline-flex items-center gap-1.5">
             <GadChip /> GAD changed
@@ -510,8 +517,9 @@ export function DispatchPlanBoard({
                       />
                       <ReadyChip
                         letter="C"
-                        on={job.hasCabin}
-                        onLabel="Cabin BOM filled"
+                        on={job.hasCabin || job.cabinReady}
+                        tone={job.cabinReady ? "blue" : "green"}
+                        onLabel={job.cabinReady ? "Cabin job marked ready" : "Cabin BOM filled"}
                         offLabel="No cabin BOM"
                       />
                     </span>
@@ -536,16 +544,19 @@ export function DispatchPlanBoard({
 /**
  * One readiness slot as a lettered chip (D = Drawing, B = Job BOM, C = Cabin BOM).
  * Solid green when present, hollow grey outline when missing — so each slot is
- * instantly identifiable and gaps read at a glance.
+ * instantly identifiable and gaps read at a glance. `tone="blue"` marks the
+ * step as DONE (e.g. cabin job marked Ready), a stage past merely "filled".
  */
 function ReadyChip({
   letter,
   on,
+  tone = "green",
   onLabel,
   offLabel,
 }: {
   letter: string;
   on: boolean;
+  tone?: "green" | "blue";
   onLabel?: string;
   offLabel?: string;
 }) {
@@ -556,7 +567,9 @@ function ReadyChip({
       className={cn(
         "inline-flex h-[18px] min-w-[18px] shrink-0 items-center justify-center rounded px-0.5 text-[10px] font-bold leading-none",
         on
-          ? "bg-emerald-600 text-white"
+          ? tone === "blue"
+            ? "bg-blue-600 text-white"
+            : "bg-emerald-600 text-white"
           : "border border-[var(--border-strong)] text-[var(--muted-foreground)] opacity-60",
       )}
     >

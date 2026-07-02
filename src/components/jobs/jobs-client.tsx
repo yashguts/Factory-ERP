@@ -94,7 +94,7 @@ export function JobsClient({
   initialJobs,
   unmatchedCount = 0,
   dispatchStatus = {},
-  readiness = { bomJobIds: [], cabinJobNumbers: [] },
+  readiness = { bomJobIds: [], cabinJobNumbers: [], cabinReadyJobNumbers: [] },
 }: Props) {
   const router = useRouter();
   const toast = useToast();

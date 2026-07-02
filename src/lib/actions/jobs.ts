@@ -146,6 +146,9 @@ export interface JobReadinessFlags {
   bomJobIds: string[];
   /** Normalised cabin job_numbers that have at least one cabin_job_line. */
   cabinJobNumbers: string[];
+  /** Normalised cabin job_numbers whose cabin job is MARKED READY — regardless
+   *  of line count (a ready cabin job may have zero lines). Shown blue. */
+  cabinReadyJobNumbers: string[];
 }
 
 const _getJobReadinessFlagsUncached =
@@ -163,7 +166,7 @@ const _getJobReadinessFlagsUncached =
         .select("job_id, job_bom_lines(count)"),
       supabase
         .from("cabin_jobs")
-        .select("job_number, cabin_job_lines(count)"),
+        .select("job_number, marked_ready_at, cabin_job_lines(count)"),
     ]);
     if (headerRes.error) throw headerRes.error;
     if (cabinRes.error) throw cabinRes.error;
@@ -180,19 +183,26 @@ const _getJobReadinessFlagsUncached =
 
     // Cabin BOM: cabin jobs with ≥1 line → their normalised job numbers
     // (lower(btrim(...)) to match how jobs link to cabin_jobs by number text).
+    // Marked-ready is tracked separately and ignores line count — the factory
+    // can flag a cabin done even when its BOM was never itemised.
     const cabinJobNumbers = new Set<string>();
+    const cabinReadyJobNumbers = new Set<string>();
     for (const c of (cabinRes.data ?? []) as Array<{
       job_number: string | null;
+      marked_ready_at: string | null;
       cabin_job_lines: { count: number }[] | null;
     }>) {
       const n = c.cabin_job_lines?.[0]?.count ?? 0;
       const num = (c.job_number ?? "").trim().toLowerCase();
-      if (n > 0 && num) cabinJobNumbers.add(num);
+      if (!num) continue;
+      if (n > 0) cabinJobNumbers.add(num);
+      if (c.marked_ready_at) cabinReadyJobNumbers.add(num);
     }
 
     return {
       bomJobIds: [...bomJobIds],
       cabinJobNumbers: [...cabinJobNumbers],
+      cabinReadyJobNumbers: [...cabinReadyJobNumbers],
     };
   };
 
