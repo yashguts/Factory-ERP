@@ -559,30 +559,6 @@ export function R1BuilderClient({
     const HEADER_H = 40; // top band reserved for the client + company letterhead
     const FOOTER_H = 32; // bottom band reserved for the company footer
 
-    // Company logo — text-only fallback if the asset is missing (export never fails).
-    let logo: { dataUrl: string; w: number; h: number } | null = null;
-    try {
-      const res = await fetch("/lt-elevator-logo.png");
-      if (res.ok) {
-        const blob = await res.blob();
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const fr = new FileReader();
-          fr.onload = () => resolve(fr.result as string);
-          fr.onerror = reject;
-          fr.readAsDataURL(blob);
-        });
-        const dim = await new Promise<{ w: number; h: number }>((resolve) => {
-          const img = new Image();
-          img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
-          img.onerror = () => resolve({ w: 0, h: 0 });
-          img.src = dataUrl;
-        });
-        if (dim.w > 0) logo = { dataUrl, w: dim.w, h: dim.h };
-      }
-    } catch {
-      logo = null;
-    }
-
     const drawHeader = () => {
       doc.setTextColor(0);
       // Left: client party details.
@@ -601,17 +577,9 @@ export function R1BuilderClient({
       label("Contact No.:", list.mobileNumber);
       label("Address:", list.address);
 
-      // Right: logo, then company name + CIN (right-aligned).
+      // Right: company name + CIN (right-aligned).
       const rx = pageW - M;
-      let ry = M;
-      if (logo) {
-        const lw = 50;
-        const lh = (logo.h / logo.w) * lw;
-        doc.addImage(logo.dataUrl, "PNG", rx - lw, ry, lw, lh);
-        ry += lh + 3.5;
-      } else {
-        ry += 4;
-      }
+      const ry = M + 4;
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.text("L.T. ELEVATOR LIMITED", rx, ry, { align: "right" });
