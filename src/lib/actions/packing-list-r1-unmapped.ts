@@ -70,17 +70,20 @@ export async function dismissUnmappedItem(jobId: string, itemId: string): Promis
       const toDelete = ids.filter((id) => !referenced.has(id));
       const toZero = ids.filter((id) => referenced.has(id));
       removedSnapshot = all; // full rows, restorable
-      if (toDelete.length > 0) {
-        const { error } = await supabase.from("job_bom_lines").delete().in("id", toDelete);
-        if (error) return { ok: false, error: error.message };
-      }
-      if (toZero.length > 0) {
-        const { error } = await supabase
-          .from("job_bom_lines")
-          .update({ required_quantity: 0 })
-          .in("id", toZero);
-        if (error) return { ok: false, error: error.message };
-      }
+      // Independent writes (the snapshot is already captured) — one concurrent
+      // round-trip wave instead of three sequential cross-region hops. The X in
+      // the UI is optimistic, but background latency still matters for rapid
+      // job-by-job review sessions.
+      const [delRes, zeroRes] = await Promise.all([
+        toDelete.length > 0
+          ? supabase.from("job_bom_lines").delete().in("id", toDelete)
+          : Promise.resolve({ error: null }),
+        toZero.length > 0
+          ? supabase.from("job_bom_lines").update({ required_quantity: 0 }).in("id", toZero)
+          : Promise.resolve({ error: null }),
+      ]);
+      if (delRes.error) return { ok: false, error: delRes.error.message };
+      if (zeroRes.error) return { ok: false, error: zeroRes.error.message };
     }
   }
 

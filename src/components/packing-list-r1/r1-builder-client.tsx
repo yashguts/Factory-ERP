@@ -395,6 +395,26 @@ export function R1BuilderClient({
       alive = false;
     };
   }, [list.jobId]);
+  // Unmapped items — local optimistic copy: a cross-off disappears INSTANTLY
+  // and the server work (line cleanup + snapshot + cache revalidation) runs in
+  // the background. The row only comes back if the server refuses.
+  const [umRows, setUmRows] = useState(unmapped);
+  useEffect(() => setUmRows(unmapped), [unmapped]);
+  const dismissUm = (u: R1UnmappedItem) => {
+    setUmRows((rows) => rows.filter((r) => r.item_id !== u.item_id));
+    dismissUnmappedItem(list.jobId, u.item_id)
+      .then((res) => {
+        if (!res.ok) {
+          setUmRows((rows) => [...rows, u]);
+          alert(`Could not cross off ${u.code}: ${res.error}`);
+        }
+      })
+      .catch(() => {
+        setUmRows((rows) => [...rows, u]);
+        alert(`Could not cross off ${u.code} — network error. Try again.`);
+      });
+  };
+
   const toggleAudited = () => {
     const name = operator ?? ensureOperator();
     startTransition(async () => {
@@ -1103,12 +1123,12 @@ export function R1BuilderClient({
         />
       )}
 
-      {unmapped.length > 0 && (
+      {umRows.length > 0 && (
         <div className="mt-5">
           <h2 className="text-sm font-semibold">
             Unmapped Items{" "}
             <span className="font-normal text-[#6b7280]">
-              ({unmapped.length}) — on this job&apos;s BOM but not captured above
+              ({umRows.length}) — on this job&apos;s BOM but not captured above
             </span>
           </h2>
           <div className="mt-1.5 rounded-lg border overflow-hidden" style={{ borderColor: C.line }}>
@@ -1123,7 +1143,7 @@ export function R1BuilderClient({
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: C.line }}>
-                {unmapped.map((u) => (
+                {umRows.map((u) => (
                   <tr key={u.item_id}>
                     <td className="px-2 py-1 font-mono">{u.code}</td>
                     <td className="px-2 py-1">{u.name}</td>
@@ -1135,15 +1155,9 @@ export function R1BuilderClient({
                     <td className="px-2 py-1 text-right">
                       <button
                         type="button"
-                        disabled={pending}
-                        onClick={() =>
-                          startTransition(async () => {
-                            await dismissUnmappedItem(list.jobId, u.item_id);
-                            router.refresh();
-                          })
-                        }
-                        title="Cross off — hides this carry-over from Unmapped Items. Never changes the BOM."
-                        className="inline-flex items-center justify-center rounded p-0.5 text-[#9ca3af] hover:text-[#dc2626] hover:bg-[#fef2f2] disabled:opacity-40 cursor-pointer"
+                        onClick={() => dismissUm(u)}
+                        title="Cross off — this job doesn't need this item; its demand is removed (recoverable)."
+                        className="inline-flex items-center justify-center rounded p-0.5 text-[#9ca3af] hover:text-[#dc2626] hover:bg-[#fef2f2] cursor-pointer"
                       >
                         <X className="h-3.5 w-3.5" />
                       </button>
