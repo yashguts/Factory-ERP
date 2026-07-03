@@ -197,7 +197,7 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
     revalidateTag("bom-lines");
     revalidateTag("jobs");
     revalidatePath(`/jobs/${jobId}`);
-    revalidatePath(`/packing-list-r1/${jobId}`);
+    revalidatePath(`/jobs/${jobId}/items`);
 
     return { ok: true, updated: updates.length, inserted: inserts.length, removed: deletes.length, zeroed: zeroes.length };
   } catch (e) {
@@ -312,7 +312,7 @@ export async function setR1Audited(
     )
     .eq("id", list.id as string);
   if (error) return { ok: false, error: error.message };
-  revalidatePath(`/packing-list-r1/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/items`);
   revalidatePath(`/jobs/${jobId}`);
   return { ok: true };
 }

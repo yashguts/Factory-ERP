@@ -93,7 +93,7 @@ export async function dismissUnmappedItem(jobId: string, itemId: string): Promis
   if (error) return { ok: false, error: error.message };
   revalidateTag("bom-lines");
   revalidateTag("jobs");
-  revalidatePath(`/packing-list-r1/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/items`);
   revalidatePath(`/jobs/${jobId}`);
   return { ok: true };
 }
@@ -108,6 +108,6 @@ export async function restoreUnmappedItem(jobId: string, itemId: string): Promis
     .eq("job_id", jobId)
     .eq("item_id", itemId);
   if (error) return { ok: false, error: error.message };
-  revalidatePath(`/packing-list-r1/${jobId}`);
+  revalidatePath(`/jobs/${jobId}/items`);
   return { ok: true };
 }

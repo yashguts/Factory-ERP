@@ -20,11 +20,11 @@ import {
   PlayCircle,
   Blocks,
   ShoppingCart,
-  PackageCheck,
   Truck,
   PackageSearch,
   Network,
   LayoutGrid,
+  Archive,
   UserRound,
   LucideIcon,
 } from "lucide-react";
@@ -61,6 +61,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     items: [
       { href: "/jobs", label: "Job Orders", icon: ClipboardList },
       { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
+      // Read-only archive of the pre-cutover Job Order BOMs (2026-07-03) —
+      // a transition-period reference; remove once the team stops needing it.
+      { href: "/bom", label: "BOM (old)", icon: Archive },
     ],
   },
   {
@@ -72,7 +75,6 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       { href: "/mrp/shortfall", label: "Job Shortfall", icon: PackageSearch },
       { href: "/demand", label: "Demand Rules", icon: Network },
       { href: "/procurement", label: "Procurement", icon: ShoppingCart },
-      { href: "/packing-list-r1", label: "Packing List R1", icon: PackageCheck },
     ],
   },
 ];

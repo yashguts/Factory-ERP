@@ -303,7 +303,7 @@ export function TemplateEditorClient({
         title="Packing List R1 — Template"
         meta={`${template.length} parts · ${totalLines} lines`}
         icon={<Layers size={18} />}
-        onBack={() => router.push("/packing-list-r1")}
+        onBack={() => router.push("/jobs")}
         actions={
           <div className="flex items-center gap-2">
             <Input
