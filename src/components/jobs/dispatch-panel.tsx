@@ -90,18 +90,10 @@ export function DispatchPanel({
   const first = dispatchStat(summary.lines.filter((l) => l.phase === "first"));
   const second = dispatchStat(summary.lines.filter((l) => l.phase === "second"));
 
-  // What still needs to leave the factory, grouped by dispatch phase.
-  const pending = summary.lines
-    .filter((l) => l.remaining > 0)
-    .sort(
-      (a, b) =>
-        a.category.localeCompare(b.category) ||
-        (a.item_name ?? "").localeCompare(b.item_name ?? ""),
-    );
-  const pendingFirst = pending.filter((l) => l.phase === "first");
-  const pendingSecond = pending.filter((l) => l.phase === "second");
+  // What still needs to leave the factory. The full per-item view lives in the
+  // job page's BALANCE tab — the panel only signals the overall state.
+  const pendingCount = summary.lines.filter((l) => l.remaining > 0).length;
   const hasBom = summary.lines.length > 0;
-  const [openRemaining, setOpenRemaining] = useState(pending.length > 0);
 
   const onDelete = (id: string) => {
     if (!window.confirm("Undo this dispatch? The recorded items will be removed (inventory is not affected)."))
@@ -122,109 +114,45 @@ export function DispatchPanel({
   };
 
   return (
-    <div className="card-surface p-3 mb-4">
-      <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
-        <div className="flex items-center gap-4 flex-wrap">
-          <h3 className="text-sm font-semibold inline-flex items-center gap-1.5">
-            <Truck className="h-4 w-4" /> Dispatch
+    <div className="card-surface p-2.5 mb-3">
+      <div className="flex items-center justify-between gap-3 mb-2 flex-wrap">
+        <div className="flex items-center gap-3 flex-wrap">
+          <h3 className="text-[13px] font-semibold inline-flex items-center gap-1.5">
+            <Truck className="h-3.5 w-3.5" /> Dispatches
+            {summary.dispatches.length > 0 && (
+              <span className="font-normal text-[11px] text-[var(--muted-foreground)]">
+                ({summary.dispatches.length})
+              </span>
+            )}
           </h3>
           <PhaseStatus name="1st phase" stat={first} />
           <PhaseStatus name="2nd phase" stat={second} />
+          {hasBom &&
+            (pendingCount === 0 ? (
+              <span className="text-[11px] font-medium text-[var(--success)]">all sent ✓</span>
+            ) : (
+              <span className="text-[11px] text-[var(--warning)]">
+                {pendingCount} item{pendingCount === 1 ? "" : "s"} pending — see Balance below
+              </span>
+            ))}
         </div>
-        <Button size="sm" onClick={onNewDispatch}>
-          <Plus className="h-3.5 w-3.5 mr-1" /> Mark dispatched
-        </Button>
+        <div className="flex items-center gap-1.5">
+          <button
+            type="button"
+            onClick={() => void downloadBalancePdf(pdfInfo, summary.lines)}
+            title="Print the balance list — everything still left to send"
+            className="inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-1 text-[11px] font-medium hover:bg-[var(--muted)] cursor-pointer"
+          >
+            <Printer className="h-3 w-3" /> Balance
+          </button>
+          <Button size="sm" onClick={onNewDispatch}>
+            <Plus className="h-3.5 w-3.5 mr-1" /> Mark dispatched
+          </Button>
+        </div>
       </div>
 
-      {/* Remaining to dispatch — what still needs to be sent, with quantities */}
-      {hasBom &&
-        (pending.length === 0 ? (
-          <p className="text-sm font-medium text-[var(--success)] mb-3">
-            All materials dispatched ✓
-          </p>
-        ) : (
-          <div className="border border-[var(--border)] rounded-md mb-3">
-            <div className="flex items-center gap-2 px-3 py-2">
-              <button
-                type="button"
-                onClick={() => setOpenRemaining((o) => !o)}
-                className="flex flex-1 items-center gap-2 text-sm font-medium cursor-pointer min-w-0"
-              >
-                {openRemaining ? (
-                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
-                ) : (
-                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
-                )}
-                <span className="text-[var(--warning)]">
-                  Remaining to dispatch — {pending.length} item
-                  {pending.length === 1 ? "" : "s"}
-                </span>
-                <span className="text-xs text-[var(--muted-foreground)]">
-                  1st phase: {pendingFirst.length} · 2nd phase: {pendingSecond.length}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => void downloadBalancePdf(pdfInfo, summary.lines)}
-                title="Print the balance list — everything still left to send"
-                className="inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium hover:bg-[var(--muted)] cursor-pointer shrink-0"
-              >
-                <Printer className="h-3 w-3" /> Print balance
-              </button>
-            </div>
-            {openRemaining && (
-              <div className="px-3 pb-2 border-t border-[var(--border)]">
-                {([
-                  ["1st phase", pendingFirst],
-                  ["2nd phase", pendingSecond],
-                ] as const).map(([title, rows]) =>
-                  rows.length === 0 ? null : (
-                    <div key={title} className="pt-2">
-                      <div className="text-[10px] uppercase tracking-wide text-[var(--muted-foreground)] mb-1">
-                        {title} · {rows.length}
-                      </div>
-                      <div className="divide-y divide-[var(--border)]">
-                        {rows.map((l) => (
-                          <div
-                            key={l.job_bom_line_id}
-                            className="flex justify-between gap-2 py-1 text-sm"
-                          >
-                            <span className="truncate">
-                              {l.item_name ?? "(item)"}
-                              {l.item_code && (
-                                <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
-                                  {l.item_code}
-                                </span>
-                              )}
-                              {l.category && (
-                                <span className="ml-2 text-[11px] italic text-[var(--muted-foreground)]">
-                                  {l.category}
-                                </span>
-                              )}
-                            </span>
-                            <span className="whitespace-nowrap text-right">
-                              <span className="font-medium text-[var(--warning)]">
-                                {l.remaining.toLocaleString()}
-                                {l.uom ? ` ${l.uom}` : ""} remaining
-                              </span>
-                              <span className="ml-2 text-[11px] text-[var(--muted-foreground)]">
-                                {l.required.toLocaleString()} required,{" "}
-                                {l.dispatched.toLocaleString()} dispatched
-                              </span>
-                            </span>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ),
-                )}
-              </div>
-            )}
-          </div>
-        ))}
-
       {summary.dispatches.length === 0 ? (
-        <p className="text-sm text-[var(--muted-foreground)]">
+        <p className="text-xs text-[var(--muted-foreground)]">
           No dispatches recorded yet.
         </p>
       ) : (

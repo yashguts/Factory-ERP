@@ -4,16 +4,13 @@ import { useState, useMemo, useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Select } from "@/components/ui/select";
 import {
   Table, TableHeader, TableBody, TableRow, TableHead, TableCell,
 } from "@/components/ui/table";
-import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
 import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import type { BadgeVariant } from "@/components/ui/badge";
 import { deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { shouldRenderSection, driveTypeLabel } from "@/lib/bom/section-gating";
@@ -34,12 +31,6 @@ const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
   in_production: "In Production",
   hold: "Hold",
-};
-
-const STATUS_BADGE: Record<JobStatus, BadgeVariant> = {
-  new: "neutral",
-  in_production: "amber",
-  hold: "red",
 };
 
 // "Full material" is the 2nd (final) dispatch phase — see Jobs list note.
@@ -423,95 +414,142 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     </div>
   );
 
+  // Compact toolbar button for the navy header (matches the R1 builder's look).
+  const HeaderBtn = ({
+    onClick,
+    title,
+    primary,
+    danger,
+    disabled,
+    children,
+  }: {
+    onClick: () => void;
+    title?: string;
+    primary?: boolean;
+    danger?: boolean;
+    disabled?: boolean;
+    children: React.ReactNode;
+  }) => (
+    <button
+      type="button"
+      onClick={onClick}
+      title={title}
+      disabled={disabled}
+      className={`inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium cursor-pointer disabled:opacity-50 transition-colors ${
+        primary
+          ? "bg-[#2563eb] text-white hover:bg-[#1d4ed8]"
+          : danger
+            ? "bg-white/10 text-red-200 hover:bg-red-500/30"
+            : "bg-white/10 text-white hover:bg-white/20"
+      }`}
+    >
+      {children}
+    </button>
+  );
+
+  const statusPill: Record<JobStatus, string> = {
+    new: "bg-white/15 text-white",
+    in_production: "bg-amber-400/25 text-amber-100",
+    hold: "bg-red-500/30 text-red-100",
+  };
+
   return (
-    <div>
-      {/* Header */}
-      <PageHeader
-        onBack={() =>
-          window.history.length > 1 ? router.back() : router.push("/jobs")
-        }
-        title={
-          <span className="flex items-center gap-2">
-            Job {job.job_number}
-            <Badge variant={STATUS_BADGE[job.status]}>
-              {STATUS_LABELS[job.status]}
-            </Badge>
-          </span>
-        }
-        subtitle={`${job.customer_name || "No customer"}${job.brand ? ` — ${job.brand}` : ""}`}
-        actions={
-          <>
-            <Button
-              size="sm"
-              onClick={() => setShowDispatch(true)}
-              title="Record a dispatch for this job"
+    <div className={splitView ? undefined : "max-w-[1000px] mx-auto"}>
+      {/* Identity header — navy bar matching the Packing List R1 builder, so
+          the job and its list read as one product. Everything the header used
+          to spread across cards (title, status, spec line, progress) lives
+          here in three compact rows. */}
+      <header className="rounded-lg px-3.5 py-2.5 mb-3" style={{ background: "#223344", color: "#fff" }}>
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <button
+              type="button"
+              onClick={() => (window.history.length > 1 ? router.back() : router.push("/jobs"))}
+              className="text-[11px] opacity-80 hover:opacity-100 cursor-pointer"
             >
-              <Truck className="h-4 w-4 mr-1" />
-              Dispatch
-            </Button>
-            {/* The legacy /jobs/[id]/packing-list document module (June 18,
-                1 list ever saved) was superseded by Packing List R1 — its
-                button was removed 2026-07-04 to avoid two "packing list"
-                entries. The route still exists for old links. */}
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setSplitView((v) => !v)}
-              title={splitView ? "Hide drawing pane" : "Show drawing pane (split view)"}
-            >
-              {splitView ? (
-                <PanelRightClose className="h-4 w-4 mr-1" />
-              ) : (
-                <Columns2 className="h-4 w-4 mr-1" />
+              ← Jobs
+            </button>
+            <h1 className="text-[15px] font-semibold leading-tight flex items-center gap-2 flex-wrap">
+              <span className="font-mono">{job.job_number}</span>
+              <span className="font-normal opacity-90 truncate max-w-[40ch]">
+                · {job.customer_name || "No customer"}
+              </span>
+              <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ${statusPill[job.status]}`}>
+                {STATUS_LABELS[job.status]}
+              </span>
+              {r1Panel?.hasR1 && r1Panel.status === "final" && (
+                <span
+                  className="rounded-full bg-emerald-400/25 px-1.5 py-0.5 text-[10px] font-medium leading-none text-emerald-100"
+                  title={r1Panel.auditedAt ? "Packing List R1: Final & Audited" : "Packing List R1: Final"}
+                >
+                  R1 {r1Panel.auditedAt ? "✓ Audited" : "Final"}
+                </span>
               )}
-              {splitView ? "Hide Drawing" : "Drawing"}
-            </Button>
-            <Button
-              variant="secondary"
-              size="sm"
+            </h1>
+            <p className="text-[10px] opacity-85 leading-tight truncate">
+              {[
+                job.spec_string,
+                job.structure_included && job.structure_included !== "NA" ? job.structure_included : null,
+                job.location,
+                job.brand,
+                job.mobile_number,
+              ]
+                .filter(Boolean)
+                .join(" · ") || "no spec yet"}
+            </p>
+          </div>
+          <div className="flex items-center gap-1.5 flex-wrap">
+            <HeaderBtn primary onClick={() => setShowDispatch(true)} title="Record a dispatch for this job">
+              <Truck className="h-3.5 w-3.5" /> Dispatch
+            </HeaderBtn>
+            <HeaderBtn
               onClick={() => router.push(`/jobs/${job.id}/items`)}
               title="The Packing List R1 is this job's item list — edits there update MRP, dispatch and this page"
             >
-              <Pencil className="h-4 w-4 mr-1" />
-              Packing List R1
-              {r1Panel?.hasR1 && (
-                <Badge
-                  variant={r1Panel.status === "final" ? "success" : "amber"}
-                  className="ml-1.5 text-[10px] px-1.5"
-                >
-                  {r1Panel.status === "final" ? (r1Panel.auditedAt ? "Final ✓ Audited" : "Final") : "Draft"}
-                </Badge>
-              )}
-            </Button>
-            <Select
+              <Pencil className="h-3.5 w-3.5" /> Packing List R1
+            </HeaderBtn>
+            <HeaderBtn
+              onClick={() => setSplitView((v) => !v)}
+              title={splitView ? "Hide drawing pane" : "Show drawing pane (split view)"}
+            >
+              {splitView ? <PanelRightClose className="h-3.5 w-3.5" /> : <Columns2 className="h-3.5 w-3.5" />}
+              {splitView ? "Hide Drawing" : "Drawing"}
+            </HeaderBtn>
+            <select
               value={job.status}
               onChange={(e) => handleStatusChange(e.target.value as JobStatus)}
-              size="sm"
-              className="w-[150px]"
               disabled={isPending}
+              title="Job status"
+              className="rounded bg-white/10 px-1.5 py-1 text-[11px] font-medium text-white cursor-pointer border-0 focus:outline-none focus:ring-1 focus:ring-white/50 disabled:opacity-50 [&>option]:text-black"
             >
               {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
-                <option key={s} value={s}>{STATUS_LABELS[s]}</option>
+                <option key={s} value={s}>
+                  {STATUS_LABELS[s]}
+                </option>
               ))}
-            </Select>
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleDelete}
-              disabled={isPending}
-              aria-label="Delete job"
-              title="Delete this job permanently"
-              className="text-[var(--destructive)] hover:bg-[var(--destructive-bg)]"
-            >
-              {isPending ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <Trash2 className="h-4 w-4" />
-              )}
-            </Button>
-          </>
-        }
-      />
+            </select>
+            <HeaderBtn danger onClick={handleDelete} disabled={isPending} title="Delete this job permanently">
+              {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+            </HeaderBtn>
+          </div>
+        </div>
+        {hasItemBom && (
+          <div className="mt-2 flex items-center gap-2">
+            <div className="h-1 flex-1 overflow-hidden rounded-full bg-white/20">
+              <div
+                className="h-full rounded-full transition-all"
+                style={{
+                  width: `${Math.min(100, shipped.pct)}%`,
+                  background: shipped.pct >= 100 ? "#34d399" : "#60a5fa",
+                }}
+              />
+            </div>
+            <span className="shrink-0 text-[10px] opacity-85 tabular-nums">
+              {shipped.pct}% dispatched · {shipped.disp.toLocaleString()}/{shipped.req.toLocaleString()} units
+            </span>
+          </div>
+        )}
+      </header>
 
       {/* GAD-changed-after-BOM alert — the drawing moved past what the BOM was
           reconciled against. Review the new drawing, then Mark Audited. */}
@@ -565,43 +603,12 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         </div>
       )}
 
-      {/* Status change history — every status move with who / when / why. */}
-      {statusHistory.length > 0 && (
-        <details className="mb-4 card-surface overflow-hidden p-0">
-          <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-sm font-medium">
-            <FileClock size={15} className="text-[var(--muted-foreground)]" />
-            Status history
-            <span className="text-xs text-[var(--muted-foreground)]">({statusHistory.length})</span>
-          </summary>
-          <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
-            {statusHistory.map((h) => (
-              <div key={h.id} className="flex items-center gap-3 px-3 py-2 text-sm">
-                <span className="w-36 shrink-0 text-xs text-[var(--muted-foreground)]">
-                  {new Date(h.changed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
-                </span>
-                <span className="shrink-0">
-                  {statusLabel(h.from_status)} <span className="text-[var(--muted-foreground)]">→</span> <strong>{statusLabel(h.to_status)}</strong>
-                </span>
-                {h.alert_kind && (
-                  <Badge variant={ALERT_META[h.alert_kind].tone === "red" ? "red" : ALERT_META[h.alert_kind].tone === "green" ? "green" : "amber"}>
-                    {ALERT_META[h.alert_kind].short}
-                  </Badge>
-                )}
-                {h.reason && <span className="truncate text-xs italic text-[var(--muted-foreground)]">“{h.reason}”</span>}
-                <span className="ml-auto shrink-0 text-xs text-[var(--muted-foreground)]">
-                  {h.changed_by === "system (backfill)" ? "initial" : (h.changed_by || "—")}
-                  {h.acknowledged_at ? ` · ✓ ${h.acknowledged_by || ""}` : ""}
-                </span>
-              </div>
-            ))}
-          </div>
-        </details>
-      )}
-
       {/* GAD version history — every uploaded drawing is kept. Auto-open when the
-          alert is active so the reviewer can compare the current vs. baseline. */}
-      {gadVersions.length > 0 && (
-        <details open={gadAlert(job)} className="mb-4 card-surface overflow-hidden p-0">
+          alert is active so the reviewer can compare the current vs. baseline.
+          (Kept near the top ONLY while the drift alert is active; otherwise it
+          renders with the reference material at the bottom of the page.) */}
+      {gadVersions.length > 0 && gadAlert(job) && (
+        <details open className="mb-4 card-surface overflow-hidden p-0">
           <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-2 text-sm font-medium">
             <FileClock size={15} className="text-[var(--muted-foreground)]" />
             GAD version history
@@ -648,97 +655,103 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       >
         <div className={splitView ? "overflow-y-auto pr-2" : "contents"}>
 
-      {/* Dispatched progress — real shipped % from recorded dispatches */}
-      {hasItemBom && (
-        <div className="mb-4 p-3 card-surface">
-          <div className="flex items-center justify-between mb-2">
-            <span className="text-sm font-medium">Dispatched</span>
-            <span className="text-sm text-[var(--muted-foreground)]">
-              {shipped.pct}%
-              <span className="mx-1.5 text-[var(--border-strong)]">·</span>
-              {shipped.disp.toLocaleString()} of {shipped.req.toLocaleString()} units
-            </span>
-          </div>
-          <div className="w-full h-2.5 bg-[var(--muted)] rounded-full overflow-hidden">
-            <div
-              className="h-full rounded-full transition-all"
-              style={{
-                width: `${shipped.pct}%`,
-                backgroundColor: shipped.pct >= 100 ? "var(--success)" : "var(--primary)",
-              }}
-            />
-          </div>
-        </div>
-      )}
-
-      {/* Stock readiness — can the remaining material ship from current stock? */}
-      {hasItemBom && (readiness.first.lines > 0 || readiness.second.lines > 0) && (
-        <div className="mb-4 flex flex-wrap items-center gap-2 text-sm">
-          <span className="text-[var(--muted-foreground)]">Stock readiness:</span>
-          {(["first", "second"] as const).map((ph) => {
+      {/* Operational strip — the working facts, one quiet line: material
+          stages, the MRP date, and whether what's left can ship from stock. */}
+      <div className="mb-3 flex flex-wrap items-center gap-1.5 text-[11px]">
+        {(
+          [
+            ["Sent", STAGE_LABELS[job.stage ?? "new"]],
+            ["Required", job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : "—"],
+            [
+              "Req. dispatch",
+              job.requirement_dispatch_date
+                ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })
+                : "—",
+            ],
+          ] as const
+        ).map(([label, value]) => (
+          <span
+            key={label}
+            className="inline-flex items-center gap-1 rounded border border-[var(--border)] bg-[var(--card)] px-1.5 py-0.5"
+          >
+            <span className="text-[var(--muted-foreground)]">{label}</span>
+            <span className="font-medium">{value}</span>
+          </span>
+        ))}
+        {hasItemBom &&
+          (["first", "second"] as const).map((ph) => {
             const r = readiness[ph];
             if (r.lines === 0) return null;
-            const label = ph === "first" ? "1st phase" : "2nd phase";
+            const label = ph === "first" ? "1st ph. stock" : "2nd ph. stock";
             return r.short === 0 ? (
-              <Badge key={ph} variant="green">{label}: ready ({r.lines})</Badge>
+              <span
+                key={ph}
+                className="inline-flex items-center gap-1 rounded border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-emerald-700"
+                title="Everything still to ship in this phase is coverable from current stock (not reserved)"
+              >
+                {label} <span className="font-medium">ready</span>
+              </span>
             ) : (
-              <Badge key={ph} variant="amber">
-                {label}: {r.short} short · {r.shortUnits.toLocaleString()} units
-              </Badge>
+              <span
+                key={ph}
+                className="inline-flex items-center gap-1 rounded border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-amber-700"
+                title="Of the material still to ship in this phase, this much is not coverable from current stock (not reserved)"
+              >
+                {label}{" "}
+                <span className="font-medium">
+                  {r.short} short · {r.shortUnits.toLocaleString()}u
+                </span>
+              </span>
             );
           })}
-          <span className="text-[11px] text-[var(--muted-foreground)]">in stock now, not reserved</span>
-        </div>
-      )}
-
-      {/* Metadata Grid — core fields always; legacy columns only when set,
-          so existing-job data is still shown but blank columns don't clutter. */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3 mb-4 p-3 card-surface">
-        <MetaItem label="Spec" value={job.spec_string} />
-        <MetaItem label="Stops" value={job.floors?.toString()} />
-        <MetaItem label="Drive Type" value={driveTypeLabel(job.drive_type)} />
-        <MetaItem label="Capacity" value={job.capacity} />
-        <MetaItem label="Structure" value={job.structure_included} />
-        <MetaItem label="Location" value={job.location} />
-        <MetaItem label="Mobile" value={job.mobile_number} />
-        <MetaItem label="Sent" value={STAGE_LABELS[job.stage ?? "new"]} />
-        <MetaItem
-          label="Required"
-          value={job.requirement_stage ? STAGE_LABELS[job.requirement_stage] : null}
-        />
-        <MetaItem
-          label="Req. Dispatch"
-          value={job.requirement_dispatch_date ? new Date(job.requirement_dispatch_date).toLocaleDateString("en-IN") : null}
-        />
-        <MetaItem
-          label="Created"
-          value={`${new Date(job.created_at).toLocaleDateString("en-IN")}${
-            job.created_by && job.created_by !== "unknown" ? ` · ${job.created_by}` : ""
-          }`}
-        />
-        {job.door_type && <MetaItem label="Door Type" value={job.door_type} />}
-        {job.door_finish && <MetaItem label="Door Finish" value={job.door_finish} />}
-        {job.brand && <MetaItem label="Brand" value={job.brand} />}
-        {job.order_date && (
-          <MetaItem label="Order Date" value={new Date(job.order_date).toLocaleDateString("en-IN")} />
-        )}
-        {job.expected_delivery && (
-          <MetaItem label="Expected Delivery" value={new Date(job.expected_delivery).toLocaleDateString("en-IN")} />
-        )}
-        {job.planned_start && (
-          <MetaItem label="Planned Start" value={new Date(job.planned_start).toLocaleDateString("en-IN")} />
-        )}
-        {job.planned_end && (
-          <MetaItem label="Planned End" value={new Date(job.planned_end).toLocaleDateString("en-IN")} />
-        )}
       </div>
 
-      {job.remark && (
-        <div className="mb-4 p-3 card-surface">
-          <h3 className="text-sm font-medium mb-1">Remark</h3>
-          <p className="text-sm text-[var(--muted-foreground)]">{job.remark}</p>
+      {/* Everything else about the job — spec fields, legacy dates, remark —
+          tucked away but never lost. */}
+      <details className="mb-3 card-surface overflow-hidden p-0">
+        <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)]">
+          <FileClock size={13} />
+          More details
+        </summary>
+        <div className="border-t border-[var(--border)] p-3">
+          <div className="grid grid-cols-2 gap-3 md:grid-cols-4 lg:grid-cols-6">
+            <MetaItem label="Spec" value={job.spec_string} />
+            <MetaItem label="Stops" value={job.floors?.toString()} />
+            <MetaItem label="Drive Type" value={driveTypeLabel(job.drive_type)} />
+            <MetaItem label="Capacity" value={job.capacity} />
+            <MetaItem label="Structure" value={job.structure_included} />
+            <MetaItem label="Location" value={job.location} />
+            <MetaItem label="Mobile" value={job.mobile_number} />
+            <MetaItem
+              label="Created"
+              value={`${new Date(job.created_at).toLocaleDateString("en-IN")}${
+                job.created_by && job.created_by !== "unknown" ? ` · ${job.created_by}` : ""
+              }`}
+            />
+            {job.door_type && <MetaItem label="Door Type" value={job.door_type} />}
+            {job.door_finish && <MetaItem label="Door Finish" value={job.door_finish} />}
+            {job.brand && <MetaItem label="Brand" value={job.brand} />}
+            {job.order_date && (
+              <MetaItem label="Order Date" value={new Date(job.order_date).toLocaleDateString("en-IN")} />
+            )}
+            {job.expected_delivery && (
+              <MetaItem label="Expected Delivery" value={new Date(job.expected_delivery).toLocaleDateString("en-IN")} />
+            )}
+            {job.planned_start && (
+              <MetaItem label="Planned Start" value={new Date(job.planned_start).toLocaleDateString("en-IN")} />
+            )}
+            {job.planned_end && (
+              <MetaItem label="Planned End" value={new Date(job.planned_end).toLocaleDateString("en-IN")} />
+            )}
+          </div>
+          {job.remark && (
+            <p className="mt-3 text-sm">
+              <span className="font-medium">Remark:</span>{" "}
+              <span className="text-[var(--muted-foreground)]">{job.remark}</span>
+            </p>
+          )}
         </div>
-      )}
+      </details>
 
       {/* Dispatch */}
       <DispatchPanel
@@ -1077,6 +1090,77 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           )
         )}
       </div>
+
+      {/* ——— Reference material: full audit trails, out of the daily path ——— */}
+      {statusHistory.length > 0 && (
+        <details className="mt-4 card-surface overflow-hidden p-0">
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)]">
+            <FileClock size={13} />
+            Status history
+            <span>({statusHistory.length})</span>
+          </summary>
+          <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+            {statusHistory.map((h) => (
+              <div key={h.id} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                <span className="w-32 shrink-0 text-[var(--muted-foreground)]">
+                  {new Date(h.changed_at).toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" })}
+                </span>
+                <span className="shrink-0">
+                  {statusLabel(h.from_status)} <span className="text-[var(--muted-foreground)]">→</span>{" "}
+                  <strong>{statusLabel(h.to_status)}</strong>
+                </span>
+                {h.alert_kind && (
+                  <Badge variant={ALERT_META[h.alert_kind].tone === "red" ? "red" : ALERT_META[h.alert_kind].tone === "green" ? "green" : "amber"}>
+                    {ALERT_META[h.alert_kind].short}
+                  </Badge>
+                )}
+                {h.reason && <span className="truncate italic text-[var(--muted-foreground)]">“{h.reason}”</span>}
+                <span className="ml-auto shrink-0 text-[var(--muted-foreground)]">
+                  {h.changed_by === "system (backfill)" ? "initial" : h.changed_by || "—"}
+                  {h.acknowledged_at ? ` · ✓ ${h.acknowledged_by || ""}` : ""}
+                </span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
+
+      {gadVersions.length > 0 && !gadAlert(job) && (
+        <details className="mt-3 card-surface overflow-hidden p-0">
+          <summary className="flex cursor-pointer select-none items-center gap-2 px-3 py-1.5 text-xs font-medium text-[var(--muted-foreground)]">
+            <FileClock size={13} />
+            GAD version history
+            <span>({gadVersions.length})</span>
+          </summary>
+          <div className="divide-y divide-[var(--border)] border-t border-[var(--border)]">
+            {gadVersions.map((v) => {
+              const ack = acknowledgedRev(job);
+              return (
+                <div key={v.id} className="flex items-center gap-3 px-3 py-1.5 text-xs">
+                  <span className="shrink-0 font-mono font-semibold">rev {v.revision_no}</span>
+                  {v.is_current && <Badge variant="green">Current</Badge>}
+                  {ack === v.revision_no && <Badge variant="blue">BOM based on this</Badge>}
+                  <span className="min-w-0 flex-1 truncate text-[var(--muted-foreground)]" title={v.filename}>
+                    {v.filename}
+                  </span>
+                  <span className="shrink-0 text-[var(--muted-foreground)]">
+                    {new Date(v.uploaded_at).toLocaleDateString("en-IN")}
+                    {v.uploaded_by && v.uploaded_by !== "unknown" ? ` · ${v.uploaded_by}` : ""}
+                  </span>
+                  <a
+                    href={v.url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex shrink-0 items-center gap-1 text-[var(--primary)] hover:underline"
+                  >
+                    <ExternalLink size={13} /> View
+                  </a>
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
         </div>
 
