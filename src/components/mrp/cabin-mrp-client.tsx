@@ -72,7 +72,7 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
       <PageHeader
         icon={<LayoutGrid size={18} />}
         title="Cabin MRP — programs to cut"
-        subtitle="Fewest cabin-program runs to clear the cabin-job shortfall, planned by finish with the same optimiser as Make MRP."
+        subtitle="Fewest program runs to clear the cabin-job shortfall — drawn from every audited program and planned with the same optimiser as Make MRP."
       />
 
       {/* Summary */}
@@ -92,8 +92,8 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
         <Card>
           <EmptyState
             icon={<LayoutGrid size={28} />}
-            title="No audited cabin programs yet"
-            description="Create cabin programs and mark them audited — only audited programs are planned (same rule as Make MRP)."
+            title="No audited program can cut the cabin demand"
+            description="No audited program produces any of the currently-demanded cabin items. Audit a program that outputs them (same rule as Make MRP)."
           />
         </Card>
       ) : (
@@ -173,8 +173,8 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
                         <div className="flex items-center gap-2 flex-wrap">
                           {p.machine && <Badge variant="neutral" className="font-mono text-[11px]">{MACHINE[p.machine] ?? p.machine}</Badge>}
                           <span className="font-mono text-xs text-[var(--muted-foreground)]">{p.code}</span>
-                          <Link href={`/cabin-programs/${p.program_id}`} className="text-sm font-medium flex-1 min-w-[120px] hover:text-[var(--primary)]">{p.name}</Link>
-                          <Badge variant="purple" className="shrink-0">{p.finish}</Badge>
+                          <Link href={`/programs/${p.program_id}`} className="text-sm font-medium flex-1 min-w-[120px] hover:text-[var(--primary)]">{p.name}</Link>
+                          {p.finish && <Badge variant="purple" className="shrink-0">{p.finish}</Badge>}
                           <Badge variant="blue" className="shrink-0">Run ×{p.runs}</Badge>
                           {p.machineSeconds != null && (
                             <span className="text-[11px] shrink-0 tabular-nums font-medium" title={`per run × ${p.runs} runs`}>{formatDuration(p.machineSeconds)}</span>
