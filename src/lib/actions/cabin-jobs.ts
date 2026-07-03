@@ -291,38 +291,49 @@ export interface CabinJobListRow {
   /** Non-null ISO timestamp when marked ready; ready jobs are excluded from the
    *  cabin requirement (their items are already built). null = still counts. */
   marked_ready_at: string | null;
+  /** Non-null = engineer-reviewed. NULL = an AI DRAFT pending review — drafts
+   *  are excluded from every cabin requirement/demand reader until reviewed. */
+  reviewed_at: string | null;
 }
 
 export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   const supabase = createCacheClient();
-  const { data: jobs } = await supabase
-    .from("cabin_jobs")
-    .select("id, job_number, customer_name, created_at, marked_ready_at")
-    .order("created_at", { ascending: false });
-  const ids = (jobs ?? []).map((j: any) => j.id as string);
+  // The lines read used to filter .in(all job ids) — redundant (the jobs read is
+  // unfiltered and the CASCADE FK guarantees every line's job is in it), so the
+  // two reads are independent: fetch them concurrently. Paged so the badges keep
+  // counting past PostgREST's 1000-row cap; errors stay silently tolerated (the
+  // old destructure ignored them too).
+  const [{ data: jobs }, lines] = await Promise.all([
+    supabase
+      .from("cabin_jobs")
+      .select("id, job_number, customer_name, created_at, marked_ready_at, reviewed_at")
+      .order("created_at", { ascending: false }),
+    fetchAllRanged<{ cabin_job_id: string; cabin_type: string; item: unknown }>(
+      (from, to, withCount) =>
+        supabase
+          .from("cabin_job_lines")
+          .select(
+            `cabin_job_id, cabin_type,
+             item:items!cabin_job_lines_item_id_fkey(name, finish)`,
+            withCount ? { count: "exact" } : {},
+          )
+          .range(from, to),
+    ).catch(() => [] as { cabin_job_id: string; cabin_type: string; item: unknown }[]),
+  ]);
   const countByJob = new Map<string, number>();
   const platformByJob = new Map<string, string>();
   const finishesByJob = new Map<string, Set<string>>();
-  if (ids.length) {
-    const { data: lines } = await supabase
-      .from("cabin_job_lines")
-      .select(
-        `cabin_job_id, cabin_type,
-         item:items!cabin_job_lines_item_id_fkey(name, finish)`,
-      )
-      .in("cabin_job_id", ids);
-    for (const l of lines ?? []) {
-      const jid = l.cabin_job_id as string;
-      countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
-      const it = flatten<any>((l as any).item);
-      if (l.cabin_type === "Platform" && it?.name && !platformByJob.has(jid)) {
-        platformByJob.set(jid, it.name as string);
-      }
-      if (l.cabin_type === "Side Panel" && it?.finish) {
-        const set = finishesByJob.get(jid) ?? new Set<string>();
-        set.add(it.finish as string);
-        finishesByJob.set(jid, set);
-      }
+  for (const l of lines) {
+    const jid = l.cabin_job_id as string;
+    countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
+    const it = flatten<any>((l as any).item);
+    if (l.cabin_type === "Platform" && it?.name && !platformByJob.has(jid)) {
+      platformByJob.set(jid, it.name as string);
+    }
+    if (l.cabin_type === "Side Panel" && it?.finish) {
+      const set = finishesByJob.get(jid) ?? new Set<string>();
+      set.add(it.finish as string);
+      finishesByJob.set(jid, set);
     }
   }
   return (jobs ?? []).map((j: any) => {
@@ -336,20 +347,9 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       side_panel_material: fset ? [...fset].sort().join(" + ") : null,
       created_at: j.created_at as string,
       marked_ready_at: (j.marked_ready_at as string | null) ?? null,
+      reviewed_at: (j.reviewed_at as string | null) ?? null,
     };
   });
-}
-
-/** Cabin jobs flagged "ready" — their items are excluded from every cabin
- *  requirement/demand reader (already built). Used to filter cabin_job_lines. */
-async function readyCabinJobIds(
-  supabase: ReturnType<typeof createCacheClient>,
-): Promise<string[]> {
-  const { data } = await supabase
-    .from("cabin_jobs")
-    .select("id")
-    .not("marked_ready_at", "is", null);
-  return (data ?? []).map((r: any) => r.id as string);
 }
 
 /* ------------------------------------------------------------------ *
@@ -388,53 +388,74 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
   const supabase = createCacheClient();
 
   // Ready jobs are already built — their items don't count toward the requirement.
-  const readyIds = await readyCabinJobIds(supabase);
+  // Filtered server-side via the inner join (empty embed = filter only, rows keep
+  // their shape) so the not-ready lines land in one round-trip.
   const lines = await fetchAllRanged<{
     cabin_job_id: string;
     cabin_type: string;
     item_id: string | null;
     qty: number;
-  }>((from, to, withCount) => {
-    const base = supabase
+  }>((from, to, withCount) =>
+    supabase
       .from("cabin_job_lines")
-      .select("cabin_job_id, cabin_type, item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null);
-    const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
-    return q.range(from, to);
-  });
+      .select(
+        "cabin_job_id, cabin_type, item_id, qty, cj:cabin_jobs!inner()",
+        withCount ? { count: "exact" } : {},
+      )
+      .not("item_id", "is", null)
+      .is("cj.marked_ready_at", null)
+      // Unreviewed AI drafts must not drive the requirement.
+      .not("cj.reviewed_at", "is", null)
+      .range(from, to),
+  );
   if (lines.length === 0) return [];
 
   const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))];
   const itemById = new Map<string, { code: string; name: string; family: string | null; finish: string | null }>();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, code, name, family, finish")
-      .in("id", itemIds.slice(i, i + 300));
-    if (error) throw error;
-    for (const it of data ?? [])
-      itemById.set(it.id as string, {
-        code: it.code as string,
-        name: it.name as string,
-        family: (it.family as string | null) ?? null,
-        finish: (it.finish as string | null) ?? null,
-      });
-  }
 
   // Cabin job metadata (for the per-item hover breakdown).
   const jobIds = [...new Set(lines.map((l) => l.cabin_job_id))];
   const jobMeta = new Map<string, { job_number: string; customer_name: string | null }>();
-  for (let i = 0; i < jobIds.length; i += 300) {
-    const { data } = await supabase
-      .from("cabin_jobs")
-      .select("id, job_number, customer_name")
-      .in("id", jobIds.slice(i, i + 300));
-    for (const j of data ?? [])
-      jobMeta.set(j.id as string, {
-        job_number: (j.job_number as string) ?? "",
-        customer_name: (j.customer_name as string | null) ?? null,
-      });
+
+  // Item and job-meta lookups both derive only from `lines` and write disjoint
+  // maps — fetch every 300-id chunk of both in one concurrent round-trip wave.
+  const lookups: Promise<void>[] = [];
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const chunk = itemIds.slice(i, i + 300);
+    lookups.push(
+      (async () => {
+        const { data, error } = await supabase
+          .from("items")
+          .select("id, code, name, family, finish")
+          .in("id", chunk);
+        if (error) throw error;
+        for (const it of data ?? [])
+          itemById.set(it.id as string, {
+            code: it.code as string,
+            name: it.name as string,
+            family: (it.family as string | null) ?? null,
+            finish: (it.finish as string | null) ?? null,
+          });
+      })(),
+    );
   }
+  for (let i = 0; i < jobIds.length; i += 300) {
+    const chunk = jobIds.slice(i, i + 300);
+    lookups.push(
+      (async () => {
+        const { data } = await supabase
+          .from("cabin_jobs")
+          .select("id, job_number, customer_name")
+          .in("id", chunk);
+        for (const j of data ?? [])
+          jobMeta.set(j.id as string, {
+            job_number: (j.job_number as string) ?? "",
+            customer_name: (j.customer_name as string | null) ?? null,
+          });
+      })(),
+    );
+  }
+  await Promise.all(lookups);
 
   // finish key -> aggregate (qty summed per distinct item, tracking each job's qty).
   type AggItem = {
@@ -539,33 +560,39 @@ export interface CabinJobDetail {
   job_number: string;
   customer_name: string | null;
   note: string | null;
+  /** NULL = AI draft pending engineer review. */
+  reviewed_at: string | null;
   lines: CabinJobLine[];
 }
 
 export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
   if (!id) return null;
   const supabase = createCacheClient();
-  const { data: job } = await supabase
-    .from("cabin_jobs")
-    .select("id, job_number, customer_name, note")
-    .eq("id", id)
-    .maybeSingle();
+  // Header and lines both key only off `id` — independent reads, fetch
+  // concurrently (one round-trip instead of two).
+  const [{ data: job }, { data: lines }] = await Promise.all([
+    supabase
+      .from("cabin_jobs")
+      .select("id, job_number, customer_name, note, reviewed_at")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("cabin_job_lines")
+      .select(
+        `id, cabin_type, item_id, qty, sort_order,
+         item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+      )
+      .eq("cabin_job_id", id)
+      .order("sort_order"),
+  ]);
   if (!job) return null;
-
-  const { data: lines } = await supabase
-    .from("cabin_job_lines")
-    .select(
-      `id, cabin_type, item_id, qty, sort_order,
-       item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-    )
-    .eq("cabin_job_id", id)
-    .order("sort_order");
 
   return {
     id: job.id as string,
     job_number: job.job_number as string,
     customer_name: (job.customer_name as string | null) ?? null,
     note: (job.note as string | null) ?? null,
+    reviewed_at: (job.reviewed_at as string | null) ?? null,
     lines: (lines ?? []).map((l: any) => {
       const it = flatten<any>(l.item);
       return {
@@ -678,6 +705,9 @@ export async function createCabinJob(input: {
       job_number,
       customer_name: input.customer_name?.trim() || null,
       note: input.note?.trim() || null,
+      // Human-created through the form = reviewed by definition. Only AI drafts
+      // (inserted outside this action) start with reviewed_at NULL.
+      reviewed_at: new Date().toISOString(),
     })
     .select("id")
     .single();
@@ -820,6 +850,36 @@ export async function setCabinJobReady(
   revalidateTag("cabin-jobs");
   // Requirement / cabin-MRP / weekly demand all key off cabin_job_lines; their
   // caches carry these tags (cabin-program-plan.ts).
+  revalidateTag("cabin-programs");
+  revalidateTag("cabin-requirements");
+  revalidatePath("/jobs");
+  return { ok: true, id };
+}
+
+/**
+ * Toggle a cabin job's "reviewed" flag. AI-drafted cabin jobs start UNREVIEWED
+ * (reviewed_at NULL) and are excluded from every cabin requirement/demand reader
+ * until an engineer reviews the draft and marks it. Reversible (back to draft).
+ * Busts the same caches as setCabinJobReady so all demand surfaces agree.
+ */
+export async function setCabinJobReviewed(
+  id: string,
+  reviewed: boolean,
+): Promise<CabinJobResult> {
+  if (!id) return { ok: false, error: "Missing cabin job id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cabin_jobs")
+    .update({
+      reviewed_at: reviewed ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/cabin-jobs");
+  revalidatePath(`/cabin-jobs/${id}`);
+  revalidateTag("cabin-jobs");
   revalidateTag("cabin-programs");
   revalidateTag("cabin-requirements");
   revalidatePath("/jobs");

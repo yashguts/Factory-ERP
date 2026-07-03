@@ -54,8 +54,9 @@ async function getEligibleCabinJobs(
 ): Promise<Map<string, EligibleCabinJob>> {
   const { data: cjobsRaw } = await supabase
     .from("cabin_jobs")
-    .select("id, job_number, marked_ready_at");
-  const notReady = ((cjobsRaw ?? []) as any[]).filter((c) => !c.marked_ready_at);
+    .select("id, job_number, marked_ready_at, reviewed_at");
+  // Ready jobs are already built; unreviewed AI drafts must not drive demand.
+  const notReady = ((cjobsRaw ?? []) as any[]).filter((c) => !c.marked_ready_at && c.reviewed_at);
   if (notReady.length === 0) return new Map();
 
   // Job Orders that pass the status + Required-stage gate. jobs is small (~200
