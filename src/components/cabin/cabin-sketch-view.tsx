@@ -79,37 +79,15 @@ interface Placed {
   w: number;
 }
 
-/** Parse the "LEFT BLANK: ..." section of an AI-draft note into short labels,
- *  so unresolved lines show ON the sketch as dashed to-fill entries. */
-function parseBlanks(note: string | null | undefined): { type: string; wanted: string }[] {
-  if (!note) return [];
-  const m = note.match(/LEFT BLANK:\s*([\s\S]*?)(?:\nASSUMPTIONS:|$)/);
-  if (!m) return [];
-  return m[1]
-    .split(" | ")
-    .map((entry) => {
-      const [head] = entry.split(" — ");
-      const idx = head.indexOf(":");
-      if (idx < 0) return { type: "?", wanted: head.trim() };
-      return { type: head.slice(0, idx).trim(), wanted: head.slice(idx + 1).trim() };
-    })
-    .filter((b) => b.wanted)
-    .slice(0, 8);
-}
-
 export function CabinSketchView({
   jobNumber,
   customerName,
   lines,
-  note,
 }: {
   jobNumber: string;
   customerName?: string | null;
   lines: CabinJobLine[];
-  /** The cabin job's note — AI drafts carry a "LEFT BLANK:" list rendered as to-fill labels. */
-  note?: string | null;
 }) {
-  const blanks = useMemo(() => parseBlanks(note), [note]);
   const model = useMemo(() => {
     const byType = (t: string) => lines.filter((l) => l.cabin_type === t && l.item_name);
     const platform = byType("Platform")[0]?.item_name ?? null;
@@ -262,24 +240,6 @@ export function CabinSketchView({
             {model.rest.length > 8 && (
               <text x={30} y={y0 + boxH + 82 + 8 * 16} fill="var(--muted-foreground)">…and {model.rest.length - 8} more</text>
             )}
-          </g>
-        )}
-
-        {/* TO FILL box — unresolved draft lines, drawn dashed so blank walls read as
-            "known, pending" rather than missing */}
-        {blanks.length > 0 && (
-          <g fontSize="11.5">
-            <rect
-              x={400} y={y0 + boxH + 48}
-              width={344} height={26 + blanks.length * 16}
-              fill="none" stroke="#b45309" strokeWidth="1.2" strokeDasharray="6 4" rx="6"
-            />
-            <text x={412} y={y0 + boxH + 68} fontWeight="bold" fill="#b45309">TO FILL (from draft note):</text>
-            {blanks.map((b, i) => (
-              <text key={i} x={412} y={y0 + boxH + 86 + i * 16} fill="#b45309">
-                ◌ {b.type}: {b.wanted.length > 44 ? b.wanted.slice(0, 43) + "…" : b.wanted}
-              </text>
-            ))}
           </g>
         )}
       </svg>
