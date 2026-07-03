@@ -1,4 +1,4 @@
-import { getCabinWeekly } from "@/lib/actions/cabin-program-plan";
+import { getCabinWeekly } from "@/lib/actions/cabin-mrp";
 import { CabinWeeklyClient } from "@/components/mrp/cabin-weekly-client";
 
 export const metadata = { title: "Cabin MRP — Weekly" };

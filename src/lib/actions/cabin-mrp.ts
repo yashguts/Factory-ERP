@@ -1,31 +1,35 @@
 "use server";
 
 /**
- * CABIN MRP — "programs to cut" for the cabin-job backlog.
+ * CABIN MRP — the three /mrp/cabin views (Requirements / Programs to run / Weekly).
  *
- * Rebuilt 2026-07-03. The original Cabin MRP planned against the standalone
- * `cabin_programs` tables (a finish-aware model: one program × a finish-set).
- * On 2026-06-27 cabin programs were folded into the main Programs catalogue
- * (`operations`, label 'Cabin Items') and are now maintained there as concrete,
- * per-finish programs — so `cabin_programs` is a frozen snapshot. This reader
- * therefore draws candidates from the **entire audited-programs universe**
- * (any audited, active `operations` program whose component outputs include a
- * demanded cabin item), then hands them to the SAME owner-locked optimiser
- * (`selectRuns` from make-plan-core) to pick the fewest sheets.
+ * Rebuilt 2026-07-03. All three read cabin-job demand and share ONE eligibility
+ * rule (getEligibleCabinJobs). "Programs to run" additionally plans against the
+ * entire audited-programs universe (see getCabinMrp) with the locked selectRuns.
  *
- * Demand still comes from Cabin Jobs (`cabin_job_lines`), netted against stock
- * to a shortfall — identical to the old reader's demand side. The finish-set /
- * sheet-matching machinery is gone: a candidate is now a concrete program with
- * concrete output items and its own recorded sheet input(s).
+ * DEMAND ELIGIBILITY (owner rule, 2026-07-03): a cabin job's items count as cabin
+ * cutting demand ONLY if
+ *   - the cabin job is NOT marked ready (Cabin Jobs → Mark Ready), AND
+ *   - its linked Job Order (matched by job_number) is status = in_production, AND
+ *   - that Job Order's Required stage = full_material (the "2nd phase"), AND
+ *   - that Job Order is NOT fully dispatched (dispatch status != 'full' — i.e. it
+ *     is still in the Jobs "Active" tab).
+ * A cabin job with no linked in-production/2nd-phase/active Job Order contributes
+ * nothing. Same rule feeds Requirements, Programs to run, and Weekly so the three
+ * agree. (The Cabin Jobs page's own weekly widget is NOT filtered by this — it
+ * still uses the dormant cabin-program-plan.ts reader.)
  *
- * Deliberately a NEW file: the dormant `cabin-program-plan.ts` (still used by
- * the Requirements + Weekly demand views and Cabin Jobs) is left untouched.
+ * Deliberately a separate file: cabin-program-plan.ts is left untouched (a
+ * parallel session has uncommitted edits there; it also still powers the Cabin
+ * Jobs page + Cabin Jobs "by finish" tab).
  */
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { selectRuns, type OpOuts } from "@/lib/actions/make-plan-core";
+import { getJobsDispatchStatus } from "@/lib/actions/dispatch";
 import { sheetThicknessMm } from "@/lib/cabin/cabin-program-meta";
+import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 import type {
   CabinMrpPlan,
   CabinPlanProgram,
@@ -33,18 +37,58 @@ import type {
   CabinPlanBlocked,
   CabinPlanInput,
   CabinPlanOutput,
+  CabinReqRow,
+  CabinWeeklyRow,
+  CabinWeeklyPlan,
 } from "@/lib/actions/cabin-program-plan";
 
-/** Cabin jobs flagged "ready" are already built — their lines are excluded from
- *  the cutting demand. Returns the ids to filter out. */
-async function readyCabinJobIds(
+interface EligibleCabinJob {
+  requirementDispatchDate: string | null;
+}
+
+/** The demand-eligibility gate (see file header). Returns eligible
+ *  cabin_job_id -> the linked Job Order's requirement_dispatch_date (used by the
+ *  weekly board). Empty map = no cabin demand is live right now. */
+async function getEligibleCabinJobs(
   supabase: ReturnType<typeof createCacheClient>,
-): Promise<string[]> {
-  const { data } = await supabase
+): Promise<Map<string, EligibleCabinJob>> {
+  const { data: cjobsRaw } = await supabase
     .from("cabin_jobs")
-    .select("id")
-    .not("marked_ready_at", "is", null);
-  return (data ?? []).map((r: any) => r.id as string);
+    .select("id, job_number, marked_ready_at");
+  const notReady = ((cjobsRaw ?? []) as any[]).filter((c) => !c.marked_ready_at);
+  if (notReady.length === 0) return new Map();
+
+  // Job Orders that pass the status + Required-stage gate. jobs is small (~200
+  // rows); fetch the in-production/2nd-phase set and match by normalised number.
+  const { data: jobsRaw } = await supabase
+    .from("jobs")
+    .select("id, job_number, requirement_dispatch_date")
+    .eq("status", "in_production")
+    .eq("requirement_stage", "full_material");
+  const jobByNumber = new Map<string, { id: string; date: string | null }>();
+  for (const j of (jobsRaw ?? []) as any[]) {
+    const key = ((j.job_number as string) ?? "").trim().toLowerCase();
+    if (key) jobByNumber.set(key, { id: j.id as string, date: (j.requirement_dispatch_date as string | null) ?? null });
+  }
+
+  const cabinToJob = new Map<string, { jobId: string; date: string | null }>();
+  const candidateJobIds = new Set<string>();
+  for (const c of notReady) {
+    const link = jobByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase());
+    if (link) {
+      cabinToJob.set(c.id as string, { jobId: link.id, date: link.date });
+      candidateJobIds.add(link.id);
+    }
+  }
+  if (candidateJobIds.size === 0) return new Map();
+
+  // Drop fully-dispatched Job Orders (dispatch status 'full' == left Active tab).
+  const dispatch = await getJobsDispatchStatus([...candidateJobIds]);
+  const eligible = new Map<string, EligibleCabinJob>();
+  for (const [cabinId, link] of cabinToJob) {
+    if (dispatch[link.jobId] !== "full") eligible.set(cabinId, { requirementDispatchDate: link.date });
+  }
+  return eligible;
 }
 
 interface ItemInfo {
@@ -55,6 +99,8 @@ interface ItemInfo {
   stock: number;
 }
 
+/* ===================== Programs to run (the optimiser plan) ===================== */
+
 const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan> => {
   const supabase = createCacheClient();
   const excludeSet = new Set(excludeKeys);
@@ -64,17 +110,18 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     totals: { demandedItems: 0, inStock: 0, toCut: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 },
   };
 
-  /* 1. Cabin demand: net cabin-job line qty against stock -> shortfall per item.
-   *    Ready jobs are already built — their lines are excluded. */
-  const readyIds = await readyCabinJobIds(supabase);
-  const lines = await fetchAllRanged<{ item_id: string | null; qty: number }>((from, to, withCount) => {
-    const base = supabase
+  /* 1. Cabin demand from ELIGIBLE cabin jobs, netted vs stock -> shortfall. */
+  const eligible = await getEligibleCabinJobs(supabase);
+  if (eligible.size === 0) return empty;
+  const eligibleIds = [...eligible.keys()];
+  const lines = await fetchAllRanged<{ item_id: string | null; qty: number }>((from, to, withCount) =>
+    supabase
       .from("cabin_job_lines")
       .select("item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null);
-    const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
-    return q.range(from, to);
-  });
+      .not("item_id", "is", null)
+      .in("cabin_job_id", eligibleIds)
+      .range(from, to),
+  );
   const demandByItem = new Map<string, number>();
   for (const l of lines) {
     if (!l.item_id) continue;
@@ -117,6 +164,12 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     return { ...empty, totals: { ...empty.totals, demandedItems, inStock } };
   }
 
+  const blockedAll = (reason: "no-program"): CabinPlanBlocked[] =>
+    [...shortfall].map(([id, need]) => {
+      const info = itemInfo.get(id)!;
+      return { item_id: id, code: info.code, name: info.name, finish: info.finish, category: info.category, need: Math.round(need), reason };
+    }).sort((a, b) => b.need - a.need);
+
   /* 3. Candidate producers from the AUDITED UNIVERSE: every component output
    *    (any audited, active program) whose item is a demanded cabin item. */
   const shortfallIds = [...shortfall.keys()];
@@ -129,26 +182,16 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
       .in("item_id", shortfallIds.slice(i, i + 200));
     for (const r of (data ?? []) as any[]) {
       if (!r.operation_id || !r.item_id) continue;
-      producedRows.push({
-        operation_id: r.operation_id as string,
-        item_id: r.item_id as string,
-        qty_per_run: Number(r.qty_per_run ?? 1) || 1,
-      });
+      producedRows.push({ operation_id: r.operation_id as string, item_id: r.item_id as string, qty_per_run: Number(r.qty_per_run ?? 1) || 1 });
     }
   }
   if (producedRows.length === 0) {
-    // Demand exists but no program produces any of it — everything is blocked.
-    const blocked: CabinPlanBlocked[] = [...shortfall].map(([id, need]) => {
-      const info = itemInfo.get(id)!;
-      return { item_id: id, code: info.code, name: info.name, finish: info.finish, category: info.category, need: Math.round(need), reason: "no-program" as const };
-    }).sort((a, b) => b.need - a.need);
-    return {
-      plan: [], sheets: [], blocked, excluded: excludeKeys,
-      totals: { demandedItems, inStock, toCut: shortfall.size, makeable: 0, blocked: blocked.length, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 },
-    };
+    const blocked = blockedAll("no-program");
+    return { plan: [], sheets: [], blocked, excluded: excludeKeys,
+      totals: { demandedItems, inStock, toCut: shortfall.size, makeable: 0, blocked: blocked.length, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 } };
   }
 
-  /* 4. Keep only AUDITED + active operations. Load their meta + sheet inputs. */
+  /* 4. Keep only AUDITED + active operations. Load meta + sheet inputs. */
   const candOpIds = [...new Set(producedRows.map((r) => r.operation_id))];
   const opMeta = new Map<string, { code: string | null; name: string; machine: string | null; machineSeconds: number | null }>();
   for (let i = 0; i < candOpIds.length; i += 200) {
@@ -170,17 +213,11 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
   const auditedOpIds = [...opMeta.keys()];
   const auditedPrograms = auditedOpIds.length;
   if (auditedPrograms === 0) {
-    const blocked: CabinPlanBlocked[] = [...shortfall].map(([id, need]) => {
-      const info = itemInfo.get(id)!;
-      return { item_id: id, code: info.code, name: info.name, finish: info.finish, category: info.category, need: Math.round(need), reason: "no-program" as const };
-    }).sort((a, b) => b.need - a.need);
-    return {
-      plan: [], sheets: [], blocked, excluded: excludeKeys,
-      totals: { demandedItems, inStock, toCut: shortfall.size, makeable: 0, blocked: blocked.length, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 },
-    };
+    const blocked = blockedAll("no-program");
+    return { plan: [], sheets: [], blocked, excluded: excludeKeys,
+      totals: { demandedItems, inStock, toCut: shortfall.size, makeable: 0, blocked: blocked.length, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 } };
   }
 
-  // Sheet inputs for the audited candidates.
   const inputRows: { operation_id: string; item_id: string; qty_per_run: number }[] = [];
   for (let i = 0; i < auditedOpIds.length; i += 200) {
     const { data } = await supabase
@@ -199,7 +236,6 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     inputsByOp.set(r.operation_id, arr);
   }
 
-  // Sheet item identity (code / name / thickness) for display.
   const sheetIds = [...new Set(inputRows.map((r) => r.item_id))];
   const sheetInfo = new Map<string, { code: string; name: string; thicknessMm: number | null }>();
   for (let i = 0; i < sheetIds.length; i += 200) {
@@ -226,10 +262,8 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
   for (const [opId, produced] of producedByOp) {
     const meta = opMeta.get(opId)!;
     const excludeKey = `${opId}::${meta.code ?? opId}`;
-    if (excludeSet.has(excludeKey)) continue; // Don't-run: drop this candidate
+    if (excludeSet.has(excludeKey)) continue; // Don't-run
 
-    // Grouping category + finish come from the demanded item this program makes
-    // most of (its primary output), so a program lands in one section.
     let primaryItem: string | null = null;
     let primaryQty = -1;
     for (const [itemId, qpr] of produced) {
@@ -320,22 +354,10 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     totalRuns += rc;
 
     plan.push({
-      excludeKey: cand,
-      program_id: cm.opId,
-      code: meta.code,
-      name: meta.name,
-      machine: meta.machine,
-      category: cm.category,
-      finish: cm.finish,
-      runs: rc,
-      machineSeconds,
-      inputs,
-      outputs,
-      partsMade,
-      extra,
+      excludeKey: cand, program_id: cm.opId, code: meta.code, name: meta.name, machine: meta.machine,
+      category: cm.category, finish: cm.finish, runs: rc, machineSeconds, inputs, outputs, partsMade, extra,
     });
   }
-  // Most-runs-first within a category (the client groups by category).
   plan.sort((a, b) => a.category.localeCompare(b.category) || b.runs - a.runs || a.name.localeCompare(b.name));
 
   const totalSheets = [...sheetAgg.values()].reduce((s, x) => s + x.total, 0);
@@ -355,16 +377,8 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     blocked,
     excluded: excludeKeys,
     totals: {
-      demandedItems,
-      inStock,
-      toCut: shortfall.size,
-      makeable: makeableItems.size,
-      blocked: blocked.length,
-      programs: plan.length,
-      runs: totalRuns,
-      sheets: totalSheets,
-      machineSeconds: totalMachineSeconds,
-      auditedPrograms,
+      demandedItems, inStock, toCut: shortfall.size, makeable: makeableItems.size, blocked: blocked.length,
+      programs: plan.length, runs: totalRuns, sheets: totalSheets, machineSeconds: totalMachineSeconds, auditedPrograms,
     },
   };
 };
@@ -373,6 +387,208 @@ export async function getCabinMrp(excludeKeys: string[] = []): Promise<CabinMrpP
   const key = excludeKeys.length ? [...excludeKeys].sort().join(",") : "__none__";
   return unstable_cache(() => _getCabinMrpUncached(excludeKeys), ["cabin-mrp-universe", key], {
     revalidate: 300,
-    tags: ["cabin-programs", "operations", "jobs", "items", "inventory-stock"],
+    tags: ["cabin-programs", "operations", "jobs", "bom-lines", "items", "inventory-stock"],
+  })();
+}
+
+/* ============================ Requirements ============================ */
+
+const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
+  const supabase = createCacheClient();
+  const eligible = await getEligibleCabinJobs(supabase);
+  if (eligible.size === 0) return [];
+  const eligibleIds = [...eligible.keys()];
+
+  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+    (from, to, withCount) =>
+      supabase
+        .from("cabin_job_lines")
+        .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
+        .not("item_id", "is", null)
+        .in("cabin_job_id", eligibleIds)
+        .range(from, to),
+  );
+  if (lines.length === 0) return [];
+
+  const demand = new Map<string, { type: string; qty: number; jobs: Set<string> }>();
+  for (const l of lines) {
+    if (!l.item_id) continue;
+    const ex = demand.get(l.item_id) ?? { type: l.cabin_type, qty: 0, jobs: new Set<string>() };
+    ex.qty += Number(l.qty) || 0;
+    ex.jobs.add(l.cabin_job_id);
+    demand.set(l.item_id, ex);
+  }
+
+  const itemIds = [...demand.keys()];
+  const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
+  for (let i = 0; i < itemIds.length; i += 200) {
+    const { data } = await supabase
+      .from("items")
+      .select("id, code, name, finish, inventory(quantity)")
+      .in("id", itemIds.slice(i, i + 200));
+    for (const it of (data ?? []) as any[]) {
+      const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+      info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+    }
+  }
+
+  const rows: CabinReqRow[] = [];
+  for (const [id, d] of demand) {
+    const it = info.get(id);
+    if (!it) continue;
+    rows.push({
+      item_id: id, code: it.code, name: it.name, type: d.type, finish: it.finish,
+      required: d.qty, stock: it.stock, shortfall: Math.max(0, d.qty - it.stock), job_count: d.jobs.size,
+    });
+  }
+  return rows;
+};
+
+export async function getCabinRequirements(): Promise<CabinReqRow[]> {
+  return unstable_cache(_getCabinRequirementsUncached, ["cabin-mrp-requirements"], {
+    revalidate: 300,
+    tags: ["cabin-programs", "jobs", "bom-lines", "items", "inventory-stock"],
+  })();
+}
+
+/* ============================ Weekly ============================ */
+
+const DAY_MS = 86_400_000;
+const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+const HORIZON_WEEKS = 8;
+
+function istToday(): Date {
+  const d = new Date(Date.now() + 5.5 * 3600 * 1000);
+  return new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate()));
+}
+function startOfWeekSunday(d: Date): Date {
+  return new Date(d.getTime() - d.getUTCDay() * DAY_MS);
+}
+function parseDate(s: string): Date | null {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s);
+  return m ? new Date(Date.UTC(+m[1], +m[2] - 1, +m[3])) : null;
+}
+function fmtRange(start: Date, end: Date): string {
+  const sm = MONTHS[start.getUTCMonth()], em = MONTHS[end.getUTCMonth()];
+  return sm === em ? `${start.getUTCDate()}–${end.getUTCDate()} ${sm}` : `${start.getUTCDate()} ${sm} – ${end.getUTCDate()} ${em}`;
+}
+function buildCabinWeeks(curWeek: Date): WeekMeta[] {
+  const weeks: WeekMeta[] = [
+    { index: -1, key: "overdue", label: "Overdue", title: "Overdue", subtitle: "Linked job date already passed", weekStartIso: null, isCurrent: false, isOverdue: true },
+  ];
+  for (let w = 0; w < HORIZON_WEEKS; w++) {
+    const start = new Date(curWeek.getTime() + w * 7 * DAY_MS);
+    const end = new Date(start.getTime() + 6 * DAY_MS);
+    const range = fmtRange(start, end);
+    weeks.push({
+      index: w, key: `w${w}`, label: range, title: range,
+      subtitle: w === 0 ? "This week" : w === 1 ? "Next week" : `In ${w} weeks`,
+      weekStartIso: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}-${String(start.getUTCDate()).padStart(2, "0")}`,
+      isCurrent: w === 0, isOverdue: false,
+    });
+  }
+  weeks.push({
+    index: 99, key: "undated", label: "Undated", title: "Undated",
+    subtitle: "Linked job has no dispatch date", weekStartIso: null, isCurrent: false, isOverdue: false,
+  });
+  return weeks;
+}
+
+const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
+  const supabase = createCacheClient();
+  const today = istToday();
+  const curWeek = startOfWeekSunday(today);
+  const weeks = buildCabinWeeks(curWeek);
+  const N = weeks.length;
+
+  const eligible = await getEligibleCabinJobs(supabase);
+  if (eligible.size === 0) return { weeks, rows: [], laterCount: 0, undatedCount: 0 };
+  const eligibleIds = [...eligible.keys()];
+
+  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+    (from, to, withCount) =>
+      supabase
+        .from("cabin_job_lines")
+        .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
+        .not("item_id", "is", null)
+        .in("cabin_job_id", eligibleIds)
+        .range(from, to),
+  );
+
+  // Each eligible cabin job's bucket comes from its linked Job Order's date.
+  const dateByCabinJob = new Map<string, string | null>();
+  for (const [cid, info] of eligible) dateByCabinJob.set(cid, info.requirementDispatchDate);
+
+  const bucketOf = (iso: string | null): { pos: number | null; later: boolean; undated: boolean } => {
+    if (!iso) return { pos: null, later: false, undated: true };
+    const d = parseDate(iso);
+    if (!d) return { pos: null, later: false, undated: true };
+    const ws = startOfWeekSunday(d);
+    const w = Math.round((ws.getTime() - curWeek.getTime()) / (7 * DAY_MS));
+    if (w < 0) return { pos: 0, later: false, undated: false };
+    if (w >= HORIZON_WEEKS) return { pos: null, later: true, undated: false };
+    return { pos: w + 1, later: false, undated: false };
+  };
+
+  const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();
+  const laterJobs = new Set<string>();
+  const undatedJobs = new Set<string>();
+  const undatedPos = N - 1;
+  for (const l of lines) {
+    if (!l.item_id) continue;
+    const b = bucketOf(dateByCabinJob.get(l.cabin_job_id) ?? null);
+    if (b.later) { laterJobs.add(l.cabin_job_id); continue; }
+    let pos = b.pos;
+    if (b.undated) { undatedJobs.add(l.cabin_job_id); pos = undatedPos; }
+    if (pos == null) continue;
+    const ex = demandByItemWeek.get(l.item_id) ?? { type: l.cabin_type, arr: new Array(N).fill(0) };
+    ex.arr[pos] += Number(l.qty) || 0;
+    demandByItemWeek.set(l.item_id, ex);
+  }
+
+  const itemIds = [...demandByItemWeek.keys()];
+  const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
+  const chunks: Promise<void>[] = [];
+  for (let i = 0; i < itemIds.length; i += 200) {
+    const chunk = itemIds.slice(i, i + 200);
+    chunks.push(
+      (async () => {
+        const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", chunk);
+        for (const it of (data ?? []) as any[]) {
+          const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+          info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+        }
+      })(),
+    );
+  }
+  await Promise.all(chunks);
+
+  const rows: CabinWeeklyRow[] = [];
+  for (const [id, d] of demandByItemWeek) {
+    const it = info.get(id);
+    if (!it) continue;
+    const cumulative: number[] = new Array(N).fill(0);
+    const perWeek: number[] = new Array(N).fill(0);
+    let gross = 0, prevShort = 0;
+    for (let i = 0; i < N; i++) {
+      gross += d.arr[i];
+      const short = Math.max(0, gross - it.stock);
+      cumulative[i] = short;
+      perWeek[i] = Math.max(0, short - prevShort);
+      prevShort = short;
+    }
+    const total = cumulative[N - 1];
+    if (total <= 0) continue;
+    rows.push({ item_id: id, code: it.code, name: it.name, type: d.type, finish: it.finish, perWeek, cumulative, total });
+  }
+  rows.sort((a, b) => b.total - a.total);
+
+  return { weeks, rows, laterCount: laterJobs.size, undatedCount: undatedJobs.size };
+};
+
+export async function getCabinWeekly(): Promise<CabinWeeklyPlan> {
+  return unstable_cache(_getCabinWeeklyUncached, ["cabin-mrp-weekly"], {
+    revalidate: 300,
+    tags: ["cabin-programs", "jobs", "bom-lines", "items", "inventory-stock"],
   })();
 }

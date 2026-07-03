@@ -1,4 +1,4 @@
-import { getCabinRequirements } from "@/lib/actions/cabin-program-plan";
+import { getCabinRequirements } from "@/lib/actions/cabin-mrp";
 import { CabinRequirementsClient } from "@/components/mrp/cabin-requirements-client";
 
 export const metadata = { title: "Cabin MRP — Requirements" };
