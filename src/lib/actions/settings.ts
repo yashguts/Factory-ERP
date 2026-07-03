@@ -1,5 +1,6 @@
 "use server";
 
+import { unstable_cache } from "next/cache";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { getItemStockSummaries } from "@/lib/actions/inventory";
@@ -113,34 +114,65 @@ export interface DemandRulesDoc {
 }
 
 export async function getDemandRulesDoc(): Promise<DemandRulesDoc> {
+  // Rule edits (demand-rules.ts revalidateDemand) and item renames both bust
+  // the "items" tag, so the cached doc stays fresh; drive rules are a constant.
+  return unstable_cache(_getDemandRulesDocUncached, ["demand-rules-doc"], {
+    revalidate: 300,
+    tags: ["items"],
+  })();
+}
+
+async function _getDemandRulesDocUncached(): Promise<DemandRulesDoc> {
   const supabase = createCacheClient();
 
-  const rules = await fetchAllRanged<{
-    parent_item_id: string;
-    child_item_id: string;
-    qty: number;
-    note: string | null;
-  }>((from, to, withCount) =>
-    supabase
-      .from("item_demand_rules")
-      .select("parent_item_id, child_item_id, qty, note", withCount ? { count: "exact" } : {})
-      .range(from, to),
-  );
+  // Two independent chains — component rules (+ name resolution) and the
+  // constant drive-type rules (+ name lookup) — run concurrently.
+  const [{ rules, nameById }, { driveRulesRaw, driveNameByCode }] = await Promise.all([
+    (async () => {
+      const rules = await fetchAllRanged<{
+        parent_item_id: string;
+        child_item_id: string;
+        qty: number;
+        note: string | null;
+      }>((from, to, withCount) =>
+        supabase
+          .from("item_demand_rules")
+          .select("parent_item_id, child_item_id, qty, note", withCount ? { count: "exact" } : {})
+          .range(from, to),
+      );
 
-  // Resolve every referenced item's code + name in one batch.
-  const ids = [
-    ...new Set(rules.flatMap((r) => [r.parent_item_id, r.child_item_id])),
-  ];
-  const nameById = new Map<string, { code: string; name: string }>();
-  for (let i = 0; i < ids.length; i += 300) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, code, name")
-      .in("id", ids.slice(i, i + 300));
-    if (error) throw error;
-    for (const it of data ?? [])
-      nameById.set(it.id as string, { code: it.code as string, name: it.name as string });
-  }
+      // Resolve every referenced item's code + name; the 300-id chunks are
+      // independent of each other, so fetch them in parallel.
+      const ids = [
+        ...new Set(rules.flatMap((r) => [r.parent_item_id, r.child_item_id])),
+      ];
+      const chunks: string[][] = [];
+      for (let i = 0; i < ids.length; i += 300) chunks.push(ids.slice(i, i + 300));
+      const results = await Promise.all(
+        chunks.map((chunk) =>
+          supabase.from("items").select("id, code, name").in("id", chunk),
+        ),
+      );
+      const nameById = new Map<string, { code: string; name: string }>();
+      for (const { data, error } of results) {
+        if (error) throw error;
+        for (const it of data ?? [])
+          nameById.set(it.id as string, { code: it.code as string, name: it.name as string });
+      }
+      return { rules, nameById };
+    })(),
+    (async () => {
+      const driveRulesRaw = await getJobDriveDemandRules();
+      // Resolve drive-rule item names too (codes are a compile-time constant).
+      const driveCodes = [...new Set(driveRulesRaw.map((r) => r.code))];
+      const driveNameByCode = new Map<string, string>();
+      if (driveCodes.length > 0) {
+        const { data } = await supabase.from("items").select("code, name").in("code", driveCodes);
+        for (const it of data ?? []) driveNameByCode.set(it.code as string, it.name as string);
+      }
+      return { driveRulesRaw, driveNameByCode };
+    })(),
+  ]);
   const nm = (id: string) => nameById.get(id) ?? { code: "—", name: "(unknown)" };
 
   // Group: note → (child_id|||qty) → { parents }.
@@ -182,14 +214,6 @@ export async function getDemandRulesDoc(): Promise<DemandRulesDoc> {
     }))
     .sort((a, b) => b.parent_count - a.parent_count);
 
-  const driveRulesRaw = await getJobDriveDemandRules();
-  // Resolve drive-rule item names too.
-  const driveCodes = [...new Set(driveRulesRaw.map((r) => r.code))];
-  const driveNameByCode = new Map<string, string>();
-  if (driveCodes.length > 0) {
-    const { data } = await supabase.from("items").select("code, name").in("code", driveCodes);
-    for (const it of data ?? []) driveNameByCode.set(it.code as string, it.name as string);
-  }
   const driveRules: DriveRuleDoc[] = driveRulesRaw.map((r) => ({
     code: r.code,
     name: driveNameByCode.get(r.code) ?? r.code,

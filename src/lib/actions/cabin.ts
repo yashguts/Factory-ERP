@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import { CABIN_PARENT, cabinCodePrefix } from "@/lib/cabin/cabin-types";
 import { currentOperatorName } from "@/lib/actions/inventory";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 /** Resolve a sub-type under a cabin type to its category id (creating it if new),
  *  else the type itself. Shared by createCabinItem + createCabinPanelVariants. */
@@ -71,20 +72,22 @@ export interface CabinTypeSummary {
 const _getCabinTypeSummaryUncached = async (): Promise<CabinTypeSummary[]> => {
   const supabase = createCacheClient();
 
-  const { data: parent } = await supabase
-    .from("item_categories")
-    .select("id")
-    .eq("name", CABIN_PARENT)
-    .is("parent_id", null)
-    .maybeSingle();
-  if (!parent) return [];
-
   // Walk the whole category tree so a type's count includes items filed in
   // ANY of its sub-categories (e.g. Platform > ACO / AT / Collapsible / …).
-  const { data: allCats } = await supabase
-    .from("item_categories")
-    .select("id, name, parent_id");
-  const cats = allCats ?? [];
+  // Paged so the Cabin parent row stays in this read even past 1,000
+  // categories — that's what lets us skip a separate parent lookup round-trip.
+  const cats = await fetchAllRanged<{ id: string; name: string; parent_id: string | null }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_categories")
+        .select("id, name, parent_id", withCount ? { count: "exact" } : {})
+        .order("id")
+        .range(from, to),
+  ).catch(() => [] as { id: string; name: string; parent_id: string | null }[]);
+  const parent = (cats as any[]).find(
+    (c) => c.name === CABIN_PARENT && c.parent_id === null,
+  );
+  if (!parent) return [];
   const childrenOf = new Map<string, string[]>();
   for (const c of cats as any[]) {
     if (c.parent_id) {
@@ -165,20 +168,22 @@ const _getCabinTypeMetaUncached = async (
 ): Promise<CabinTypeMeta> => {
   const supabase = createCacheClient();
 
-  const { data: type } = await supabase
-    .from("item_categories")
-    .select("id, name")
-    .eq("id", typeId)
-    .maybeSingle();
+  // Both reads key only off typeId — independent, one concurrent round-trip.
+  const [{ data: type }, { data: subs }] = await Promise.all([
+    supabase
+      .from("item_categories")
+      .select("id, name")
+      .eq("id", typeId)
+      .maybeSingle(),
+    // Direct children only — matches the old dropdown (sub-types are one level
+    // under the type), sorted by name.
+    supabase
+      .from("item_categories")
+      .select("id, name")
+      .eq("parent_id", typeId)
+      .order("name"),
+  ]);
   if (!type) return { type: null, subCategories: [] };
-
-  // Direct children only — matches the old dropdown (sub-types are one level
-  // under the type), sorted by name.
-  const { data: subs } = await supabase
-    .from("item_categories")
-    .select("id, name")
-    .eq("parent_id", typeId)
-    .order("name");
   const subCategories = ((subs ?? []) as any[])
     .map((c) => ({ id: c.id as string, name: c.name as string }))
     .sort((a, b) => a.name.localeCompare(b.name));

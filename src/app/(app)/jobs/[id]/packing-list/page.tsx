@@ -1,4 +1,4 @@
-import { getJobDetail } from "@/lib/actions/jobs";
+import { createClient } from "@/lib/supabase/server";
 import { getPartList } from "@/lib/actions/partlist";
 import { getJobDoorType } from "@/lib/actions/partlist-generate";
 import { PartListClient } from "@/components/jobs/partlist-client";
@@ -9,11 +9,20 @@ interface Props {
 
 export default async function PartListPage({ params }: Props) {
   const { id } = await params;
-  const [{ job }, initial, doorType] = await Promise.all([
-    getJobDetail(id),
+  const supabase = await createClient();
+  // slim header read — this page only renders three job fields; getJobDetail's
+  // full BOM join + GAD versions were fetched and discarded here
+  const [jobRes, initial, doorType] = await Promise.all([
+    supabase
+      .from("jobs")
+      .select("job_number, customer_name, drive_type")
+      .eq("id", id)
+      .single(),
     getPartList(id),
     getJobDoorType(id),
   ]);
+  if (jobRes.error) throw jobRes.error;
+  const job = jobRes.data;
 
   return (
     <PartListClient

@@ -82,8 +82,13 @@ export async function dismissUnmappedItem(jobId: string, itemId: string): Promis
           ? supabase.from("job_bom_lines").update({ required_quantity: 0 }).in("id", toZero)
           : Promise.resolve({ error: null }),
       ]);
-      if (delRes.error) return { ok: false, error: delRes.error.message };
-      if (zeroRes.error) return { ok: false, error: zeroRes.error.message };
+      if (delRes.error || zeroRes.error) {
+        // The sibling write may have landed — refresh the cached BOM reads
+        // (job detail is cached now) so the UI can't keep serving deleted lines.
+        revalidateTag("bom-lines");
+        revalidateTag("jobs");
+        return { ok: false, error: (delRes.error ?? zeroRes.error)!.message };
+      }
     }
   }
 

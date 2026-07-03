@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { unstable_cache, revalidateTag } from "next/cache";
 
 export interface UnmatchedPattern {
@@ -26,28 +27,23 @@ export interface ItemOption {
 export async function getUnmatchedBomSummary(): Promise<UnmatchedPattern[]> {
   const supabase = await createClient();
 
-  // Fetch all unmatched lines with their job info
-  const PAGE = 1000;
-  let allLines: any[] = [];
-  let offset = 0;
-
-  while (true) {
-    const { data, error } = await supabase
+  // Fetch all unmatched lines with their job info — pages in parallel via
+  // fetchAllRanged instead of one cross-region round-trip per 1000 rows
+  const allLines = await fetchAllRanged<any>((from, to, withCount) =>
+    supabase
       .from("job_bom_lines")
-      .select(`
+      .select(
+        `
         category, variant, value_text,
         job_bom_header:job_bom_headers!inner(
           job:jobs!inner(job_number)
         )
-      `)
+      `,
+        withCount ? { count: "exact" } : {},
+      )
       .is("item_id", null)
-      .range(offset, offset + PAGE - 1);
-
-    if (error) throw error;
-    allLines = allLines.concat(data ?? []);
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
-  }
+      .range(from, to),
+  );
 
   // Group by (category, variant, value_text)
   const groups = new Map<string, {

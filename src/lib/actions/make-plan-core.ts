@@ -327,11 +327,22 @@ export function selectRuns(
 
 export async function computeMakePlanCore(
   excludeCodes: string[],
-  mrpData: MrpRow[],
+  // A caller may pass a still-running MRP read so its round-trips overlap the
+  // prefetches below (await on a plain array is a no-op — the weekly board
+  // passes one). Selection logic is untouched; only fetch overlap changes.
+  mrpData: MrpRow[] | Promise<MrpRow[]>,
 ): Promise<MakePlanCore> {
   const supabase = createCacheClient();
 
-  const partsOfPromise = (async () => {
+  // If a prefetch rejects while we're still awaiting another read, the no-op
+  // catch stops it becoming an unhandled rejection; awaiting the same promise
+  // later still throws the real error.
+  const inFlight = <T,>(p: Promise<T>): Promise<T> => {
+    p.catch(() => {});
+    return p;
+  };
+
+  const partsOfPromise = inFlight((async () => {
     const partsOf = new Map<string, { child: string; qty: number }[]>();
     const rows = await fetchAllRanged<any>((from, to, withCount) =>
       supabase
@@ -347,16 +358,16 @@ export async function computeMakePlanCore(
       partsOf.set(b.parent_item_id as string, a);
     }
     return partsOf;
-  })();
+  })());
 
-  const catProcPromise = (async () => {
+  const catProcPromise = inFlight((async () => {
     const catProc = new Map<string, { name: string | null; procurement_type: string | null; parent_id: string | null }>();
     const { data } = await supabase.from("item_categories").select("id, name, procurement_type, parent_id");
     for (const c of data ?? []) catProc.set(c.id as string, { name: c.name as string, procurement_type: c.procurement_type as string | null, parent_id: (c.parent_id as string | null) ?? null });
     return catProc;
-  })();
+  })());
 
-  const opsPromise = (async () => {
+  const opsPromise = inFlight((async () => {
     const ops = new Map<string, any>();
     const rows = await fetchAllRanged<any>((from, to, withCount) =>
       supabase
@@ -371,16 +382,37 @@ export async function computeMakePlanCore(
     );
     for (const o of rows) ops.set(o.id as string, o);
     return ops;
-  })();
+  })());
+
+  // Program outputs: the query's filters are all static (the `involved` filter
+  // further down is applied in JS), so it belongs in this prefetch group too —
+  // it used to launch only after the items/stock batch, costing extra
+  // sequential round-trips. Awaited where the rows are consumed.
+  const outputRowsPromise = inFlight(
+    fetchAllRanged<any>((from, to, withCount) =>
+      supabase
+        .from("operation_outputs")
+        .select("operation_id, item_id, qty_per_run, role", withCount ? { count: "exact" } : {})
+        .not("item_id", "is", null)
+        .gt("qty_per_run", 0)
+        .in("role", ["component", "cut_part"])
+        .order("id")
+        .range(from, to),
+    ),
+  );
+
+  // Await the injected MRP demand only now, so a promise-passing caller's MRP
+  // round-trips overlap the prefetches above.
+  const mrpRows = await mrpData;
 
   // 1) Make shortfall from the injected MRP calc
   const short = new Map<string, { shortfall: number; code: string; name: string; category: string }>();
-  for (const r of mrpData) {
+  for (const r of mrpRows) {
     if (r.procurement_type === "make" && r.shortfall > 0)
       short.set(r.item_id, { shortfall: r.shortfall, code: r.item_code, name: r.item_name, category: r.category_name ?? "(none)" });
   }
   if (short.size === 0) {
-    await Promise.all([partsOfPromise, catProcPromise, opsPromise]);
+    await Promise.all([partsOfPromise, catProcPromise, opsPromise, outputRowsPromise]);
     return { empty: true, ...EMPTY_CORE };
   }
 
@@ -414,19 +446,7 @@ export async function computeMakePlanCore(
   };
   const isMakeLeaf = (id: string) => effProc(id) !== "trade";
 
-  const [ops, outputRows] = await Promise.all([
-    opsPromise,
-    fetchAllRanged<any>((from, to, withCount) =>
-      supabase
-        .from("operation_outputs")
-        .select("operation_id, item_id, qty_per_run, role", withCount ? { count: "exact" } : {})
-        .not("item_id", "is", null)
-        .gt("qty_per_run", 0)
-        .in("role", ["component", "cut_part"])
-        .order("id")
-        .range(from, to),
-    ),
-  ]);
+  const [ops, outputRows] = await Promise.all([opsPromise, outputRowsPromise]);
   const excludedIds = new Set(
     [...ops.values()].filter((o: any) => excludeCodes.includes(o.code as string)).map((o: any) => o.id as string),
   );

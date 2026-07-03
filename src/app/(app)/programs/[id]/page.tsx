@@ -18,21 +18,25 @@ interface Props {
 export default async function ProgramDetailPage({ params }: Props) {
   const { id } = await params;
 
-  // getFamilyOptions() is argument-free, so it joins the first wave instead of
-  // paying a second serial cross-region hop. Only getFamilyVariants genuinely
-  // depends on the loaded operation's family_key.
-  const [operation, itemRefs, categories, units, familyOptions] = await Promise.all([
-    getOperationDetail(id),
-    getItemRefs(),
-    getCategories(),
-    getUnits(),
-    getFamilyOptions(),
-  ]);
+  // Two concurrent chains: getFamilyVariants genuinely depends on the loaded
+  // operation's family_key, so it chains after getOperationDetail — but that
+  // whole chain runs alongside the argument-free reference reads, so the
+  // variants hop hides under the first wave instead of costing an extra serial
+  // cross-region round-trip.
+  const [{ operation, variants }, [itemRefs, categories, units, familyOptions]] =
+    await Promise.all([
+      (async () => {
+        const operation = await getOperationDetail(id);
+        // Sibling material/finish variants (same family) for the variant switcher.
+        const variants = operation
+          ? await getFamilyVariants(operation.family_key)
+          : [];
+        return { operation, variants };
+      })(),
+      Promise.all([getItemRefs(), getCategories(), getUnits(), getFamilyOptions()]),
+    ]);
 
   if (!operation) notFound();
-
-  // Sibling material/finish variants (same family) for the variant switcher.
-  const variants = await getFamilyVariants(operation.family_key);
 
   return (
     <ProgramDetailClient

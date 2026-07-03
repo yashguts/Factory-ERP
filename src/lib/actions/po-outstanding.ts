@@ -16,31 +16,34 @@ import { fetchAllRanged } from "@/lib/supabase/fetch-all";
  */
 export async function _getOutstandingByItemUncached(): Promise<Record<string, number>> {
   const supabase = createCacheClient();
-  const cancelled = await fetchAllRanged<{ id: string }>((from, to, wc) =>
-    supabase
-      .from("purchase_orders")
-      .select("id", wc ? { count: "exact" } : {})
-      .eq("status", "cancelled")
-      .range(from, to),
-  );
+  // Independent reads (the cancelled-PO filter is applied in JS below) — fetch concurrently.
+  const [cancelled, lines] = await Promise.all([
+    fetchAllRanged<{ id: string }>((from, to, wc) =>
+      supabase
+        .from("purchase_orders")
+        .select("id", wc ? { count: "exact" } : {})
+        .eq("status", "cancelled")
+        .range(from, to),
+    ),
+    fetchAllRanged<{
+      po_id: string;
+      item_id: string;
+      qty: number;
+      received_qty: number;
+      purchase_uom_id: string | null;
+      tentative_stock_qty: number | null;
+      received_stock_qty: number | null;
+    }>((from, to, wc) =>
+      supabase
+        .from("purchase_order_lines")
+        .select(
+          "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
+          wc ? { count: "exact" } : {},
+        )
+        .range(from, to),
+    ),
+  ]);
   const cancelledSet = new Set(cancelled.map((c) => c.id));
-  const lines = await fetchAllRanged<{
-    po_id: string;
-    item_id: string;
-    qty: number;
-    received_qty: number;
-    purchase_uom_id: string | null;
-    tentative_stock_qty: number | null;
-    received_stock_qty: number | null;
-  }>((from, to, wc) =>
-    supabase
-      .from("purchase_order_lines")
-      .select(
-        "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
-        wc ? { count: "exact" } : {},
-      )
-      .range(from, to),
-  );
   const out: Record<string, number> = {};
   for (const l of lines) {
     if (cancelledSet.has(l.po_id)) continue;
@@ -95,30 +98,33 @@ export async function _getOutstandingLinesUncached(): Promise<
   { item_id: string; expected_date: string | null; on_order: number }[]
 > {
   const supabase = createCacheClient();
-  const pos = await fetchAllRanged<{ id: string; status: string; expected_date: string | null }>((from, to, wc) =>
-    supabase
-      .from("purchase_orders")
-      .select("id, status, expected_date", wc ? { count: "exact" } : {})
-      .range(from, to),
-  );
+  // Independent reads (the PO status/date join happens in JS below) — fetch concurrently.
+  const [pos, lines] = await Promise.all([
+    fetchAllRanged<{ id: string; status: string; expected_date: string | null }>((from, to, wc) =>
+      supabase
+        .from("purchase_orders")
+        .select("id, status, expected_date", wc ? { count: "exact" } : {})
+        .range(from, to),
+    ),
+    fetchAllRanged<{
+      po_id: string;
+      item_id: string;
+      qty: number;
+      received_qty: number;
+      purchase_uom_id: string | null;
+      tentative_stock_qty: number | null;
+      received_stock_qty: number | null;
+    }>((from, to, wc) =>
+      supabase
+        .from("purchase_order_lines")
+        .select(
+          "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
+          wc ? { count: "exact" } : {},
+        )
+        .range(from, to),
+    ),
+  ]);
   const meta = new Map(pos.map((p) => [p.id, p]));
-  const lines = await fetchAllRanged<{
-    po_id: string;
-    item_id: string;
-    qty: number;
-    received_qty: number;
-    purchase_uom_id: string | null;
-    tentative_stock_qty: number | null;
-    received_stock_qty: number | null;
-  }>((from, to, wc) =>
-    supabase
-      .from("purchase_order_lines")
-      .select(
-        "po_id, item_id, qty, received_qty, purchase_uom_id, tentative_stock_qty, received_stock_qty",
-        wc ? { count: "exact" } : {},
-      )
-      .range(from, to),
-  );
   const out: { item_id: string; expected_date: string | null; on_order: number }[] = [];
   for (const l of lines) {
     const po = meta.get(l.po_id);

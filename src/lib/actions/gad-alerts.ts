@@ -4,7 +4,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import type { Job } from "@/lib/supabase/types";
-import { gadAlert, acknowledgedRev } from "@/lib/jobs/gad-alert";
+import { gadAlert, acknowledgedRev, type GadAlertInput } from "@/lib/jobs/gad-alert";
 
 /* ------------------------------------------------------------------ *
  * GAD Change Alerts — the global view of every job whose GAD drawing was
@@ -31,12 +31,28 @@ export interface GadDriftRow {
   gad_uploaded_by: string | null;
 }
 
+/** Only the columns gadAlert()/the mapper actually read — jobs carries wide
+ *  legacy text columns, so select("*") would ship the whole table cross-region. */
+type GadDriftSource = GadAlertInput &
+  Pick<
+    Job,
+    | "id"
+    | "job_number"
+    | "customer_name"
+    | "requirement_dispatch_date"
+    | "gad_drawing_uploaded_at"
+    | "gad_uploaded_by"
+  >;
+
 const _getJobsWithGadDriftUncached = async (): Promise<GadDriftRow[]> => {
   const supabase = createCacheClient();
-  const jobs = await fetchAllRanged<Job>((from, to, withCount) =>
+  const jobs = await fetchAllRanged<GadDriftSource>((from, to, withCount) =>
     supabase
       .from("jobs")
-      .select("*", withCount ? { count: "exact" } : {})
+      .select(
+        "id, job_number, customer_name, requirement_dispatch_date, gad_drawing_uploaded_at, gad_uploaded_by, gad_drawing_url, gad_revision_no, bom_defined_at, bom_gad_baseline_rev, bom_audited_gad_rev",
+        withCount ? { count: "exact" } : {},
+      )
       .order("requirement_dispatch_date", { ascending: true, nullsFirst: false })
       .range(from, to),
   );

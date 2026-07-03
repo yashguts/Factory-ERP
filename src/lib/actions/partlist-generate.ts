@@ -91,13 +91,17 @@ async function fetchActiveItems(supabase: Awaited<ReturnType<typeof createClient
  */
 export async function getJobDoorType(jobId: string): Promise<string | null> {
   const supabase = await createClient();
-  const { data: job } = await supabase
-    .from("jobs").select("door_type, gad_drawing_url").eq("id", jobId).maybeSingle();
+  // both keyed by jobId only — fetch concurrently; the "has a drawing" gate is
+  // applied in memory (the extraction result is just discarded when it fails)
+  const [{ data: job }, { data: ext }] = await Promise.all([
+    supabase
+      .from("jobs").select("door_type, gad_drawing_url").eq("id", jobId).maybeSingle(),
+    supabase
+      .from("job_drawing_extractions").select("extracted").eq("job_id", jobId)
+      .order("extracted_at", { ascending: false }).limit(1).maybeSingle(),
+  ]);
   let door = mapDoorErp(job?.door_type ?? null);
   if (job?.gad_drawing_url) {
-    const { data: ext } = await supabase
-      .from("job_drawing_extractions").select("extracted").eq("job_id", jobId)
-      .order("extracted_at", { ascending: false }).limit(1).maybeSingle();
     const dDoor = mapDoorDrawing((ext?.extracted as RichLike | null)?.door_type?.value ?? null);
     if (dDoor) door = dDoor;
   }

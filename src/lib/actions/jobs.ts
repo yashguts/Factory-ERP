@@ -213,48 +213,85 @@ export const getJobReadinessFlags = unstable_cache(
 );
 
 export async function getJobDetail(jobId: string) {
-  const supabase = await createClient();
+  // Cached per-job — every write path touching these tables revalidates one
+  // of the tags (job/BOM saves, dispatches, GAD uploads, item/category edits,
+  // stock moves), so repeat views between mutations skip the cross-region reads.
+  return unstable_cache(_getJobDetailUncached, ["job-detail", jobId], {
+    revalidate: 300,
+    tags: ["jobs", "bom-lines", "items", "categories", "inventory-stock", "gad-alerts"],
+  })(jobId);
+}
 
-  // Parallel: fetch job metadata + BOM header + GAD version history at once
-  const [jobResult, headerResult, versionsResult] = await Promise.all([
-    supabase.from("jobs").select("*").eq("id", jobId).single(),
-    supabase
-      .from("job_bom_headers")
-      .select("id")
-      .eq("job_id", jobId)
-      .limit(1)
-      .single(),
-    supabase
-      .from("job_gad_versions")
-      .select("*")
-      .eq("job_id", jobId)
-      .order("revision_no", { ascending: false }),
-  ]);
+async function _getJobDetailUncached(jobId: string) {
+  const supabase = createCacheClient();
+
+  // One parallel round-trip: job metadata + BOM header id + BOM lines + GAD
+  // version history. The lines filter to this job through an empty header
+  // embed (pure filter — adds no key to the rows) so they don't wait on the
+  // header id; the separate header query stays because bomHeaderId is
+  // returned even when a header has zero lines. The nested inventory rows
+  // fold per-item stock in, replacing the dependent getStockForItems
+  // round-trip on the detail page.
+  const [jobResult, headerResult, linesResult, versionsResult] =
+    await Promise.all([
+      supabase.from("jobs").select("*").eq("id", jobId).single(),
+      supabase
+        .from("job_bom_headers")
+        .select("id")
+        .eq("job_id", jobId)
+        .limit(1)
+        .single(),
+      supabase
+        .from("job_bom_lines")
+        .select(`
+          *,
+          item:items(id, code, name, item_type, category_id, uom_id,
+            category:item_categories(name),
+            uom:units_of_measurement!items_uom_id_fkey(abbreviation),
+            inventory(quantity)
+          ),
+          hdr:job_bom_headers!inner()
+        `)
+        .eq("hdr.job_id", jobId)
+        .order("sort_order"),
+      supabase
+        .from("job_gad_versions")
+        .select("*")
+        .eq("job_id", jobId)
+        .order("revision_no", { ascending: false }),
+    ]);
 
   if (jobResult.error) throw jobResult.error;
   const job = jobResult.data;
   const bomHeader = headerResult.data;
   const gadVersions = (versionsResult.data ?? []) as JobGadVersion[];
 
-  let bomLines: any[] = [];
-  if (bomHeader) {
-    const { data, error } = await supabase
-      .from("job_bom_lines")
-      .select(`
-        *,
-        item:items(id, code, name, item_type, category_id, uom_id,
-          category:item_categories(name),
-          uom:units_of_measurement!items_uom_id_fkey(abbreviation)
-        )
-      `)
-      .eq("job_bom_id", bomHeader.id)
-      .order("sort_order");
+  if (linesResult.error) throw linesResult.error;
+  const bomLines: any[] = linesResult.data ?? [];
 
-    if (error) throw error;
-    bomLines = data ?? [];
+  // Sum on-hand stock per item across warehouses, then strip the nested rows
+  // so each line keeps exactly the shape the clients already expect.
+  const stockByItem: Record<string, number> = {};
+  for (const line of bomLines) {
+    const item = Array.isArray(line.item) ? line.item[0] : line.item;
+    if (!item) continue;
+    const inv = (item.inventory ?? []) as Array<{ quantity: number }>;
+    if (item.id && inv.length > 0) {
+      stockByItem[item.id] = inv.reduce(
+        (sum, r) => sum + (Number(r.quantity) || 0),
+        0,
+      );
+    }
+    delete item.inventory;
   }
 
-  return { job, bomLines, bomHeaderId: bomHeader?.id ?? null, gadVersions };
+  return {
+    job,
+    bomLines,
+    bomHeaderId: bomHeader?.id ?? null,
+    gadVersions,
+    stockByItem,
+  };
 }
 
 /**
@@ -495,19 +532,14 @@ export async function updateJobWithBom(
 export async function getJobBomSections(jobId: string) {
   const supabase = await createClient();
 
-  const { data: header } = await supabase
-    .from("job_bom_headers")
-    .select("id")
-    .eq("job_id", jobId)
-    .limit(1)
-    .single();
-
-  if (!header) return [];
-
+  // Single round-trip: filter to this job's lines through an empty header
+  // embed (pure filter, adds no key) instead of resolving the header id first.
   const { data, error } = await supabase
     .from("job_bom_lines")
-    .select("category, variant, value_text, required_quantity")
-    .eq("job_bom_id", header.id)
+    .select(
+      "category, variant, value_text, required_quantity, hdr:job_bom_headers!inner()",
+    )
+    .eq("hdr.job_id", jobId)
     .not("category", "is", null)
     .order("sort_order");
 
@@ -528,18 +560,27 @@ export async function getJobBomSections(jobId: string) {
 export async function getJobTemplate(jobId: string) {
   const supabase = createCacheClient();
 
-  const [jobResult, headerResult] = await Promise.all([
+  // One parallel round-trip: the lines filter to this job through an empty
+  // header embed (pure filter, adds no key) instead of waiting on the header id.
+  const [jobResult, linesResult] = await Promise.all([
     supabase
       .from("jobs")
       .select("floors, drive_type, capacity")
       .eq("id", jobId)
       .single(),
     supabase
-      .from("job_bom_headers")
-      .select("id")
-      .eq("job_id", jobId)
-      .limit(1)
-      .single(),
+      .from("job_bom_lines")
+      .select(`
+        category, variant, value_text, required_quantity, item_id,
+        item:items!job_bom_lines_item_id_fkey(code, name, lookup_key,
+          uom:units_of_measurement!items_uom_id_fkey(abbreviation)
+        ),
+        hdr:job_bom_headers!inner()
+      `)
+      .eq("hdr.job_id", jobId)
+      .not("category", "is", null)
+      .not("item_id", "is", null)
+      .order("sort_order"),
   ]);
 
   if (jobResult.error) throw jobResult.error;
@@ -549,21 +590,8 @@ export async function getJobTemplate(jobId: string) {
     capacity: (jobResult.data.capacity as string | null) ?? null,
   };
 
-  if (!headerResult.data) return { spec, bomLines: [] };
-
-  const { data, error } = await supabase
-    .from("job_bom_lines")
-    .select(`
-      category, variant, value_text, required_quantity, item_id,
-      item:items!job_bom_lines_item_id_fkey(code, name, lookup_key,
-        uom:units_of_measurement!items_uom_id_fkey(abbreviation)
-      )
-    `)
-    .eq("job_bom_id", headerResult.data.id)
-    .not("category", "is", null)
-    .not("item_id", "is", null)
-    .order("sort_order");
-  if (error) throw error;
+  if (linesResult.error) throw linesResult.error;
+  const data = linesResult.data;
 
   const flatten = <T,>(rel: unknown): T | null => {
     if (!rel) return null;
@@ -604,24 +632,18 @@ export async function getJobTemplate(jobId: string) {
 export async function getJobBomItemLines(jobId: string) {
   const supabase = await createClient();
 
-  const { data: header } = await supabase
-    .from("job_bom_headers")
-    .select("id")
-    .eq("job_id", jobId)
-    .limit(1)
-    .single();
-
-  if (!header) return [];
-
+  // Single round-trip: filter to this job's lines through an empty header
+  // embed (pure filter, adds no key) instead of resolving the header id first.
   const { data, error } = await supabase
     .from("job_bom_lines")
     .select(`
       category, variant, value_text, required_quantity, item_id,
       item:items!job_bom_lines_item_id_fkey(code, name,
         uom:units_of_measurement!items_uom_id_fkey(abbreviation)
-      )
+      ),
+      hdr:job_bom_headers!inner()
     `)
-    .eq("job_bom_id", header.id)
+    .eq("hdr.job_id", jobId)
     .not("category", "is", null)
     .order("sort_order");
 

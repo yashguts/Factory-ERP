@@ -214,95 +214,109 @@ async function assembleRows(
   maps: { cat: Map<string, string>; uom: Map<string, string> },
 ): Promise<InventoryChangeRow[]> {
   const txnIds = txns.map((t) => t.id as string);
-  const reversedIds = new Set<string>();
-  // Look up which of these were reversed. Chunk the id list (batches of 300): a
-  // single .in() with thousands of UUIDs would overflow the request URL on a
-  // wide date range. Batches run in parallel, so this stays one round-trip deep.
-  if (txnIds.length > 0) {
-    const batches: string[][] = [];
-    for (let i = 0; i < txnIds.length; i += 300) batches.push(txnIds.slice(i, i + 300));
-    const results = await Promise.all(
-      batches.map((batch) =>
-        supabase
-          .from("inventory_transactions")
-          .select("reference_id")
-          .eq("reference_type", "txn_reversal")
-          .in("reference_id", batch),
-      ),
-    );
-    for (const { data } of results)
-      for (const r of data ?? []) {
-        const ref = r.reference_id as string | null;
-        if (ref) reversedIds.add(ref);
+
+  // The three resolution blocks below read only from the already-fetched txns —
+  // independent of each other, so their round-trip chains run concurrently.
+  const [reversedIds, poByReceipt, jobByDispatch] = await Promise.all([
+    // Look up which of these were reversed. Chunk the id list (batches of 300): a
+    // single .in() with thousands of UUIDs would overflow the request URL on a
+    // wide date range. Batches run in parallel, so this stays one round-trip deep.
+    (async () => {
+      const reversedIds = new Set<string>();
+      if (txnIds.length > 0) {
+        const batches: string[][] = [];
+        for (let i = 0; i < txnIds.length; i += 300) batches.push(txnIds.slice(i, i + 300));
+        const results = await Promise.all(
+          batches.map((batch) =>
+            supabase
+              .from("inventory_transactions")
+              .select("reference_id")
+              .eq("reference_type", "txn_reversal")
+              .in("reference_id", batch),
+          ),
+        );
+        for (const { data } of results)
+          for (const r of data ?? []) {
+            const ref = r.reference_id as string | null;
+            if (ref) reversedIds.add(ref);
+          }
       }
-  }
+      return reversedIds;
+    })(),
 
-  // Resolve the source PO (number + id) for "po_receipt" movements so the feed
-  // can show + filter by PO number. txn.reference_id is the receipt id →
-  // purchase_order_receipts.po_id → purchase_orders.po_number.
-  const receiptIds = [
-    ...new Set(
-      txns
-        .filter((t) => t.reference_type === "po_receipt")
-        .map((t) => t.reference_id as string | null)
-        .filter((x): x is string => !!x),
-    ),
-  ];
-  const poByReceipt = new Map<string, { po_id: string; po_number: string | null }>();
-  if (receiptIds.length > 0) {
-    const { data: receipts } = await supabase
-      .from("purchase_order_receipts")
-      .select("id, po_id")
-      .in("id", receiptIds);
-    const poIds = [...new Set((receipts ?? []).map((r) => r.po_id as string).filter(Boolean))];
-    const poNum = new Map<string, string | null>();
-    if (poIds.length > 0) {
-      const { data: pos } = await supabase
-        .from("purchase_orders")
-        .select("id, po_number")
-        .in("id", poIds);
-      for (const p of pos ?? []) poNum.set(p.id as string, (p.po_number as string | null) ?? null);
-    }
-    for (const r of receipts ?? [])
-      poByReceipt.set(r.id as string, {
-        po_id: r.po_id as string,
-        po_number: poNum.get(r.po_id as string) ?? null,
-      });
-  }
+    // Resolve the source PO (number + id) for "po_receipt" movements so the feed
+    // can show + filter by PO number. txn.reference_id is the receipt id →
+    // purchase_order_receipts.po_id → purchase_orders.po_number.
+    (async () => {
+      const receiptIds = [
+        ...new Set(
+          txns
+            .filter((t) => t.reference_type === "po_receipt")
+            .map((t) => t.reference_id as string | null)
+            .filter((x): x is string => !!x),
+        ),
+      ];
+      const poByReceipt = new Map<string, { po_id: string; po_number: string | null }>();
+      if (receiptIds.length > 0) {
+        const { data: receipts } = await supabase
+          .from("purchase_order_receipts")
+          .select("id, po_id")
+          .in("id", receiptIds);
+        const poIds = [...new Set((receipts ?? []).map((r) => r.po_id as string).filter(Boolean))];
+        const poNum = new Map<string, string | null>();
+        if (poIds.length > 0) {
+          const { data: pos } = await supabase
+            .from("purchase_orders")
+            .select("id, po_number")
+            .in("id", poIds);
+          for (const p of pos ?? []) poNum.set(p.id as string, (p.po_number as string | null) ?? null);
+        }
+        for (const r of receipts ?? [])
+          poByReceipt.set(r.id as string, {
+            po_id: r.po_id as string,
+            po_number: poNum.get(r.po_id as string) ?? null,
+          });
+      }
+      return poByReceipt;
+    })(),
 
-  // Resolve the source job (number + id) for dispatch movements so the feed can
-  // show which job a stock-out belongs to. txn.reference_id is the dispatch id →
-  // job_dispatches.job_id → jobs.job_number. Covers both 'dispatch' (the
-  // deduction) and 'dispatch_undo' (its reversal), which share the dispatch id.
-  const dispatchIds = [
-    ...new Set(
-      txns
-        .filter((t) => t.reference_type === "dispatch" || t.reference_type === "dispatch_undo")
-        .map((t) => t.reference_id as string | null)
-        .filter((x): x is string => !!x),
-    ),
-  ];
-  const jobByDispatch = new Map<string, { job_id: string; job_number: string | null }>();
-  if (dispatchIds.length > 0) {
-    const { data: dispatches } = await supabase
-      .from("job_dispatches")
-      .select("id, job_id")
-      .in("id", dispatchIds);
-    const jobIds = [...new Set((dispatches ?? []).map((d) => d.job_id as string).filter(Boolean))];
-    const jobNum = new Map<string, string | null>();
-    if (jobIds.length > 0) {
-      const { data: jobs } = await supabase
-        .from("jobs")
-        .select("id, job_number")
-        .in("id", jobIds);
-      for (const j of jobs ?? []) jobNum.set(j.id as string, (j.job_number as string | null) ?? null);
-    }
-    for (const d of dispatches ?? [])
-      jobByDispatch.set(d.id as string, {
-        job_id: d.job_id as string,
-        job_number: jobNum.get(d.job_id as string) ?? null,
-      });
-  }
+    // Resolve the source job (number + id) for dispatch movements so the feed can
+    // show which job a stock-out belongs to. txn.reference_id is the dispatch id →
+    // job_dispatches.job_id → jobs.job_number. Covers both 'dispatch' (the
+    // deduction) and 'dispatch_undo' (its reversal), which share the dispatch id.
+    (async () => {
+      const dispatchIds = [
+        ...new Set(
+          txns
+            .filter((t) => t.reference_type === "dispatch" || t.reference_type === "dispatch_undo")
+            .map((t) => t.reference_id as string | null)
+            .filter((x): x is string => !!x),
+        ),
+      ];
+      const jobByDispatch = new Map<string, { job_id: string; job_number: string | null }>();
+      if (dispatchIds.length > 0) {
+        const { data: dispatches } = await supabase
+          .from("job_dispatches")
+          .select("id, job_id")
+          .in("id", dispatchIds);
+        const jobIds = [...new Set((dispatches ?? []).map((d) => d.job_id as string).filter(Boolean))];
+        const jobNum = new Map<string, string | null>();
+        if (jobIds.length > 0) {
+          const { data: jobs } = await supabase
+            .from("jobs")
+            .select("id, job_number")
+            .in("id", jobIds);
+          for (const j of jobs ?? []) jobNum.set(j.id as string, (j.job_number as string | null) ?? null);
+        }
+        for (const d of dispatches ?? [])
+          jobByDispatch.set(d.id as string, {
+            job_id: d.job_id as string,
+            job_number: jobNum.get(d.job_id as string) ?? null,
+          });
+      }
+      return jobByDispatch;
+    })(),
+  ]);
 
   const itemRows: ItemChangeRow[] = logRows.map((row) => ({
     kind: "item",

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { OperationMachine, OutputRole } from "@/lib/supabase/types";
 import { auditBlockers, isOutputResolved, summaryFromLines } from "@/lib/operations/audit-eligibility";
@@ -141,30 +142,25 @@ const _getOperationsUncached = async (): Promise<OperationListRow[]> => {
   // item:items(name) join is what keeps this read small enough to cache.
   // Page past PostgREST's 1000-row cap — there are >1,000 active programs, so a
   // single select would silently drop the tail (~41 programs went missing).
-  const PAGE = 1000;
-  let data: any[] = [];
-  let offset = 0;
-  for (;;) {
-    const { data: rows, error } = await supabase
-      .from("operations")
-      .select(
-        `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
-         operation_inputs(item_id),
-         operation_outputs(item_id, role)`,
-      )
-      .eq("is_active", true)
-      .order("name")
-      .order("id")
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    data = data.concat(rows ?? []);
-    if (!rows || rows.length < PAGE) break;
-    offset += PAGE;
-  }
-
-  // Set of every sub-assembly item id — a component output equal to one of these
-  // is the modeling error we flag in RED.
-  const subSet = await loadSubassemblyIds(supabase);
+  // The sub-assembly-id read (for the RED "outputs a sub-assembly" flag) is
+  // independent of the operations pages, so both fetch concurrently.
+  const [data, subSet] = await Promise.all([
+    fetchAllRanged<any>((from, to, withCount) =>
+      supabase
+        .from("operations")
+        .select(
+          `id, code, name, machine, family_key, material_label, program_label, audited_at, is_active,
+           operation_inputs(item_id),
+           operation_outputs(item_id, role)`,
+          withCount ? { count: "exact" } : {},
+        )
+        .eq("is_active", true)
+        .order("name")
+        .order("id")
+        .range(from, to),
+    ),
+    loadSubassemblyIds(supabase),
+  ]);
 
   return data.map((row: any) => {
     const ins = Array.isArray(row.operation_inputs) ? row.operation_inputs : [];
@@ -791,21 +787,18 @@ function childIsMake(r: any): boolean {
  * assembly, and a program legitimately outputs it. Paged past the 1000 cap.
  */
 async function loadSubassemblyIds(supabase: CacheDb): Promise<Set<string>> {
-  const hasMake = new Map<string, boolean>();
-  const PAGE = 1000;
-  let offset = 0;
-  for (;;) {
-    const { data, error } = await supabase
+  const rows = await fetchAllRanged<any>((from, to, withCount) =>
+    supabase
       .from("item_bom_lines")
-      .select(CHILD_PROC_SELECT)
-      .range(offset, offset + PAGE - 1);
-    if (error) throw error;
-    for (const r of data ?? []) {
-      const pid = (r as any).parent_item_id as string;
-      hasMake.set(pid, (hasMake.get(pid) ?? false) || childIsMake(r));
-    }
-    if (!data || data.length < PAGE) break;
-    offset += PAGE;
+      .select(CHILD_PROC_SELECT, withCount ? { count: "exact" } : {})
+      // Deterministic order so parallel page slices can't duplicate/miss rows.
+      .order("id")
+      .range(from, to),
+  );
+  const hasMake = new Map<string, boolean>();
+  for (const r of rows) {
+    const pid = (r as any).parent_item_id as string;
+    hasMake.set(pid, (hasMake.get(pid) ?? false) || childIsMake(r));
   }
   return new Set(
     [...hasMake.entries()].filter(([, m]) => m).map(([id]) => id),

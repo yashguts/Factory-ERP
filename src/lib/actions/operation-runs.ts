@@ -230,8 +230,8 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
   const runs = data ?? [];
 
   // Per-program inputs (sheets consumed → Raw Material Store) and outputs (parts
-  // produced). One read each for the day's programs, then resolve item names in
-  // a single shared lookup.
+  // produced). One read each for the day's programs; item code/name come off the
+  // embedded relation — no separate item-lookup round-trip.
   const opIds = [...new Set(runs.map((r: any) => r.operation_id as string))];
   const outsByOp = new Map<string, RunOutput[]>();
   const insByOp = new Map<string, RunInput[]>();
@@ -239,14 +239,14 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
     const [outRes, inRes] = await Promise.all([
       supabase
         .from("operation_outputs")
-        .select("operation_id, item_id, label, qty_per_run, role, sort_order")
+        .select("operation_id, item_id, label, qty_per_run, role, sort_order, item:items(code, name)")
         .in("operation_id", opIds)
         .in("role", ["component", "cut_part", "tooling"])
         .gt("qty_per_run", 0)
         .order("sort_order", { ascending: true }),
       supabase
         .from("operation_inputs")
-        .select("operation_id, item_id, label, qty_per_run, sort_order")
+        .select("operation_id, item_id, label, qty_per_run, sort_order, item:items(code, name)")
         .in("operation_id", opIds)
         .gt("qty_per_run", 0)
         .order("sort_order", { ascending: true }),
@@ -254,27 +254,14 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
     const outRows = outRes.data ?? [];
     const inRows = inRes.data ?? [];
 
-    const allItemIds = [
-      ...new Set([...outRows, ...inRows].filter((o: any) => o.item_id).map((o: any) => o.item_id as string)),
-    ];
-    const itemById = new Map<string, { code: string | null; name: string }>();
-    for (let i = 0; i < allItemIds.length; i += 200) {
-      const { data: items } = await supabase
-        .from("items")
-        .select("id, code, name")
-        .in("id", allItemIds.slice(i, i + 200));
-      for (const it of items ?? [])
-        itemById.set(it.id as string, { code: (it.code as string) ?? null, name: (it.name as string) ?? "(item)" });
-    }
-
     const rank: Record<string, number> = { component: 0, cut_part: 1, tooling: 2 };
     for (const o of outRows) {
-      const it = o.item_id ? itemById.get(o.item_id as string) : null;
-      const name = it?.name ?? ((o.label as string | null) ?? "").trim();
+      const it = o.item_id ? flatten<{ code: string | null; name: string | null }>(o.item) : null;
+      const name = it ? ((it.name as string) ?? "(item)") : ((o.label as string | null) ?? "").trim();
       if (!name) continue; // nothing to display (no mapped item, no label)
       const arr = outsByOp.get(o.operation_id as string) ?? [];
       arr.push({
-        code: it?.code ?? null,
+        code: (it?.code as string | null) ?? null,
         name,
         perRun: Number(o.qty_per_run) || 0,
         role: (o.role as RunOutput["role"]) ?? "component",
@@ -285,11 +272,11 @@ export async function getRunsForDate(date: string): Promise<DailyRunRow[]> {
     for (const arr of outsByOp.values()) arr.sort((a, b) => (rank[a.role] ?? 0) - (rank[b.role] ?? 0));
 
     for (const o of inRows) {
-      const it = o.item_id ? itemById.get(o.item_id as string) : null;
-      const name = it?.name ?? ((o.label as string | null) ?? "").trim();
+      const it = o.item_id ? flatten<{ code: string | null; name: string | null }>(o.item) : null;
+      const name = it ? ((it.name as string) ?? "(item)") : ((o.label as string | null) ?? "").trim();
       if (!name) continue;
       const arr = insByOp.get(o.operation_id as string) ?? [];
-      arr.push({ code: it?.code ?? null, name, perRun: Number(o.qty_per_run) || 0 });
+      arr.push({ code: (it?.code as string | null) ?? null, name, perRun: Number(o.qty_per_run) || 0 });
       insByOp.set(o.operation_id as string, arr);
     }
   }

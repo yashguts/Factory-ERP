@@ -4,12 +4,16 @@ import { getJobsDispatchStatus } from "@/lib/actions/dispatch";
 import { JobsClient } from "@/components/jobs/jobs-client";
 
 export default async function JobsPage() {
-  const [jobs, unmatchedCount, readiness] = await Promise.all([
-    getJobs(),
+  // Dispatch status needs the job ids, so it chains off the jobs read — but
+  // the chain runs concurrently with the other independent fetches instead of
+  // starting only after all of them have resolved.
+  const jobsPromise = getJobs();
+  const [jobs, unmatchedCount, readiness, dispatchStatus] = await Promise.all([
+    jobsPromise,
     getUnmatchedCount(),
     getJobReadinessFlags(),
+    jobsPromise.then((js) => getJobsDispatchStatus(js.map((j) => j.id))),
   ]);
-  const dispatchStatus = await getJobsDispatchStatus(jobs.map((j) => j.id));
   return (
     <JobsClient
       initialJobs={jobs}

@@ -295,34 +295,42 @@ export interface CabinJobListRow {
 
 export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   const supabase = createCacheClient();
-  const { data: jobs } = await supabase
-    .from("cabin_jobs")
-    .select("id, job_number, customer_name, created_at, marked_ready_at")
-    .order("created_at", { ascending: false });
-  const ids = (jobs ?? []).map((j: any) => j.id as string);
+  // The jobs read is unfiltered, so the lines read needs no .in(job ids): the
+  // CASCADE FK guarantees every line's parent is in the jobs set. That makes the
+  // two reads independent — run them concurrently (and page the lines, which
+  // were silently capped at PostgREST's 1000 rows before).
+  const [{ data: jobs }, lines] = await Promise.all([
+    supabase
+      .from("cabin_jobs")
+      .select("id, job_number, customer_name, created_at, marked_ready_at")
+      .order("created_at", { ascending: false }),
+    fetchAllRanged<{ cabin_job_id: string; cabin_type: string; item: unknown }>(
+      (from, to, withCount) =>
+        supabase
+          .from("cabin_job_lines")
+          .select(
+            `cabin_job_id, cabin_type,
+             item:items!cabin_job_lines_item_id_fkey(name, finish)`,
+            withCount ? { count: "exact" } : {},
+          )
+          .range(from, to),
+      // A lines error was tolerated before (the list rendered without counts).
+    ).catch(() => []),
+  ]);
   const countByJob = new Map<string, number>();
   const platformByJob = new Map<string, string>();
   const finishesByJob = new Map<string, Set<string>>();
-  if (ids.length) {
-    const { data: lines } = await supabase
-      .from("cabin_job_lines")
-      .select(
-        `cabin_job_id, cabin_type,
-         item:items!cabin_job_lines_item_id_fkey(name, finish)`,
-      )
-      .in("cabin_job_id", ids);
-    for (const l of lines ?? []) {
-      const jid = l.cabin_job_id as string;
-      countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
-      const it = flatten<any>((l as any).item);
-      if (l.cabin_type === "Platform" && it?.name && !platformByJob.has(jid)) {
-        platformByJob.set(jid, it.name as string);
-      }
-      if (l.cabin_type === "Side Panel" && it?.finish) {
-        const set = finishesByJob.get(jid) ?? new Set<string>();
-        set.add(it.finish as string);
-        finishesByJob.set(jid, set);
-      }
+  for (const l of lines) {
+    const jid = l.cabin_job_id as string;
+    countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
+    const it = flatten<any>((l as any).item);
+    if (l.cabin_type === "Platform" && it?.name && !platformByJob.has(jid)) {
+      platformByJob.set(jid, it.name as string);
+    }
+    if (l.cabin_type === "Side Panel" && it?.finish) {
+      const set = finishesByJob.get(jid) ?? new Set<string>();
+      set.add(it.finish as string);
+      finishesByJob.set(jid, set);
     }
   }
   return (jobs ?? []).map((j: any) => {
@@ -338,18 +346,6 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       marked_ready_at: (j.marked_ready_at as string | null) ?? null,
     };
   });
-}
-
-/** Cabin jobs flagged "ready" — their items are excluded from every cabin
- *  requirement/demand reader (already built). Used to filter cabin_job_lines. */
-async function readyCabinJobIds(
-  supabase: ReturnType<typeof createCacheClient>,
-): Promise<string[]> {
-  const { data } = await supabase
-    .from("cabin_jobs")
-    .select("id")
-    .not("marked_ready_at", "is", null);
-  return (data ?? []).map((r: any) => r.id as string);
 }
 
 /* ------------------------------------------------------------------ *
@@ -388,53 +384,69 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
   const supabase = createCacheClient();
 
   // Ready jobs are already built — their items don't count toward the requirement.
-  const readyIds = await readyCabinJobIds(supabase);
+  // The empty !inner embed is a pure server-side filter on the parent job (adds
+  // no key to the rows), replacing the old fetch-ready-ids-then-exclude round-trip.
   const lines = await fetchAllRanged<{
     cabin_job_id: string;
     cabin_type: string;
     item_id: string | null;
     qty: number;
-  }>((from, to, withCount) => {
-    const base = supabase
+  }>((from, to, withCount) =>
+    supabase
       .from("cabin_job_lines")
-      .select("cabin_job_id, cabin_type, item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null);
-    const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
-    return q.range(from, to);
-  });
+      .select(
+        "cabin_job_id, cabin_type, item_id, qty, cj:cabin_jobs!inner()",
+        withCount ? { count: "exact" } : {},
+      )
+      .not("item_id", "is", null)
+      .is("cj.marked_ready_at", null)
+      .range(from, to),
+  );
   if (lines.length === 0) return [];
 
   const itemIds = [...new Set(lines.map((l) => l.item_id).filter((id): id is string => !!id))];
-  const itemById = new Map<string, { code: string; name: string; family: string | null; finish: string | null }>();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data, error } = await supabase
-      .from("items")
-      .select("id, code, name, family, finish")
-      .in("id", itemIds.slice(i, i + 300));
-    if (error) throw error;
-    for (const it of data ?? [])
-      itemById.set(it.id as string, {
-        code: it.code as string,
-        name: it.name as string,
-        family: (it.family as string | null) ?? null,
-        finish: (it.finish as string | null) ?? null,
-      });
-  }
-
   // Cabin job metadata (for the per-item hover breakdown).
   const jobIds = [...new Set(lines.map((l) => l.cabin_job_id))];
+  const itemById = new Map<string, { code: string; name: string; family: string | null; finish: string | null }>();
   const jobMeta = new Map<string, { job_number: string; customer_name: string | null }>();
-  for (let i = 0; i < jobIds.length; i += 300) {
-    const { data } = await supabase
-      .from("cabin_jobs")
-      .select("id, job_number, customer_name")
-      .in("id", jobIds.slice(i, i + 300));
-    for (const j of data ?? [])
-      jobMeta.set(j.id as string, {
-        job_number: (j.job_number as string) ?? "",
-        customer_name: (j.customer_name as string | null) ?? null,
-      });
+  // The two chunk loops fill disjoint maps — run every chunk in one concurrent wave.
+  const chunkReads: Promise<void>[] = [];
+  for (let i = 0; i < itemIds.length; i += 300) {
+    const slice = itemIds.slice(i, i + 300);
+    chunkReads.push(
+      (async () => {
+        const { data, error } = await supabase
+          .from("items")
+          .select("id, code, name, family, finish")
+          .in("id", slice);
+        if (error) throw error;
+        for (const it of data ?? [])
+          itemById.set(it.id as string, {
+            code: it.code as string,
+            name: it.name as string,
+            family: (it.family as string | null) ?? null,
+            finish: (it.finish as string | null) ?? null,
+          });
+      })(),
+    );
   }
+  for (let i = 0; i < jobIds.length; i += 300) {
+    const slice = jobIds.slice(i, i + 300);
+    chunkReads.push(
+      (async () => {
+        const { data } = await supabase
+          .from("cabin_jobs")
+          .select("id, job_number, customer_name")
+          .in("id", slice);
+        for (const j of data ?? [])
+          jobMeta.set(j.id as string, {
+            job_number: (j.job_number as string) ?? "",
+            customer_name: (j.customer_name as string | null) ?? null,
+          });
+      })(),
+    );
+  }
+  await Promise.all(chunkReads);
 
   // finish key -> aggregate (qty summed per distinct item, tracking each job's qty).
   type AggItem = {
@@ -545,21 +557,23 @@ export interface CabinJobDetail {
 export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
   if (!id) return null;
   const supabase = createCacheClient();
-  const { data: job } = await supabase
-    .from("cabin_jobs")
-    .select("id, job_number, customer_name, note")
-    .eq("id", id)
-    .maybeSingle();
+  // Header and lines are both keyed only by id — fetch concurrently.
+  const [{ data: job }, { data: lines }] = await Promise.all([
+    supabase
+      .from("cabin_jobs")
+      .select("id, job_number, customer_name, note")
+      .eq("id", id)
+      .maybeSingle(),
+    supabase
+      .from("cabin_job_lines")
+      .select(
+        `id, cabin_type, item_id, qty, sort_order,
+         item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+      )
+      .eq("cabin_job_id", id)
+      .order("sort_order"),
+  ]);
   if (!job) return null;
-
-  const { data: lines } = await supabase
-    .from("cabin_job_lines")
-    .select(
-      `id, cabin_type, item_id, qty, sort_order,
-       item:items!cabin_job_lines_item_id_fkey(code, name, family, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-    )
-    .eq("cabin_job_id", id)
-    .order("sort_order");
 
   return {
     id: job.id as string,

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
+import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { revalidatePath } from "next/cache";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { CUTOVER_DATE } from "@/lib/inventory/cutover";
@@ -54,32 +55,47 @@ async function mainStoreId(supabase: Db): Promise<string | null> {
   return (data?.id as string) ?? null;
 }
 
-/** Main Store stock for a set of items (paged to dodge the 1000-row cap). */
-async function mainStock(supabase: Db, itemIds: string[], main: string): Promise<Map<string, number>> {
-  const out = new Map<string, number>();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data } = await supabase
-      .from("inventory")
-      .select("item_id, quantity")
-      .eq("warehouse_id", main)
-      .in("item_id", itemIds.slice(i, i + 300));
-    for (const r of data ?? [])
-      out.set(r.item_id as string, (out.get(r.item_id as string) ?? 0) + (Number(r.quantity) || 0));
-  }
+/** Split ids into 300-id chunks (bounds URL length + the 1000-row cap). */
+function chunked(ids: string[], size = 300): string[][] {
+  const out: string[][] = [];
+  for (let i = 0; i < ids.length; i += size) out.push(ids.slice(i, i + size));
   return out;
 }
 
-/** Fetch a column set for many item ids, chunked to dodge URL-length + row caps. */
+/** Main Store stock for a set of items. Chunks are disjoint id sets, so they
+ *  fetch concurrently — one round-trip wave instead of one per chunk. */
+async function mainStock(supabase: Db, itemIds: string[], main: string): Promise<Map<string, number>> {
+  const results = await Promise.all(
+    chunked(itemIds).map((ids) =>
+      supabase
+        .from("inventory")
+        .select("item_id, quantity")
+        .eq("warehouse_id", main)
+        .in("item_id", ids),
+    ),
+  );
+  const out = new Map<string, number>();
+  for (const { data } of results)
+    for (const r of data ?? [])
+      out.set(r.item_id as string, (out.get(r.item_id as string) ?? 0) + (Number(r.quantity) || 0));
+  return out;
+}
+
+/** Fetch a column set for many item ids — chunked, all chunks concurrent. */
 async function fetchItemsChunked(
   supabase: Db,
   ids: string[],
 ): Promise<Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>> {
+  const results = await Promise.all(
+    chunked(ids).map((batch) =>
+      supabase
+        .from("items")
+        .select("id, code, name, procurement_type, category_id")
+        .in("id", batch),
+    ),
+  );
   const out = new Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>();
-  for (let i = 0; i < ids.length; i += 300) {
-    const { data } = await supabase
-      .from("items")
-      .select("id, code, name, procurement_type, category_id")
-      .in("id", ids.slice(i, i + 300));
+  for (const { data } of results)
     for (const it of data ?? [])
       out.set(it.id as string, {
         code: (it.code as string) ?? null,
@@ -87,7 +103,6 @@ async function fetchItemsChunked(
         procurement_type: (it.procurement_type as string | null) ?? null,
         category_id: (it.category_id as string | null) ?? null,
       });
-  }
   return out;
 }
 
@@ -103,41 +118,60 @@ const KIND_RANK: Record<ChildKind, number> = { cut: 0, made: 1, trade: 2 };
 export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   const supabase = createCacheClient();
 
-  // 1. Full parts list (paged past the 1000-row cap). Group children per parent.
-  const byParent = new Map<string, Map<string, number>>();
-  for (let off = 0; ; off += 1000) {
-    const { data } = await supabase
-      .from("item_bom_lines")
-      .select("parent_item_id, child_item_id, qty")
-      .not("child_item_id", "is", null)
-      .range(off, off + 999);
-    const batch = data ?? [];
-    for (const l of batch) {
-      const pid = l.parent_item_id as string;
-      const cid = l.child_item_id as string;
-      const kids = byParent.get(pid) ?? new Map<string, number>();
-      kids.set(cid, (kids.get(cid) ?? 0) + (Number(l.qty) || 0));
-      byParent.set(pid, kids);
-    }
-    if (batch.length < 1000) break;
-  }
-  if (byParent.size === 0) return [];
-
-  // 2. Item identities + effective procurement (item.procurement_type ??
-  //    category.procurement_type) + cut-piece set (for the kind label) + stock.
-  const parentIds = [...byParent.keys()];
-  const childIds = [...new Set([...byParent.values()].flatMap((k) => [...k.keys()]))];
-  const allIds = [...new Set([...parentIds, ...childIds])];
-  const [meta, { data: cats }, { data: cutOut }, main, { data: recentRuns }] = await Promise.all([
-    fetchItemsChunked(supabase, allIds),
+  // Wave 1 — five independent reads, fetched concurrently: full parts list
+  // (paged past the 1000-row cap), category procurement defaults, every
+  // cut-piece output WITH its operation_id (so the cutover gate below becomes
+  // a pure in-memory intersection instead of a second outputs query), the Main
+  // Store id, and the post-cutover runs.
+  const [bomLines, { data: cats }, cutRows, main, { data: recentRuns }] = await Promise.all([
+    fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>((from, to, withCount) =>
+      supabase
+        .from("item_bom_lines")
+        .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+        .not("child_item_id", "is", null)
+        // Deterministic order so parallel page slices can't duplicate/miss rows.
+        .order("id")
+        .range(from, to),
+    ),
     supabase.from("item_categories").select("id, procurement_type"),
-    supabase.from("operation_outputs").select("item_id").eq("role", "cut_part").not("item_id", "is", null),
+    fetchAllRanged<{ item_id: string; operation_id: string }>((from, to, withCount) =>
+      supabase
+        .from("operation_outputs")
+        .select("item_id, operation_id", withCount ? { count: "exact" } : {})
+        .eq("role", "cut_part")
+        .not("item_id", "is", null)
+        .order("id")
+        .range(from, to),
+      // Label-only data (kind chip + cutover gate) — degrade to made/trade
+      // labels on a transient read failure rather than error the whole page.
+    ).catch(() => [] as { item_id: string; operation_id: string }[]),
     mainStoreId(supabase),
     supabase.from("operation_runs").select("operation_id").gte("run_date", CUTOVER_DATE),
   ]);
+
+  // Group children per parent.
+  const byParent = new Map<string, Map<string, number>>();
+  for (const l of bomLines) {
+    const pid = l.parent_item_id as string;
+    const cid = l.child_item_id as string;
+    const kids = byParent.get(pid) ?? new Map<string, number>();
+    kids.set(cid, (kids.get(cid) ?? 0) + (Number(l.qty) || 0));
+    byParent.set(pid, kids);
+  }
+  if (byParent.size === 0) return [];
+
+  // Wave 2 — item identities + Main Store stock (both keyed by wave 1's id set).
+  // Effective procurement = item.procurement_type ?? category.procurement_type;
+  // cut-piece set drives the kind label.
+  const parentIds = [...byParent.keys()];
+  const childIds = [...new Set([...byParent.values()].flatMap((k) => [...k.keys()]))];
+  const allIds = [...new Set([...parentIds, ...childIds])];
+  const [meta, stock] = await Promise.all([
+    fetchItemsChunked(supabase, allIds),
+    main ? mainStock(supabase, allIds, main) : Promise.resolve(new Map<string, number>()),
+  ]);
   const catProc = new Map((cats ?? []).map((c) => [c.id as string, (c.procurement_type as string | null) ?? null]));
-  const cutIds = new Set((cutOut ?? []).map((o) => o.item_id as string));
-  const stock = main ? await mainStock(supabase, allIds, main) : new Map<string, number>();
+  const cutIds = new Set(cutRows.map((o) => o.item_id));
   const effProc = (id: string): string | null => {
     const it = meta.get(id);
     return it?.procurement_type ?? (it?.category_id ? catProc.get(it.category_id) ?? null : null);
@@ -147,18 +181,11 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   // parts has been CUT by a program run on/after the cutover (CUTOVER_DATE). The
   // page starts from the cutover and grows as more runs happen — older / never-run
   // sub-assemblies are omitted for now (owner: "only going forward we'll keep
-  // adding here"). producedSince = cut_part outputs of the post-cutover runs.
-  const recentOpIds = [...new Set((recentRuns ?? []).map((r) => r.operation_id as string))];
+  // adding here"). producedSince = cut_part outputs of the post-cutover runs —
+  // intersected in memory from the wave-1 reads.
+  const recentOpIds = new Set((recentRuns ?? []).map((r) => r.operation_id as string));
   const producedSince = new Set<string>();
-  for (let i = 0; i < recentOpIds.length; i += 300) {
-    const { data } = await supabase
-      .from("operation_outputs")
-      .select("item_id")
-      .eq("role", "cut_part")
-      .not("item_id", "is", null)
-      .in("operation_id", recentOpIds.slice(i, i + 300));
-    for (const o of data ?? []) producedSince.add(o.item_id as string);
-  }
+  for (const o of cutRows) if (recentOpIds.has(o.operation_id)) producedSince.add(o.item_id);
 
   const groups: ChildPartGroup[] = [];
   for (const pid of parentIds) {

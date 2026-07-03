@@ -220,66 +220,75 @@ async function _getJobDispatchSummaryUncached(
 ): Promise<JobDispatchSummary> {
   const supabase = createCacheClient();
 
-  // BOM lines (item-based, real sections) for the job.
-  const { data: header } = await supabase
-    .from("job_bom_headers")
-    .select("id")
-    .eq("job_id", jobId)
-    .limit(1)
-    .maybeSingle();
+  // The BOM chain and the dispatch chain only need jobId — independent
+  // two-step reads, run concurrently so the worst case is 2 round-trips, not 4.
+  const [lines, { disp, dlines }] = await Promise.all([
+    (async (): Promise<DispatchSummaryLine[]> => {
+      // BOM lines (item-based, real sections) for the job.
+      const { data: header } = await supabase
+        .from("job_bom_headers")
+        .select("id")
+        .eq("job_id", jobId)
+        .limit(1)
+        .maybeSingle();
 
-  let lines: DispatchSummaryLine[] = [];
-  if (header) {
-    const { data: bl, error } = await supabase
-      .from("job_bom_lines")
-      .select(
-        `id, category, required_quantity, item_id,
-         item:items!job_bom_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-      )
-      .eq("job_bom_id", header.id)
-      .not("category", "is", null)
-      .order("sort_order");
-    if (error) throw error;
-    lines = (bl ?? []).map((r: any) => {
-      const it = flatten<any>(r.item);
-      const uom = it ? flatten<any>(it.uom) : null;
-      const category = (r.category as string) ?? "";
-      const required = Number(r.required_quantity ?? 0);
-      return {
-        job_bom_line_id: r.id as string,
-        item_id: (r.item_id as string | null) ?? null,
-        item_code: (it?.code as string) ?? null,
-        item_name: (it?.name as string) ?? null,
-        uom: (uom?.abbreviation as string) ?? null,
-        category,
-        phase: dispatchPhaseOf(category),
-        required,
-        dispatched: 0,
-        remaining: required,
-      };
-    });
-  }
+      let lines: DispatchSummaryLine[] = [];
+      if (header) {
+        const { data: bl, error } = await supabase
+          .from("job_bom_lines")
+          .select(
+            `id, category, required_quantity, item_id,
+             item:items!job_bom_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+          )
+          .eq("job_bom_id", header.id)
+          .not("category", "is", null)
+          .order("sort_order");
+        if (error) throw error;
+        lines = (bl ?? []).map((r: any) => {
+          const it = flatten<any>(r.item);
+          const uom = it ? flatten<any>(it.uom) : null;
+          const category = (r.category as string) ?? "";
+          const required = Number(r.required_quantity ?? 0);
+          return {
+            job_bom_line_id: r.id as string,
+            item_id: (r.item_id as string | null) ?? null,
+            item_code: (it?.code as string) ?? null,
+            item_name: (it?.name as string) ?? null,
+            uom: (uom?.abbreviation as string) ?? null,
+            category,
+            phase: dispatchPhaseOf(category),
+            required,
+            dispatched: 0,
+            remaining: required,
+          };
+        });
+      }
+      return lines;
+    })(),
+    (async () => {
+      // Dispatch events + their lines.
+      const { data: disp } = await supabase
+        .from("job_dispatches")
+        .select("id, dispatch_date, phase_scope, note, created_at")
+        .eq("job_id", jobId)
+        .order("dispatch_date", { ascending: false })
+        .order("created_at", { ascending: false });
+      const dispatchIds = (disp ?? []).map((d: any) => d.id as string);
 
-  // Dispatch events + their lines.
-  const { data: disp } = await supabase
-    .from("job_dispatches")
-    .select("id, dispatch_date, phase_scope, note, created_at")
-    .eq("job_id", jobId)
-    .order("dispatch_date", { ascending: false })
-    .order("created_at", { ascending: false });
-  const dispatchIds = (disp ?? []).map((d: any) => d.id as string);
-
-  let dlines: any[] = [];
-  if (dispatchIds.length > 0) {
-    const { data: dl } = await supabase
-      .from("job_dispatch_lines")
-      .select(
-        `id, dispatch_id, job_bom_line_id, item_id, category, label, qty,
-         item:items!job_dispatch_lines_item_id_fkey(code, name)`,
-      )
-      .in("dispatch_id", dispatchIds);
-    dlines = dl ?? [];
-  }
+      let dlines: any[] = [];
+      if (dispatchIds.length > 0) {
+        const { data: dl } = await supabase
+          .from("job_dispatch_lines")
+          .select(
+            `id, dispatch_id, job_bom_line_id, item_id, category, label, qty,
+             item:items!job_dispatch_lines_item_id_fkey(code, name)`,
+          )
+          .in("dispatch_id", dispatchIds);
+        dlines = dl ?? [];
+      }
+      return { disp, dlines };
+    })(),
+  ]);
 
   // Cumulative dispatched per BOM line → fill remaining.
   const byLine = new Map<string, number>();
@@ -561,30 +570,35 @@ async function _getJobsDispatchStatusUncached(
   if (jobIds.length === 0) return out;
 
   const supabase = createCacheClient();
-  const { data: disp } = await supabase
-    .from("job_dispatches")
-    .select("id, job_id")
-    .in("job_id", jobIds);
+  // Dispatches and BOM headers both only need jobIds — independent reads,
+  // one round-trip each, fetch concurrently.
+  const [{ data: disp }, { data: allHeaders }] = await Promise.all([
+    supabase.from("job_dispatches").select("id, job_id").in("job_id", jobIds),
+    supabase.from("job_bom_headers").select("id, job_id").in("job_id", jobIds),
+  ]);
   if (!disp || disp.length === 0) return out;
 
   const dispJobIds = [...new Set(disp.map((d: any) => d.job_id as string))];
   const dispIds = disp.map((d: any) => d.id as string);
 
-  const { data: headers } = await supabase
-    .from("job_bom_headers")
-    .select("id, job_id")
-    .in("job_id", dispJobIds);
-  const headerToJob = new Map(
-    (headers ?? []).map((h: any) => [h.id as string, h.job_id as string]),
+  // Only dispatched jobs' BOMs matter — keep the line fetch scoped as before.
+  const dispJobSet = new Set(dispJobIds);
+  const headers = (allHeaders ?? []).filter((h: any) =>
+    dispJobSet.has(h.job_id as string),
   );
-  const headerIds = (headers ?? []).map((h: any) => h.id as string);
+  const headerToJob = new Map(
+    headers.map((h: any) => [h.id as string, h.job_id as string]),
+  );
+  const headerIds = headers.map((h: any) => h.id as string);
 
-  // Page this read: across many dispatched jobs the BOM-line total can exceed the
+  // BOM lines and dispatch lines are independent of each other (lines keyed by
+  // headerIds, dispatch lines by dispIds) — fetch concurrently.
+  // Page both reads: across many dispatched jobs either total can exceed the
   // 1000-row PostgREST cap, which silently truncated the set and made jobs whose
   // un-dispatched lines fell past the cutoff look fully dispatched (CLAUDE.md §8).
-  const bl =
+  const [bl, dl] = await Promise.all([
     headerIds.length > 0
-      ? await fetchAllRanged<{ id: string; job_bom_id: string; required_quantity: number }>(
+      ? fetchAllRanged<{ id: string; job_bom_id: string; required_quantity: number }>(
           (from, to, withCount) =>
             supabase
               .from("job_bom_lines")
@@ -594,7 +608,17 @@ async function _getJobsDispatchStatusUncached(
               .order("id")
               .range(from, to),
         )
-      : [];
+      : Promise.resolve([] as { id: string; job_bom_id: string; required_quantity: number }[]),
+    fetchAllRanged<{ job_bom_line_id: string | null; qty: number }>(
+      (from, to, withCount) =>
+        supabase
+          .from("job_dispatch_lines")
+          .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
+          .in("dispatch_id", dispIds)
+          .order("id")
+          .range(from, to),
+    ),
+  ]);
 
   const requiredByLine = new Map<string, number>();
   const linesByJob = new Map<string, string[]>();
@@ -606,17 +630,6 @@ async function _getJobsDispatchStatusUncached(
     arr.push(l.id as string);
     linesByJob.set(job, arr);
   }
-
-  // Page this read too — dispatch lines climb past 1000 as more jobs ship.
-  const dl = await fetchAllRanged<{ job_bom_line_id: string | null; qty: number }>(
-    (from, to, withCount) =>
-      supabase
-        .from("job_dispatch_lines")
-        .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
-        .in("dispatch_id", dispIds)
-        .order("id")
-        .range(from, to),
-  );
   const dispatchedByLine = new Map<string, number>();
   for (const d of dl) {
     if (d.job_bom_line_id)

@@ -194,6 +194,40 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   const horizonEndDate = new Date(curWeek.getTime() + (HORIZON_WEEKS * 7 - 1) * DAY_MS); // end of w7
   const horizonEnd = ymd(horizonEndDate);
 
+  // Three whole-table reads whose QUERIES are independent of the demand chain
+  // below (only their in-memory folds consume earlier results): dispatch lines,
+  // component-demand rules, category tree. Issue them now, alongside the jobs
+  // fetch, and await each right before its fold — mirrors getMrpData's
+  // dispatchedByLinePromise. The no-op catch keeps an early return from turning
+  // an in-flight rejection into an unhandled one; awaiting the same promise
+  // later still surfaces the real error at the same program point as before.
+  const inFlight = <T,>(p: Promise<T>): Promise<T> => {
+    p.catch(() => {});
+    return p;
+  };
+  const dispatchPromise = inFlight(
+    fetchAllRanged<{ job_bom_line_id: string; qty: number }>((from, to, withCount) =>
+      supabase.from("job_dispatch_lines").select("job_bom_line_id, qty", withCount ? { count: "exact" } : {}).not("job_bom_line_id", "is", null).range(from, to),
+    ),
+  );
+  const rulesPromise = inFlight(
+    fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
+      (from, to, withCount) =>
+        supabase
+          .from("item_demand_rules")
+          .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
+          .range(from, to),
+    ),
+  );
+  // Destructures only `data` — a Postgres error is still tolerated as an
+  // empty tree, exactly as before.
+  const catTreePromise = inFlight(
+    (async () => {
+      const { data } = await supabase.from("item_categories").select("id, name, parent_id");
+      return data ?? [];
+    })(),
+  );
+
   const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; requirement_dispatch_date: string | null }>(
     (from, to, withCount) =>
       supabase
@@ -222,12 +256,11 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   if (stageByJob.size === 0) return empty;
   const prodJobIds = [...stageByJob.keys()];
 
-  // dispatched-so-far per BOM line (whole table; identical to getMrpData)
+  // dispatched-so-far per BOM line (whole table; identical to getMrpData —
+  // prefetched above)
   const dispatchedByLine = new Map<string, number>();
   {
-    const rows = await fetchAllRanged<{ job_bom_line_id: string; qty: number }>((from, to, withCount) =>
-      supabase.from("job_dispatch_lines").select("job_bom_line_id, qty", withCount ? { count: "exact" } : {}).not("job_bom_line_id", "is", null).range(from, to),
-    );
+    const rows = await dispatchPromise;
     for (const d of rows) dispatchedByLine.set(d.job_bom_line_id, (dispatchedByLine.get(d.job_bom_line_id) ?? 0) + (Number(d.qty) || 0));
   }
 
@@ -277,13 +310,7 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   // parents), then fold them in. These rules are NOT item_bom_lines, so the
   // optimiser's parts-list explosion never re-derives them — no double-count.
   {
-    const rules = await fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
-      (from, to, withCount) =>
-        supabase
-          .from("item_demand_rules")
-          .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
-          .range(from, to),
-    );
+    const rules = await rulesPromise;
     const additions = new Map<string, number[]>();
     for (const r of rules) {
       const parentArr = demandByItemWeek.get(r.parent_item_id);
@@ -305,11 +332,12 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   // item meta + stock for every demanded item (same shape as getMrpData)
   const itemMeta = new Map<string, ItemMeta>();
   {
-    // Top-level category per item, for the board's category-wise grouping.
+    // Top-level category per item, for the board's category-wise grouping
+    // (prefetched above).
     const catTree = new Map<string, { name: string | null; parent_id: string | null }>();
     {
-      const { data } = await supabase.from("item_categories").select("id, name, parent_id");
-      for (const c of data ?? []) catTree.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
+      const cats = await catTreePromise;
+      for (const c of cats) catTree.set(c.id as string, { name: (c.name as string) ?? null, parent_id: (c.parent_id as string | null) ?? null });
     }
     const topCatOf = (catId: string | null): string | null => {
       let id = catId, last: string | null = null;
@@ -387,6 +415,13 @@ const emptyPlan = (l: LoadedDemand, excluded: string[]): WeeklyMrpPlan => ({
 });
 
 export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<WeeklyMrpPlan> {
+  // The PO-outstanding read is independent of the demand loader (the
+  // time-phasing below only needs curWeek) — start it now so it overlaps the
+  // loader's chain instead of running after it. The no-op catch keeps the
+  // empty-demand early return from leaving an unhandled rejection; the await
+  // below still surfaces the real error at the same program point as before.
+  const ooLinesPromise = _getOutstandingLinesUncached();
+  ooLinesPromise.catch(() => {});
   const l = await loadWeeklyDemand();
   if (l.demandByItemWeek.size === 0) return emptyPlan(l, excludeCodes);
   const N = l.N;
@@ -397,7 +432,7 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   // in-window). Make items carry no POs, so this only affects the Trade lane.
   const onOrderByItemWeek = new Map<string, number[]>();
   {
-    const ooLines = await _getOutstandingLinesUncached();
+    const ooLines = await ooLinesPromise;
     for (const ln of ooLines) {
       let pos = 0;
       if (ln.expected_date) {

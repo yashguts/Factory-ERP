@@ -529,18 +529,6 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
   const weeks = buildCabinWeeks(curWeek);
   const N = weeks.length;
 
-  // cabin job -> linked elevator job's requirement_dispatch_date.
-  const { data: cjobs } = await supabase.from("cabin_jobs").select("id, job_number");
-  const cabinJobNumbers = (cjobs ?? []).map((c: any) => (c.job_number as string) ?? "");
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select("job_number, requirement_dispatch_date")
-    .in("job_number", cabinJobNumbers);
-  const dateByNumber = new Map<string, string | null>();
-  for (const j of jobs ?? []) dateByNumber.set(((j.job_number as string) ?? "").trim().toLowerCase(), (j.requirement_dispatch_date as string | null) ?? null);
-  const dateByCabinJob = new Map<string, string | null>();
-  for (const c of cjobs ?? []) dateByCabinJob.set(c.id as string, dateByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase()) ?? null);
-
   // bucket position for a date: 0 = overdue, 1..N-1 = weeks; null = later/undated.
   const bucketOf = (iso: string | null): { pos: number | null; later: boolean; undated: boolean } => {
     if (!iso) return { pos: null, later: false, undated: true };
@@ -553,14 +541,35 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
     return { pos: w + 1, later: false, undated: false };
   };
 
-  const readyIds = await readyCabinJobIds(supabase);
-  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
-    (from, to, withCount) => {
-      const base = supabase.from("cabin_job_lines").select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {}).not("item_id", "is", null);
-      const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
-      return q.range(from, to);
-    },
-  );
+  // Two independent chains, concurrently: (cabin jobs -> their linked elevator
+  // jobs' dates — genuinely sequential) alongside the demand lines, which drop
+  // the ready-ids pre-read by filtering on the parent job server-side via the
+  // empty !inner embed (pure filter, adds no key to the rows).
+  const [dateByCabinJob, lines] = await Promise.all([
+    (async () => {
+      // cabin job -> linked elevator job's requirement_dispatch_date.
+      const { data: cjobs } = await supabase.from("cabin_jobs").select("id, job_number");
+      const cabinJobNumbers = (cjobs ?? []).map((c: any) => (c.job_number as string) ?? "");
+      const { data: jobs } = await supabase
+        .from("jobs")
+        .select("job_number, requirement_dispatch_date")
+        .in("job_number", cabinJobNumbers);
+      const dateByNumber = new Map<string, string | null>();
+      for (const j of jobs ?? []) dateByNumber.set(((j.job_number as string) ?? "").trim().toLowerCase(), (j.requirement_dispatch_date as string | null) ?? null);
+      const byCabinJob = new Map<string, string | null>();
+      for (const c of cjobs ?? []) byCabinJob.set(c.id as string, dateByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase()) ?? null);
+      return byCabinJob;
+    })(),
+    fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+      (from, to, withCount) =>
+        supabase
+          .from("cabin_job_lines")
+          .select("cabin_type, item_id, qty, cabin_job_id, cj:cabin_jobs!inner()", withCount ? { count: "exact" } : {})
+          .not("item_id", "is", null)
+          .is("cj.marked_ready_at", null)
+          .range(from, to),
+    ),
+  ]);
 
   const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();
   const laterJobs = new Set<string>();
@@ -582,13 +591,16 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
 
   const itemIds = [...demandByItemWeek.keys()];
   const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
-  for (let i = 0; i < itemIds.length; i += 200) {
-    const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", itemIds.slice(i, i + 200));
-    for (const it of (data ?? []) as any[]) {
-      const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
-      info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
-    }
-  }
+  // All chunks hit disjoint ids — fan them out in one concurrent wave.
+  await Promise.all(
+    Array.from({ length: Math.ceil(itemIds.length / 200) }, async (_, w) => {
+      const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", itemIds.slice(w * 200, w * 200 + 200));
+      for (const it of (data ?? []) as any[]) {
+        const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+        info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+      }
+    }),
+  );
 
   const rows: CabinWeeklyRow[] = [];
   for (const [id, d] of demandByItemWeek) {

@@ -97,13 +97,18 @@ async function producedItemIds(
 ): Promise<Set<string>> {
   const out = new Set<string>();
   const CHUNK = 100;
-  for (let i = 0; i < itemIds.length; i += CHUNK) {
-    const batch = itemIds.slice(i, i + CHUNK);
-    if (batch.length === 0) continue;
-    const { data, error } = await supabase
-      .from("operation_outputs")
-      .select(`item_id, operation:operations(import_source)`)
-      .in("item_id", batch);
+  const batches: string[][] = [];
+  for (let i = 0; i < itemIds.length; i += CHUNK) batches.push(itemIds.slice(i, i + CHUNK));
+  // Chunks are independent — fan out in parallel instead of one round-trip each.
+  const results = await Promise.all(
+    batches.map((batch) =>
+      supabase
+        .from("operation_outputs")
+        .select(`item_id, operation:operations(import_source)`)
+        .in("item_id", batch),
+    ),
+  );
+  for (const { data, error } of results) {
     if (error) throw error;
     for (const r of data ?? []) {
       const src =
@@ -124,13 +129,18 @@ async function subassemblyIdsAmong(
 ): Promise<Set<string>> {
   const out = new Set<string>();
   const CHUNK = 100;
-  for (let i = 0; i < itemIds.length; i += CHUNK) {
-    const batch = itemIds.slice(i, i + CHUNK);
-    if (batch.length === 0) continue;
-    const { data, error } = await supabase
-      .from("item_bom_lines")
-      .select("parent_item_id")
-      .in("parent_item_id", batch);
+  const batches: string[][] = [];
+  for (let i = 0; i < itemIds.length; i += CHUNK) batches.push(itemIds.slice(i, i + CHUNK));
+  // Chunks are independent — fan out in parallel instead of one round-trip each.
+  const results = await Promise.all(
+    batches.map((batch) =>
+      supabase
+        .from("item_bom_lines")
+        .select("parent_item_id")
+        .in("parent_item_id", batch),
+    ),
+  );
+  for (const { data, error } of results) {
     if (error) throw error;
     for (const r of data ?? []) out.add((r as any).parent_item_id as string);
   }
@@ -142,28 +152,33 @@ const _getItemBomUncached = async (
 ): Promise<ItemBomResult | null> => {
   const supabase = createCacheClient();
 
-  const { data: item, error: itemErr } = await supabase
-    .from("items")
-    .select(
-      `id, code, name, stock_behaviour, part_role, procurement_type, family, finish,
+  // Both selects filter only on itemId — independent reads, fetch concurrently.
+  const [itemRes, linesRes] = await Promise.all([
+    supabase
+      .from("items")
+      .select(
+        `id, code, name, stock_behaviour, part_role, procurement_type, family, finish,
        category:item_categories!items_category_id_fkey(procurement_type),
        uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
-    )
-    .eq("id", itemId)
-    .maybeSingle();
-  if (itemErr) throw itemErr;
-  if (!item) return null;
-
-  const { data: rows, error: lineErr } = await supabase
-    .from("item_bom_lines")
-    .select(
-      `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
+      )
+      .eq("id", itemId)
+      .maybeSingle(),
+    supabase
+      .from("item_bom_lines")
+      .select(
+        `id, child_item_id, child_family, qty, finish_rule, pinned_finish, sort_order,
        child:items!item_bom_lines_child_item_id_fkey(code, name, family, finish, stock_behaviour, part_role, procurement_type,
          category:item_categories!items_category_id_fkey(procurement_type),
          uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-    )
-    .eq("parent_item_id", itemId)
-    .order("sort_order");
+      )
+      .eq("parent_item_id", itemId)
+      .order("sort_order"),
+  ]);
+  const { data: item, error: itemErr } = itemRes;
+  if (itemErr) throw itemErr;
+  if (!item) return null;
+
+  const { data: rows, error: lineErr } = linesRes;
   if (lineErr) throw lineErr;
 
   // Which children are make pieces that no program produces (and aren't

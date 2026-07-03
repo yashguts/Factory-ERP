@@ -26,11 +26,13 @@ export async function getItems() {
   return data;
 }
 
-// Exported so callers that are THEMSELVES inside an unstable_cache (the MRP
-// plan / make-plan) can read items WITHOUT nesting unstable_cache (nesting
-// makes the OUTER cache degrade to pass-through). The cached wrapper below is
-// what the inventory page uses.
-export const _getItemsWithStockUncached = async () => {
+// Exported so its caller — which is ITSELF inside an unstable_cache (the
+// /mrp/trade buy-list explode, _getProductionPlanUncached in mrp.ts) — can
+// read items WITHOUT nesting unstable_cache (nesting makes the OUTER cache
+// degrade to pass-through). Slim projection: only the fields that consumer
+// reads (id/code/name/family/finish/type/category/uom/procurement/stock) —
+// the old items.* shape serialised to ~2.2MB and was pure dead weight.
+export const _getPlanItemsSlimUncached = async () => {
   const supabase = createCacheClient();
 
   // Cabin items live in their own /cabin-inventory section — keep them OUT of the
@@ -70,7 +72,7 @@ export const _getItemsWithStockUncached = async () => {
         .from("items")
         .select(
           `
-        *,
+        id, code, name, family, finish, item_type, category_id, procurement_type,
         category:item_categories!items_category_id_fkey(id, name, parent_id, procurement_type),
         uom:units_of_measurement!items_uom_id_fkey(id, abbreviation),
         inventory(quantity, warehouse_id)
@@ -98,32 +100,16 @@ export const _getItemsWithStockUncached = async () => {
       id: item.id as string,
       code: item.code as string,
       name: item.name as string,
-      lookup_key: item.lookup_key as string | null,
-      description: item.description as string | null,
       item_type: item.item_type as ItemType,
       category_id: item.category_id as string | null,
-      uom_id: item.uom_id as string,
-      minimum_stock: Number(item.minimum_stock),
-      reorder_point: Number(item.reorder_point),
-      lead_time_days: Number(item.lead_time_days),
-      cost_price: Number(item.cost_price),
-      is_active: item.is_active as boolean,
-      /** stocked | phantom | tooling — stock/planning behaviour. */
-      stock_behaviour: (item.stock_behaviour as StockBehaviour) ?? "stocked",
       /** Finish-variant grouping. */
       family: (item.family as string | null) ?? null,
       finish: (item.finish as string | null) ?? null,
       /** Per-item override. NULL = inherit from category. */
       procurement_type: itemPT,
-      /** The (sub-)category's default — used by the form's "Inherit (X)" label. */
-      category_procurement_type: catPT,
       /** Effective value = item override ?? category default. NULL only if neither is set. */
       effective_procurement_type: (itemPT ??
         catPT) as "make" | "trade" | null,
-      /** Up to 5 free-text supplier names. */
-      suppliers: Array.isArray(item.suppliers)
-        ? (item.suppliers as string[])
-        : [],
       category: item.category as {
         id: string;
         name: string;
@@ -139,16 +125,16 @@ export const _getItemsWithStockUncached = async () => {
   });
 };
 
-// NOTE: there is intentionally NO cached wrapper around the fat read above.
-// Its row (~30 fields × ~2,700 active non-cabin items) serialises to ~2.2MB,
-// which silently exceeds Next's 2MB unstable_cache entry cap — so a cached
-// wrapper never actually cached and re-ran the whole fetch on every request
-// (the /settings 2MB build warning). The only consumer that needs the FULL
-// shape is the make-plan, which reads `_getItemsWithStockUncached` directly
-// (it's already inside its own unstable_cache and must not nest). Everything
-// else uses a lighter read: the /inventory list uses getInventoryPage, detail
-// pages use getItemRefs, and the Settings overstock report uses the lean
-// getItemStockSummaries below.
+// NOTE: this read is intentionally NOT wrapped in unstable_cache here. Its one
+// consumer (_getProductionPlanUncached — the /mrp/trade buy-list explode) is
+// itself inside an unstable_cache, and nesting would make the outer cache
+// degrade to pass-through. Historical context: this used to select items.*
+// (~30 fields × ~2,700 rows ≈ 2.2MB), which silently exceeded Next's 2MB
+// unstable_cache entry cap (the /settings 2MB build warning) — hence the slim
+// projection above. The make-plan does NOT use it (production-plan.ts /
+// make-plan-core.ts do their own reads). Everything else uses a lighter read:
+// the /inventory list uses getInventoryPage, detail pages use getItemRefs, and
+// the Settings overstock report uses the lean getItemStockSummaries below.
 
 /* ------------------------------------------------------------------ *
  * Lean item + stock summary read.
@@ -329,8 +315,8 @@ export const getItemRefs = unstable_cache(_getItemRefsUncached, ["item-refs"], {
  * fields) to the browser and filter/sort/paginate in JS. These helpers move
  * all of that into one Postgres call (the search_inventory function), so the
  * browser only ever receives one page (~50 rows) — fast regardless of host.
- * The fat _getItemsWithStockUncached above is kept for the production plan,
- * which needs the full per-item shape (it reads it uncached, see note there).
+ * The slim _getPlanItemsSlimUncached above is kept for the production plan's
+ * buy-list explode (it reads it uncached, see note there).
  * ------------------------------------------------------------------ */
 
 /** Full item shape for the edit/clone form modal + the (legacy) full list. */
@@ -559,8 +545,11 @@ export async function getInventoryPage(
   const pageSize = q.pageSize ?? 50;
   const page = Math.max(1, q.page ?? 1);
 
-  const categoryIds = await resolveCategoryFilter(q);
-  const boundCategoryIds = await getJobBoundCategoryIds();
+  // Independent reads — one round-trip each on a cold cache, fetch concurrently.
+  const [categoryIds, boundCategoryIds] = await Promise.all([
+    resolveCategoryFilter(q),
+    getJobBoundCategoryIds(),
+  ]);
 
   const supabase = createCacheClient();
   const { data, error } = await supabase.rpc("search_inventory", {
@@ -602,8 +591,10 @@ const EXPORT_MAX_ROWS = 20000;
 export async function getInventoryForExport(
   q: InventoryQuery,
 ): Promise<InventoryRow[]> {
-  const categoryIds = await resolveCategoryFilter(q);
-  const boundCategoryIds = await getJobBoundCategoryIds();
+  const [categoryIds, boundCategoryIds] = await Promise.all([
+    resolveCategoryFilter(q),
+    getJobBoundCategoryIds(),
+  ]);
   const supabase = createCacheClient();
 
   const BATCH = 1000;

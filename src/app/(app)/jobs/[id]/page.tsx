@@ -1,6 +1,5 @@
-import { getJobDetail, getJobBomSections } from "@/lib/actions/jobs";
+import { getJobDetail } from "@/lib/actions/jobs";
 import { getJobDispatchSummary } from "@/lib/actions/dispatch";
-import { getStockForItems } from "@/lib/actions/inventory";
 import { JobDetailClient } from "@/components/jobs/job-detail-client";
 
 interface Props {
@@ -10,18 +9,21 @@ interface Props {
 export default async function JobDetailPage({ params }: Props) {
   const { id } = await params;
 
-  // Parallel fetch — job detail, BOM sections, and dispatch summary together.
-  const [{ job, bomLines, bomHeaderId, gadVersions }, bomSections, dispatch] =
-    await Promise.all([
-      getJobDetail(id),
-      getJobBomSections(id),
-      getJobDispatchSummary(id),
-    ]);
+  // Parallel fetch — job detail (BOM lines + scoped stock folded in) and
+  // dispatch summary together.
+  const [{ job, bomLines, bomHeaderId, gadVersions, stockByItem }, dispatch] =
+    await Promise.all([getJobDetail(id), getJobDispatchSummary(id)]);
 
-  // Scoped on-hand stock for THIS job's BOM items (drives the readiness view).
-  const stockByItem = await getStockForItems(
-    bomLines.map((l) => l.item_id).filter((x): x is string => !!x),
-  );
+  // Section view rows derive from the same BOM lines (same header, same
+  // sort_order) — no extra query needed.
+  const bomSections = bomLines
+    .filter((l) => l.category != null)
+    .map((l) => ({
+      category: l.category,
+      variant: l.variant,
+      value_text: l.value_text,
+      required_quantity: l.required_quantity,
+    }));
 
   return (
     <JobDetailClient

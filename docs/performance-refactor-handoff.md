@@ -86,32 +86,29 @@ freeze).
 indexes** — the slowness is the app/serverless/latency layer. In order of expected
 payoff:
 
-### (1) Cross-region latency — CHECK THIS FIRST, likely the biggest win
-Supabase is in **ap-south-1 (Mumbai)**. If Netlify runs the SSR/functions in a
-**different region** (US by default on many plans), **every single query is a
-cross-continent round-trip (~200–300 ms)**. A server component that runs 4–6
-queries **sequentially** (or a `fetchAllRanged` that pages 3× for a 2.5k-row read)
-then costs **1–2 seconds of pure network latency** before anything renders — which
-is exactly "slow to open a section."
-- **Action:** confirm the Netlify function/SSR region and **pin it to Mumbai /
-  ap-south** (or the nearest Netlify region to ap-south-1). Measure a page's query
-  count × RTT before/after.
-- **Compounding fix:** audit server components for **sequential** awaits and
-  `Promise.all()` the independent ones (the codebase already does this in places —
-  e.g. `_getProductionPlanUncached`, `getMrpData` — extend it everywhere). Every
-  serialised query is one RTT you pay in full.
+### (1) Cross-region latency — CONFIRMED 2026-07-02, owner action pending
+**Measured** via `/api/debug-region` (left deployed as a permanent probe): the
+Netlify function runs in **us-east-2 (Ohio)**; Supabase is ap-south-1 (Mumbai);
+**~273 ms per query round-trip**. A section that runs 4–6 queries sequentially
+pays 1–2 s of pure network before rendering.
+- **Owner action (one click):** Netlify's self-serve region list has **no
+  Mumbai** — the closest is **Singapore (`sin`)**, ~60–70 ms to Mumbai (~4×
+  faster). Pro plan allows it: **Project configuration → Build & deploy →
+  Continuous deployment → Functions region → Configure → Asia Pacific
+  (Singapore) → Save**, then redeploy. Not settable via API/CLI without an
+  interactive `netlify login`; `netlify.toml` per-function region does not
+  apply to framework adapters like Next.js.
+- **Compounding fix (DONE 2026-07-02):** the render-path audit found 64
+  sequential-await / fat-read / serial-paging findings across ~20 files;
+  the independent reads are now `Promise.all`'d. Re-verify with
+  `/api/debug-region` after the region flip.
 
-### (2) Missing `loading.tsx` on ~13 routes — cheap, big *perceived* win
-34 of 47 routes have a `loading.tsx`; **these don't**, so they paint blank until
-the server responds (feels frozen). Add one to each (copy the pattern from a
-neighbour). Prioritise the heavy ones:
-- **`/mrp/make-plan`, `/mrp/plan`** ← the optimiser pages, the slowest, and they
-  have NO skeleton — worst offenders.
-- `/packing-list-r1`, `/packing-list-r1/[jobId]`, `/packing-list-r1/template`
-- `/jobs/new`, `/jobs/import`, `/jobs/unmatched`, `/jobs/gad-alerts`,
-  `/jobs/status-alerts`, `/procurement/new`, `/inventory/import`
-- (CLAUDE.md still claims "all routes have loading.tsx" — that's now **stale**; fix
-  the doc too.)
+### (2) Missing `loading.tsx` — DONE 2026-07-02 (commit 0c09184)
+All 11 uncovered routes got skeletons (`/mrp/make-plan`, the three
+`/packing-list-r1` routes, `/jobs/new|import|unmatched|gad-alerts|status-alerts`,
+`/procurement/new`, `/inventory/import`). `/mrp/plan` and the root page are pure
+redirects and need none. CLAUDE.md's "every route needs a loading.tsx" rule is
+accurate again — keep it that way for new routes.
 
 ### (3) Uncacheable fat reads (the 2 MB cap)
 `_getItemsWithStockUncached` (~2.2 MB, all 24.9k items × ~30 fields) **re-runs

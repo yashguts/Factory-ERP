@@ -2,7 +2,7 @@
 
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
-import { _getItemsWithStockUncached } from "@/lib/actions/inventory";
+import { _getPlanItemsSlimUncached } from "@/lib/actions/inventory";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
@@ -183,6 +183,34 @@ export async function _getMrpDataUncached(
     return dispatchedByLine;
   })();
 
+  // The demand folds and the row build further down each need one more read
+  // (demand rules, parts lists + procurement/stock, drive-rule items, demand
+  // formulas, the category tree, open POs). None of those QUERIES depends on
+  // the accumulated reqMap — only the folds do — so kick them all off here,
+  // concurrent with the header -> lines chain, and await each right before its
+  // fold (the fold order below is unchanged). The no-op catch keeps an early
+  // return (or an earlier throw) from turning an in-flight rejection into an
+  // unhandled one; awaiting the same promise later still surfaces the real
+  // error at the same program point as before.
+  const inFlight = <T,>(p: Promise<T>): Promise<T> => {
+    p.catch(() => {});
+    return p;
+  };
+  const componentRulesPromise = inFlight(fetchComponentRules(supabase));
+  const tradeLeafPromise = includeDerivedTrade
+    ? inFlight(fetchTradeLeafData(supabase))
+    : null;
+  const driveItemsPromise =
+    includeDerivedTrade && JOB_DRIVE_DEMAND.length > 0 && driveByJob.size > 0
+      ? inFlight(fetchJobDriveItems(supabase))
+      : null;
+  const formulasPromise =
+    includeDerivedTrade && jobInfo.size > 0
+      ? inFlight(fetchDemandFormulas(supabase))
+      : null;
+  const topCatPromise = inFlight(buildTopCategoryResolver(supabase));
+  const onOrderPromise = inFlight(_getOutstandingByItemUncached());
+
   // Header -> job map (drives both the stage scope below and job_count later).
   const headerToJob = new Map<string, string>();
   {
@@ -202,6 +230,7 @@ export async function _getMrpDataUncached(
   }
   if (headerToJob.size === 0) {
     // Drain the in-flight dispatch query so we don't leave an unhandled rejection.
+    // (The inFlight prefetches above self-guard via their no-op catch.)
     await dispatchedByLinePromise;
     return [];
   }
@@ -281,15 +310,15 @@ export async function _getMrpDataUncached(
   // programs. No double-count: the make-plan's own explosion goes through item_bom_lines,
   // and these rules are deliberately NOT in item_bom_lines. Must run before
   // addTradeLeafDemand so a rule-added child's own trade leaves get exploded below.
-  await addComponentRuleDemand(supabase, reqMap);
+  await addComponentRuleDemand(componentRulesPromise, reqMap);
   if (includeDerivedTrade) {
-    await addTradeLeafDemand(supabase, reqMap);
+    await addTradeLeafDemand(tradeLeafPromise!, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
     // even when the BOM sum is empty, so the emptiness check comes AFTER this.
-    await addJobDriveDemand(supabase, reqMap, driveByJob);
+    await addJobDriveDemand(driveItemsPromise, reqMap, driveByJob);
     // Editable job-type / per-floor demand formulas (demand_formulas). No-op when
     // the table is empty, so existing MRP is unchanged until a formula is defined.
-    await addDemandFormulaDemand(supabase, reqMap, jobInfo);
+    await addDemandFormulaDemand(formulasPromise, reqMap, jobInfo);
   }
 
   if (reqMap.size === 0) return [];
@@ -298,8 +327,8 @@ export async function _getMrpDataUncached(
 
   // Category tree -> resolve each item's TOP-LEVEL category (walk parent_id to the
   // root). Drives the by-category grouping on the Requirements pages. Cheap: the
-  // categories table is small, one read.
-  const topCatOf = await buildTopCategoryResolver(supabase);
+  // categories table is small, one read (prefetched above).
+  const topCatOf = await topCatPromise;
 
   // Fetch the items (with stock) for the required item ids. The header -> job map
   // was already built up front (and used for the stage scope above). category_id is
@@ -329,7 +358,7 @@ export async function _getMrpDataUncached(
 
   // Outstanding PO qty per item (un-nested read — this fn runs inside the MRP
   // unstable_cache; the cached getOutstandingByItem would nest and break it).
-  const onOrder = await _getOutstandingByItemUncached();
+  const onOrder = await onOrderPromise;
 
   const rows: MrpRow[] = allItems.map((item) => {
     const req = reqMap.get(item.id)!;
@@ -460,11 +489,20 @@ async function buildTopCategoryResolver(
  * once — a per-path recursion would over-net a shared/nested node. Representative-
  * child resolution (child_item_id), cycle-safe (cyclic nodes never reach indeg 0
  * and are dropped — a data error; none exist today).
+ *
+ * Split fetch/fold: fetchTradeLeafData is the prefetchable half — the whole
+ * item_bom_lines table plus procurement/stock for every participant. None of it
+ * depends on reqMap (the participant set comes purely from the bom rows), so it
+ * can overlap the header -> lines chain; addTradeLeafDemand awaits it and folds.
+ * Returns null when there are no parts lists.
  */
-async function addTradeLeafDemand(
+async function fetchTradeLeafData(
   supabase: ReturnType<typeof createCacheClient>,
-  reqMap: Map<string, ReqEntry>,
-): Promise<void> {
+): Promise<{
+  bomByParent: Map<string, { child: string; qty: number }[]>;
+  effProc: Map<string, "make" | "trade" | null>;
+  stock: Map<string, number>;
+} | null> {
   const bomRows = await fetchAllRanged<{ parent_item_id: string; child_item_id: string | null; qty: number }>(
     (from, to, withCount) =>
       supabase
@@ -473,7 +511,7 @@ async function addTradeLeafDemand(
         .not("child_item_id", "is", null)
         .range(from, to),
   );
-  if (bomRows.length === 0) return;
+  if (bomRows.length === 0) return null;
 
   const bomByParent = new Map<string, { child: string; qty: number }[]>();
   const participantIds = new Set<string>();
@@ -505,6 +543,16 @@ async function addTradeLeafDemand(
       return s;
     })(),
   ]);
+  return { bomByParent, effProc, stock };
+}
+
+async function addTradeLeafDemand(
+  dataPromise: Promise<Awaited<ReturnType<typeof fetchTradeLeafData>>>,
+  reqMap: Map<string, ReqEntry>,
+): Promise<void> {
+  const data = await dataPromise;
+  if (!data) return;
+  const { bomByParent, effProc, stock } = data;
   const isMake = (id: string) => effProc.get(id) !== "trade"; // null (inherit) counts as make
 
   // Seed gross demand + job attribution from the top-level demanded MAKE items that
@@ -581,16 +629,25 @@ async function addTradeLeafDemand(
  * row's job_count is right. driveByJob already reflects the status/cutoff scope; the
  * owner's rule counts every such in-production job regardless of requirement stage.
  */
-async function addJobDriveDemand(
+/** Prefetchable half of addJobDriveDemand: item ids for the hard-coded rule
+ *  codes. The caller gates creation on the same guards the fold used to check
+ *  (rules exist + in-scope jobs exist), passing null otherwise. */
+async function fetchJobDriveItems(
   supabase: ReturnType<typeof createCacheClient>,
-  reqMap: Map<string, ReqEntry>,
-  driveByJob: Map<string, string | null>,
-): Promise<void> {
-  if (JOB_DRIVE_DEMAND.length === 0 || driveByJob.size === 0) return;
+): Promise<Map<string, string>> {
   const codes = [...new Set(JOB_DRIVE_DEMAND.map((r) => r.code))];
   const { data: items, error } = await supabase.from("items").select("id, code").in("code", codes);
   if (error) throw error;
-  const idByCode = new Map<string, string>((items ?? []).map((it) => [it.code as string, it.id as string]));
+  return new Map<string, string>((items ?? []).map((it) => [it.code as string, it.id as string]));
+}
+
+async function addJobDriveDemand(
+  idByCodePromise: Promise<Map<string, string>> | null,
+  reqMap: Map<string, ReqEntry>,
+  driveByJob: Map<string, string | null>,
+): Promise<void> {
+  if (!idByCodePromise) return;
+  const idByCode = await idByCodePromise;
 
   for (const rule of JOB_DRIVE_DEMAND) {
     const itemId = idByCode.get(rule.code);
@@ -628,18 +685,27 @@ interface JobAttrs {
  * [per_floor], rounded up, attributed to those jobs. No-op when the table is
  * empty, so MRP is unchanged until a formula exists.
  */
-async function addDemandFormulaDemand(
+/** Prefetchable half of addDemandFormulaDemand: the active demand_formulas.
+ *  The caller gates creation on jobInfo being non-empty, passing null otherwise. */
+async function fetchDemandFormulas(
   supabase: ReturnType<typeof createCacheClient>,
-  reqMap: Map<string, ReqEntry>,
-  jobInfo: Map<string, JobAttrs>,
-): Promise<void> {
-  if (jobInfo.size === 0) return;
+): Promise<{ target_item_id: string; driver: string; factor: number; conditions: unknown }[]> {
   const { data: formulas, error } = await supabase
     .from("demand_formulas")
     .select("target_item_id, driver, factor, conditions")
     .eq("is_active", true);
   if (error) throw error;
-  if (!formulas || formulas.length === 0) return;
+  return formulas ?? [];
+}
+
+async function addDemandFormulaDemand(
+  formulasPromise: Promise<{ target_item_id: string; driver: string; factor: number; conditions: unknown }[]> | null,
+  reqMap: Map<string, ReqEntry>,
+  jobInfo: Map<string, JobAttrs>,
+): Promise<void> {
+  if (!formulasPromise || jobInfo.size === 0) return;
+  const formulas = await formulasPromise;
+  if (formulas.length === 0) return;
 
   const norm = (s: string | null | undefined) => (s ?? "").trim().toLowerCase();
   const condMatch = (info: JobAttrs, cond: Record<string, unknown>): boolean => {
@@ -696,17 +762,25 @@ async function addDemandFormulaDemand(
  * to the parent's jobs (bomIds) so job_count resolves. The child's own procurement
  * decides which MRP tab it lands in (guide shoes are make → Make MRP).
  */
-async function addComponentRuleDemand(
+/** Prefetchable half of addComponentRuleDemand: the whole (small)
+ *  item_demand_rules table — the query takes no input from reqMap. */
+function fetchComponentRules(
   supabase: ReturnType<typeof createCacheClient>,
-  reqMap: Map<string, ReqEntry>,
-): Promise<void> {
-  const rules = await fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
+): Promise<{ parent_item_id: string; child_item_id: string; qty: number }[]> {
+  return fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
     (from, to, withCount) =>
       supabase
         .from("item_demand_rules")
         .select("parent_item_id, child_item_id, qty", withCount ? { count: "exact" } : {})
         .range(from, to),
   );
+}
+
+async function addComponentRuleDemand(
+  rulesPromise: Promise<{ parent_item_id: string; child_item_id: string; qty: number }[]>,
+  reqMap: Map<string, ReqEntry>,
+): Promise<void> {
+  const rules = await rulesPromise;
   if (rules.length === 0) return;
 
   // Compute additions off the PARENT demand snapshot (children aren't parents here).
@@ -857,11 +931,11 @@ async function _getProductionPlanUncached(
 
   // Top-level demand + every active item (procurement, family/finish, stock).
   // Use the UN-nested variants: this fn is itself wrapped in unstable_cache, and
-  // nesting unstable_cache (getMrpData/getItemsWithStock) makes the OUTER
+  // nesting unstable_cache (getMrpData / the slim plan-items read) makes the OUTER
   // production-plan cache degrade to pass-through (re-running on every request).
   const [demand, items] = await Promise.all([
     _getMrpDataUncached(cutoffDate),
-    _getItemsWithStockUncached(),
+    _getPlanItemsSlimUncached(),
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
 

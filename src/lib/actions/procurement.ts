@@ -84,26 +84,28 @@ async function _getPurchaseOrdersUncached(): Promise<PoListRow[]> {
   // Paged: a single supabase-js select caps at 1000 rows, and the lines table
   // can exceed that across many POs — un-ranged reads would silently
   // under-report every list aggregate (the documented PostgREST cap gotcha).
-  const orders = await fetchAllRanged<PurchaseOrder>((from, to, withCount) =>
-    supabase
-      .from("purchase_orders")
-      .select("*", withCount ? { count: "exact" } : {})
-      .order("created_at", { ascending: false })
-      .range(from, to),
-  );
+  // The lines scan takes nothing from the orders result — fetch concurrently.
+  const [orders, lines] = await Promise.all([
+    fetchAllRanged<PurchaseOrder>((from, to, withCount) =>
+      supabase
+        .from("purchase_orders")
+        .select("*", withCount ? { count: "exact" } : {})
+        .order("created_at", { ascending: false })
+        .range(from, to),
+    ),
+    fetchAllRanged<{
+      po_id: string;
+      qty: number;
+      unit_cost: number | null;
+      received_qty: number;
+    }>((from, to, withCount) =>
+      supabase
+        .from("purchase_order_lines")
+        .select("po_id, qty, unit_cost, received_qty", withCount ? { count: "exact" } : {})
+        .range(from, to),
+    ),
+  ]);
   if (orders.length === 0) return [];
-
-  const lines = await fetchAllRanged<{
-    po_id: string;
-    qty: number;
-    unit_cost: number | null;
-    received_qty: number;
-  }>((from, to, withCount) =>
-    supabase
-      .from("purchase_order_lines")
-      .select("po_id, qty, unit_cost, received_qty", withCount ? { count: "exact" } : {})
-      .range(from, to),
-  );
 
   const agg = new Map<
     string,
@@ -138,22 +140,20 @@ async function _getPurchaseOrderUncached(
   id: string,
 ): Promise<{ po: PurchaseOrder; lines: PoLineDetail[] } | null> {
   const supabase = createCacheClient();
-  const { data: po, error } = await supabase
-    .from("purchase_orders")
-    .select("*")
-    .eq("id", id)
-    .single();
+  // Header and lines both filter on the id argument alone — fetch concurrently.
+  const [{ data: po, error }, { data: rawLines, error: lErr }] = await Promise.all([
+    supabase.from("purchase_orders").select("*").eq("id", id).single(),
+    supabase
+      .from("purchase_order_lines")
+      .select(
+        `id, item_id, qty, unit_cost, received_qty, sort_order, description,
+         purchase_uom_id, tentative_stock_qty, received_stock_qty,
+         item:items(code, name, reorder_point, gst_rate, gst_creditable, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
+      )
+      .eq("po_id", id)
+      .order("sort_order"),
+  ]);
   if (error || !po) return null;
-
-  const { data: rawLines, error: lErr } = await supabase
-    .from("purchase_order_lines")
-    .select(
-      `id, item_id, qty, unit_cost, received_qty, sort_order, description,
-       purchase_uom_id, tentative_stock_qty, received_stock_qty,
-       item:items(code, name, reorder_point, gst_rate, gst_creditable, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-    )
-    .eq("po_id", id)
-    .order("sort_order");
   if (lErr) throw lErr;
 
   // Resolve purchase-UOM abbreviations (no FK on purchase_uom_id → map from units).
@@ -164,26 +164,30 @@ async function _getPurchaseOrderUncached(
         .filter((x): x is string => !!x),
     ),
   ];
-  const puomAbbr = new Map<string, string>();
-  if (puomIds.length > 0) {
-    const { data: us } = await supabase
-      .from("units_of_measurement")
-      .select("id, abbreviation")
-      .in("id", puomIds);
-    for (const u of us ?? [])
-      puomAbbr.set(u.id as string, (u.abbreviation as string) ?? "");
-  }
-
   const itemIds = (rawLines ?? []).map((l) => l.item_id);
+  const puomAbbr = new Map<string, string>();
   const onHand = new Map<string, number>();
-  if (itemIds.length > 0) {
-    const { data: inv } = await supabase
-      .from("inventory")
-      .select("item_id, quantity")
-      .in("item_id", itemIds);
-    for (const r of inv ?? [])
-      onHand.set(r.item_id, (onHand.get(r.item_id) ?? 0) + (Number(r.quantity) || 0));
-  }
+  // Both lookups derive from rawLines but not from each other — fetch concurrently.
+  await Promise.all([
+    (async () => {
+      if (puomIds.length === 0) return;
+      const { data: us } = await supabase
+        .from("units_of_measurement")
+        .select("id, abbreviation")
+        .in("id", puomIds);
+      for (const u of us ?? [])
+        puomAbbr.set(u.id as string, (u.abbreviation as string) ?? "");
+    })(),
+    (async () => {
+      if (itemIds.length === 0) return;
+      const { data: inv } = await supabase
+        .from("inventory")
+        .select("item_id, quantity")
+        .in("item_id", itemIds);
+      for (const r of inv ?? [])
+        onHand.set(r.item_id, (onHand.get(r.item_id) ?? 0) + (Number(r.quantity) || 0));
+    })(),
+  ]);
 
   const lines: PoLineDetail[] = (rawLines ?? []).map((l) => {
     const item = Array.isArray(l.item) ? l.item[0] : l.item;
@@ -258,29 +262,32 @@ export async function getProcurementData(): Promise<ProcurementData> {
 
 async function _getProcurementDataUncached(): Promise<ProcurementData> {
   const supabase = createCacheClient();
-  const pos = await fetchAllRanged<PurchaseOrder>((from, to, wc) =>
-    supabase
-      .from("purchase_orders")
-      .select("*", wc ? { count: "exact" } : {})
-      .order("created_at", { ascending: false })
-      .range(from, to),
-  );
-  const lines = await fetchAllRanged<{
-    po_id: string;
-    item_id: string;
-    qty: number;
-    unit_cost: number | null;
-    received_qty: number;
-    item: { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null } | { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null }[] | null;
-  }>((from, to, wc) =>
-    supabase
-      .from("purchase_order_lines")
-      .select(
-        "po_id, item_id, qty, unit_cost, received_qty, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
-        wc ? { count: "exact" } : {},
-      )
-      .range(from, to),
-  );
+  // Orders and lines are joined in JS via poById — independent scans, fetch concurrently.
+  const [pos, lines] = await Promise.all([
+    fetchAllRanged<PurchaseOrder>((from, to, wc) =>
+      supabase
+        .from("purchase_orders")
+        .select("*", wc ? { count: "exact" } : {})
+        .order("created_at", { ascending: false })
+        .range(from, to),
+    ),
+    fetchAllRanged<{
+      po_id: string;
+      item_id: string;
+      qty: number;
+      unit_cost: number | null;
+      received_qty: number;
+      item: { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null } | { code: string; name: string; uom: { abbreviation: string } | { abbreviation: string }[] | null }[] | null;
+    }>((from, to, wc) =>
+      supabase
+        .from("purchase_order_lines")
+        .select(
+          "po_id, item_id, qty, unit_cost, received_qty, item:items(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))",
+          wc ? { count: "exact" } : {},
+        )
+        .range(from, to),
+    ),
+  ]);
   const poById = new Map(pos.map((p) => [p.id, p]));
 
   // Orders (one row per PO, with aggregates) — same shape as getPurchaseOrders.
@@ -471,7 +478,17 @@ async function logPoChange(
 }
 
 export async function getPoChangeLog(poId: string): Promise<PoChangeLog[]> {
-  const supabase = await createClient();
+  // Pure read; every logPoChange writer runs inside a mutation that then calls
+  // revalidateTag("purchase-orders"), so the tag keeps this fresh — same
+  // pattern as getPoReceipts.
+  return unstable_cache(_getPoChangeLogUncached, ["po-change-log", poId], {
+    revalidate: 120,
+    tags: ["purchase-orders"],
+  })(poId);
+}
+
+async function _getPoChangeLogUncached(poId: string): Promise<PoChangeLog[]> {
+  const supabase = createCacheClient();
   const { data, error } = await supabase
     .from("po_change_log")
     .select("*")
@@ -896,12 +913,21 @@ export async function getPoReceipts(poId: string): Promise<PoReceipt[]> {
 
 async function _getPoReceiptsUncached(poId: string): Promise<PoReceipt[]> {
   const supabase = createCacheClient();
-  const { data: receipts, error } = await supabase
-    .from("purchase_order_receipts")
-    .select("*")
-    .eq("po_id", poId)
-    .order("receipt_date", { ascending: false })
-    .order("created_at", { ascending: false });
+  // Receipts, this PO's lines, and the small units master don't depend on each
+  // other — fetch concurrently. The PO-lines read is a superset of the old
+  // per-receipt-line .in() lookup (receipt lines only reference lines of their
+  // own PO), so the keyed maps below resolve identically.
+  const [receiptsRes, plsRes, unitsRes] = await Promise.all([
+    supabase
+      .from("purchase_order_receipts")
+      .select("*")
+      .eq("po_id", poId)
+      .order("receipt_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    supabase.from("purchase_order_lines").select("id, purchase_uom_id").eq("po_id", poId),
+    supabase.from("units_of_measurement").select("id, abbreviation"),
+  ]);
+  const { data: receipts, error } = receiptsRes;
   if (error) throw error;
   if (!receipts || receipts.length === 0) return [];
 
@@ -914,33 +940,11 @@ async function _getPoReceiptsUncached(poId: string): Promise<PoReceipt[]> {
   if (lErr) throw lErr;
 
   // Resolve the purchase-unit label for dual-UOM receipt lines, via their PO line.
-  const poLineIds = [
-    ...new Set(
-      (rawLines ?? []).map((l) => l.po_line_id as string | null).filter((x): x is string => !!x),
-    ),
-  ];
+  const abbr = new Map<string, string>();
+  for (const u of unitsRes.data ?? []) abbr.set(u.id as string, (u.abbreviation as string) ?? "");
   const puomByPoLine = new Map<string, string>();
-  if (poLineIds.length > 0) {
-    const { data: pls } = await supabase
-      .from("purchase_order_lines")
-      .select("id, purchase_uom_id")
-      .in("id", poLineIds);
-    const puomIds = [
-      ...new Set(
-        (pls ?? []).map((p) => p.purchase_uom_id as string | null).filter((x): x is string => !!x),
-      ),
-    ];
-    const abbr = new Map<string, string>();
-    if (puomIds.length > 0) {
-      const { data: us } = await supabase
-        .from("units_of_measurement")
-        .select("id, abbreviation")
-        .in("id", puomIds);
-      for (const u of us ?? []) abbr.set(u.id as string, (u.abbreviation as string) ?? "");
-    }
-    for (const p of pls ?? [])
-      if (p.purchase_uom_id) puomByPoLine.set(p.id as string, abbr.get(p.purchase_uom_id as string) ?? "");
-  }
+  for (const p of plsRes.data ?? [])
+    if (p.purchase_uom_id) puomByPoLine.set(p.id as string, abbr.get(p.purchase_uom_id as string) ?? "");
 
   const byReceipt = new Map<string, PoReceiptLineDetail[]>();
   for (const l of rawLines ?? []) {

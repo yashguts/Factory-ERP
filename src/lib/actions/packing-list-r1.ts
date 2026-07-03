@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { getAllCategories, expandCategoryDescendants } from "@/lib/actions/categories";
+import type { CategoryNode } from "@/lib/actions/categories";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { CABIN_TYPES } from "@/lib/cabin/cabin-types";
 import type { PackingLineKind } from "@/lib/supabase/types";
@@ -141,19 +142,22 @@ export async function getR1Lists(): Promise<R1ListSummary[]> {
 // ============================================================================
 export async function getTemplate(): Promise<R1TemplatePart[]> {
   const supabase = createCacheClient();
-  const { data: parts, error: pe } = await supabase
-    .from("packing_template_parts")
-    .select("id, title, sort_order")
-    .order("sort_order");
-  if (pe) throw pe;
-  const { data: lines, error: le } = await supabase
-    .from("packing_template_lines")
-    .select(
-      `id, part_id, kind, category_id, item_id, label, spec_hint, sort_order,
+  // independent reads (lines join to parts in memory) — fetch concurrently
+  const [{ data: parts, error: pe }, { data: lines, error: le }] = await Promise.all([
+    supabase
+      .from("packing_template_parts")
+      .select("id, title, sort_order")
+      .order("sort_order"),
+    supabase
+      .from("packing_template_lines")
+      .select(
+        `id, part_id, kind, category_id, item_id, label, spec_hint, sort_order,
        category:item_categories!packing_template_lines_category_id_fkey(name),
        item:items!packing_template_lines_item_id_fkey(code, name)`,
-    )
-    .order("sort_order");
+      )
+      .order("sort_order"),
+  ]);
+  if (pe) throw pe;
   if (le) throw le;
 
   const byPart = new Map<string, R1TemplateLine[]>();
@@ -290,6 +294,11 @@ async function buildJobBom(jobId: string): Promise<{
   byItem: Map<string, number>;
 }> {
   const supabase = createCacheClient();
+  // category parent map is independent of the whole BOM chain — start it now.
+  // The early returns below skip awaiting it, so swallow a stray rejection here;
+  // the main-path await still surfaces real errors.
+  const catsPromise = getAllCategories();
+  catsPromise.catch(() => {});
   // job → its BOM header(s) → lines (item_id + required_quantity)
   const { data: headers } = await supabase
     .from("job_bom_headers")
@@ -312,19 +321,20 @@ async function buildJobBom(jobId: string): Promise<{
   for (const l of lines)
     byItem.set(l.item_id, (byItem.get(l.item_id) ?? 0) + Number(l.required_quantity || 0));
 
-  // each BOM item's direct category
+  // each BOM item's direct category — independent 300-id chunks, fetch concurrently
   const itemIds = [...byItem.keys()];
   const itemCat = new Map<string, string | null>();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data } = await supabase
-      .from("items")
-      .select("id, category_id")
-      .in("id", itemIds.slice(i, i + 300));
+  const chunks: string[][] = [];
+  for (let i = 0; i < itemIds.length; i += 300) chunks.push(itemIds.slice(i, i + 300));
+  const chunkResults = await Promise.all(
+    chunks.map((ids) => supabase.from("items").select("id, category_id").in("id", ids)),
+  );
+  for (const { data } of chunkResults) {
     for (const it of data ?? []) itemCat.set(it.id as string, (it.category_id as string | null) ?? null);
   }
 
   // category parent map (to walk a BOM item's category up to all ancestors)
-  const cats = await getAllCategories();
+  const cats = await catsPromise;
   const parentOf = new Map<string, string | null>(cats.map((c) => [c.id, c.parent_id]));
 
   // aggregate qty per (category-or-ancestor, item)
@@ -359,11 +369,22 @@ async function buildJobBom(jobId: string): Promise<{
 export async function getR1List(jobId: string): Promise<R1ListView> {
   const supabase = await createClient();
 
-  const { data: existing } = await supabase
-    .from("packing_r1_lists")
-    .select("id, status")
-    .eq("job_id", jobId)
-    .maybeSingle();
+  // independent reads — the job header + category tree (both consumed by the
+  // final readR1List) never depend on the list row, so fetch them alongside
+  // the existence check instead of serially after it.
+  const [{ data: existing }, { data: job }, cats] = await Promise.all([
+    supabase
+      .from("packing_r1_lists")
+      .select("id, status")
+      .eq("job_id", jobId)
+      .maybeSingle(),
+    createCacheClient()
+      .from("jobs")
+      .select("job_number, customer_name, mobile_number, location")
+      .eq("id", jobId)
+      .maybeSingle(),
+    getAllCategories(),
+  ]);
 
   let listId = existing?.id as string | undefined;
   let status = (existing?.status as "draft" | "final") ?? "draft";
@@ -377,9 +398,12 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
     if (error) throw error;
     listId = created.id as string;
     status = "draft";
-    // seed from template + BOM auto-fill
-    const template = await getTemplate();
-    const { byCat, byItem } = await buildJobBom(jobId);
+    // seed from template + BOM auto-fill — template tables and the job's BOM
+    // are independent, fetch concurrently
+    const [template, { byCat, byItem }] = await Promise.all([
+      getTemplate(),
+      buildJobBom(jobId),
+    ]);
 
     // Per category: how many template lines reference it, and across how many parts.
     //  - distinct (1 line)           → expand: one row per matching BOM item.
@@ -471,21 +495,23 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
     }
   }
 
-  return readR1List(jobId, listId!, status);
+  return readR1List(jobId, listId!, status, job, cats);
 }
 
 async function readR1List(
   jobId: string,
   listId: string,
   status: "draft" | "final",
+  // prefetched by getR1List (concurrently with the list-existence check)
+  job: {
+    job_number: string | null;
+    customer_name: string | null;
+    mobile_number: string | null;
+    location: string | null;
+  } | null,
+  cats: CategoryNode[],
 ): Promise<R1ListView> {
   const supabase = createCacheClient();
-  const { data: job } = await supabase
-    .from("jobs")
-    .select("job_number, customer_name, mobile_number, location")
-    .eq("id", jobId)
-    .maybeSingle();
-  const cats = await getAllCategories();
   const catById = new Map(cats.map((c) => [c.id, c]));
   const groupOf = (kind: PackingLineKind, catId: string | null, catName: string | null): string => {
     if (kind === "hardware") return "Hardware";
@@ -777,6 +803,12 @@ export async function getCategoryItemCounts(): Promise<Record<string, number>> {
 // ============================================================================
 export async function getR1Demand(jobId: string): Promise<R1Demand> {
   const supabase = createCacheClient();
+  // PO on-order takes no inputs — start it now so it overlaps the whole
+  // list → lines → meta/stock chain. The early returns below skip awaiting
+  // it, so swallow a stray rejection here; the main-path await still
+  // surfaces real errors.
+  const onOrderPromise = _getOutstandingByItemUncached();
+  onOrderPromise.catch(() => {});
   const { data: list } = await supabase
     .from("packing_r1_lists")
     .select("id")
@@ -800,20 +832,36 @@ export async function getR1Demand(jobId: string): Promise<R1Demand> {
   if (itemIds.length === 0)
     return { make: [], trade: [], unclassified: [], totals: { items: 0, shortfallItems: 0, toBuyItems: 0 } };
 
+  // item meta + stock — mutually independent 300-id chunk sets (each id sits in
+  // exactly one chunk, so accumulation order doesn't matter); fetch all concurrently
+  const chunks: string[][] = [];
+  for (let i = 0; i < itemIds.length; i += 300) chunks.push(itemIds.slice(i, i + 300));
+  const [metaResults, stockResults] = await Promise.all([
+    Promise.all(
+      chunks.map((ids) =>
+        supabase
+          .from("items")
+          .select(
+            `id, code, name, procurement_type,
+         category:item_categories!items_category_id_fkey(procurement_type),
+         uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
+          )
+          .in("id", ids),
+      ),
+    ),
+    Promise.all(
+      chunks.map((ids) =>
+        supabase.from("inventory").select("item_id, quantity").in("item_id", ids),
+      ),
+    ),
+  ]);
+
   // item meta (code/name/uom + effective procurement_type)
   const meta = new Map<
     string,
     { code: string; name: string; uom: string | null; pt: "make" | "trade" | null }
   >();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data } = await supabase
-      .from("items")
-      .select(
-        `id, code, name, procurement_type,
-         category:item_categories!items_category_id_fkey(procurement_type),
-         uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
-      )
-      .in("id", itemIds.slice(i, i + 300));
+  for (const { data } of metaResults) {
     for (const it of data ?? []) {
       const cat = relOne<{ procurement_type: "make" | "trade" | null }>(it.category);
       const uom = relOne<{ abbreviation: string }>(it.uom);
@@ -830,17 +878,13 @@ export async function getR1Demand(jobId: string): Promise<R1Demand> {
 
   // stock = Σ inventory.quantity per item (includes cabin)
   const stock = new Map<string, number>();
-  for (let i = 0; i < itemIds.length; i += 300) {
-    const { data } = await supabase
-      .from("inventory")
-      .select("item_id, quantity")
-      .in("item_id", itemIds.slice(i, i + 300));
+  for (const { data } of stockResults) {
     for (const r of data ?? [])
       stock.set(r.item_id as string, (stock.get(r.item_id as string) ?? 0) + (Number(r.quantity) || 0));
   }
 
   // on-order (reuse PO outstanding)
-  const onOrder = await _getOutstandingByItemUncached();
+  const onOrder = await onOrderPromise;
 
   const rows: R1DemandRow[] = itemIds.map((id) => {
     const m = meta.get(id);
@@ -908,24 +952,31 @@ export async function getCabinPanelsForJob(jobId: string): Promise<R1CabinPanels
   const jobNumber = ((job?.job_number as string) ?? "").trim();
   if (!jobNumber) return empty;
 
-  // cabin job by number (case-insensitive)
+  // cabin job by number (case-insensitive) with its lines embedded — one
+  // round-trip instead of two; a zero-line cabin job still returns its row,
+  // so hasCabinJob stays correct.
   const { data: cabs } = await supabase
     .from("cabin_jobs")
-    .select("id, job_number")
+    .select(
+      `id, job_number,
+       lines:cabin_job_lines(cabin_type, qty, sort_order,
+         item:items!cabin_job_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation)))`,
+    )
     .ilike("job_number", jobNumber);
   const cab = (cabs ?? []).find(
     (c) => ((c.job_number as string) ?? "").trim().toLowerCase() === jobNumber.toLowerCase(),
   );
   if (!cab) return empty;
 
-  const { data: lines } = await supabase
-    .from("cabin_job_lines")
-    .select(
-      `cabin_type, qty, sort_order,
-       item:items!cabin_job_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
-    )
-    .eq("cabin_job_id", cab.id as string)
-    .order("sort_order");
+  // embedded rows come unordered — sort like the previous .order("sort_order")
+  const lines = [
+    ...((cab.lines ?? []) as {
+      cabin_type: unknown;
+      qty: unknown;
+      sort_order: unknown;
+      item: unknown;
+    }[]),
+  ].sort((a, b) => (Number(a.sort_order) || 0) - (Number(b.sort_order) || 0));
 
   const byType = new Map<string, R1CabinPanelLine[]>();
   for (const l of lines ?? []) {
@@ -964,52 +1015,68 @@ export interface R1UnmappedItem {
 export async function getUnmappedBomItems(jobId: string): Promise<R1UnmappedItem[]> {
   const supabase = createCacheClient();
 
-  const { data: headers } = await supabase
-    .from("job_bom_headers")
-    .select("id")
-    .eq("job_id", jobId);
-  const headerIds = (headers ?? []).map((h) => h.id as string);
-  if (headerIds.length === 0) return [];
+  // Two internally-dependent chains (job BOM headers → lines; R1 list → lines)
+  // that are independent of EACH OTHER — run them concurrently.
+  const [bomQty, onList] = await Promise.all([
+    (async () => {
+      const bomQty = new Map<string, number>();
+      const { data: headers } = await supabase
+        .from("job_bom_headers")
+        .select("id")
+        .eq("job_id", jobId);
+      const headerIds = (headers ?? []).map((h) => h.id as string);
+      if (headerIds.length === 0) return bomQty;
 
-  const { data: bomLines } = await supabase
-    .from("job_bom_lines")
-    .select("item_id, required_quantity")
-    .in("job_bom_id", headerIds)
-    .not("item_id", "is", null);
-  const bomQty = new Map<string, number>();
-  for (const l of bomLines ?? [])
-    bomQty.set(l.item_id as string, (bomQty.get(l.item_id as string) ?? 0) + (Number(l.required_quantity) || 0));
+      const { data: bomLines } = await supabase
+        .from("job_bom_lines")
+        .select("item_id, required_quantity")
+        .in("job_bom_id", headerIds)
+        .not("item_id", "is", null);
+      for (const l of bomLines ?? [])
+        bomQty.set(l.item_id as string, (bomQty.get(l.item_id as string) ?? 0) + (Number(l.required_quantity) || 0));
+      return bomQty;
+    })(),
+    (async () => {
+      // item_ids already present on the job's R1 list
+      const onList = new Set<string>();
+      const { data: list } = await supabase
+        .from("packing_r1_lists")
+        .select("id")
+        .eq("job_id", jobId)
+        .maybeSingle();
+      if (list) {
+        const { data: r1 } = await supabase
+          .from("packing_r1_lines")
+          .select("item_id")
+          .eq("list_id", list.id as string)
+          .not("item_id", "is", null);
+        for (const r of r1 ?? []) onList.add(r.item_id as string);
+      }
+      return onList;
+    })(),
+  ]);
   if (bomQty.size === 0) return [];
-
-  // item_ids already present on the job's R1 list
-  const onList = new Set<string>();
-  const { data: list } = await supabase
-    .from("packing_r1_lists")
-    .select("id")
-    .eq("job_id", jobId)
-    .maybeSingle();
-  if (list) {
-    const { data: r1 } = await supabase
-      .from("packing_r1_lines")
-      .select("item_id")
-      .eq("list_id", list.id as string)
-      .not("item_id", "is", null);
-    for (const r of r1 ?? []) onList.add(r.item_id as string);
-  }
 
   const unmappedIds = [...bomQty.keys()].filter((id) => !onList.has(id));
   if (unmappedIds.length === 0) return [];
 
-  const out: R1UnmappedItem[] = [];
-  for (let i = 0; i < unmappedIds.length; i += 300) {
-    const { data } = await supabase
-      .from("items")
-      .select(
-        `id, code, name,
+  // item meta — independent 300-id chunks, fetch concurrently
+  const chunks: string[][] = [];
+  for (let i = 0; i < unmappedIds.length; i += 300) chunks.push(unmappedIds.slice(i, i + 300));
+  const chunkResults = await Promise.all(
+    chunks.map((ids) =>
+      supabase
+        .from("items")
+        .select(
+          `id, code, name,
          category:item_categories!items_category_id_fkey(name),
          uom:units_of_measurement!items_uom_id_fkey(abbreviation)`,
-      )
-      .in("id", unmappedIds.slice(i, i + 300));
+        )
+        .in("id", ids),
+    ),
+  );
+  const out: R1UnmappedItem[] = [];
+  for (const { data } of chunkResults) {
     for (const it of data ?? []) {
       const cat = relOne<{ name: string }>(it.category);
       const uom = relOne<{ abbreviation: string }>(it.uom);
