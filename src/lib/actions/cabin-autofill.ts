@@ -427,13 +427,29 @@ export async function autofillCabinFromSketch(
     const cats = await loadCats();
     const rows: AutofillRow[] = [];
     const unresolved: AutofillUnresolved[] = [];
+    // The same panel drawn several times resolves to the SAME item_id (the finish
+    // is baked into the id), so merge repeats into ONE row with the quantity
+    // summed instead of emitting a duplicate row per occurrence. Keyed by
+    // section + item, so a shared item across two blocks (e.g. Front Wall LHS
+    // P1L vs RHS P1R — different items anyway) can never collapse together.
+    const rowByKey = new Map<string, AutofillRow>();
 
     for (const it of extracted.items ?? []) {
       if (!it?.block || !it?.label) continue;
       const qty = Number.isFinite(it.qty) && it.qty > 0 ? Math.round(it.qty) : 1;
       const res = await resolveOne(cats, it.block, it.label, it.finish ?? null, extracted.height ?? null);
-      if ("row" in res) rows.push({ ...res.row, qty });
-      else unresolved.push({ ...res.unresolved, qty });
+      if ("row" in res) {
+        const row: AutofillRow = { ...res.row, qty };
+        const key = `${row.cabin_type} ${row.item_id}`;
+        const existing = rowByKey.get(key);
+        if (existing) existing.qty += qty; // same object is already in `rows` — order preserved
+        else {
+          rowByKey.set(key, row);
+          rows.push(row);
+        }
+      } else {
+        unresolved.push({ ...res.unresolved, qty });
+      }
     }
 
     const jobOrder = await findJobOrder(extracted.job_number);
