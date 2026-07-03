@@ -349,6 +349,7 @@ export function R1BuilderClient({
   counts,
   cabinPanels,
   unmapped,
+  context = "r1",
 }: {
   list: R1ListView;
   categories: CategoryNode[];
@@ -356,6 +357,9 @@ export function R1BuilderClient({
   counts: Record<string, number>;
   cabinPanels: R1CabinPanels;
   unmapped: R1UnmappedItem[];
+  /** "jobs" = rendered natively inside Job Orders (/jobs/[id]/items) — the
+   *  back-link stays in the job's context. "r1" = the standalone section. */
+  context?: "r1" | "jobs";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -765,19 +769,29 @@ export function R1BuilderClient({
       {/* Navy header + toolbar */}
       <header className="rounded-lg px-3.5 py-2 mb-2 flex items-center justify-between" style={{ background: C.navy, color: "#fff" }}>
         <div>
-          <div className="flex items-center gap-2">
-            <button onClick={() => router.push("/packing-list-r1")} className="text-[11px] opacity-80 hover:opacity-100">
-              ← Packing Lists
-            </button>
-            <span className="text-[11px] opacity-40">|</span>
+          {context === "jobs" ? (
             <button
               onClick={() => router.push(`/jobs/${list.jobId}`)}
               className="text-[11px] opacity-80 hover:opacity-100"
-              title="Status, dispatch, drawing and alerts for this job"
+              title="Back to the job — status, dispatch, drawing, alerts"
             >
-              Job page →
+              ← Job {list.jobNumber ?? ""}
             </button>
-          </div>
+          ) : (
+            <div className="flex items-center gap-2">
+              <button onClick={() => router.push("/packing-list-r1")} className="text-[11px] opacity-80 hover:opacity-100">
+                ← Packing Lists
+              </button>
+              <span className="text-[11px] opacity-40">|</span>
+              <button
+                onClick={() => router.push(`/jobs/${list.jobId}`)}
+                className="text-[11px] opacity-80 hover:opacity-100"
+                title="Status, dispatch, drawing and alerts for this job"
+              >
+                Job page →
+              </button>
+            </div>
+          )}
           <h1 className="text-[13px] font-semibold leading-tight">
             Packing List R1 · <span className="font-mono">{list.jobNumber ?? ""}</span>
           </h1>

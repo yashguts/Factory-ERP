@@ -719,9 +719,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         captureOutcome(jobId); // learning signal — never blocks the save
         // Invalidate client-side Router Cache so detail page shows fresh data
         router.refresh();
-        // New jobs land in the Packing List R1 builder (the job's item list
-        // going forward) — it seeds itself from whatever BOM was just saved.
-        router.push(mode === "create" ? `/packing-list-r1/${jobId}` : `/jobs/${jobId}`);
+        // New jobs land in the job's item list (Packing List R1, native inside
+        // Job Orders) — it seeds itself from whatever BOM was just saved.
+        router.push(mode === "create" ? `/jobs/${jobId}/items` : `/jobs/${jobId}`);
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
       }

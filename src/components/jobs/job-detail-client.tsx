@@ -461,7 +461,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => router.push(`/packing-list-r1/${job.id}`)}
+              onClick={() => router.push(`/jobs/${job.id}/items`)}
               title="The Packing List R1 is this job's item list — edits there update MRP, dispatch and this page"
             >
               <Pencil className="h-4 w-4 mr-1" />
@@ -840,7 +840,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => router.push(`/packing-list-r1/${job.id}`)}
+                    onClick={() => router.push(`/jobs/${job.id}/items`)}
                   >
                     <Pencil className="h-4 w-4 mr-1" />
                     Fill Packing List R1
