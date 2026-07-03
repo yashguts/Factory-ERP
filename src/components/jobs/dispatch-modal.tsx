@@ -35,6 +35,8 @@ interface Row {
   item_name: string | null;
   uom: string | null;
   category: string | null;
+  /** Dispatch phase of the line (null for ad-hoc extras). */
+  phase: "first" | "second" | null;
   required: number | null; // null = ad-hoc (not in BOM)
   dispatched: number;
   remaining: number | null;
@@ -42,9 +44,19 @@ interface Row {
   // When sending less than what's left, the user ticks this to say "the rest
   // isn't needed" — revising the BOM requirement down instead of a partial.
   closeLine: boolean;
+  /** User pulled a greyed-out row (other phase / nothing left) into this
+   *  dispatch anyway — "+ Include". */
+  forced: boolean;
   // Extra (ad-hoc) items only: total needed for the job. When set, the unsent
   // balance (needed − qty) is tracked as due (the item is added to the BOM).
   needed?: number | null;
+}
+
+/** Is this row live for the selected scope — right phase AND something left? */
+function isActiveRow(r: Row, sc: PhaseScope): boolean {
+  if (r.job_bom_line_id == null) return true; // extras are always live
+  const inScope = sc === "full" || r.phase === sc;
+  return inScope && (r.remaining ?? 0) > 0;
 }
 
 const todayISO = () => new Date().toISOString().slice(0, 10);
@@ -84,25 +96,30 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
-  const buildRows = useCallback(
-    (s: JobDispatchSummary, sc: PhaseScope): Row[] =>
-      s.lines
-        .filter((l) => (sc === "full" ? true : l.phase === sc))
-        .map((l) => ({
-          _key: makeKey(),
-          job_bom_line_id: l.job_bom_line_id,
-          item_id: l.item_id,
-          item_code: l.item_code,
-          item_name: l.item_name,
-          uom: l.uom,
-          category: l.category,
-          required: l.required,
-          dispatched: l.dispatched,
-          remaining: l.remaining,
-          qty: l.remaining, // default: dispatch what's left
-          closeLine: false,
-        })),
-    [],
+  // Every packing-list line is ALWAYS in the list (the modal renders the exact
+  // R1 format); the scope only decides which rows are live. Out-of-phase or
+  // fully-sent rows render greyed with "+ Include" to pull them in anyway.
+  const buildRows = useCallback((s: JobDispatchSummary, sc: PhaseScope): Row[] =>
+    s.lines.map((l) => {
+      const inScope = sc === "full" || l.phase === sc;
+      const live = inScope && l.remaining > 0;
+      return {
+        _key: makeKey(),
+        job_bom_line_id: l.job_bom_line_id,
+        item_id: l.item_id,
+        item_code: l.item_code,
+        item_name: l.item_name,
+        uom: l.uom,
+        category: l.category,
+        phase: l.phase,
+        required: l.required,
+        dispatched: l.dispatched,
+        remaining: l.remaining,
+        qty: live ? l.remaining : 0, // default: dispatch what's left
+        closeLine: false,
+        forced: false,
+      };
+    }), [],
   );
 
   useEffect(() => {
@@ -136,7 +153,14 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
 
   const changeScope = (sc: PhaseScope) => {
     setScope(sc);
-    if (summary) setRows(buildRows(summary, sc));
+    // Reset BOM rows to the new scope's defaults (extras are kept as-is).
+    setRows((rs) =>
+      rs.map((r) => {
+        if (r.job_bom_line_id == null) return r;
+        const live = (sc === "full" || r.phase === sc) && (r.remaining ?? 0) > 0;
+        return { ...r, qty: live ? (r.remaining ?? 0) : 0, closeLine: false, forced: false };
+      }),
+    );
   };
 
   const updateRow = (key: string, patch: Partial<Row>) =>
@@ -167,11 +191,13 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
           item_name: it.name,
           uom: it.uom_abbreviation,
           category: null,
+          phase: null,
           required: null,
           dispatched: 0,
           remaining: null,
           qty: 1,
           closeLine: false,
+          forced: false,
         },
       ];
     });
@@ -297,75 +323,119 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
           </div>
         ) : (
           <>
-            <div className="border border-[var(--border)] rounded-md overflow-hidden">
-              {/* header */}
-              <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 bg-[var(--muted)]/50 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                <span>
-                  Item
-                  {fromR1 && (
-                    <span className="ml-1.5 normal-case font-normal tracking-normal text-[var(--primary)]">
-                      · from Packing List R1
-                    </span>
-                  )}
-                </span>
-                <span className="w-52 text-right">Remaining</span>
-                <span className="w-28 text-right">Dispatch now</span>
-              </div>
-              <div className="max-h-[45vh] overflow-y-auto">
-                {bomRows.length === 0 ? (
-                  <div className="px-3 py-8 text-center text-sm text-[var(--muted-foreground)]">
-                    No {scope === "full" ? "" : SCOPE_LABEL[scope].toLowerCase().replace(" only", "")} items on this job&rsquo;s {fromR1 ? "Packing List R1" : "BOM"}. Use the search below to add items.
-                  </div>
-                ) : (
-                  // Rows grouped under their section — the R1 PART names (or old
-                  // BOM sections for jobs without an R1 list), mirroring how the
-                  // packing list itself is organised.
-                  (() => {
-                    const groups = new Map<string, Row[]>();
-                    for (const r of bomRows) {
-                      const k = r.category?.trim() || "Other items";
-                      const arr = groups.get(k) ?? [];
-                      arr.push(r);
-                      groups.set(k, arr);
-                    }
-                    return [...groups.entries()].map(([cat, rs]) => (
-                      <div key={cat}>
-                        <div className="px-3 py-1 bg-[var(--muted)]/30 border-y border-[var(--border)] text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
-                          {cat}
-                          <span className="ml-1.5 font-normal normal-case">· {rs.length} item{rs.length === 1 ? "" : "s"}</span>
-                        </div>
+            {/* The packing list itself, in the exact R1 builder format — PART
+                header bars, compact rows. Rows outside the selected phase or
+                with nothing left to send render greyed, each with "+ Include"
+                to pull it into this dispatch anyway. */}
+            <div className="max-h-[50vh] overflow-y-auto space-y-2 pr-0.5">
+              {bomRows.length === 0 ? (
+                <div className="rounded-md border border-[var(--border)] px-3 py-8 text-center text-sm text-[var(--muted-foreground)]">
+                  Nothing on this job&rsquo;s packing list yet. Use the search below to add items.
+                </div>
+              ) : (
+                (() => {
+                  const groups = new Map<string, Row[]>();
+                  for (const r of bomRows) {
+                    const k = r.category?.trim() || "Other items";
+                    const arr = groups.get(k) ?? [];
+                    arr.push(r);
+                    groups.set(k, arr);
+                  }
+                  return [...groups.entries()].map(([cat, rs], gi) => {
+                    const sending = rs.filter((r) => r.qty > 0).length;
+                    return (
+                      <section
+                        key={cat}
+                        className="rounded-lg border overflow-hidden bg-white"
+                        style={{ borderColor: "#e5e7eb" }}
+                      >
+                        <h3
+                          className="flex items-center gap-2 px-3 py-1.5 text-[12px] font-semibold border-b"
+                          style={{ background: "#eef2f6", borderColor: "#e5e7eb" }}
+                        >
+                          <span
+                            className="rounded px-1 py-px text-[9px] tracking-wider text-white"
+                            style={{ background: "#223344" }}
+                          >
+                            PART {gi + 1}
+                          </span>
+                          <span className="uppercase">{cat}</span>
+                          <span className="ml-auto text-[10px] font-normal text-[#6b7280]">
+                            {sending}/{rs.length} to send
+                          </span>
+                        </h3>
                         <div className="divide-y divide-[var(--border)]">
-                          {rs.map((row) => (
-                            <DispatchRow
-                              key={row._key}
-                              row={row}
-                              onPick={(it) =>
-                                updateRow(row._key, {
-                                  item_id: it.id,
-                                  item_code: it.code,
-                                  item_name: it.name,
-                                  uom: it.uom_abbreviation,
-                                })
-                              }
-                              onClear={() =>
-                                updateRow(row._key, {
-                                  item_id: null,
-                                  item_code: null,
-                                  item_name: null,
-                                  uom: null,
-                                })
-                              }
-                              onQty={(q) => updateRow(row._key, { qty: q })}
-                              onClose={(v) => updateRow(row._key, { closeLine: v })}
-                              onRemove={() => removeRow(row._key)}
-                            />
-                          ))}
+                          {rs.map((row) => {
+                            const live = isActiveRow(row, scope) || row.forced;
+                            if (!live) {
+                              const allSent = (row.remaining ?? 0) <= 0;
+                              const reason = allSent
+                                ? `all sent · ${row.dispatched.toLocaleString()}/${(row.required ?? 0).toLocaleString()}`
+                                : row.phase === "first"
+                                  ? "1st phase item"
+                                  : "2nd phase item";
+                              return (
+                                <div key={row._key} className="flex items-center gap-2 px-3 py-1.5">
+                                  <div className="min-w-0 flex-1 opacity-55">
+                                    <span className="text-sm truncate">{row.item_name ?? "(item)"}</span>
+                                    {row.item_code && (
+                                      <span className="ml-2 font-mono text-[11px] text-[var(--muted-foreground)]">
+                                        {row.item_code}
+                                      </span>
+                                    )}
+                                  </div>
+                                  <span
+                                    className={`shrink-0 text-[11px] ${
+                                      allSent ? "text-[var(--success)]" : "text-[var(--muted-foreground)] opacity-70"
+                                    }`}
+                                  >
+                                    {reason}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      updateRow(row._key, { forced: true, qty: Math.max(0, row.remaining ?? 0) })
+                                    }
+                                    title="Include this item in this dispatch anyway"
+                                    className="shrink-0 inline-flex items-center gap-0.5 rounded border border-dashed border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                                  >
+                                    <Plus className="h-3 w-3" /> Include
+                                  </button>
+                                </div>
+                              );
+                            }
+                            return (
+                              <DispatchRow
+                                key={row._key}
+                                row={row}
+                                onPick={(it) =>
+                                  updateRow(row._key, {
+                                    item_id: it.id,
+                                    item_code: it.code,
+                                    item_name: it.name,
+                                    uom: it.uom_abbreviation,
+                                  })
+                                }
+                                onClear={() =>
+                                  updateRow(row._key, {
+                                    item_id: null,
+                                    item_code: null,
+                                    item_name: null,
+                                    uom: null,
+                                  })
+                                }
+                                onQty={(q) => updateRow(row._key, { qty: q })}
+                                onClose={(v) => updateRow(row._key, { closeLine: v })}
+                                onRemove={() => updateRow(row._key, { qty: 0, closeLine: false, forced: false })}
+                              />
+                            );
+                          })}
                         </div>
-                      </div>
-                    ));
-                  })()
-                )}
-              </div>
+                      </section>
+                    );
+                  });
+                })()
+              )}
             </div>
 
             {/* Extra items added at dispatch time (not on the BOM). Kept OUTSIDE
