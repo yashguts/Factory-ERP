@@ -447,6 +447,7 @@ export function CabinJobForm({
             jobNumber={jobNumber || job?.job_number || "—"}
             customerName={customerName}
             lines={sketchLines}
+            note={job?.note}
           />
         </div>
       )}
