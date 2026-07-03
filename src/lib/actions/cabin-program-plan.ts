@@ -16,15 +16,16 @@ import { selectRuns, type OpOuts } from "@/lib/actions/make-plan-core";
 import { sheetThicknessMm, CABIN_PROGRAM_FINISHES } from "@/lib/cabin/cabin-program-meta";
 import type { WeekMeta } from "@/lib/actions/mrp-weekly";
 
-/** Cabin jobs flagged "ready" are already built — excluded from all cabin
- *  requirement / cutting-demand readers below. Returns the ids to filter out. */
+/** Cabin jobs excluded from all cabin requirement / cutting-demand readers:
+ *  flagged "ready" (already built) OR unreviewed AI drafts (reviewed_at NULL —
+ *  a draft must never drive cutting demand). Returns the ids to filter out. */
 async function readyCabinJobIds(
   supabase: ReturnType<typeof createCacheClient>,
 ): Promise<string[]> {
   const { data } = await supabase
     .from("cabin_jobs")
     .select("id")
-    .not("marked_ready_at", "is", null);
+    .or("marked_ready_at.not.is.null,reviewed_at.is.null");
   return (data ?? []).map((r: any) => r.id as string);
 }
 
@@ -529,13 +530,32 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
   const weeks = buildCabinWeeks(curWeek);
   const N = weeks.length;
 
-  // cabin job -> linked elevator job's requirement_dispatch_date.
-  const { data: cjobs } = await supabase.from("cabin_jobs").select("id, job_number");
-  const cabinJobNumbers = (cjobs ?? []).map((c: any) => (c.job_number as string) ?? "");
-  const { data: jobs } = await supabase
-    .from("jobs")
-    .select("job_number, requirement_dispatch_date")
-    .in("job_number", cabinJobNumbers);
+  // Two concurrent chains: (A) cabin job -> linked elevator job's
+  // requirement_dispatch_date (the jobs read needs the cabin job numbers, so it
+  // chains off the cjobs read); (B) the demand lines, independent because ready
+  // jobs are filtered server-side via the inner join (empty embed = filter only).
+  const [{ cjobs, jobs }, lines] = await Promise.all([
+    (async () => {
+      const { data: cjobs } = await supabase.from("cabin_jobs").select("id, job_number");
+      const cabinJobNumbers = (cjobs ?? []).map((c: any) => (c.job_number as string) ?? "");
+      const { data: jobs } = await supabase
+        .from("jobs")
+        .select("job_number, requirement_dispatch_date")
+        .in("job_number", cabinJobNumbers);
+      return { cjobs, jobs };
+    })(),
+    fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
+      (from, to, withCount) =>
+        supabase
+          .from("cabin_job_lines")
+          .select("cabin_type, item_id, qty, cabin_job_id, cj:cabin_jobs!inner()", withCount ? { count: "exact" } : {})
+          .not("item_id", "is", null)
+          .is("cj.marked_ready_at", null)
+          // Unreviewed AI drafts must not drive the weekly cutting plan.
+          .not("cj.reviewed_at", "is", null)
+          .range(from, to),
+    ),
+  ]);
   const dateByNumber = new Map<string, string | null>();
   for (const j of jobs ?? []) dateByNumber.set(((j.job_number as string) ?? "").trim().toLowerCase(), (j.requirement_dispatch_date as string | null) ?? null);
   const dateByCabinJob = new Map<string, string | null>();
@@ -552,15 +572,6 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
     if (w >= HORIZON_WEEKS) return { pos: null, later: true, undated: false };
     return { pos: w + 1, later: false, undated: false };
   };
-
-  const readyIds = await readyCabinJobIds(supabase);
-  const lines = await fetchAllRanged<{ cabin_type: string; item_id: string | null; qty: number; cabin_job_id: string }>(
-    (from, to, withCount) => {
-      const base = supabase.from("cabin_job_lines").select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {}).not("item_id", "is", null);
-      const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
-      return q.range(from, to);
-    },
-  );
 
   const demandByItemWeek = new Map<string, { type: string; arr: number[] }>();
   const laterJobs = new Set<string>();
@@ -582,13 +593,21 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
 
   const itemIds = [...demandByItemWeek.keys()];
   const info = new Map<string, { code: string; name: string; finish: string | null; stock: number }>();
+  // independent 200-id chunks — fetch concurrently instead of one RTT each
+  const chunks: Promise<void>[] = [];
   for (let i = 0; i < itemIds.length; i += 200) {
-    const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", itemIds.slice(i, i + 200));
-    for (const it of (data ?? []) as any[]) {
-      const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
-      info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
-    }
+    const chunk = itemIds.slice(i, i + 200);
+    chunks.push(
+      (async () => {
+        const { data } = await supabase.from("items").select("id, code, name, finish, inventory(quantity)").in("id", chunk);
+        for (const it of (data ?? []) as any[]) {
+          const stock = Array.isArray(it.inventory) ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0) : 0;
+          info.set(it.id as string, { code: it.code as string, name: it.name as string, finish: (it.finish as string | null) ?? null, stock });
+        }
+      })(),
+    );
   }
+  await Promise.all(chunks);
 
   const rows: CabinWeeklyRow[] = [];
   for (const [id, d] of demandByItemWeek) {
