@@ -3,7 +3,7 @@
 import { useState, useCallback, useTransition, useMemo, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
-import { ArrowLeft, Save, Loader2, Plus, Check, Copy, Columns2, PanelRightClose, Sparkles } from "lucide-react";
+import { ArrowLeft, Save, Loader2, Plus, Check, Copy, Columns2, PanelRightClose, Sparkles, ClipboardList } from "lucide-react";
 import { BOM_SECTIONS, PHASE_ORDER } from "@/lib/bom/bom-sections";
 import type { BomSection } from "@/lib/bom/bom-sections";
 import { shouldRenderSection } from "@/lib/bom/section-gating";
@@ -713,15 +713,22 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     startTransition(async () => {
       try {
         const jobId = await ensureJob();
+        if (mode === "create") {
+          // New jobs: details + spec only — items are defined on the Packing
+          // List R1 (it seeds itself from the shared template on first open).
+          // The old BOM-section picker no longer renders in create mode.
+          captureOutcome(jobId); // learning signal — never blocks the save
+          router.refresh();
+          router.push(`/jobs/${jobId}/items`);
+          return;
+        }
         const categories = visibleSections.map((s) => s.category);
         const lines = collectBomLines(visibleSections);
         await saveBomSection(jobId, categories, lines);
-        captureOutcome(jobId); // learning signal — never blocks the save
+        captureOutcome(jobId);
         // Invalidate client-side Router Cache so detail page shows fresh data
         router.refresh();
-        // New jobs land in the job's item list (Packing List R1, native inside
-        // Job Orders) — it seeds itself from whatever BOM was just saved.
-        router.push(mode === "create" ? `/jobs/${jobId}/items` : `/jobs/${jobId}`);
+        router.push(`/jobs/${jobId}`);
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
       }
@@ -823,7 +830,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             ) : (
               <Save className="h-3.5 w-3.5 mr-1.5" />
             )}
-            Save All &amp; Finish
+            {mode === "create" ? "Create Job → Packing List" : "Save All & Finish"}
           </Button>
         </div>
       </div>
@@ -911,8 +918,24 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         />
       )}
 
-      {/* ── BOM Sections by Phase ── */}
-      {Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
+      {/* ── Next step (create mode): items live on the Packing List R1 ── */}
+      {mode === "create" && (
+        <div className="rounded-lg border px-3.5 py-3 flex items-center gap-3" style={{ background: "#223344", borderColor: "#223344", color: "#fff" }}>
+          <ClipboardList className="h-5 w-5 shrink-0 opacity-90" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold leading-tight">Next: fill the Packing List R1</div>
+            <p className="text-[10px] opacity-85 leading-tight">
+              Create the job and its packing list opens pre-seeded from the shared template —
+              that list is the job&rsquo;s item data (it drives MRP, dispatch and the balance view).
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* ── BOM Sections by Phase (edit mode only — the legacy escape hatch;
+             since the R1 cutover the Packing List R1 is the item editor and
+             overwrites these lines on its next save) ── */}
+      {mode === "edit" && Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
         const isSaving = savingPhase === phase;
         const isSaved = savedPhases[phase] === true;
         const phaseItemCount = sections.reduce(
@@ -994,17 +1017,19 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       })}
 
       {/* +Add Section — opens an inventory category picker so the user can
-          add any sub-category as an ad-hoc section. */}
-      <div className="flex justify-center">
-        <Button
-          size="sm"
-          variant="secondary"
-          onClick={() => setPickerModalOpen(true)}
-        >
-          <Plus className="h-3.5 w-3.5 mr-1.5" />
-          Add Section From Inventory
-        </Button>
-      </div>
+          add any sub-category as an ad-hoc section. (Edit mode only.) */}
+      {mode === "edit" && (
+        <div className="flex justify-center">
+          <Button
+            size="sm"
+            variant="secondary"
+            onClick={() => setPickerModalOpen(true)}
+          >
+            <Plus className="h-3.5 w-3.5 mr-1.5" />
+            Add Section From Inventory
+          </Button>
+        </div>
+      )}
 
       {pickerModalOpen && (
         <CategoryPickerModal
@@ -1042,7 +1067,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           ) : (
             <Save className="h-3.5 w-3.5 mr-1.5" />
           )}
-          Save All &amp; Finish
+          {mode === "create" ? "Create Job → Packing List" : "Save All & Finish"}
         </Button>
       </div>
 
