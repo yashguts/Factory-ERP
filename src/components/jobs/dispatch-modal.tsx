@@ -14,6 +14,7 @@ import {
   type JobDispatchSummary,
   type PhaseScope,
 } from "@/lib/actions/dispatch";
+import { getR1DispatchView } from "@/lib/actions/r1-bom-sync";
 
 interface Props {
   jobId: string;
@@ -99,9 +100,18 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
 
   useEffect(() => {
     let active = true;
-    getJobDispatchSummary(jobId)
-      .then((s) => {
+    Promise.all([getJobDispatchSummary(jobId), getR1DispatchView(jobId)])
+      .then(([s, r1]) => {
         if (!active) return;
+        // Since the R1 cutover (2026-07-03), the Packing List R1 is the job's
+        // item list — the marking flow lists ITS items. Legacy BOM leftovers
+        // (already-dispatched history, unresolved unmapped items) stay out of
+        // the picker; their history/status math elsewhere is untouched. Jobs
+        // without an R1 list keep the full legacy view.
+        if (r1.hasR1) {
+          const onR1 = new Set(r1.itemIds);
+          s = { ...s, lines: s.lines.filter((l) => l.item_id != null && onR1.has(l.item_id) && (l.required ?? 0) > 0) };
+        }
         setSummary(s);
         setRows(buildRows(s, "first"));
         setLoading(false);

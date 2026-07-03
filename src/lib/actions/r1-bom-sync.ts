@@ -239,6 +239,53 @@ export async function getR1JobPanel(jobId: string): Promise<R1JobPanel> {
   };
 }
 
+export interface R1DispatchView {
+  /** False = job has no R1 list yet → callers keep legacy behaviour. */
+  hasR1: boolean;
+  /** Items on the job's R1 list (any qty). */
+  itemIds: string[];
+  /** All-time dispatched qty per item for this job (for Sent/Left chips). */
+  dispatchedByItem: Record<string, number>;
+}
+
+/** The R1 lens on a job's dispatch state. The dispatch modal filters its rows to
+ *  the R1 items (the job's item list); the R1 builder shows sent/left per line.
+ *  Reads only — dispatch math itself stays in dispatch.ts, untouched. */
+export async function getR1DispatchView(jobId: string): Promise<R1DispatchView> {
+  const supabase = await createClient();
+  const { data: list } = await supabase
+    .from("packing_r1_lists")
+    .select("id")
+    .eq("job_id", jobId)
+    .maybeSingle();
+  if (!list) return { hasR1: false, itemIds: [], dispatchedByItem: {} };
+
+  const [{ data: r1Lines }, { data: dispatches }] = await Promise.all([
+    supabase
+      .from("packing_r1_lines")
+      .select("item_id")
+      .eq("list_id", list.id as string)
+      .not("item_id", "is", null),
+    supabase.from("job_dispatches").select("id").eq("job_id", jobId),
+  ]);
+  const itemIds = [...new Set((r1Lines ?? []).map((r) => r.item_id as string))];
+
+  const dispatchedByItem: Record<string, number> = {};
+  const dispatchIds = (dispatches ?? []).map((d) => d.id as string);
+  if (dispatchIds.length > 0) {
+    const { data: dl } = await supabase
+      .from("job_dispatch_lines")
+      .select("item_id, qty")
+      .in("dispatch_id", dispatchIds)
+      .not("item_id", "is", null);
+    for (const r of dl ?? []) {
+      const id = r.item_id as string;
+      dispatchedByItem[id] = (dispatchedByItem[id] ?? 0) + (Number(r.qty) || 0);
+    }
+  }
+  return { hasR1: true, itemIds, dispatchedByItem };
+}
+
 export type R1AuditResult = { ok: true } | { ok: false; error: string };
 
 /** Mark a job's R1 list audited (or clear it). The reviewer name comes from the

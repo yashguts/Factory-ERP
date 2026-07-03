@@ -16,7 +16,7 @@ import {
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import { dismissUnmappedItem } from "@/lib/actions/packing-list-r1-unmapped";
-import { syncR1ToBom, getR1JobPanel, setR1Audited, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
+import { syncR1ToBom, getR1JobPanel, setR1Audited, getR1DispatchView, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
 import { useOperator } from "@/lib/jobs/use-operator";
 import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
 import { exportRowsToXlsx } from "@/lib/export/xlsx";
@@ -372,11 +372,19 @@ export function R1BuilderClient({
   // Job-side header: GAD drawing pointer + audit state (this list runs the job).
   const { operator, ensureOperator } = useOperator();
   const [jobPanel, setJobPanel] = useState<R1JobPanel | null>(null);
+  // All-time dispatched qty per item — powers the per-line "sent · left" chip so
+  // the list shows dispatch progress without changing the quantities themselves.
+  const [sentByItem, setSentByItem] = useState<Record<string, number>>({});
   useEffect(() => {
     let alive = true;
     getR1JobPanel(list.jobId)
       .then((p) => {
         if (alive) setJobPanel(p);
+      })
+      .catch(() => {});
+    getR1DispatchView(list.jobId)
+      .then((v) => {
+        if (alive) setSentByItem(v.dispatchedByItem);
       })
       .catch(() => {});
     return () => {
@@ -965,6 +973,20 @@ export function R1BuilderClient({
                                 className="w-full rounded border px-2 py-1 text-xs text-right"
                                 style={{ borderColor: C.line }}
                               />
+                              {l.item_id && (sentByItem[l.item_id] ?? 0) > 0 && (
+                                <div
+                                  className={
+                                    "mt-0.5 text-right text-[9px] leading-tight whitespace-nowrap " +
+                                    (Math.max(0, (Number(l.qty) || 0) - (sentByItem[l.item_id] ?? 0)) === 0
+                                      ? "text-emerald-600"
+                                      : "text-amber-600")
+                                  }
+                                  title="Dispatched so far (from the job's dispatch records) · left = QTY − sent"
+                                >
+                                  sent {sentByItem[l.item_id]} · left{" "}
+                                  {Math.max(0, (Number(l.qty) || 0) - (sentByItem[l.item_id] ?? 0))}
+                                </div>
+                              )}
                             </td>
                             <td className="py-1 pl-1 align-top text-right whitespace-nowrap">
                               {canAdd && (
