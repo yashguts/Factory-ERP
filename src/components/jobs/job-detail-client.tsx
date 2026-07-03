@@ -11,7 +11,7 @@ import {
 import { PageHeader } from "@/components/ui/page-header";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, Package, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
 import { deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
@@ -441,15 +441,10 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               <Truck className="h-4 w-4 mr-1" />
               Dispatch
             </Button>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => router.push(`/jobs/${job.id}/packing-list`)}
-              title="Open the comprehensive packing list for this job"
-            >
-              <Package className="h-4 w-4 mr-1" />
-              Packing List
-            </Button>
+            {/* The legacy /jobs/[id]/packing-list document module (June 18,
+                1 list ever saved) was superseded by Packing List R1 — its
+                button was removed 2026-07-04 to avoid two "packing list"
+                entries. The route still exists for old links. */}
             <Button
               variant="secondary"
               size="sm"
@@ -470,7 +465,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               title="The Packing List R1 is this job's item list — edits there update MRP, dispatch and this page"
             >
               <Pencil className="h-4 w-4 mr-1" />
-              Edit Items (R1)
+              Packing List R1
               {r1Panel?.hasR1 && (
                 <Badge
                   variant={r1Panel.status === "final" ? "success" : "amber"}
