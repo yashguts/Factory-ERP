@@ -12,6 +12,8 @@ import { useToast } from "@/components/ui/toast";
 import { CabinItemPicker } from "@/components/cabin/cabin-item-picker";
 import { CabinBaseFinishPicker } from "@/components/cabin/cabin-base-finish-picker";
 import { CabinJobOrderPicker } from "@/components/cabin/cabin-job-order-picker";
+import { CabinSketchAutofill } from "@/components/cabin/cabin-sketch-autofill";
+import type { CabinAutofillData } from "@/lib/actions/cabin-autofill";
 import { CABIN_TYPES, isFinishSplitType } from "@/lib/cabin/cabin-types";
 import {
   createCabinJob,
@@ -139,6 +141,32 @@ export function CabinJobForm({
 
   const setRows = (type: string, fn: (rows: Row[]) => Row[]) =>
     setRowsByType((prev) => ({ ...prev, [type]: fn(prev[type] ?? []) }));
+
+  /** Apply an AI sketch read: set the Job Order (if matched) and replace the item
+   *  rows with the resolved panels, grouped by cabin type, for the engineer to review. */
+  const applyAutofill = (data: CabinAutofillData) => {
+    if (data.job_order) {
+      setJobNumber(data.job_order.job_number);
+      setCustomerName(data.job_order.customer_name);
+    }
+    setRowsByType(() => {
+      const map: Record<string, Row[]> = {};
+      for (const t of CABIN_TYPES) map[t] = [];
+      for (const r of data.rows) {
+        if (!map[r.cabin_type]) map[r.cabin_type] = [];
+        map[r.cabin_type].push({
+          _key: makeKey(),
+          item_id: r.item_id,
+          item_code: r.item_code,
+          item_name: r.item_name,
+          item_family: r.item_family,
+          uom: r.uom,
+          qty: r.qty || 1,
+        });
+      }
+      return map;
+    });
+  };
 
   /* --- row handlers; Support types also manage their linked Cover row --- */
   const pickItem = (
@@ -350,6 +378,9 @@ export function CabinJobForm({
           Pick the matching Job Order — cabin jobs must link to one. Not listed? Create it in Jobs first.
         </p>
       </div>
+
+      {/* AI: upload a hand sketch → resolve panels → pre-fill the rows below */}
+      {!isEditing && <CabinSketchAutofill onApply={applyAutofill} />}
 
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
         {totalItems} item{totalItems === 1 ? "" : "s"} added across{" "}
