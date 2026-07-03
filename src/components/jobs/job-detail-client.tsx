@@ -27,6 +27,7 @@ import { gadAlert, acknowledgedRev } from "@/lib/jobs/gad-alert";
 import { useOperator } from "@/lib/jobs/use-operator";
 import { changeJobStatus, acknowledgeStatusAlert, getJobStatusHistory } from "@/lib/actions/job-status";
 import { alertKind, reasonRequired, ALERT_META, statusLabel } from "@/lib/jobs/status-alert";
+import { getR1JobPanel, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -99,6 +100,20 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   const [auditing, startAudit] = useTransition();
   const { ensureOperator } = useOperator();
   const [showDispatch, setShowDispatch] = useState(false);
+  // Packing List R1 header (Draft/Final/Audited chip on the Edit Items button).
+  // Client-fetched so the (parallel-owned) server page needs no new props.
+  const [r1Panel, setR1Panel] = useState<R1JobPanel | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getR1JobPanel(job.id)
+      .then((p) => {
+        if (alive) setR1Panel(p);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [job.id]);
   const [bomSearch, setBomSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("code");
   const [sortDir, setSortDir] = useState<SortDir>("asc");
@@ -451,10 +466,19 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             <Button
               variant="secondary"
               size="sm"
-              onClick={() => router.push(`/jobs/${job.id}/edit`)}
+              onClick={() => router.push(`/packing-list-r1/${job.id}`)}
+              title="The Packing List R1 is this job's item list — edits there update MRP, dispatch and this page"
             >
               <Pencil className="h-4 w-4 mr-1" />
-              Edit BOM
+              Edit Items (R1)
+              {r1Panel?.hasR1 && (
+                <Badge
+                  variant={r1Panel.status === "final" ? "success" : "amber"}
+                  className="ml-1.5 text-[10px] px-1.5"
+                >
+                  {r1Panel.status === "final" ? (r1Panel.auditedAt ? "Final ✓ Audited" : "Final") : "Draft"}
+                </Badge>
+              )}
             </Button>
             <Select
               value={job.status}
@@ -821,10 +845,10 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
                   <Button
                     size="sm"
                     variant="secondary"
-                    onClick={() => router.push(`/jobs/${job.id}/edit`)}
+                    onClick={() => router.push(`/packing-list-r1/${job.id}`)}
                   >
                     <Pencil className="h-4 w-4 mr-1" />
-                    Add BOM Data
+                    Fill Packing List R1
                   </Button>
                 }
               />

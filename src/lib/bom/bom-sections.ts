@@ -656,6 +656,18 @@ export const FIRST_PHASE_SECTIONS: ReadonlySet<string> = new Set([
   "TROUGHING 50",
   "TROUGHING 100",
   "FIREMAN SWITCH",
+  // Packing List R1 part titles (since 2026-07-03 the R1 list mirrors into
+  // job_bom_lines with the R1 PART TITLE as the category — see r1-bom-sync.ts).
+  // These are the R1 parts whose material goes out with the first dispatch;
+  // every other R1 part (Machine, Rope, Door, Cabin, …) is second phase.
+  "Template Channel",
+  "Buffer Channel",
+  "Rail Brackets",
+  "Guide Rails",
+  "Troughing",
+  "Controller Bracket",
+  "Door Frame",
+  "Rail Clip",
 ]);
 
 /** Dispatch phase for a section/line by its stored `category` name. */

@@ -15,7 +15,7 @@
  */
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, revalidateTag } from "next/cache";
 import { getUnmappedBomItems, type R1UnmappedItem } from "@/lib/actions/packing-list-r1";
 
 export type R1DismissResult = { ok: true } | { ok: false; error: string };
@@ -36,16 +36,65 @@ export async function getCuratedUnmappedBomItems(jobId: string): Promise<R1Unmap
   return all.filter((u) => !dismissed.has(u.item_id));
 }
 
-/** Cross an unmapped BOM item off a job's R1 carry-over list. Records a hidden-
- *  reminder row only — never edits job_bom_lines or the R1 list. Reversible. */
+/** Cross an unmapped BOM item off a job's R1 carry-over list.
+ *
+ *  Since R1 became the job's item source of truth (2026-07-03), crossing off
+ *  means "this job does NOT need this item" — so besides hiding the reminder it
+ *  also clears the legacy BOM line's demand: unreferenced lines are deleted,
+ *  dispatch-referenced lines are zeroed (history preserved). Every removed/
+ *  zeroed line is snapshotted onto the dismissal row, so restore can put the
+ *  data back exactly. */
 export async function dismissUnmappedItem(jobId: string, itemId: string): Promise<R1DismissResult> {
   if (!jobId || !itemId) return { ok: false, error: "Missing job or item." };
   const supabase = await createClient();
+
+  // The job's legacy BOM lines for this item (mirrored 'r1' lines can't be
+  // unmapped by construction — unmapped = on BOM but NOT on R1).
+  const { data: headers } = await supabase.from("job_bom_headers").select("id").eq("job_id", jobId);
+  const headerIds = (headers ?? []).map((h) => h.id as string);
+  let removedSnapshot: unknown[] = [];
+  if (headerIds.length > 0) {
+    const { data: lines } = await supabase
+      .from("job_bom_lines")
+      .select("*")
+      .in("job_bom_id", headerIds)
+      .eq("item_id", itemId);
+    const all = lines ?? [];
+    if (all.length > 0) {
+      const ids = all.map((l) => l.id as string);
+      const { data: refs } = await supabase
+        .from("job_dispatch_lines")
+        .select("job_bom_line_id")
+        .in("job_bom_line_id", ids);
+      const referenced = new Set((refs ?? []).map((r) => r.job_bom_line_id as string));
+      const toDelete = ids.filter((id) => !referenced.has(id));
+      const toZero = ids.filter((id) => referenced.has(id));
+      removedSnapshot = all; // full rows, restorable
+      if (toDelete.length > 0) {
+        const { error } = await supabase.from("job_bom_lines").delete().in("id", toDelete);
+        if (error) return { ok: false, error: error.message };
+      }
+      if (toZero.length > 0) {
+        const { error } = await supabase
+          .from("job_bom_lines")
+          .update({ required_quantity: 0 })
+          .in("id", toZero);
+        if (error) return { ok: false, error: error.message };
+      }
+    }
+  }
+
   const { error } = await supabase
     .from("packing_r1_unmapped_dismissed")
-    .upsert({ job_id: jobId, item_id: itemId }, { onConflict: "job_id,item_id" });
+    .upsert(
+      { job_id: jobId, item_id: itemId, removed_bom_lines: removedSnapshot.length ? removedSnapshot : null },
+      { onConflict: "job_id,item_id" },
+    );
   if (error) return { ok: false, error: error.message };
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
   revalidatePath(`/packing-list-r1/${jobId}`);
+  revalidatePath(`/jobs/${jobId}`);
   return { ok: true };
 }
 

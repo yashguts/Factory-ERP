@@ -16,6 +16,8 @@ import {
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import { dismissUnmappedItem } from "@/lib/actions/packing-list-r1-unmapped";
+import { syncR1ToBom, getR1JobPanel, setR1Audited, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
+import { useOperator } from "@/lib/jobs/use-operator";
 import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
 import { exportRowsToXlsx } from "@/lib/export/xlsx";
 import type { CategoryNode } from "@/lib/actions/categories";
@@ -367,6 +369,33 @@ export function R1BuilderClient({
   const [dirty, setDirty] = useState(false);
   const [savingPart, setSavingPart] = useState<number | null>(null);
   const [savedPart, setSavedPart] = useState<number | null>(null);
+  // Job-side header: GAD drawing pointer + audit state (this list runs the job).
+  const { operator, ensureOperator } = useOperator();
+  const [jobPanel, setJobPanel] = useState<R1JobPanel | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getR1JobPanel(list.jobId)
+      .then((p) => {
+        if (alive) setJobPanel(p);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [list.jobId]);
+  const toggleAudited = () => {
+    const name = operator ?? ensureOperator();
+    startTransition(async () => {
+      const next = !jobPanel?.auditedAt;
+      const r = await setR1Audited(list.jobId, next, name ?? undefined);
+      if (r.ok) {
+        setJobPanel((p) =>
+          p ? { ...p, auditedAt: next ? new Date().toISOString() : null, auditedBy: next ? (name ?? null) : null } : p,
+        );
+        router.refresh();
+      } else alert(r.error);
+    });
+  };
   const [newPart, setNewPart] = useState("");
 
   const hw = categories.find((c) => c.name === "Hardware" && c.parent_id === null);
@@ -498,6 +527,10 @@ export function R1BuilderClient({
       const st = newStatus ?? status;
       const r = await saveR1List(list.jobId, flat(), st);
       if (r.ok) {
+        // This list IS the job's BOM now — mirror it into job_bom_lines so
+        // MRP / dispatch / the job page see the same items immediately.
+        const sync = await syncR1ToBom(list.jobId);
+        if (!sync.ok) alert(`Saved, but updating the job's item data failed: ${sync.error}`);
         setStatus(st);
         setDirty(false);
         router.refresh();
@@ -513,6 +546,11 @@ export function R1BuilderClient({
     setSavedPart(null);
     void (async () => {
       const r = await saveR1List(list.jobId, flat(), status);
+      if (r.ok) {
+        // Mirror into job_bom_lines (see save() above).
+        const sync = await syncR1ToBom(list.jobId);
+        if (!sync.ok) alert(`Saved, but updating the job's item data failed: ${sync.error}`);
+      }
       setSavingPart(null);
       if (r.ok) {
         setDirty(false);
@@ -719,18 +757,37 @@ export function R1BuilderClient({
       {/* Navy header + toolbar */}
       <header className="rounded-lg px-3.5 py-2 mb-2 flex items-center justify-between" style={{ background: C.navy, color: "#fff" }}>
         <div>
-          <button onClick={() => router.push("/packing-list-r1")} className="text-[11px] opacity-80 hover:opacity-100">
-            ← Packing Lists
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={() => router.push("/packing-list-r1")} className="text-[11px] opacity-80 hover:opacity-100">
+              ← Packing Lists
+            </button>
+            <span className="text-[11px] opacity-40">|</span>
+            <button
+              onClick={() => router.push(`/jobs/${list.jobId}`)}
+              className="text-[11px] opacity-80 hover:opacity-100"
+              title="Status, dispatch, drawing and alerts for this job"
+            >
+              Job page →
+            </button>
+          </div>
           <h1 className="text-[13px] font-semibold leading-tight">
             Packing List R1 · <span className="font-mono">{list.jobNumber ?? ""}</span>
           </h1>
           <p className="text-[10px] opacity-85 leading-tight">
             {status}
-            {dirty ? " • unsaved" : ""} · {filled}/{totalLines} lines filled
+            {jobPanel?.auditedAt ? ` • audited${jobPanel.auditedBy ? ` by ${jobPanel.auditedBy}` : ""}` : ""}
+            {dirty ? " • unsaved" : ""} · {filled}/{totalLines} lines filled · this list is the job&apos;s item data
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {jobPanel?.gadUrl && (
+            <ToolbarBtn onClick={() => window.open(jobPanel.gadUrl!, "_blank", "noopener")}>
+              <FileText size={14} /> Drawing
+            </ToolbarBtn>
+          )}
+          <ToolbarBtn onClick={toggleAudited} disabled={pending}>
+            <CheckCircle2 size={14} /> {jobPanel?.auditedAt ? "Un-audit" : "Mark Audited"}
+          </ToolbarBtn>
           <ToolbarBtn onClick={exportExcel}>
             <FileSpreadsheet size={14} /> Excel
           </ToolbarBtn>
