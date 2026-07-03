@@ -978,29 +978,45 @@ export function R1BuilderClient({
                               </div>
                             </td>
                             <td className="py-1 px-2 align-top">
-                              <input
-                                type="number"
-                                min={0}
-                                value={String(l.qty ?? 0)}
-                                onChange={(e) => setLine(pi, li, { qty: Number(e.target.value) || 0 })}
-                                placeholder="QTY"
-                                className="w-full rounded border px-2 py-1 text-xs text-right"
-                                style={{ borderColor: C.line }}
-                              />
-                              {l.item_id && (sentByItem[l.item_id] ?? 0) > 0 && (
-                                <div
-                                  className={
-                                    "mt-0.5 text-right text-[9px] leading-tight whitespace-nowrap " +
-                                    (Math.max(0, (Number(l.qty) || 0) - (sentByItem[l.item_id] ?? 0)) === 0
-                                      ? "text-emerald-600"
-                                      : "text-amber-600")
-                                  }
-                                  title="Dispatched so far (from the job's dispatch records) · left = QTY − sent"
-                                >
-                                  sent {sentByItem[l.item_id]} · left{" "}
-                                  {Math.max(0, (Number(l.qty) || 0) - (sentByItem[l.item_id] ?? 0))}
-                                </div>
-                              )}
+                              {(() => {
+                                // The QTY box shows what's LEFT TO SEND (owner rule:
+                                // a fully-dispatched item reads 0, not its total —
+                                // non-zero counts on sent items confuse the floor).
+                                // Storage stays the TOTAL (qty = left + sent), which
+                                // is what mirrors to the job/MRP; editing the box
+                                // means "this much still to send".
+                                const sent = l.item_id ? (sentByItem[l.item_id] ?? 0) : 0;
+                                const total = Number(l.qty) || 0;
+                                const left = sent > 0 ? Math.max(0, total - sent) : total;
+                                return (
+                                  <>
+                                    <input
+                                      type="number"
+                                      min={0}
+                                      value={String(left)}
+                                      onChange={(e) => {
+                                        const v = Number(e.target.value) || 0;
+                                        setLine(pi, li, { qty: sent > 0 ? v + sent : v });
+                                      }}
+                                      placeholder="QTY"
+                                      title={sent > 0 ? `Still to send. ${sent} sent earlier — total required ${total}` : undefined}
+                                      className="w-full rounded border px-2 py-1 text-xs text-right"
+                                      style={{ borderColor: C.line }}
+                                    />
+                                    {sent > 0 && (
+                                      <div
+                                        className={
+                                          "mt-0.5 text-right text-[9px] leading-tight whitespace-nowrap " +
+                                          (left === 0 ? "text-emerald-600" : "text-amber-600")
+                                        }
+                                        title={`Dispatched so far (from the job's dispatch records) — total required ${total}`}
+                                      >
+                                        sent {sent} earlier · total {total}
+                                      </div>
+                                    )}
+                                  </>
+                                );
+                              })()}
                             </td>
                             <td className="py-1 pl-1 align-top text-right whitespace-nowrap">
                               {canAdd && (
