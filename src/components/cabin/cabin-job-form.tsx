@@ -1,9 +1,9 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2, Copy, Check } from "lucide-react";
+import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2, Copy } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -13,7 +13,6 @@ import { CabinItemPicker } from "@/components/cabin/cabin-item-picker";
 import { CabinBaseFinishPicker } from "@/components/cabin/cabin-base-finish-picker";
 import { CabinJobOrderPicker } from "@/components/cabin/cabin-job-order-picker";
 import { CabinSketchAutofill } from "@/components/cabin/cabin-sketch-autofill";
-import { CabinSketchView } from "@/components/cabin/cabin-sketch-view";
 import type { CabinAutofillData } from "@/lib/actions/cabin-autofill";
 import { CABIN_TYPES, isFinishSplitType } from "@/lib/cabin/cabin-types";
 import {
@@ -21,9 +20,7 @@ import {
   updateCabinJob,
   deleteCabinJob,
   getCabinItemByName,
-  setCabinJobReviewed,
   type CabinJobDetail,
-  type CabinJobLine,
 } from "@/lib/actions/cabin-jobs";
 
 interface Row {
@@ -253,45 +250,6 @@ export function CabinJobForm({
     .flat()
     .filter((r) => r.item_id).length;
 
-  // Live sketch model: the CURRENT edited rows (not just what's saved), so the
-  // engineer reviews exactly what would be saved.
-  const sketchLines = useMemo<CabinJobLine[]>(
-    () =>
-      CABIN_TYPES.flatMap((type) =>
-        (rowsByType[type] ?? [])
-          .filter((r) => r.item_id)
-          .map((r, i) => ({
-            id: r._key,
-            cabin_type: type,
-            item_id: r.item_id,
-            item_code: r.item_code,
-            item_name: r.item_name,
-            item_family: r.item_family ?? null,
-            uom: r.uom,
-            qty: r.qty,
-            sort_order: i,
-          })),
-      ),
-    [rowsByType],
-  );
-
-  // AI-draft review state (optimistic overlay over the server prop).
-  const [justReviewed, setJustReviewed] = useState(false);
-  const isDraft = isEditing && !!job && job.reviewed_at == null && !justReviewed;
-  const markReviewed = () => {
-    if (!job) return;
-    startTransition(async () => {
-      const res = await setCabinJobReviewed(job.id, true);
-      if (!res.ok) {
-        setError(res.error);
-        return;
-      }
-      setJustReviewed(true);
-      toast.success(`${job.job_number} marked reviewed — it now counts in the cabin requirement.`);
-      router.refresh();
-    });
-  };
-
   // stay = save but keep editing this job (don't leave for the list).
   const save = (stay = false) => {
     setError(null);
@@ -423,33 +381,6 @@ export function CabinJobForm({
 
       {/* AI: upload a hand sketch → resolve panels → pre-fill the rows below */}
       {!isEditing && <CabinSketchAutofill onApply={applyAutofill} />}
-
-      {/* AI-draft review banner — drafts are excluded from cabin demand until reviewed */}
-      {isDraft && (
-        <div className="mb-3 p-3 rounded-md border border-amber-300 bg-amber-50 flex flex-wrap items-center gap-3">
-          <div className="flex-1 min-w-[260px] text-sm text-amber-900">
-            <strong>AI-drafted cabin job — pending review.</strong>{" "}
-            Check the sketch and items below (the job note lists every assumption and
-            blank). Draft items are <em>excluded</em> from the cabin requirement and
-            cutting plans until you mark this reviewed.
-          </div>
-          <Button size="sm" onClick={markReviewed} disabled={isPending}>
-            {isPending ? <Loader2 className="h-4 w-4 mr-1.5 animate-spin" /> : <Check className="h-4 w-4 mr-1.5" />}
-            Mark reviewed
-          </Button>
-        </div>
-      )}
-
-      {/* Hand-sketch-style plan view of the current items — review at a glance */}
-      {totalItems > 0 && (
-        <div className="mb-3">
-          <CabinSketchView
-            jobNumber={jobNumber || job?.job_number || "—"}
-            customerName={customerName}
-            lines={sketchLines}
-          />
-        </div>
-      )}
 
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
         {totalItems} item{totalItems === 1 ? "" : "s"} added across{" "}

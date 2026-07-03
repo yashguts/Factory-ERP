@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table";
 import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
 import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
-import { setCabinJobReady, setCabinJobReviewed } from "@/lib/actions/cabin-jobs";
+import { setCabinJobReady } from "@/lib/actions/cabin-jobs";
 import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
 import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
 import { useToast } from "@/components/ui/toast";
@@ -112,23 +112,6 @@ export function CabinJobsClient({
     toast.success(next ? `${j.job_number} marked ready` : `${j.job_number} reopened`);
     router.refresh();
   }
-
-  // Optimistic reviewed overlay — AI drafts (reviewed_at NULL) are excluded from
-  // cabin demand until an engineer marks them reviewed.
-  const [reviewedOverride, setReviewedOverride] = useState<Record<string, boolean>>({});
-  const isReviewed = (j: CabinJobListRow) => reviewedOverride[j.id] ?? j.reviewed_at != null;
-  async function markReviewed(j: CabinJobListRow) {
-    setReviewedOverride((m) => ({ ...m, [j.id]: true }));
-    const res = await setCabinJobReviewed(j.id, true);
-    if (!res.ok) {
-      setReviewedOverride((m) => ({ ...m, [j.id]: false }));
-      toast.error(res.error);
-      return;
-    }
-    toast.success(`${j.job_number} reviewed — now counts in the cabin requirement`);
-    router.refresh();
-  }
-  const draftCount = jobs.filter((j) => !isReviewed(j)).length;
   const sp = useSearchParams();
   const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category", "weekly"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
@@ -326,8 +309,8 @@ export function CabinJobsClient({
               : view === "weekly"
                 ? "Parts by category (sorted by finish), required week by week"
                 : filtersActive
-                  ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}${draftCount > 0 ? ` · ${draftCount} AI draft${draftCount === 1 ? "" : "s"} to review` : ""}`
-                  : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}${draftCount > 0 ? ` · ${draftCount} AI draft${draftCount === 1 ? "" : "s"} to review` : ""}`
+                  ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+                  : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
           <>
@@ -463,17 +446,7 @@ export function CabinJobsClient({
                       className={cn("cursor-pointer hover:bg-[var(--muted)]", isReady(j) && "opacity-60")}
                       onClick={() => router.push(`/cabin-jobs/${j.id}`)}
                     >
-                      <TableCell className="font-mono font-medium">
-                        {j.job_number}
-                        {!isReviewed(j) && (
-                          <span
-                            className="ml-2 inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-sans font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-300"
-                            title="AI-drafted — excluded from the cabin requirement until reviewed"
-                          >
-                            Draft
-                          </span>
-                        )}
-                      </TableCell>
+                      <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
                       <TableCell>{j.customer_name || "—"}</TableCell>
                       <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
                       <TableCell>{j.side_panel_material || "—"}</TableCell>
@@ -483,20 +456,6 @@ export function CabinJobsClient({
                       </TableCell>
                       <TableCell className="text-right">
                         <div className="flex items-center justify-end gap-1.5">
-                          {!isReviewed(j) && (
-                            <Button
-                              size="sm"
-                              variant="primary"
-                              className="cursor-pointer"
-                              title="Open the draft to review its sketch, or mark it reviewed right here"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                markReviewed(j);
-                              }}
-                            >
-                              <ClipboardCheck size={14} className="mr-1.5" /> Review ✓
-                            </Button>
-                          )}
                           <Button
                             size="sm"
                             variant={isReady(j) ? "secondary" : "primary"}
