@@ -69,6 +69,9 @@ const SCOPE_LABEL: Record<PhaseScope, string> = {
 export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
   const toast = useToast();
   const [summary, setSummary] = useState<JobDispatchSummary | null>(null);
+  // True when the rows come from the job's Packing List R1 (the item source of
+  // truth since 2026-07-03) — drives the part-grouped display + labels.
+  const [fromR1, setFromR1] = useState(false);
   const [loading, setLoading] = useState(true);
   const [scope, setScope] = useState<PhaseScope>("first");
   const [date, setDate] = useState(todayISO());
@@ -112,6 +115,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           const onR1 = new Set(r1.itemIds);
           s = { ...s, lines: s.lines.filter((l) => l.item_id != null && onR1.has(l.item_id) && (l.required ?? 0) > 0) };
         }
+        setFromR1(r1.hasR1);
         setSummary(s);
         setRows(buildRows(s, "first"));
         setLoading(false);
@@ -256,7 +260,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
                 ? "1st phase = structure material: rails, brackets, door frames, sills, linton, controller stand…"
                 : scope === "second"
                   ? "2nd phase = finishing material: doors, cabin, COP/LOP and everything else."
-                  : "Everything still pending on this job's BOM."}
+                  : `Everything still pending on this job's ${fromR1 ? "packing list" : "BOM"}.`}
             </p>
           </div>
         </div>
@@ -271,41 +275,70 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
             <div className="border border-[var(--border)] rounded-md overflow-hidden">
               {/* header */}
               <div className="grid grid-cols-[1fr_auto_auto] gap-2 px-3 py-2 bg-[var(--muted)]/50 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-                <span>Item</span>
+                <span>
+                  Item
+                  {fromR1 && (
+                    <span className="ml-1.5 normal-case font-normal tracking-normal text-[var(--primary)]">
+                      · from Packing List R1
+                    </span>
+                  )}
+                </span>
                 <span className="w-52 text-right">Remaining</span>
                 <span className="w-28 text-right">Dispatch now</span>
               </div>
-              <div className="max-h-[45vh] overflow-y-auto divide-y divide-[var(--border)]">
+              <div className="max-h-[45vh] overflow-y-auto">
                 {bomRows.length === 0 ? (
                   <div className="px-3 py-8 text-center text-sm text-[var(--muted-foreground)]">
-                    No {scope === "full" ? "" : SCOPE_LABEL[scope].toLowerCase().replace(" only", "")} items on this job&rsquo;s BOM. Use the search below to add items.
+                    No {scope === "full" ? "" : SCOPE_LABEL[scope].toLowerCase().replace(" only", "")} items on this job&rsquo;s {fromR1 ? "Packing List R1" : "BOM"}. Use the search below to add items.
                   </div>
                 ) : (
-                  bomRows.map((row) => (
-                    <DispatchRow
-                      key={row._key}
-                      row={row}
-                      onPick={(it) =>
-                        updateRow(row._key, {
-                          item_id: it.id,
-                          item_code: it.code,
-                          item_name: it.name,
-                          uom: it.uom_abbreviation,
-                        })
-                      }
-                      onClear={() =>
-                        updateRow(row._key, {
-                          item_id: null,
-                          item_code: null,
-                          item_name: null,
-                          uom: null,
-                        })
-                      }
-                      onQty={(q) => updateRow(row._key, { qty: q })}
-                      onClose={(v) => updateRow(row._key, { closeLine: v })}
-                      onRemove={() => removeRow(row._key)}
-                    />
-                  ))
+                  // Rows grouped under their section — the R1 PART names (or old
+                  // BOM sections for jobs without an R1 list), mirroring how the
+                  // packing list itself is organised.
+                  (() => {
+                    const groups = new Map<string, Row[]>();
+                    for (const r of bomRows) {
+                      const k = r.category?.trim() || "Other items";
+                      const arr = groups.get(k) ?? [];
+                      arr.push(r);
+                      groups.set(k, arr);
+                    }
+                    return [...groups.entries()].map(([cat, rs]) => (
+                      <div key={cat}>
+                        <div className="px-3 py-1 bg-[var(--muted)]/30 border-y border-[var(--border)] text-[10px] font-semibold uppercase tracking-wider text-[var(--muted-foreground)]">
+                          {cat}
+                          <span className="ml-1.5 font-normal normal-case">· {rs.length} item{rs.length === 1 ? "" : "s"}</span>
+                        </div>
+                        <div className="divide-y divide-[var(--border)]">
+                          {rs.map((row) => (
+                            <DispatchRow
+                              key={row._key}
+                              row={row}
+                              onPick={(it) =>
+                                updateRow(row._key, {
+                                  item_id: it.id,
+                                  item_code: it.code,
+                                  item_name: it.name,
+                                  uom: it.uom_abbreviation,
+                                })
+                              }
+                              onClear={() =>
+                                updateRow(row._key, {
+                                  item_id: null,
+                                  item_code: null,
+                                  item_name: null,
+                                  uom: null,
+                                })
+                              }
+                              onQty={(q) => updateRow(row._key, { qty: q })}
+                              onClose={(v) => updateRow(row._key, { closeLine: v })}
+                              onRemove={() => removeRow(row._key)}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                    ));
+                  })()
                 )}
               </div>
             </div>
@@ -317,7 +350,7 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
             <div className="rounded-md border border-[var(--border)]">
               <div className="px-3 py-2.5">
                 <label className="flex items-center gap-1 text-[11px] font-medium text-[var(--muted-foreground)] mb-1.5">
-                  <Plus className="h-3 w-3" /> Add extra items dispatched with the job (not on the BOM)
+                  <Plus className="h-3 w-3" /> Add extra items dispatched with the job (not on the {fromR1 ? "packing list" : "BOM"})
                 </label>
                 <ItemSearch
                   onPick={addItem}
