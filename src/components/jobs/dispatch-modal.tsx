@@ -15,10 +15,14 @@ import {
   type PhaseScope,
 } from "@/lib/actions/dispatch";
 import { getR1DispatchView } from "@/lib/actions/r1-bom-sync";
+import { downloadDispatchNotePdf } from "@/lib/export/dispatch-pdf";
 
 interface Props {
   jobId: string;
   jobNumber: string;
+  /** Optional letterhead details for the auto-printed dispatch list. */
+  customerName?: string | null;
+  location?: string | null;
   onClose: () => void;
   onSaved: () => void;
 }
@@ -66,7 +70,7 @@ const SCOPE_LABEL: Record<PhaseScope, string> = {
   full: "Entire job",
 };
 
-export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
+export function DispatchModal({ jobId, jobNumber, customerName, location, onClose, onSaved }: Props) {
   const toast = useToast();
   const [summary, setSummary] = useState<JobDispatchSummary | null>(null);
   // True when the rows come from the job's Packing List R1 (the item source of
@@ -224,6 +228,27 @@ export function DispatchModal({ jobId, jobNumber, onClose, onSaved }: Props) {
           ? `Dispatch recorded for Job ${jobNumber} — ${SCOPE_LABEL[scope]}, ${dispatchRows.length} item${dispatchRows.length === 1 ? "" : "s"}, ${totalQty.toLocaleString()} qty.${reviseNote}`
           : `Job ${jobNumber} updated — ${reviseOnlyRows.length} item${reviseOnlyRows.length === 1 ? "" : "s"} no longer required.`,
       );
+      // The factory prints the dispatch list with every dispatch — download it
+      // automatically. Best-effort: a print hiccup never blocks the record.
+      if (dispatchRows.length > 0) {
+        try {
+          await downloadDispatchNotePdf({
+            info: { jobNumber, customerName, location },
+            dispatchDate: date,
+            phaseScope: scope,
+            note,
+            lines: dispatchRows.map((r) => ({
+              code: r.item_code,
+              name: r.item_name,
+              category: r.category,
+              qty: r.qty,
+              adhoc: r.job_bom_line_id == null,
+            })),
+          });
+        } catch {
+          /* printing must never block the dispatch record */
+        }
+      }
       onSaved();
       onClose();
     });

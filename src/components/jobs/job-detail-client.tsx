@@ -20,7 +20,8 @@ import { shouldRenderSection, driveTypeLabel } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
-import type { JobDispatchSummary } from "@/lib/actions/dispatch";
+import type { JobDispatchSummary, DispatchSummaryLine } from "@/lib/actions/dispatch";
+import { downloadBalancePdf } from "@/lib/export/dispatch-pdf";
 import { dispatchStat, toneChip } from "@/lib/dispatch-status";
 import type { Job, JobStatus, JobStage, JobGadVersion, JobStatusChange } from "@/lib/supabase/types";
 import { gadAlert, acknowledgedRev } from "@/lib/jobs/gad-alert";
@@ -92,7 +93,7 @@ interface Props {
 
 type SortKey = "code" | "name" | "category" | "required" | "dispatched";
 type SortDir = "asc" | "desc";
-type ViewTab = "sections" | "items";
+type ViewTab = "balance" | "sections" | "items";
 
 export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, dispatch, stockByItem, gadVersions }: Props) {
   const router = useRouter();
@@ -120,7 +121,14 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
 
   const hasItemBom = bomLines.some((l) => l.item_id != null);
   const hasSectionBom = bomSectionLines.length > 0 || bomLines.some((l) => l.category != null);
-  const [viewTab, setViewTab] = useState<ViewTab>("sections");
+  // Balance ("what's left to send?") is the factory's daily question — it opens
+  // first whenever the job has item lines; jobs with nothing defined yet fall
+  // back to the section view.
+  const [viewTab, setViewTab] = useState<ViewTab>(
+    dispatch.lines.length > 0 ? "balance" : "sections",
+  );
+  // Balance view: also show the fully-sent lines (default hides them).
+  const [showSentRows, setShowSentRows] = useState(false);
 
   // Live dispatch progress from recorded dispatches, keyed for the BOM views:
   // per BOM line (id -> dispatched qty) and per section (category -> status).
@@ -737,11 +745,16 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
         jobId={job.id}
         summary={dispatch}
         onNewDispatch={() => setShowDispatch(true)}
+        jobNumber={job.job_number}
+        customerName={job.customer_name}
+        location={job.location}
       />
       {showDispatch && (
         <DispatchModal
           jobId={job.id}
           jobNumber={job.job_number}
+          customerName={job.customer_name}
+          location={job.location}
           onClose={() => setShowDispatch(false)}
           onSaved={() => router.refresh()}
         />
@@ -751,25 +764,28 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       <div>
         <div className="flex items-center justify-between gap-3 mb-3 flex-wrap">
           <div className="flex items-center gap-3">
-            <h2 className="text-base font-semibold">Bill of Materials</h2>
-            {(hasSectionBom && hasItemBom) && (
+            <h2 className="text-base font-semibold">Job Items</h2>
+            {(dispatch.lines.length > 0 || hasSectionBom || hasItemBom) && (
               <Tabs
                 variant="segmented"
                 value={viewTab}
                 onChange={(v) => setViewTab(v as ViewTab)}
                 tabs={[
-                  { value: "sections", label: "By Section", count: bomSectionLines.length },
-                  { value: "items", label: "By Item", count: itemBomLines.length },
+                  ...(dispatch.lines.length > 0
+                    ? [{ value: "balance", label: "Balance", count: dispatch.lines.filter((l) => l.remaining > 0).length }]
+                    : []),
+                  ...(hasSectionBom ? [{ value: "sections", label: "By Section", count: bomSectionLines.length }] : []),
+                  ...(hasItemBom ? [{ value: "items", label: "By Item", count: itemBomLines.length }] : []),
                 ]}
               />
             )}
           </div>
-          {viewTab === "items" && hasItemBom && (
+          {((viewTab === "items" && hasItemBom) || viewTab === "balance") && (
             <div className="relative w-64">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)] z-10" />
               <Input
                 size="sm"
-                placeholder="Search BOM items..."
+                placeholder={viewTab === "balance" ? "Search balance items..." : "Search BOM items..."}
                 value={bomSearch}
                 onChange={(e) => setBomSearch(e.target.value)}
                 className="pl-9"
@@ -777,6 +793,143 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             </div>
           )}
         </div>
+
+        {/* Balance view — the operational heart: what's still LEFT to send.
+            Data comes straight from the dispatch summary (required − sent per
+            line), so it's always consistent with the modal and with MRP. */}
+        {viewTab === "balance" && (() => {
+          const q = bomSearch.trim().toLowerCase();
+          const matches = (l: DispatchSummaryLine) =>
+            !q || [l.item_name, l.item_code, l.category].some((s) => (s ?? "").toLowerCase().includes(q));
+          const all = dispatch.lines.filter(matches);
+          const pending = all.filter((l) => l.remaining > 0);
+          const done = all.filter((l) => l.remaining <= 0);
+          const unitsLeft = pending.reduce((a, l) => a + l.remaining, 0);
+          const phaseRows = (phase: "first" | "second") => {
+            const rows = (showSentRows ? all : pending).filter((l) => l.phase === phase);
+            const byCat = new Map<string, DispatchSummaryLine[]>();
+            for (const l of rows) {
+              const arr = byCat.get(l.category) ?? [];
+              arr.push(l);
+              byCat.set(l.category, arr);
+            }
+            return [...byCat.entries()].sort((a, b) => a[0].localeCompare(b[0]));
+          };
+          return (
+            <div>
+              {/* Summary strip */}
+              <div className="flex items-center gap-3 flex-wrap mb-3 text-sm">
+                {pending.length === 0 ? (
+                  <span className="inline-flex items-center gap-1.5 font-medium text-[var(--success)]">
+                    <CheckCircle2 className="h-4 w-4" /> All materials dispatched
+                  </span>
+                ) : (
+                  <>
+                    <Badge variant="warning" className="text-xs">
+                      {pending.length} item{pending.length === 1 ? "" : "s"} pending
+                    </Badge>
+                    <span className="text-[var(--muted-foreground)] text-xs">
+                      {unitsLeft.toLocaleString()} units left ·{" "}
+                      1st phase: {pending.filter((l) => l.phase === "first").length} ·{" "}
+                      2nd phase: {pending.filter((l) => l.phase === "second").length}
+                    </span>
+                  </>
+                )}
+                <label className="inline-flex items-center gap-1.5 text-xs text-[var(--muted-foreground)] cursor-pointer ml-auto">
+                  <input
+                    type="checkbox"
+                    checked={showSentRows}
+                    onChange={(e) => setShowSentRows(e.target.checked)}
+                    className="cursor-pointer"
+                  />
+                  Show fully-sent items ({done.length})
+                </label>
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  onClick={() => void downloadBalancePdf({ jobNumber: job.job_number, customerName: job.customer_name, location: job.location }, dispatch.lines)}
+                  title="Print the balance list — everything still left to send"
+                >
+                  <FileClock className="h-3.5 w-3.5 mr-1.5" /> Print balance
+                </Button>
+              </div>
+
+              {all.length === 0 ? (
+                <div className="card-surface">
+                  <EmptyState
+                    icon={<Truck size={26} />}
+                    title={q ? "No items match your search" : "Nothing here yet"}
+                    description={q ? undefined : "Fill the Packing List R1 to define what this job needs."}
+                  />
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {(["first", "second"] as const).map((phase) => {
+                    const groups = phaseRows(phase);
+                    if (groups.length === 0) return null;
+                    return (
+                      <div key={phase}>
+                        <h3 className="text-sm font-semibold text-[var(--muted-foreground)] uppercase tracking-wider mb-2">
+                          {phase === "first" ? "1st phase" : "2nd phase"}
+                        </h3>
+                        <div className="card-surface overflow-hidden">
+                          <Table density="dense">
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="w-28">Code</TableHead>
+                                <TableHead>Item</TableHead>
+                                <TableHead className="w-44">Section</TableHead>
+                                <TableHead className="text-right w-24">Required</TableHead>
+                                <TableHead className="text-right w-20">Sent</TableHead>
+                                <TableHead className="text-right w-24">Left</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {groups.flatMap(([cat, rows]) =>
+                                rows.map((l) => {
+                                  const doneRow = l.remaining <= 0;
+                                  return (
+                                    <TableRow key={l.job_bom_line_id} className={doneRow ? "opacity-60" : ""}>
+                                      <TableCell className="font-mono text-xs text-[var(--muted-foreground)]">
+                                        {l.item_code ?? "—"}
+                                      </TableCell>
+                                      <TableCell className="font-medium">{l.item_name ?? "(item)"}</TableCell>
+                                      <TableCell className="text-xs text-[var(--muted-foreground)]">{cat}</TableCell>
+                                      <TableCell className="text-right tabular-nums">{l.required.toLocaleString()}</TableCell>
+                                      <TableCell className="text-right tabular-nums text-[var(--muted-foreground)]">
+                                        {l.dispatched.toLocaleString()}
+                                      </TableCell>
+                                      <TableCell
+                                        className={`text-right tabular-nums font-semibold ${
+                                          doneRow ? "text-[var(--success)]" : "text-[var(--warning)]"
+                                        }`}
+                                      >
+                                        {doneRow ? "✓ 0" : `${l.remaining.toLocaleString()}${l.uom ? ` ${l.uom}` : ""}`}
+                                      </TableCell>
+                                    </TableRow>
+                                  );
+                                }),
+                              )}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
+              {/* The rules of the road — so the flow's guarantees stay known */}
+              <p className="mt-3 text-[11px] text-[var(--muted-foreground)] leading-relaxed max-w-3xl">
+                Recording a dispatch <span className="font-medium">deducts stock and reduces MRP demand</span> automatically
+                (undo restores both). Partial quantities accumulate across dispatches. At dispatch time you can{" "}
+                <span className="font-medium">revise a wrong requirement</span> (&ldquo;balance not required&rdquo;),{" "}
+                <span className="font-medium">swap the item</span> actually sent, or add extra items — everything lands in
+                the dated history below with a reprintable dispatch list.
+              </p>
+            </div>
+          );
+        })()}
 
         {/* Section View */}
         {viewTab === "sections" && (

@@ -11,6 +11,7 @@ import {
   ChevronDown,
   ChevronRight,
   Plus,
+  Printer,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import {
@@ -23,6 +24,7 @@ import {
   toneText,
   type DispatchStat,
 } from "@/lib/dispatch-status";
+import { downloadDispatchHistoryPdf, downloadBalancePdf } from "@/lib/export/dispatch-pdf";
 
 const SCOPE_LABEL: Record<PhaseScope, string> = {
   first: "1st phase",
@@ -62,11 +64,19 @@ export function DispatchPanel({
   jobId,
   summary,
   onNewDispatch,
+  jobNumber,
+  customerName,
+  location,
 }: {
   jobId: string;
   summary: JobDispatchSummary;
   onNewDispatch: () => void;
+  /** Letterhead details for the printable dispatch/balance lists. */
+  jobNumber?: string | null;
+  customerName?: string | null;
+  location?: string | null;
 }) {
+  const pdfInfo = { jobNumber: jobNumber ?? null, customerName, location };
   const router = useRouter();
   const toast = useToast();
   const [isPending, startTransition] = useTransition();
@@ -134,24 +144,34 @@ export function DispatchPanel({
           </p>
         ) : (
           <div className="border border-[var(--border)] rounded-md mb-3">
-            <button
-              type="button"
-              onClick={() => setOpenRemaining((o) => !o)}
-              className="flex w-full items-center gap-2 px-3 py-2 text-sm font-medium cursor-pointer"
-            >
-              {openRemaining ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-              <span className="text-[var(--warning)]">
-                Remaining to dispatch — {pending.length} item
-                {pending.length === 1 ? "" : "s"}
-              </span>
-              <span className="text-xs text-[var(--muted-foreground)]">
-                1st phase: {pendingFirst.length} · 2nd phase: {pendingSecond.length}
-              </span>
-            </button>
+            <div className="flex items-center gap-2 px-3 py-2">
+              <button
+                type="button"
+                onClick={() => setOpenRemaining((o) => !o)}
+                className="flex flex-1 items-center gap-2 text-sm font-medium cursor-pointer min-w-0"
+              >
+                {openRemaining ? (
+                  <ChevronDown className="h-3.5 w-3.5 shrink-0" />
+                ) : (
+                  <ChevronRight className="h-3.5 w-3.5 shrink-0" />
+                )}
+                <span className="text-[var(--warning)]">
+                  Remaining to dispatch — {pending.length} item
+                  {pending.length === 1 ? "" : "s"}
+                </span>
+                <span className="text-xs text-[var(--muted-foreground)]">
+                  1st phase: {pendingFirst.length} · 2nd phase: {pendingSecond.length}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => void downloadBalancePdf(pdfInfo, summary.lines)}
+                title="Print the balance list — everything still left to send"
+                className="inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium hover:bg-[var(--muted)] cursor-pointer shrink-0"
+              >
+                <Printer className="h-3 w-3" /> Print balance
+              </button>
+            </div>
             {openRemaining && (
               <div className="px-3 pb-2 border-t border-[var(--border)]">
                 {([
@@ -245,10 +265,18 @@ export function DispatchPanel({
                   )}
                   <button
                     type="button"
+                    onClick={() => void downloadDispatchHistoryPdf(pdfInfo, d)}
+                    title="Print this dispatch list (reprint)"
+                    className="ml-auto p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                  >
+                    <Printer className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    type="button"
                     onClick={() => onDelete(d.id)}
                     disabled={busy === d.id || isPending}
                     title="Undo this dispatch"
-                    className="ml-auto p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
+                    className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
                   >
                     {busy === d.id ? (
                       <Loader2 className="h-3.5 w-3.5 animate-spin" />
