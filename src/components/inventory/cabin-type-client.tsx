@@ -15,10 +15,11 @@ import {
   hasNoListParams,
   useUrlListSync,
 } from "@/lib/hooks/use-url-list-state";
-import { ArrowLeft, Search, Container, Plus, ChevronLeft, ChevronRight } from "lucide-react";
+import { ArrowLeft, Search, Container, Plus, ChevronLeft, ChevronRight, ArrowUpDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
 import { PageHeader } from "@/components/ui/page-header";
 import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
 import { EmptyState } from "@/components/ui/empty-state";
@@ -32,7 +33,9 @@ import {
 } from "@/components/ui/table";
 import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
-import { getCabinTypePage, type CabinTypeRow } from "@/lib/actions/cabin";
+import { StockLedgerPopover } from "@/components/inventory/stock-ledger-popover";
+import { getCabinTypeView } from "@/lib/actions/cabin-type-view";
+import type { CabinTypeRow } from "@/lib/actions/cabin";
 import { useRealtimeRefresh } from "@/lib/realtime/use-realtime-refresh";
 import type { Warehouse } from "@/lib/supabase/types";
 
@@ -54,6 +57,12 @@ interface Props {
 
 const PAGE_SIZE = 100;
 
+type SortKey = "code" | "name" | "stock";
+type SortDir = "asc" | "desc";
+type StockFilter = "all" | "in_stock" | "zero";
+
+const LIST_PARAM_KEYS = ["q", "sub", "stock", "sort", "dir", "page"] as const;
+
 export function CabinTypeClient({
   typeId,
   typeName,
@@ -73,12 +82,21 @@ export function CabinTypeClient({
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [debouncedSearch, setDebouncedSearch] = useState(() => readParam(sp, "q", ""));
   const [subFilter, setSubFilter] = useState<string>(() => readParam(sp, "sub", "all"));
+  const [stockFilter, setStockFilter] = useState<StockFilter>(
+    () => readParam(sp, "stock", "all", ["all", "in_stock", "zero"]) as StockFilter,
+  );
+  const [sortKey, setSortKey] = useState<SortKey>(
+    () => readParam(sp, "sort", "name", ["code", "name", "stock"]) as SortKey,
+  );
+  const [sortDir, setSortDir] = useState<SortDir>(
+    () => readParam(sp, "dir", "asc", ["asc", "desc"]) as SortDir,
+  );
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
   const [showAdd, setShowAdd] = useState(false);
 
   useUrlListSync(
-    { q: debouncedSearch, sub: subFilter, page },
-    { q: "", sub: "all", page: 1 },
+    { q: debouncedSearch, sub: subFilter, stock: stockFilter, sort: sortKey, dir: sortDir, page },
+    { q: "", sub: "all", stock: "all", sort: "name", dir: "asc", page: 1 },
   );
 
   // Server-provided page data.
@@ -92,7 +110,7 @@ export function CabinTypeClient({
     return () => clearTimeout(t);
   }, [search]);
 
-  // Reset to page 1 whenever the filters change — but not on mount, which
+  // Reset to page 1 whenever the filters/sort change — but not on mount, which
   // would clobber a page number restored from the URL.
   const filtersTouched = useRef(false);
   useEffect(() => {
@@ -101,7 +119,7 @@ export function CabinTypeClient({
       return;
     }
     setPage(1);
-  }, [debouncedSearch, subFilter]);
+  }, [debouncedSearch, subFilter, stockFilter, sortKey, sortDir]);
 
   // Fetch a page from the server for the current query. A monotonic request id
   // guards against a slow earlier response overwriting a newer one when the user
@@ -110,12 +128,13 @@ export function CabinTypeClient({
   const runQuery = useCallback(() => {
     const myId = ++reqId.current;
     startTransition(async () => {
-      const res = await getCabinTypePage({
+      const res = await getCabinTypeView({
         typeId,
         search: debouncedSearch,
         sub: subFilter,
-        sort: "name",
-        dir: "asc",
+        stock: stockFilter,
+        sort: sortKey,
+        dir: sortDir,
         page,
         pageSize: PAGE_SIZE,
       });
@@ -131,12 +150,12 @@ export function CabinTypeClient({
       setTotal(res.total);
       setInStock(res.inStock);
     });
-  }, [typeId, debouncedSearch, subFilter, page]);
+  }, [typeId, debouncedSearch, subFilter, stockFilter, sortKey, sortDir, page]);
 
   // Re-fetch when the query changes — but skip the very first run when the
   // view opened with default state, since initialRows already match the
   // default query. With URL-carried filters (Back / shared link), fetch now.
-  const firstRun = useRef(hasNoListParams(sp, ["q", "sub", "page"]));
+  const firstRun = useRef(hasNoListParams(sp, LIST_PARAM_KEYS));
   useEffect(() => {
     if (firstRun.current) {
       firstRun.current = false;
@@ -147,6 +166,27 @@ export function CabinTypeClient({
 
   // Live sync: re-fetch the current page when another user changes items/stock.
   useRealtimeRefresh(["items", "inventory"], runQuery);
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir(sortDir === "asc" ? "desc" : "asc");
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const SortHeader = ({ label, sortField, className }: { label: string; sortField: SortKey; className?: string }) => (
+    <TableHead
+      className={`cursor-pointer select-none hover:bg-[var(--muted)] transition-colors ${className ?? ""}`}
+      onClick={() => handleSort(sortField)}
+    >
+      <span className={`inline-flex items-center gap-1 ${className?.includes("text-right") ? "justify-end w-full" : ""}`}>
+        {label}
+        <ArrowUpDown size={12} className={sortKey === sortField ? "text-[var(--primary)]" : "opacity-30"} />
+      </span>
+    </TableHead>
+  );
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE));
   const rangeStart = total === 0 ? 0 : (page - 1) * PAGE_SIZE + 1;
@@ -204,6 +244,16 @@ export function CabinTypeClient({
             ))}
           </Select>
         )}
+        <Select
+          size="sm"
+          value={stockFilter}
+          onChange={(e) => setStockFilter(e.target.value as StockFilter)}
+          className="w-[140px]"
+        >
+          <option value="all">All Stock</option>
+          <option value="in_stock">In Stock</option>
+          <option value="zero">Out of Stock</option>
+        </Select>
         <ToolbarSpacer />
       </Toolbar>
 
@@ -225,57 +275,77 @@ export function CabinTypeClient({
           <Table density="dense">
             <TableHeader sticky>
               <TableRow>
-                <TableHead>Code</TableHead>
-                <TableHead>Name</TableHead>
+                <SortHeader label="Code" sortField="code" />
+                <SortHeader label="Name" sortField="name" />
                 <TableHead>Sub-type</TableHead>
-                <TableHead className="text-right">Stock</TableHead>
+                <SortHeader label="Stock" sortField="stock" className="text-right" />
+                <TableHead>Status</TableHead>
                 <TableHead className="w-10 text-right">Adjust</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
-              {rows.map((it) => (
-                <TableRow
-                  key={it.id}
-                  className="cursor-pointer hover:bg-[var(--muted)]"
-                  onClick={() => router.push(`/inventory/${it.id}`)}
-                >
-                  <TableCell className="font-mono text-xs">{it.code}</TableCell>
-                  <TableCell className="font-medium">{it.name}</TableCell>
-                  <TableCell className="text-[var(--muted-foreground)]">
-                    {it.sub_category ?? "—"}
-                  </TableCell>
-                  <TableCell className="text-right font-medium tabular-nums">
-                    <span
-                      className={
-                        it.total_stock > 0
-                          ? "text-[var(--foreground)]"
-                          : it.total_stock < 0
-                            ? "text-[var(--destructive)]"
-                            : "text-[var(--muted-foreground)]"
-                      }
-                    >
-                      {it.total_stock.toLocaleString()}
-                    </span>{" "}
-                    <span className="text-xs text-[var(--muted-foreground)]">{it.uom}</span>
-                  </TableCell>
-                  <TableCell
-                    className="text-right"
-                    onClick={(e) => e.stopPropagation()}
+              {rows.map((it) => {
+                const inStk = it.total_stock > 0;
+                return (
+                  <TableRow
+                    key={it.id}
+                    className="cursor-pointer hover:bg-[var(--muted)]"
+                    onClick={() => router.push(`/inventory/${it.id}`)}
                   >
-                    <InlineStockAdjust
-                      item={{
-                        id: it.id,
-                        code: it.code,
-                        name: it.name,
-                        lookup_key: null,
-                        uom: { id: "", abbreviation: it.uom },
-                      }}
-                      warehouses={warehouses}
-                      onSuccess={runQuery}
-                    />
-                  </TableCell>
-                </TableRow>
-              ))}
+                    <TableCell className="font-mono text-xs" onClick={(e) => e.stopPropagation()}>
+                      <Link
+                        href={`/inventory/${it.id}`}
+                        className="text-[var(--primary)] hover:underline"
+                        title="Open item — structure, parts list, programs"
+                      >
+                        {it.code}
+                      </Link>
+                    </TableCell>
+                    <TableCell className="font-medium">{it.name}</TableCell>
+                    <TableCell className="text-[var(--muted-foreground)]">
+                      {it.sub_category ?? "—"}
+                    </TableCell>
+                    <TableCell
+                      className="text-right font-medium tabular-nums"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <StockLedgerPopover itemId={it.id}>
+                        <span
+                          className={`cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)] ${
+                            it.total_stock < 0 ? "text-[var(--destructive)]" : ""
+                          }`}
+                        >
+                          {it.total_stock.toLocaleString()}
+                        </span>
+                      </StockLedgerPopover>{" "}
+                      <span className="text-xs text-[var(--muted-foreground)]">{it.uom}</span>
+                    </TableCell>
+                    <TableCell>
+                      {inStk ? (
+                        <Badge variant="success">OK</Badge>
+                      ) : (
+                        <Badge variant="danger">Out</Badge>
+                      )}
+                    </TableCell>
+                    <TableCell
+                      className="text-right"
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <InlineStockAdjust
+                        item={{
+                          id: it.id,
+                          code: it.code,
+                          name: it.name,
+                          lookup_key: null,
+                          uom: { id: "", abbreviation: it.uom },
+                        }}
+                        warehouses={warehouses}
+                        onSuccess={runQuery}
+                      />
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
