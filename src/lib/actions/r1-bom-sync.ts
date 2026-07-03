@@ -239,6 +239,26 @@ export async function getR1JobPanel(jobId: string): Promise<R1JobPanel> {
   };
 }
 
+export interface R1JobStatus {
+  status: "draft" | "final";
+  audited_at: string | null;
+}
+
+/** R1 list status per job — one small read (≤ a few hundred rows) powering the
+ *  "R1 Final / Audited" labels on the Jobs list. Jobs with no R1 list are absent. */
+export async function getR1StatusMap(): Promise<Record<string, R1JobStatus>> {
+  const supabase = await createClient();
+  const { data } = await supabase.from("packing_r1_lists").select("job_id, status, audited_at");
+  const out: Record<string, R1JobStatus> = {};
+  for (const r of data ?? []) {
+    out[r.job_id as string] = {
+      status: (r.status as "draft" | "final") ?? "draft",
+      audited_at: (r.audited_at as string | null) ?? null,
+    };
+  }
+  return out;
+}
+
 export interface R1DispatchView {
   /** False = job has no R1 list yet → callers keep legacy behaviour. */
   hasR1: boolean;

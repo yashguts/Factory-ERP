@@ -32,6 +32,7 @@ import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
 import { gadAlert } from "@/lib/jobs/gad-alert";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
+import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -99,6 +100,20 @@ export function JobsClient({
   const router = useRouter();
   const toast = useToast();
   const [, startTransition] = useTransition();
+  // R1 list status per job (Final / Audited label under the Spec). Client-
+  // fetched — the (parallel-owned) server page needs no new props; one tiny read.
+  const [r1Status, setR1Status] = useState<Record<string, R1JobStatus>>({});
+  useEffect(() => {
+    let alive = true;
+    getR1StatusMap()
+      .then((m) => {
+        if (alive) setR1Status(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Optimistic local copy so inline edits are instant
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
@@ -637,6 +652,26 @@ export function JobsClient({
                     {job.spec_string ? (
                       <span className="font-mono text-xs">{job.spec_string}</span>
                     ) : "-"}
+                    {r1Status[job.id]?.status === "final" && (
+                      <div className="mt-0.5">
+                        {r1Status[job.id].audited_at ? (
+                          <span
+                            className="inline-flex items-center rounded bg-emerald-100 px-1 py-0.5 text-[10px] font-medium leading-none text-emerald-700"
+                            title={`Packing List R1 marked Final and Audited on ${new Date(r1Status[job.id].audited_at!).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`}
+                          >
+                            R1 ✓ Audited{" "}
+                            {new Date(r1Status[job.id].audited_at!).toLocaleDateString("en-IN", { day: "2-digit", month: "short" })}
+                          </span>
+                        ) : (
+                          <span
+                            className="inline-flex items-center rounded border border-emerald-300 px-1 py-0.5 text-[10px] font-medium leading-none text-emerald-700"
+                            title="Packing List R1 marked Final (not yet audited)"
+                          >
+                            R1 Final
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </TableCell>
                   <TableCell>
                     {job.structure_included && job.structure_included !== "NA" ? (
