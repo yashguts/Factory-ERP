@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState, useEffect, useMemo, useCallback, useTransition, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2 } from "lucide-react";
+import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2, X } from "lucide-react";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
@@ -15,6 +15,7 @@ import {
   type R1CabinPanels,
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
+import { dismissUnmappedItem } from "@/lib/actions/packing-list-r1-unmapped";
 import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
 import { exportRowsToXlsx } from "@/lib/export/xlsx";
 import type { CategoryNode } from "@/lib/actions/categories";
@@ -1009,6 +1010,7 @@ export function R1BuilderClient({
                   <th className="text-left font-medium px-2 py-1">Item</th>
                   <th className="text-left font-medium px-2 py-1">Category</th>
                   <th className="text-right font-medium px-2 py-1">BOM Qty</th>
+                  <th className="px-2 py-1 w-8" title="Cross off carry-overs you don't want on R1"></th>
                 </tr>
               </thead>
               <tbody className="divide-y" style={{ borderColor: C.line }}>
@@ -1021,6 +1023,22 @@ export function R1BuilderClient({
                       {u.qty}
                       {u.uom ? ` ${u.uom}` : ""}
                     </td>
+                    <td className="px-2 py-1 text-right">
+                      <button
+                        type="button"
+                        disabled={pending}
+                        onClick={() =>
+                          startTransition(async () => {
+                            await dismissUnmappedItem(list.jobId, u.item_id);
+                            router.refresh();
+                          })
+                        }
+                        title="Cross off — hides this carry-over from Unmapped Items. Never changes the BOM."
+                        className="inline-flex items-center justify-center rounded p-0.5 text-[#9ca3af] hover:text-[#dc2626] hover:bg-[#fef2f2] disabled:opacity-40 cursor-pointer"
+                      >
+                        <X className="h-3.5 w-3.5" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -1028,6 +1046,7 @@ export function R1BuilderClient({
           </div>
           <p className="mt-1 text-[10px] text-[#6b7280]">
             BOM items whose category isn&apos;t on the template (reflects the last saved list).
+            Cross one off (✕) to hide a carry-over you don&apos;t need — it only hides the reminder, never changes the BOM.
           </p>
         </div>
       )}

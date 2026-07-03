@@ -3,8 +3,8 @@ import {
   getR1Demand,
   getCategoryItemCounts,
   getCabinPanelsForJob,
-  getUnmappedBomItems,
 } from "@/lib/actions/packing-list-r1";
+import { getCuratedUnmappedBomItems } from "@/lib/actions/packing-list-r1-unmapped";
 import { getAllCategories } from "@/lib/actions/categories";
 import { R1BuilderClient } from "@/components/packing-list-r1/r1-builder-client";
 
@@ -23,7 +23,7 @@ export default async function PackingListR1JobPage({
     getR1Demand(jobId),
     getCategoryItemCounts(),
     getCabinPanelsForJob(jobId),
-    getUnmappedBomItems(jobId),
+    getCuratedUnmappedBomItems(jobId),
   ]);
   return (
     <R1BuilderClient
