@@ -177,6 +177,28 @@ body {
   .animate-fade-in, .animate-slide-up, .animate-scale-in { animation: none; }
 }
 
+/* GAD-changed alert — a cabin job whose linked elevator job had its GAD
+   re-uploaded AFTER the cabin was planned/built. Severe: the built cabin may
+   now be wrong, so the row flashes red to force a recheck. Reduced-motion
+   users still get a strong static red so the warning is never lost. */
+@keyframes gad-flash {
+  0%, 100% { background-color: color-mix(in srgb, var(--destructive) 7%, transparent); }
+  50%      { background-color: color-mix(in srgb, var(--destructive) 24%, transparent); }
+}
+@keyframes gad-badge-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.gad-flash-row { animation: gad-flash 1.1s ease-in-out infinite; }
+.gad-flash-badge { animation: gad-badge-pulse 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .gad-flash-row {
+    animation: none;
+    background-color: color-mix(in srgb, var(--destructive) 16%, transparent);
+  }
+  .gad-flash-badge { animation: none; }
+}
+
 /* Skeleton shimmer */
 .skeleton {
   position: relative;

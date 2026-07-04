@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers, Check } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers, Check, AlertTriangle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -172,9 +172,17 @@ export function CabinJobsClient({
     });
   }, [jobs, search, systemFilter, materialFilter]);
 
+  // Cabin jobs whose linked elevator job had its GAD changed — a stale-drawing
+  // hazard. Counted across ALL jobs (not just the filtered view) so the banner
+  // never under-reports if a filter happens to hide one.
+  const gadChangedCount = useMemo(() => jobs.filter((j) => j.gad_changed).length, [jobs]);
+
   const sorted = useMemo(() => {
     const copy = [...filtered];
     copy.sort((a, b) => {
+      // GAD-changed jobs always float to the very top — a stale-drawing recheck
+      // outranks whatever column sort is active.
+      if (a.gad_changed !== b.gad_changed) return a.gad_changed ? -1 : 1;
       let cmp = 0;
       switch (sortKey) {
         case "job_number":
@@ -272,6 +280,7 @@ export function CabinJobsClient({
       platform: j.platform ?? "",
       side_panel_material: j.side_panel_material ?? "",
       line_count: j.line_count,
+      gad_changed: j.gad_changed ? "GAD CHANGED — RECHECK" : "",
       created_at: new Date(j.created_at).toLocaleDateString([], {
         day: "2-digit",
         month: "short",
@@ -286,6 +295,7 @@ export function CabinJobsClient({
         { header: "Platform", field: "platform" },
         { header: "Side Panel", field: "side_panel_material" },
         { header: "Items", field: "line_count" },
+        { header: "GAD Alert", field: "gad_changed" },
         { header: "Created", field: "created_at" },
       ],
       filename: "cabin-jobs",
@@ -363,6 +373,18 @@ export function CabinJobsClient({
         />
       ) : (
         <>
+          {gadChangedCount > 0 && (
+            <div className="mb-4 flex items-center gap-3 rounded-lg border-2 border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive)_10%,transparent)] px-4 py-3 text-[var(--destructive)]">
+              <AlertTriangle size={20} className="shrink-0 gad-flash-badge" />
+              <span className="text-sm font-semibold">
+                {gadChangedCount} cabin job{gadChangedCount === 1 ? "" : "s"} — the linked elevator job&rsquo;s GAD
+                drawing changed after the cabin was planned. Recheck the cabin against the new drawing
+                before building or dispatch. {gadChangedCount === 1 ? "It is" : "They are"} pinned to the top
+                and marked in red below.
+              </span>
+            </div>
+          )}
+
           <Toolbar>
             <div className="relative w-full max-w-sm">
               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]" />
@@ -452,10 +474,28 @@ export function CabinJobsClient({
                   {sorted.map((j) => (
                     <TableRow
                       key={j.id}
-                      className={cn("cursor-pointer hover:bg-[var(--muted)]", isReady(j) && "opacity-60")}
+                      className={cn(
+                        "cursor-pointer",
+                        j.gad_changed ? "gad-flash-row" : "hover:bg-[var(--muted)]",
+                        // A GAD-changed row must stand out even when it's Ready,
+                        // so don't dim it in that case.
+                        isReady(j) && !j.gad_changed && "opacity-60",
+                      )}
                       onClick={() => router.push(`/cabin-jobs/${j.id}`)}
                     >
-                      <TableCell className="font-mono font-medium">{j.job_number}</TableCell>
+                      <TableCell className="font-mono font-medium">
+                        <span className="inline-flex items-center gap-2">
+                          {j.gad_changed && (
+                            <span
+                              title="The linked elevator job's GAD drawing changed after this cabin was planned. Recheck the cabin against the new drawing before building or dispatch."
+                              className="gad-flash-badge inline-flex items-center gap-1 rounded bg-[var(--destructive)] px-1.5 py-0.5 text-[10px] font-bold uppercase leading-none text-white"
+                            >
+                              <AlertTriangle size={11} /> GAD changed
+                            </span>
+                          )}
+                          {j.job_number}
+                        </span>
+                      </TableCell>
                       <TableCell>{j.customer_name || "—"}</TableCell>
                       <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
                       <TableCell>{j.side_panel_material || "—"}</TableCell>

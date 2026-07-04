@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { CABIN_PARENT } from "@/lib/cabin/cabin-types";
+import { gadAlert, type GadAlertInput } from "@/lib/jobs/gad-alert";
 
 /* ------------------------------------------------------------------ *
  * Cabin jobs — a job number with cabin inventory items grouped by the
@@ -291,6 +292,11 @@ export interface CabinJobListRow {
   /** Non-null ISO timestamp when marked ready; ready jobs are excluded from the
    *  cabin requirement (their items are already built). null = still counts. */
   marked_ready_at: string | null;
+  /** TRUE when the linked elevator Job Order's GAD drawing was changed after its
+   *  BOM was defined (the `jobs`-level GAD-drift alert). Severe: the cabin was
+   *  planned/built against a now-stale drawing, so the list flashes it red and
+   *  pins it to the top for a recheck. */
+  gad_changed: boolean;
 }
 
 export async function getCabinJobs(): Promise<CabinJobListRow[]> {
@@ -299,7 +305,7 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   // CASCADE FK guarantees every line's parent is in the jobs set. That makes the
   // two reads independent — run them concurrently (and page the lines, which
   // were silently capped at PostgREST's 1000 rows before).
-  const [{ data: jobs }, lines] = await Promise.all([
+  const [{ data: jobs }, lines, jobOrders] = await Promise.all([
     supabase
       .from("cabin_jobs")
       .select("id, job_number, customer_name, created_at, marked_ready_at")
@@ -316,7 +322,27 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
           .range(from, to),
       // A lines error was tolerated before (the list rendered without counts).
     ).catch(() => []),
+    // The linked elevator Job Orders' GAD-drift fields, so each cabin job can
+    // flag whether its drawing moved after the cabin was planned. Light
+    // projection, paged (the jobs table can grow past PostgREST's 1000 cap).
+    fetchAllRanged<GadAlertInput & { job_number: string }>((from, to, withCount) =>
+      supabase
+        .from("jobs")
+        .select(
+          "job_number, gad_drawing_url, gad_revision_no, bom_defined_at, bom_gad_baseline_rev, bom_audited_gad_rev",
+          withCount ? { count: "exact" } : {},
+        )
+        .range(from, to),
+    ).catch(() => []),
   ]);
+
+  // job_number → does its Job Order currently have a GAD-changed alert. Keyed
+  // case-insensitively (cabin jobs link by number; case may drift on legacy rows).
+  const gadChangedByNumber = new Map<string, boolean>();
+  for (const jo of jobOrders) {
+    const key = (jo.job_number ?? "").trim().toLowerCase();
+    if (key) gadChangedByNumber.set(key, gadAlert(jo));
+  }
   const countByJob = new Map<string, number>();
   const platformByJob = new Map<string, string>();
   const finishesByJob = new Map<string, Set<string>>();
@@ -344,6 +370,8 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       side_panel_material: fset ? [...fset].sort().join(" + ") : null,
       created_at: j.created_at as string,
       marked_ready_at: (j.marked_ready_at as string | null) ?? null,
+      gad_changed:
+        gadChangedByNumber.get(((j.job_number as string) ?? "").trim().toLowerCase()) ?? false,
     };
   });
 }
