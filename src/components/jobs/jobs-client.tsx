@@ -177,14 +177,19 @@ export function JobsClient({
   );
 
   // Tab buckets (computed across ALL jobs, independent of the other filters, so
-  // the counts on the tabs always reflect the true split).
-  const { activeCount, dispatchedCount } = useMemo(() => {
-    let a = 0, d = 0;
+  // the counts on the tabs always reflect the true split). The Dispatch Plan
+  // additionally drops Hold/New jobs — parked or not-started work isn't
+  // dispatchable, so it doesn't belong on the board.
+  const { activeCount, dispatchedCount, planCount } = useMemo(() => {
+    let a = 0, d = 0, p = 0;
     for (const j of jobs) {
       if ((dispatchStatus[j.id] ?? "none") === "full") d++;
-      else a++;
+      else {
+        a++;
+        if (j.status !== "hold" && j.status !== "new") p++;
+      }
     }
-    return { activeCount: a, dispatchedCount: d };
+    return { activeCount: a, dispatchedCount: d, planCount: p };
   }, [jobs, dispatchStatus]);
 
   // Jobs whose GAD was changed after the BOM was defined (and not re-audited).
@@ -233,6 +238,9 @@ export function JobsClient({
       // the "Active" tab shows everything else (never-dispatched + partial).
       const isFull = (dispatchStatus[job.id] ?? "none") === "full";
       if (view === "dispatched" ? !isFull : isFull) return false;
+      // Dispatch Plan shows only jobs actually in production — Hold and New
+      // jobs are parked/not-started, so they don't belong on the dispatch board.
+      if (view === "plan" && (job.status === "hold" || job.status === "new")) return false;
       if (searchTokens.length > 0) {
         const haystack = [
           job.job_number,
@@ -510,7 +518,7 @@ export function JobsClient({
         tabs={[
           { value: "active", label: "Active", count: activeCount },
           { value: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
-          { value: "plan", label: "Dispatch Plan", count: activeCount },
+          { value: "plan", label: "Dispatch Plan", count: planCount },
         ]}
       />
 
