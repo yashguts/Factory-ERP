@@ -491,3 +491,83 @@ export async function deleteRun(id: string): Promise<{ ok: boolean; error?: stri
   revalidatePath("/child-parts");
   return { ok: true };
 }
+
+/* ------------------------------------------------------------------ *
+ * Bulk record — the run-sheet photo reader's commit path.
+ * ------------------------------------------------------------------ */
+
+export interface BulkRunEntry {
+  operation_id: string;
+  runs_count: number;
+  /** Shown in failure toasts; typically the program code or name. */
+  label: string;
+  note?: string | null;
+}
+
+export interface BulkRunOutcome {
+  recorded: number;
+  updated: number;
+  failed: { label: string; error: string }[];
+}
+
+/**
+ * Record several runs for one date in a single action call. Each entry goes
+ * through the SAME per-run paths as manual entry (recordRun / updateRunCount),
+ * so stock posting, the cutover gate and idempotency behave identically.
+ * Entries for the same program are merged (counts summed) first; a program
+ * already logged that day has its count RAISED by the entry's qty (the sheet
+ * adds to what's recorded, it doesn't replace it). Sequential on purpose:
+ * every step posts inventory, and per-row errors must map back to their line.
+ */
+export async function recordRunsBulk(
+  run_date: string,
+  entries: BulkRunEntry[],
+): Promise<BulkRunOutcome> {
+  const outcome: BulkRunOutcome = { recorded: 0, updated: 0, failed: [] };
+  if (!run_date || !entries.length) return outcome;
+
+  // Merge duplicate programs (a sheet may list the same program morning and
+  // evening) so the second line doesn't just hit the (program, date) unique key.
+  const merged = new Map<string, BulkRunEntry>();
+  for (const e of entries) {
+    const count = Math.max(0, Math.round(Number(e.runs_count) || 0));
+    if (!e.operation_id || count <= 0) continue;
+    const cur = merged.get(e.operation_id);
+    if (cur) cur.runs_count += count;
+    else merged.set(e.operation_id, { ...e, runs_count: count });
+  }
+
+  // Existing entries for the day, so "already logged" becomes a count raise.
+  const supabase = await createClient();
+  const { data: existing } = await supabase
+    .from("operation_runs")
+    .select("id, operation_id, runs_count")
+    .eq("run_date", run_date)
+    .in("operation_id", [...merged.keys()]);
+  const existingByOp = new Map(
+    (existing ?? []).map((r: any) => [
+      r.operation_id as string,
+      { id: r.id as string, runs_count: Number(r.runs_count) || 0 },
+    ]),
+  );
+
+  for (const e of merged.values()) {
+    const prior = existingByOp.get(e.operation_id);
+    const res = prior
+      ? await updateRunCount(prior.id, prior.runs_count + e.runs_count)
+      : await recordRun({
+          operation_id: e.operation_id,
+          run_date,
+          runs_count: e.runs_count,
+          note: e.note ?? null,
+        });
+    if (res.ok) {
+      if (prior) outcome.updated += 1;
+      else outcome.recorded += 1;
+    } else {
+      outcome.failed.push({ label: e.label, error: res.error });
+    }
+  }
+  return outcome;
+}
+

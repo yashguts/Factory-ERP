@@ -31,6 +31,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { useToast } from "@/components/ui/toast";
+import { RunSheetReader } from "@/components/programs/run-sheet-reader";
 import { formatDuration } from "@/lib/utils";
 import {
   searchAuditedPrograms,
@@ -75,24 +76,30 @@ export function DailyRunsClient({ date, maxDate, initialRows }: Props) {
     if (!picked) return;
     setSaving(true);
     startTransition(async () => {
-      const res = await recordRun({
-        operation_id: picked.id,
-        run_date: date,
-        runs_count: count,
-        note,
-      });
-      setSaving(false);
-      if (!res.ok) {
-        toast.error(res.error);
-        return;
+      try {
+        const res = await recordRun({
+          operation_id: picked.id,
+          run_date: date,
+          runs_count: count,
+          note,
+        });
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        toast.success(
+          `Recorded — ${picked.code ?? picked.name} ×${count} on ${prettyDate(date)}.`,
+        );
+        setPicked(null);
+        setCount(1);
+        setNote("");
+        router.refresh();
+      } catch {
+        // A rejected action (redeploy/network) must not leave the button dead.
+        toast.error("Couldn't record — connection problem. Check the list and retry.");
+      } finally {
+        setSaving(false);
       }
-      toast.success(
-        `Recorded — ${picked.code ?? picked.name} ×${count} on ${prettyDate(date)}.`,
-      );
-      setPicked(null);
-      setCount(1);
-      setNote("");
-      router.refresh();
     });
   };
 
@@ -131,7 +138,10 @@ export function DailyRunsClient({ date, maxDate, initialRows }: Props) {
 
       {/* Add a run */}
       <Card className="mb-4">
-        <SectionHeader title={`Record a run for ${prettyDate(date)}`} />
+        <SectionHeader
+          title={`Record a run for ${prettyDate(date)}`}
+          actions={<RunSheetReader date={date} />}
+        />
         <CardBody className="space-y-2">
           <div className="flex items-start gap-2 flex-wrap">
             <div className="flex-1 min-w-[280px]">
@@ -193,8 +203,10 @@ export function DailyRunsClient({ date, maxDate, initialRows }: Props) {
             <Info className="h-3.5 w-3.5 shrink-0 mt-px" />
             Only <span className="font-semibold">audited</span> programs can be
             logged. If the factory ran something new, create the program and mark
-            it audited first — then record it here. Logging a run does{" "}
-            <span className="font-semibold">not</span> consume or produce stock.
+            it audited first — then record it here. Recording a run{" "}
+            <span className="font-semibold">consumes its input sheets and adds
+            its produced parts to stock</span> (runs dated before the inventory
+            cutover don&apos;t post stock).
           </p>
         </CardBody>
       </Card>
@@ -429,7 +441,7 @@ function RunRow({ row, onChanged }: { row: DailyRunRow; onChanged: () => void })
 
 /* ------------------------------------------------------------------ */
 
-function ProgramSearch({ onPick }: { onPick: (p: AuditedProgramHit) => void }) {
+export function ProgramSearch({ onPick }: { onPick: (p: AuditedProgramHit) => void }) {
   const [search, setSearch] = useState("");
   const [results, setResults] = useState<AuditedProgramHit[]>([]);
   const [loading, setLoading] = useState(false);
