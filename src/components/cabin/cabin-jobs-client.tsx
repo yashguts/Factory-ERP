@@ -102,6 +102,15 @@ export function CabinJobsClient({
   const isReady = (j: CabinJobListRow) => readyOverride[j.id] ?? j.marked_ready_at != null;
   async function toggleReady(j: CabinJobListRow) {
     const next = !isReady(j);
+    // Marking ready removes the job's items from the cabin requirement — guard
+    // against stray clicks. Reopening stays one-click (it's the corrective action).
+    if (
+      next &&
+      !window.confirm(
+        `Mark cabin job "${j.job_number}" as READY?\n\nIts items will stop counting in the cabin requirement and cutting plans. Click OK to confirm.`,
+      )
+    )
+      return;
     setReadyOverride((m) => ({ ...m, [j.id]: next }));
     const res = await setCabinJobReady(j.id, next);
     if (!res.ok) {
