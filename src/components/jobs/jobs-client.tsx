@@ -33,6 +33,16 @@ import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
 import { gadAlert } from "@/lib/jobs/gad-alert";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
+import { getRicardoFinancialsForJobs, type RicardoListSummary } from "@/lib/actions/ricardo";
+
+// Compact rupee display for the CRM column: lakhs/crores keep the cell narrow.
+function fmtL(n: number | null | undefined): string {
+  if (n === null || n === undefined) return "—";
+  const abs = Math.abs(n);
+  if (abs >= 1e7) return `₹${+(n / 1e7).toFixed(2)}Cr`;
+  if (abs >= 1e5) return `₹${+(n / 1e5).toFixed(1)}L`;
+  return `₹${new Intl.NumberFormat("en-IN").format(Math.round(n))}`;
+}
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -114,6 +124,20 @@ export function JobsClient({
       alive = false;
     };
   }, []);
+  // Ricardo CRM money per job number (contract / received / transport scope).
+  // Client-fetched in one batch call — live from the CRM, never blocks the list.
+  const [crm, setCrm] = useState<Record<string, RicardoListSummary>>({});
+  useEffect(() => {
+    let alive = true;
+    getRicardoFinancialsForJobs(initialJobs.map((j) => j.job_number))
+      .then((m) => {
+        if (alive) setCrm(m);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [initialJobs]);
   // Optimistic local copy so inline edits are instant
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
@@ -409,6 +433,19 @@ export function JobsClient({
                   },
                 },
                 { header: "GAD Alert", field: (j) => (gadAlert(j) ? "CHANGED" : "") },
+                { header: "CRM Contract Value", field: (j) => crm[j.job_number]?.contractValue ?? "" },
+                { header: "CRM Received (approved)", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedApproved : "") },
+                { header: "CRM Pending Approval", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedPending : "") },
+                {
+                  header: "CRM Transport",
+                  field: (j) => {
+                    const s = crm[j.job_number];
+                    if (!s?.found) return "";
+                    if (s.transportMode === "Customer") return "Customer scope";
+                    if (!s.transportMode) return "";
+                    return `${s.transportMode}: ${s.transportAmount ?? (s.transportTbd ? "TBD" : "")}`;
+                  },
+                },
               ]}
             />
           </>
@@ -601,6 +638,7 @@ export function JobsClient({
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
+                <TableHead title="Live from Ricardo CRM — money received (approved) / contract value, plus transport scope. Only Ricardo jobs.">CRM ₹</TableHead>
                 <TableHead title="Structure supply: Factory-made / Site-fabricated / none">Structure</TableHead>
                 <SortHeader
                   label="Sent"
@@ -672,6 +710,49 @@ export function JobsClient({
                         )}
                       </div>
                     )}
+                  </TableCell>
+                  <TableCell>
+                    {(() => {
+                      const s = crm[job.job_number];
+                      if (!s)
+                        return <span className="text-xs text-[var(--muted-foreground)]">—</span>;
+                      if (!s.found)
+                        return (
+                          <span
+                            className="text-[10px] text-amber-600"
+                            title="No live job found in the Ricardo CRM for this number"
+                          >
+                            not in CRM
+                          </span>
+                        );
+                      const transport =
+                        s.transportMode === "Customer"
+                          ? "Transport: customer"
+                          : s.transportMode
+                            ? `Transport: ${s.transportAmount != null ? fmtL(s.transportAmount) : s.transportTbd ? "TBD" : "company"}`
+                            : null;
+                      return (
+                        <div
+                          className="whitespace-nowrap leading-tight"
+                          title={`Ricardo CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${s.receivedPending > 0 ? ` · ₹${new Intl.NumberFormat("en-IN").format(s.receivedPending)} pending approval` : ""}${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
+                        >
+                          <span className="text-xs font-medium text-emerald-700">
+                            {fmtL(s.receivedApproved)}
+                          </span>
+                          <span className="text-xs text-[var(--muted-foreground)]">
+                            {" "}/ {fmtL(s.contractValue)}
+                          </span>
+                          <div className="text-[10px] text-[var(--muted-foreground)]">
+                            {transport}
+                            {s.receivedPending > 0 && (
+                              <span className="text-amber-600">
+                                {transport ? " · " : ""}+{fmtL(s.receivedPending)} pending
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </TableCell>
                   <TableCell>
                     {job.structure_included && job.structure_included !== "NA" ? (
