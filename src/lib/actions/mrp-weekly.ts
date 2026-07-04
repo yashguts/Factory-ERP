@@ -18,7 +18,7 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
-import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
+import { linePhase } from "@/lib/bom/bom-sections";
 import { computeMakePlanCore, explodeToLeaves } from "@/lib/actions/make-plan-core";
 import { _getOutstandingLinesUncached } from "@/lib/actions/po-outstanding";
 import type { MrpRow } from "@/lib/actions/mrp";
@@ -277,7 +277,7 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   const allLines: any[] = await fetchAllRanged((from, to, withCount) =>
     supabase
       .from("job_bom_lines")
-      .select("id, item_id, required_quantity, job_bom_id, category", withCount ? { count: "exact" } : {})
+      .select("id, item_id, required_quantity, job_bom_id, category, dispatch_phase", withCount ? { count: "exact" } : {})
       .in("job_bom_id", [...headerToJob.keys()])
       .not("item_id", "is", null)
       .gt("required_quantity", 0)
@@ -302,7 +302,7 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
     if (bucket === undefined) continue; // job out of scope (later / undated)
     const stage = jobId ? stageByJob.get(jobId) : undefined;
     if (!stage || stage === "new") continue;
-    if (stage === "first_phase" && dispatchPhaseOf((line.category as string) ?? "") !== "first") continue;
+    if (stage === "first_phase" && linePhase(line.dispatch_phase as number | null, (line.category as string) ?? "") !== "first") continue;
     if (jobId && ruleChildIds.has(line.item_id)) {
       const s = childDirectJobs.get(line.item_id) ?? new Set<string>();
       s.add(jobId);

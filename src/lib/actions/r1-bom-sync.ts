@@ -47,22 +47,32 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
 
     const { data: r1Lines } = await supabase
       .from("packing_r1_lines")
-      .select("item_id, part_title, qty, sort_order")
+      .select(
+        `item_id, part_title, qty, sort_order,
+         template:packing_template_lines!packing_r1_lines_template_line_id_fkey(dispatch_phase)`,
+      )
       .eq("list_id", list.id as string)
       .not("item_id", "is", null);
 
     // Items with qty 0 on R1 still participate: an existing BOM line for them is
     // zeroed/adopted (the list says "not required"), we just never INSERT them.
-    const desired = new Map<string, { qty: number; category: string; sort: number }>();
+    // `phase` = the template line's explicit dispatch-phase override (1|2) or
+    // null (inherit the part's default) — first explicit value wins per item.
+    const desired = new Map<string, { qty: number; category: string; sort: number; phase: number | null }>();
     for (const l of r1Lines ?? []) {
       const qty = Math.max(0, Number(l.qty) || 0);
+      const tpl = Array.isArray(l.template) ? l.template[0] : l.template;
+      const explicit = (tpl?.dispatch_phase as number | null | undefined) ?? null;
       const cur = desired.get(l.item_id as string);
-      if (cur) cur.qty += qty;
-      else
+      if (cur) {
+        cur.qty += qty;
+        if (cur.phase == null && explicit != null) cur.phase = explicit;
+      } else
         desired.set(l.item_id as string, {
           qty,
           category: ((l.part_title as string) || "Miscellaneous").trim() || "Miscellaneous",
           sort: Number(l.sort_order) || 0,
+          phase: explicit,
         });
     }
 
@@ -87,11 +97,12 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
 
     const { data: bomLines } = await supabase
       .from("job_bom_lines")
-      .select("id, item_id, category, required_quantity, source, sort_order")
+      .select("id, item_id, category, required_quantity, source, sort_order, dispatch_phase")
       .eq("job_bom_id", headerId);
     const existing = (bomLines ?? []) as {
       id: string; item_id: string | null; category: string | null;
       required_quantity: number; source: string | null; sort_order: number | null;
+      dispatch_phase: number | null;
     }[];
     const hadLines = existing.length > 0;
 
@@ -115,15 +126,15 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
     }
 
     /* 3. Reconcile. */
-    const updates: { id: string; qty: number; category: string; sort: number }[] = [];
-    const inserts: { category: string; item_id: string; qty: number; sort: number }[] = [];
+    const updates: { id: string; qty: number; category: string; sort: number; phase: number | null }[] = [];
+    const inserts: { category: string; item_id: string; qty: number; sort: number; phase: number | null }[] = [];
     const deletes: string[] = [];
     const zeroes: string[] = [];
 
     for (const [itemId, want] of desired) {
       const lines = byItem.get(itemId);
       if (!lines || lines.length === 0) {
-        if (want.qty > 0) inserts.push({ category: want.category, item_id: itemId, qty: want.qty, sort: want.sort });
+        if (want.qty > 0) inserts.push({ category: want.category, item_id: itemId, qty: want.qty, sort: want.sort, phase: want.phase });
         continue;
       }
       // Keep the dispatch-referenced line if there is one (Sent/Left stays tied
@@ -132,9 +143,10 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
       if (
         Number(keep.required_quantity) !== want.qty ||
         (keep.category ?? "") !== want.category ||
-        keep.source !== "r1"
+        keep.source !== "r1" ||
+        (keep.dispatch_phase ?? null) !== want.phase
       ) {
-        updates.push({ id: keep.id, qty: want.qty, category: want.category, sort: want.sort });
+        updates.push({ id: keep.id, qty: want.qty, category: want.category, sort: want.sort, phase: want.phase });
       }
       for (const dup of lines) {
         if (dup.id === keep.id) continue;
@@ -157,7 +169,7 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
     for (const u of updates) {
       const { error } = await supabase
         .from("job_bom_lines")
-        .update({ required_quantity: u.qty, category: u.category, source: "r1", sort_order: u.sort })
+        .update({ required_quantity: u.qty, category: u.category, source: "r1", sort_order: u.sort, dispatch_phase: u.phase })
         .eq("id", u.id);
       if (error) return { ok: false, error: error.message };
     }
@@ -169,6 +181,7 @@ export async function syncR1ToBom(jobId: string): Promise<R1SyncResult> {
         required_quantity: i.qty,
         sort_order: i.sort,
         source: "r1",
+        dispatch_phase: i.phase,
       }));
       for (let i = 0; i < rows.length; i += 200) {
         const { error } = await supabase.from("job_bom_lines").insert(rows.slice(i, i + 200));

@@ -4,7 +4,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { _getPlanItemsSlimUncached } from "@/lib/actions/inventory";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
-import { dispatchPhaseOf } from "@/lib/bom/bom-sections";
+import { linePhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 
 export interface MrpRow {
@@ -243,7 +243,7 @@ export async function _getMrpDataUncached(
       supabase
         .from("job_bom_lines")
         .select(
-          "id, item_id, required_quantity, job_bom_id, category",
+          "id, item_id, required_quantity, job_bom_id, category, dispatch_phase",
           withCount ? { count: "exact" } : {},
         )
         .in("job_bom_id", bomHeaderIds)
@@ -281,7 +281,7 @@ export async function _getMrpDataUncached(
     if (!stage || stage === "new") continue;
     if (
       stage === "first_phase" &&
-      dispatchPhaseOf((line.category as string) ?? "") !== "first"
+      linePhase(line.dispatch_phase as number | null, (line.category as string) ?? "") !== "first"
     )
       continue;
     if (jobId && ruleChildIds.has(line.item_id)) {
@@ -1435,11 +1435,12 @@ async function _getMrpItemJobsUncached(
     required_quantity: number;
     category: string | null;
     item_id: string;
+    dispatch_phase: number | null;
   }>((from, to, withCount) =>
     supabase
       .from("job_bom_lines")
       .select(
-        "id, job_bom_id, required_quantity, category, item_id",
+        "id, job_bom_id, required_quantity, category, item_id, dispatch_phase",
         withCount ? { count: "exact" } : {},
       )
       .in("item_id", sourceIds)
@@ -1561,7 +1562,7 @@ async function _getMrpItemJobsUncached(
     if (stage === "new") continue;
     if (
       stage === "first_phase" &&
-      dispatchPhaseOf((line.category as string) ?? "") !== "first"
+      linePhase(line.dispatch_phase, (line.category as string) ?? "") !== "first"
     )
       continue;
     // net is in the SOURCE item's units; the multiplier converts it to `itemId`

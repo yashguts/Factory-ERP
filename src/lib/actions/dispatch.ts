@@ -3,7 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
-import { dispatchPhaseOf, type DispatchPhase } from "@/lib/bom/bom-sections";
+import { dispatchPhaseOf, linePhase, type DispatchPhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { postsInventory } from "@/lib/inventory/cutover";
@@ -237,7 +237,7 @@ async function _getJobDispatchSummaryUncached(
         const { data: bl, error } = await supabase
           .from("job_bom_lines")
           .select(
-            `id, category, required_quantity, item_id,
+            `id, category, required_quantity, item_id, dispatch_phase,
              item:items!job_bom_lines_item_id_fkey(code, name, uom:units_of_measurement!items_uom_id_fkey(abbreviation))`,
           )
           .eq("job_bom_id", header.id)
@@ -256,7 +256,9 @@ async function _getJobDispatchSummaryUncached(
             item_name: (it?.name as string) ?? null,
             uom: (uom?.abbreviation as string) ?? null,
             category,
-            phase: dispatchPhaseOf(category),
+            // Line-level phase override (owner's phase sheet) falls back to the
+            // section default — drives the modal scope, Balance tab and prints.
+            phase: linePhase(r.dispatch_phase as number | null, category),
             required,
             dispatched: 0,
             remaining: required,

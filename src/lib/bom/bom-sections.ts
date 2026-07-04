@@ -674,3 +674,18 @@ export const FIRST_PHASE_SECTIONS: ReadonlySet<string> = new Set([
 export function dispatchPhaseOf(category: string): DispatchPhase {
   return FIRST_PHASE_SECTIONS.has(category) ? "first" : "second";
 }
+
+/**
+ * Line-level dispatch phase (owner's phase sheet, 2026-07-04): a line can carry
+ * an explicit `dispatch_phase` (1|2) — set from the R1 template's per-line
+ * override (e.g. Buffer Spring is phase 2 inside the phase-1 Buffer Channel
+ * part). NULL/undefined falls back to the section default above.
+ */
+export function linePhase(
+  explicit: number | null | undefined,
+  category: string | null | undefined,
+): DispatchPhase {
+  if (explicit === 1) return "first";
+  if (explicit === 2) return "second";
+  return dispatchPhaseOf(category ?? "");
+}
