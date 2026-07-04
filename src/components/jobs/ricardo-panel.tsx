@@ -81,7 +81,9 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
       "—"
     );
 
-  const payments = data.payments ?? [];
+  // Owner's call (2026-07-04): only approved money is shown — no pending
+  // figures anywhere, including the history rows.
+  const payments = (data.payments ?? []).filter((p) => p.status === "approved");
 
   return (
     <div className="mb-3 card-surface p-3">
@@ -108,7 +110,7 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
         <Stat label="Contract Value" value={fmt(data.contractValue)} />
         <Stat label="Transport" value={transport} />
         <Stat
@@ -116,18 +118,8 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
           value={<span className="text-emerald-700">{fmt(data.receivedApproved)}</span>}
           sub={
             payments.length
-              ? `${payments.filter((p) => p.status === "approved").length} payment${payments.filter((p) => p.status === "approved").length === 1 ? "" : "s"}`
+              ? `${payments.length} payment${payments.length === 1 ? "" : "s"}`
               : undefined
-          }
-        />
-        <Stat
-          label="Pending approval"
-          value={
-            (data.receivedPending ?? 0) > 0 ? (
-              <span className="text-amber-700">{fmt(data.receivedPending)}</span>
-            ) : (
-              "—"
-            )
           }
         />
       </div>
@@ -157,15 +149,9 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
                       {[p.reference, p.bank].filter(Boolean).join(" · ") || "—"}
                     </td>
                     <td className="py-1">
-                      {p.status === "pending" ? (
-                        <span className="rounded-full border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[10px] text-amber-700">
-                          pending
-                        </span>
-                      ) : (
-                        <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
-                          approved
-                        </span>
-                      )}
+                      <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] text-emerald-700">
+                        approved
+                      </span>
                     </td>
                   </tr>
                 ))}

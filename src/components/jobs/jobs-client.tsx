@@ -435,7 +435,6 @@ export function JobsClient({
                 { header: "GAD Alert", field: (j) => (gadAlert(j) ? "CHANGED" : "") },
                 { header: "CRM Contract Value", field: (j) => crm[j.job_number]?.contractValue ?? "" },
                 { header: "CRM Received (approved)", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedApproved : "") },
-                { header: "CRM Pending Approval", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedPending : "") },
                 {
                   header: "CRM Transport",
                   field: (j) => {
@@ -734,7 +733,7 @@ export function JobsClient({
                       return (
                         <div
                           className="whitespace-nowrap leading-tight"
-                          title={`Ricardo CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${s.receivedPending > 0 ? ` · ₹${new Intl.NumberFormat("en-IN").format(s.receivedPending)} pending approval` : ""}${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
+                          title={`Ricardo CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
                         >
                           <span className="text-xs font-medium text-emerald-700">
                             {fmtL(s.receivedApproved)}
@@ -742,14 +741,11 @@ export function JobsClient({
                           <span className="text-xs text-[var(--muted-foreground)]">
                             {" "}/ {fmtL(s.contractValue)}
                           </span>
-                          <div className="text-[10px] text-[var(--muted-foreground)]">
-                            {transport}
-                            {s.receivedPending > 0 && (
-                              <span className="text-amber-600">
-                                {transport ? " · " : ""}+{fmtL(s.receivedPending)} pending
-                              </span>
-                            )}
-                          </div>
+                          {transport && (
+                            <div className="text-[10px] text-[var(--muted-foreground)]">
+                              {transport}
+                            </div>
+                          )}
                         </div>
                       );
                     })()}

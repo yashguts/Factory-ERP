@@ -118,102 +118,142 @@ export function Sidebar() {
     )
     .sort((a, b) => b.length - a.length)[0];
 
+  // Collapsed icon-rail that expands to the full labelled panel on hover /
+  // keyboard focus. The rail stays a slim 64px in the page flow (see the
+  // spacer below) so every page gets ~160px more width; the expanded panel
+  // is an overlay (fixed, high z-index) so hovering never reflows the content.
+  // `labelReveal` = text/badges that fade in only when the panel is open.
+  const labelReveal =
+    "whitespace-nowrap overflow-hidden opacity-0 transition-opacity duration-150 group-hover:opacity-100 group-focus-within:opacity-100";
+
   return (
-    <aside className="w-56 border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] h-screen sticky top-0 flex flex-col">
-      <div className="px-4 py-3.5 border-b border-[var(--sidebar-border)]">
-        <h1 className="text-sm font-bold tracking-tight">Factory ERP</h1>
-        <p className="text-[11px] text-[var(--muted-foreground)] mt-0.5">
-          Elevator Manufacturing
-        </p>
-      </div>
+    <>
+      {/* Spacer: reserves the collapsed rail's slot in the flex layout so the
+          fixed overlay panel below doesn't sit on top of the page content. */}
+      <div className="w-16 shrink-0" aria-hidden />
 
-      <div className="px-3 pt-3">
-        <button
-          type="button"
-          onClick={() =>
-            window.dispatchEvent(new CustomEvent("open-global-search"))
-          }
-          className="w-full flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm text-[var(--muted-foreground)] border border-[var(--border)] bg-[var(--background)] hover:bg-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer transition-colors"
-        >
-          <Search size={15} strokeWidth={1.75} />
-          <span className="flex-1 text-left">Search…</span>
-          <kbd className="text-[10px] font-mono px-1.5 py-0.5 rounded border border-[var(--border)] bg-[var(--muted)]">
-            Ctrl K
-          </kbd>
-        </button>
-      </div>
-
-      <nav className="flex-1 px-3 py-3 overflow-y-auto">
-        {navGroups.map((group, gi) => (
-          <div key={group.label} className={cn(gi > 0 && "mt-4")}>
-            <div className="px-2 mb-1 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
-              {group.label}
-            </div>
-            <div className="space-y-0.5">
-              {group.items.map((item) => {
-                const Icon = item.icon;
-                const isActive = item.href === activeHref;
-                const badge = item.href === "/jobs" ? gadDrift : 0;
-                const statusBadge = item.href === "/jobs" ? statusAlerts : 0;
-                return (
-                  <Link
-                    key={item.href}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-2.5 px-2.5 py-1.5 rounded-md text-sm transition-all duration-150",
-                      isActive
-                        ? "bg-[var(--sidebar-accent)] text-[var(--primary)] font-medium shadow-[var(--shadow-xs)]"
-                        : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-                    )}
-                  >
-                    <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
-                    <span className="flex-1">{item.label}</span>
-                    {statusBadge > 0 && (
-                      <span
-                        title={`${statusBadge} open job status alert${statusBadge === 1 ? "" : "s"}`}
-                        className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white"
-                      >
-                        {statusBadge > 99 ? "99+" : statusBadge}
-                      </span>
-                    )}
-                    {badge > 0 && (
-                      <span
-                        title={`${badge} GAD change${badge === 1 ? "" : "s"} need review`}
-                        className="inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white"
-                      >
-                        {badge > 99 ? "99+" : badge}
-                      </span>
-                    )}
-                  </Link>
-                );
-              })}
-            </div>
+      <aside
+        className="group fixed left-0 top-0 z-40 flex h-screen w-16 flex-col overflow-hidden border-r border-[var(--sidebar-border)] bg-[var(--sidebar)] transition-[width] duration-200 ease-out hover:w-56 hover:shadow-xl focus-within:w-56 focus-within:shadow-xl"
+        aria-label="Main navigation"
+      >
+        <div className="flex items-center gap-2.5 border-b border-[var(--sidebar-border)] px-3 py-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-[var(--primary)] text-sm font-bold text-[var(--primary-foreground)]">
+            FE
           </div>
-        ))}
-      </nav>
+          <div className={labelReveal}>
+            <h1 className="text-sm font-bold leading-tight tracking-tight">Factory ERP</h1>
+            <p className="text-[11px] leading-tight text-[var(--muted-foreground)]">
+              Elevator Manufacturing
+            </p>
+          </div>
+        </div>
 
-      {/* Operator identity — the name attached to GAD uploads / job creates /
-          audits (no login in this app). Click to set or change. */}
-      <div className="border-t border-[var(--sidebar-border)] px-3 py-2">
-        <button
-          type="button"
-          onClick={() => {
-            if (operator) {
-              const next = window.prompt("Change your name (used on the audit trail):", operator);
-              if (next !== null) setOperator(next);
-            } else {
-              ensureOperator();
+        <div className="px-3 pt-3">
+          <button
+            type="button"
+            onClick={() =>
+              window.dispatchEvent(new CustomEvent("open-global-search"))
             }
-          }}
-          title="The name recorded when you upload a GAD, create a job, or mark a job audited"
-          className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
-        >
-          <UserRound size={16} strokeWidth={1.75} />
-          <span className="flex-1 truncate text-left">
-            {operator ? operator : <span className="italic opacity-80">Set your name…</span>}
-          </span>
-        </button>
-      </div>
-    </aside>
+            title="Search (Ctrl K)"
+            className="flex w-full items-center gap-2.5 rounded-md border border-[var(--border)] bg-[var(--background)] px-2.5 py-1.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)] cursor-pointer"
+          >
+            <Search size={15} strokeWidth={1.75} className="shrink-0" />
+            <span className={cn("flex-1 text-left", labelReveal)}>Search…</span>
+            <kbd className={cn("rounded border border-[var(--border)] bg-[var(--muted)] px-1.5 py-0.5 font-mono text-[10px]", labelReveal)}>
+              Ctrl K
+            </kbd>
+          </button>
+        </div>
+
+        <nav className="flex-1 overflow-y-auto overflow-x-hidden px-3 py-3">
+          {navGroups.map((group, gi) => (
+            <div key={group.label} className={cn(gi > 0 && "mt-4")}>
+              {/* Header keeps its row height when collapsed so the gap still
+                  separates the groups; the text just fades out. */}
+              <div className={cn("mb-1 px-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]", labelReveal)}>
+                {group.label}
+              </div>
+              <div className="space-y-0.5">
+                {group.items.map((item) => {
+                  const Icon = item.icon;
+                  const isActive = item.href === activeHref;
+                  const badge = item.href === "/jobs" ? gadDrift : 0;
+                  const statusBadge = item.href === "/jobs" ? statusAlerts : 0;
+                  const hasAlert = badge > 0 || statusBadge > 0;
+                  return (
+                    <Link
+                      key={item.href}
+                      href={item.href}
+                      title={item.label}
+                      className={cn(
+                        "flex items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm transition-all duration-150",
+                        isActive
+                          ? "bg-[var(--sidebar-accent)] text-[var(--primary)] font-medium shadow-[var(--shadow-xs)]"
+                          : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                      )}
+                    >
+                      <span className="relative shrink-0">
+                        <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
+                        {/* Collapsed: a single alert dot on the icon (red for
+                            GAD drift, else amber for status). Hidden once the
+                            panel opens and the full counts show inline. */}
+                        {hasAlert && (
+                          <span
+                            className={cn(
+                              "absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-[var(--sidebar)] group-hover:hidden group-focus-within:hidden",
+                              badge > 0 ? "bg-red-600" : "bg-amber-500"
+                            )}
+                          />
+                        )}
+                      </span>
+                      <span className={cn("flex-1", labelReveal)}>{item.label}</span>
+                      {statusBadge > 0 && (
+                        <span
+                          title={`${statusBadge} open job status alert${statusBadge === 1 ? "" : "s"}`}
+                          className={cn("inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-amber-500 px-1 text-[10px] font-bold leading-none text-white", labelReveal)}
+                        >
+                          {statusBadge > 99 ? "99+" : statusBadge}
+                        </span>
+                      )}
+                      {badge > 0 && (
+                        <span
+                          title={`${badge} GAD change${badge === 1 ? "" : "s"} need review`}
+                          className={cn("inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white", labelReveal)}
+                        >
+                          {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+        </nav>
+
+        {/* Operator identity — the name attached to GAD uploads / job creates /
+            audits (no login in this app). Click to set or change. */}
+        <div className="border-t border-[var(--sidebar-border)] px-3 py-2">
+          <button
+            type="button"
+            onClick={() => {
+              if (operator) {
+                const next = window.prompt("Change your name (used on the audit trail):", operator);
+                if (next !== null) setOperator(next);
+              } else {
+                ensureOperator();
+              }
+            }}
+            title={operator ? `Signed in as ${operator}` : "Set your name (used on the audit trail)"}
+            className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+          >
+            <UserRound size={16} strokeWidth={1.75} className="shrink-0" />
+            <span className={cn("flex-1 truncate text-left", labelReveal)}>
+              {operator ? operator : <span className="italic opacity-80">Set your name…</span>}
+            </span>
+          </button>
+        </div>
+      </aside>
+    </>
   );
 }
