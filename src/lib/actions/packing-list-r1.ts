@@ -32,6 +32,11 @@ export interface R1TemplateLine {
   label: string | null;
   spec_hint: string | null;
   sort_order: number;
+  /** Seed quantity for NEW lists (e.g. GI Wire: 2 for every job). Editable after. */
+  default_qty: number | null;
+  /** Restricts default_qty to jobs with these drive-type codes (e.g. the Cabin
+   *  Hanging Rod: ['HOME','BELT'] = Home Rope / Home Belt only). NULL = all. */
+  default_qty_drive_types: string[] | null;
 }
 export interface R1TemplatePart {
   id: string;
@@ -152,6 +157,7 @@ export async function getTemplate(): Promise<R1TemplatePart[]> {
       .from("packing_template_lines")
       .select(
         `id, part_id, kind, category_id, item_id, label, spec_hint, sort_order,
+       default_qty, default_qty_drive_types,
        category:item_categories!packing_template_lines_category_id_fkey(name),
        item:items!packing_template_lines_item_id_fkey(code, name)`,
       )
@@ -176,6 +182,8 @@ export async function getTemplate(): Promise<R1TemplatePart[]> {
       label: (l.label as string | null) ?? null,
       spec_hint: (l.spec_hint as string | null) ?? null,
       sort_order: (l.sort_order as number) ?? 0,
+      default_qty: l.default_qty != null ? Number(l.default_qty) : null,
+      default_qty_drive_types: (l.default_qty_drive_types as string[] | null) ?? null,
     });
     byPart.set(l.part_id as string, arr);
   }
@@ -380,7 +388,7 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
       .maybeSingle(),
     createCacheClient()
       .from("jobs")
-      .select("job_number, customer_name, mobile_number, location")
+      .select("job_number, customer_name, mobile_number, location, drive_type")
       .eq("id", jobId)
       .maybeSingle(),
     getAllCategories(),
@@ -478,9 +486,18 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
           continue;
         }
         if (tl.kind === "item") {
-          // pinned item → capture its BOM quantity when the job uses it
-          const q = tl.item_id ? byItem.get(tl.item_id) ?? 0 : 0;
-          pushRow(part.title, tl, tl.item_id, q, q > 0 ? "auto" : "template");
+          // pinned item → capture its BOM quantity when the job uses it; else
+          // the template's default qty (optionally drive-type-scoped, e.g. the
+          // Cabin Hanging Rod seeds 2 only on Home Rope/Home Belt jobs, and
+          // GI Wire seeds 2 on every job). Always editable after seeding.
+          const bomQ = tl.item_id ? byItem.get(tl.item_id) ?? 0 : 0;
+          const driveOk =
+            !tl.default_qty_drive_types ||
+            tl.default_qty_drive_types.length === 0 ||
+            (!!job?.drive_type && tl.default_qty_drive_types.includes(job.drive_type as string));
+          const dq = tl.default_qty != null && driveOk ? tl.default_qty : 0;
+          const q = bomQ > 0 ? bomQ : dq;
+          pushRow(part.title, tl, tl.item_id, q, bomQ > 0 ? "auto" : "template");
           continue;
         }
         // hardware / free → blank
