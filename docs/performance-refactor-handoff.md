@@ -86,22 +86,20 @@ freeze).
 indexes** — the slowness is the app/serverless/latency layer. In order of expected
 payoff:
 
-### (1) Cross-region latency — CONFIRMED 2026-07-02, owner action pending
-**Measured** via `/api/debug-region` (left deployed as a permanent probe): the
-Netlify function runs in **us-east-2 (Ohio)**; Supabase is ap-south-1 (Mumbai);
-**~273 ms per query round-trip**. A section that runs 4–6 queries sequentially
-pays 1–2 s of pure network before rendering.
-- **Owner action (one click):** Netlify's self-serve region list has **no
-  Mumbai** — the closest is **Singapore (`sin`)**, ~60–70 ms to Mumbai (~4×
-  faster). Pro plan allows it: **Project configuration → Build & deploy →
-  Continuous deployment → Functions region → Configure → Asia Pacific
-  (Singapore) → Save**, then redeploy. Not settable via API/CLI without an
-  interactive `netlify login`; `netlify.toml` per-function region does not
-  apply to framework adapters like Next.js.
-- **Compounding fix (DONE 2026-07-02):** the render-path audit found 64
-  sequential-await / fat-read / serial-paging findings across ~20 files;
-  the independent reads are now `Promise.all`'d. Re-verify with
-  `/api/debug-region` after the region flip.
+### (1) Cross-region latency — FIXED 2026-07-03
+**Measured** via `/api/debug-region` (left deployed as a permanent probe):
+functions were in **us-east-2 (Ohio)** vs Supabase in ap-south-1 (Mumbai) —
+**~273 ms per query**. Moved to **Singapore (`sin` / ap-southeast-1)** after
+owner-authorized `netlify login` (Mumbai is not self-serve): now **~81–111 ms
+per query**; cold section opens roughly halved, warm mostly under 1 s.
+API note for next time: the writable knob is TOP-LEVEL `functions_region`
+(airport code) via `netlify api updateSite`; `build_settings.functions_region`
+is silently ignored; a redeploy applies it. The CLI stays logged in on the
+owner's machine.
+- **Compounding fix (SHIPPED 2026-07-03, d99a291):** the render-path audit
+  found 64 sequential-await / fat-read / serial-paging findings across ~20
+  files; independent reads are now `Promise.all`'d, twice adversarially
+  reviewed, smoke-tested live.
 
 ### (2) Missing `loading.tsx` — DONE 2026-07-02 (commit 0c09184)
 All 11 uncovered routes got skeletons (`/mrp/make-plan`, the three
