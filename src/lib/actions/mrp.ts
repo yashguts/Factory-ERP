@@ -254,6 +254,21 @@ export async function _getMrpDataUncached(
 
   const dispatchedByLine = await dispatchedByLinePromise;
 
+  // Component rules are needed DURING the line loop (smart suppression below
+  // builds per-job maps for rule parents/children) — the fetch has been in
+  // flight since the top of the function, so this await costs ~nothing.
+  const componentRules = await componentRulesPromise;
+  const ruleParentIds = new Set(componentRules.map((r) => r.parent_item_id));
+  const ruleChildIds = new Set(componentRules.map((r) => r.child_item_id));
+  // Rule-parent demand per JOB (net, same scope rules as reqMap) — lets the rule
+  // fold skip a parent's contribution from jobs that capture the child directly.
+  const parentPerJob = new Map<string, Map<string, { qty: number; headers: Set<string> }>>();
+  // Jobs whose packing list (job BOM) DIRECTLY lists a rule child, within the
+  // same stage/phase scope. Gross capture (required > 0), regardless of dispatch:
+  // a listed child means the job's need is explicitly tracked — the rule must not
+  // re-derive it, even after it ships.
+  const childDirectJobs = new Map<string, Set<string>>();
+
   // total = sum of NET required_quantity across all BOM lines for the item,
   // where net = required − dispatched (floored at 0). Lines fully dispatched
   // contribute nothing; an item whose lines all net to 0 drops out entirely.
@@ -269,10 +284,23 @@ export async function _getMrpDataUncached(
       dispatchPhaseOf((line.category as string) ?? "") !== "first"
     )
       continue;
+    if (jobId && ruleChildIds.has(line.item_id)) {
+      const s = childDirectJobs.get(line.item_id) ?? new Set<string>();
+      s.add(jobId);
+      childDirectJobs.set(line.item_id, s);
+    }
     const required = Number(line.required_quantity) || 0;
     const dispatched = dispatchedByLine.get(line.id) ?? 0;
     const qty = Math.max(0, required - dispatched);
     if (qty <= 0) continue; // fully dispatched — no remaining demand
+    if (jobId && ruleParentIds.has(line.item_id)) {
+      const perJob = parentPerJob.get(line.item_id) ?? new Map<string, { qty: number; headers: Set<string> }>();
+      const pj = perJob.get(jobId) ?? { qty: 0, headers: new Set<string>() };
+      pj.qty += qty;
+      pj.headers.add(line.job_bom_id);
+      perJob.set(jobId, pj);
+      parentPerJob.set(line.item_id, perJob);
+    }
     const existing = reqMap.get(line.item_id);
     if (existing) {
       existing.total += qty;
@@ -310,7 +338,7 @@ export async function _getMrpDataUncached(
   // programs. No double-count: the make-plan's own explosion goes through item_bom_lines,
   // and these rules are deliberately NOT in item_bom_lines. Must run before
   // addTradeLeafDemand so a rule-added child's own trade leaves get exploded below.
-  await addComponentRuleDemand(componentRulesPromise, reqMap);
+  addComponentRuleDemand(componentRules, reqMap, parentPerJob, childDirectJobs);
   if (includeDerivedTrade) {
     await addTradeLeafDemand(tradeLeafPromise!, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
@@ -776,23 +804,57 @@ function fetchComponentRules(
   );
 }
 
-async function addComponentRuleDemand(
-  rulesPromise: Promise<{ parent_item_id: string; child_item_id: string; qty: number }[]>,
+function addComponentRuleDemand(
+  rules: { parent_item_id: string; child_item_id: string; qty: number }[],
   reqMap: Map<string, ReqEntry>,
-): Promise<void> {
-  const rules = await rulesPromise;
+  /** Rule-parent net demand per job (same scope/netting as reqMap). */
+  parentPerJob: Map<string, Map<string, { qty: number; headers: Set<string> }>>,
+  /** Jobs whose own BOM directly lists a rule child (scope-passing lines). */
+  childDirectJobs: Map<string, Set<string>>,
+): void {
   if (rules.length === 0) return;
 
   // Compute additions off the PARENT demand snapshot (children aren't parents here).
+  //
+  // SMART SUPPRESSION (owner decision 2026-07-04): if a job's packing list
+  // captures the rule CHILD directly, that job's parent demand contributes
+  // nothing here — the direct line already carries the need, and adding the
+  // rule on top double-counted it (Door Closer / Upright Channel cases). Jobs
+  // that only list the parent still derive the child exactly as before, so
+  // both conventions — "list it explicitly" and "let the rule derive it" —
+  // coexist safely.
   const add = new Map<string, { total: number; bomIds: Set<string> }>();
   for (const r of rules) {
     const parent = reqMap.get(r.parent_item_id);
     if (!parent || parent.total <= 0) continue;
     const q = Number(r.qty) || 0;
     if (q <= 0) continue;
+
+    let parentTotal = parent.total;
+    let bomIds: Set<string> = parent.bomIds;
+    const suppressJobs = childDirectJobs.get(r.child_item_id);
+    if (suppressJobs && suppressJobs.size > 0) {
+      const perJob = parentPerJob.get(r.parent_item_id);
+      if (perJob) {
+        let suppressedQty = 0;
+        const suppressedHeaders = new Set<string>();
+        for (const [jobId, pj] of perJob) {
+          if (suppressJobs.has(jobId)) {
+            suppressedQty += pj.qty;
+            for (const h of pj.headers) suppressedHeaders.add(h);
+          }
+        }
+        if (suppressedQty > 0) {
+          parentTotal = Math.max(0, parentTotal - suppressedQty);
+          bomIds = new Set([...parent.bomIds].filter((b) => !suppressedHeaders.has(b)));
+        }
+      }
+    }
+    if (parentTotal <= 0) continue;
+
     const ex = add.get(r.child_item_id) ?? { total: 0, bomIds: new Set<string>() };
-    ex.total += parent.total * q;
-    for (const b of parent.bomIds) ex.bomIds.add(b);
+    ex.total += parentTotal * q;
+    for (const b of bomIds) ex.bomIds.add(b);
     add.set(r.child_item_id, ex);
   }
   for (const [child, d] of add) {

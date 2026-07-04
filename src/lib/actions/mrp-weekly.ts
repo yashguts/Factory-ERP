@@ -284,6 +284,16 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
       .range(from, to),
   );
 
+  // Component rules are needed DURING the loop (smart suppression builds
+  // per-job maps for rule parents/children) — prefetched above, cheap await.
+  const rules = await rulesPromise;
+  const ruleParentIds = new Set(rules.map((r) => r.parent_item_id));
+  const ruleChildIds = new Set(rules.map((r) => r.child_item_id));
+  /** Rule-parent weekly demand per JOB (same scope/netting as the main fold). */
+  const parentJobArr = new Map<string, Map<string, number[]>>();
+  /** Jobs whose own BOM directly lists a rule child (scope-passing lines). */
+  const childDirectJobs = new Map<string, Set<string>>();
+
   // accumulate net demand per (item, bucket-pos)
   const demandByItemWeek = new Map<string, number[]>();
   for (const line of allLines) {
@@ -293,10 +303,22 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
     const stage = jobId ? stageByJob.get(jobId) : undefined;
     if (!stage || stage === "new") continue;
     if (stage === "first_phase" && dispatchPhaseOf((line.category as string) ?? "") !== "first") continue;
+    if (jobId && ruleChildIds.has(line.item_id)) {
+      const s = childDirectJobs.get(line.item_id) ?? new Set<string>();
+      s.add(jobId);
+      childDirectJobs.set(line.item_id, s);
+    }
     const required = Number(line.required_quantity) || 0;
     const dispatched = dispatchedByLine.get(line.id) ?? 0;
     const qty = Math.max(0, required - dispatched);
     if (qty <= 0) continue;
+    if (jobId && ruleParentIds.has(line.item_id)) {
+      const perJob = parentJobArr.get(line.item_id) ?? new Map<string, number[]>();
+      const jArr = perJob.get(jobId) ?? new Array(N).fill(0);
+      jArr[pos(bucket)] += qty;
+      perJob.set(jobId, jArr);
+      parentJobArr.set(line.item_id, perJob);
+    }
     const arr = demandByItemWeek.get(line.item_id) ?? new Array(N).fill(0);
     arr[pos(bucket)] += qty;
     demandByItemWeek.set(line.item_id, arr);
@@ -309,15 +331,29 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   // all additions off the un-mutated parent demand (children aren't re-expanded as
   // parents), then fold them in. These rules are NOT item_bom_lines, so the
   // optimiser's parts-list explosion never re-derives them — no double-count.
+  // SMART SUPPRESSION (owner decision 2026-07-04, mirrors getMrpData): a job
+  // whose packing list captures the rule CHILD directly contributes no rule-
+  // derived child demand — the direct line already carries it.
   {
-    const rules = await rulesPromise;
     const additions = new Map<string, number[]>();
     for (const r of rules) {
       const parentArr = demandByItemWeek.get(r.parent_item_id);
       const q = Number(r.qty) || 0;
       if (!parentArr || q <= 0) continue;
+      let effective = parentArr;
+      const suppressJobs = childDirectJobs.get(r.child_item_id);
+      if (suppressJobs && suppressJobs.size > 0) {
+        const perJob = parentJobArr.get(r.parent_item_id);
+        if (perJob) {
+          effective = [...parentArr];
+          for (const [jobId, jArr] of perJob) {
+            if (!suppressJobs.has(jobId)) continue;
+            for (let i = 0; i < N; i++) effective[i] = Math.max(0, effective[i] - jArr[i]);
+          }
+        }
+      }
       const add = additions.get(r.child_item_id) ?? new Array(N).fill(0);
-      for (let i = 0; i < N; i++) add[i] += parentArr[i] * q;
+      for (let i = 0; i < N; i++) add[i] += effective[i] * q;
       additions.set(r.child_item_id, add);
     }
     for (const [child, add] of additions) {
