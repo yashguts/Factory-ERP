@@ -739,6 +739,34 @@ Don't add new code that reads or writes `lookup_key` for display — use
 - Jobs via `/jobs/import` (Excel)
 - Both use Excel parsers under `lib/import/`
 
+### Ricardo CRM financial feed (job detail)
+- Ricardo-brand jobs (job_number starting `RNL`/`REB`/`ANZ`/`LKO`) show a
+  "Ricardo CRM" panel on `/jobs/[id]`: contract value, transport scope
+  (Customer scope vs company mode + amount/TBD), received (approved) +
+  pending-approval sums, job Audited badge, collapsible payment history.
+  Amber "no live job found" note when the number doesn't resolve in the CRM
+  (e.g. the `RNLMALS-*` jobs — that prefix doesn't exist in the CRM's cities).
+  LT jobs render nothing. Panel client-fetches on mount (R1-chip pattern) so
+  the CRM call never slows the page open.
+- **Live read, no sync**: `getRicardoFinancials` (`lib/actions/ricardo.ts`,
+  `unstable_cache` 60s, tag `"ricardo"`) calls a secret-gated SECURITY DEFINER
+  RPC `erp_job_financials(p_secret, p_keys)` on the **Ricardo Supabase project
+  `xatfjvaretgnrbmffqgx`** — data is never copied, so the ERP always shows what
+  the CRM shows (≤60s stale). CRM writes can't revalidate the tag; the TTL is
+  the freshness mechanism.
+- Matching key = `upper(city prefix) + '|' + number without leading zeros`
+  (CRM stores the number split as `cities.prefix` + 4-digit `jobs.job_number`).
+  `lib/ricardo/job-number.ts` mirrors the SQL normalisation — tolerates the
+  ERP's format drift (missing dash `RNLBLR0042`, 3-digit `RNLNAG009`).
+  Cancelled CRM jobs are excluded; denied payments excluded; reversals are
+  negative approved payments so the approved sum nets them out.
+- Env (set on Netlify + `.env.local`): `RICARDO_SUPABASE_URL`,
+  `RICARDO_SUPABASE_ANON_KEY`, `RICARDO_ERP_SECRET`. The secret lives in the
+  CRM's `erp_integration_config` table (RLS on, zero policies = invisible to
+  its API; only the RPC can read it). The CRM's own RLS is untouched — its
+  anon key alone still can't read jobs/payments. Panel hides itself if the
+  env vars are missing.
+
 ### Cross-cutting
 - **Stale-deploy guard** (`StaleDeployGuard` in root layout) — listens for the Next.js "Server Action X was not found on the server" error and shows an amber toast prompting reload
 - Loading skeletons for the heavy list pages

@@ -26,6 +26,7 @@ import { useOperator } from "@/lib/jobs/use-operator";
 import { changeJobStatus, acknowledgeStatusAlert, getJobStatusHistory } from "@/lib/actions/job-status";
 import { alertKind, reasonRequired, ALERT_META, statusLabel } from "@/lib/jobs/status-alert";
 import { getR1JobPanel, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
+import { RicardoPanel } from "@/components/jobs/ricardo-panel";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -705,6 +706,10 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
             );
           })}
       </div>
+
+      {/* Ricardo jobs: contract value, transport scope + customer payments,
+          read live from the Ricardo CRM. Renders nothing for LT jobs. */}
+      <RicardoPanel jobNumber={job.job_number} />
 
       {/* Everything else about the job — spec fields, legacy dates, remark —
           tucked away but never lost. */}
