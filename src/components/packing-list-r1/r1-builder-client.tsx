@@ -2,17 +2,20 @@
 
 import { Fragment, useRef, useState, useEffect, useMemo, useCallback, useTransition, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2, X } from "lucide-react";
+import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2, X, Copy } from "lucide-react";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
   itemsInCategory,
+  getR1CloneSources,
+  cloneR1List,
   type R1ListView,
   type R1Line,
   type R1Demand,
   type R1UnmappedItem,
   type R1SaveLine,
   type R1CabinPanels,
+  type R1CloneSource,
 } from "@/lib/actions/packing-list-r1";
 import { searchItems, type SearchableItem } from "@/lib/actions/items";
 import { dismissUnmappedItem } from "@/lib/actions/packing-list-r1-unmapped";
@@ -593,6 +596,58 @@ export function R1BuilderClient({
     })();
   };
 
+  // Clone from another job — copy an already-filled identical job's whole list.
+  const [showClone, setShowClone] = useState(false);
+  const [cloneSources, setCloneSources] = useState<R1CloneSource[]>([]);
+  const [cloneLoading, setCloneLoading] = useState(false);
+  const [cloneQuery, setCloneQuery] = useState("");
+  const [cloning, setCloning] = useState(false);
+  const openClone = () => {
+    setShowClone(true);
+    setCloneQuery("");
+    setCloneLoading(true);
+    getR1CloneSources(list.jobId)
+      .then((rows) => setCloneSources(rows))
+      .catch(() => setCloneSources([]))
+      .finally(() => setCloneLoading(false));
+  };
+  const filteredSources = useMemo(() => {
+    const toks = cloneQuery.trim().toLowerCase().split(/\s+/).filter(Boolean);
+    if (!toks.length) return cloneSources;
+    return cloneSources.filter((s) => {
+      const hay = `${s.jobNumber ?? ""} ${s.customerName ?? ""}`.toLowerCase();
+      return toks.every((t) => hay.includes(t));
+    });
+  }, [cloneSources, cloneQuery]);
+  const doClone = (s: R1CloneSource) => {
+    if (
+      !window.confirm(
+        `Replace ${list.jobNumber ?? "this job"}'s packing list with a copy of ${s.jobNumber ?? "the selected job"}?\n\nThis overwrites the current list. The copy lands as DRAFT for you to review, then Mark Final.`,
+      )
+    )
+      return;
+    setCloning(true);
+    startTransition(async () => {
+      const res = await cloneR1List(list.jobId, s.jobId);
+      if (!res.ok) {
+        setCloning(false);
+        alert(res.error ?? "Clone failed");
+        return;
+      }
+      // Swap the builder's local state to the cloned list in one shot — a bare
+      // router.refresh() wouldn't re-seed the parts useState.
+      setParts(res.list.parts.map((p) => ({ title: p.title, lines: p.lines.map((l) => ({ ...l, _k: l.id })) })));
+      setStatus("draft");
+      setDirty(false);
+      // Mirror into job_bom_lines like save() does, so MRP / dispatch see it.
+      const sync = await syncR1ToBom(list.jobId);
+      if (!sync.ok) alert(`Cloned, but updating the job's item data failed: ${sync.error}`);
+      setCloning(false);
+      setShowClone(false);
+      router.refresh();
+    });
+  };
+
   // Cabin Job items (read-only mirror) — emitted under the Cabin part in exports.
   type ExportRow = {
     part: string; group: string; particular: string; code: string; item: string; qty: number | string; uom: string;
@@ -829,6 +884,9 @@ export function R1BuilderClient({
           )}
           <ToolbarBtn onClick={toggleAudited} disabled={pending}>
             <CheckCircle2 size={14} /> {jobPanel?.auditedAt ? "Un-audit" : "Mark Audited"}
+          </ToolbarBtn>
+          <ToolbarBtn onClick={openClone} disabled={pending || cloning}>
+            <Copy size={14} /> Clone from job
           </ToolbarBtn>
           <ToolbarBtn onClick={exportExcel}>
             <FileSpreadsheet size={14} /> Excel
@@ -1121,6 +1179,91 @@ export function R1BuilderClient({
           onPick={({ path, displayName }) => addCategoryPart(path, displayName)}
           onClose={() => setShowCatModal(false)}
         />
+      )}
+
+      {showClone && (
+        <div
+          className="fixed inset-0 z-50 flex items-start justify-center bg-black/40 p-4 pt-[8vh]"
+          onClick={() => !cloning && setShowClone(false)}
+        >
+          <div
+            className="w-full max-w-lg rounded-lg bg-white shadow-xl"
+            style={{ border: `1px solid ${C.line}` }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between border-b px-4 py-2.5" style={{ borderColor: C.line }}>
+              <h3 className="text-sm font-semibold">Clone packing list from another job</h3>
+              <button
+                onClick={() => !cloning && setShowClone(false)}
+                className="text-[#6b7280] hover:text-black disabled:opacity-40"
+                disabled={cloning}
+                aria-label="Close"
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="p-3">
+              <p className="mb-2 text-[11px] text-[#6b7280]">
+                Copies every line from the chosen job into{" "}
+                <b className="font-mono">{list.jobNumber ?? "this job"}</b>, replacing its current list. The copy
+                lands as <b>draft</b> — review it, then Mark Final.
+              </p>
+              <input
+                autoFocus
+                placeholder="Search job # or customer…"
+                value={cloneQuery}
+                onChange={(e) => setCloneQuery(e.target.value)}
+                className="mb-2 w-full rounded border px-2.5 py-1.5 text-sm outline-none focus:ring-2 focus:ring-[#2563eb]/30"
+                style={{ borderColor: C.line }}
+              />
+              <div className="max-h-[46vh] overflow-y-auto rounded border" style={{ borderColor: C.line }}>
+                {cloneLoading ? (
+                  <div className="p-4 text-center text-xs text-[#6b7280]">
+                    <Loader2 size={14} className="mr-1 inline animate-spin" /> Loading…
+                  </div>
+                ) : filteredSources.length === 0 ? (
+                  <div className="p-4 text-center text-xs text-[#6b7280]">
+                    {cloneSources.length === 0
+                      ? "No other job has a filled-in packing list yet."
+                      : "No job matches your search."}
+                  </div>
+                ) : (
+                  filteredSources.map((s) => (
+                    <button
+                      key={s.jobId}
+                      type="button"
+                      disabled={cloning}
+                      onClick={() => doClone(s)}
+                      className="flex w-full items-center gap-2 border-b px-3 py-2 text-left last:border-b-0 hover:bg-[#f3f4f6] disabled:opacity-50"
+                      style={{ borderColor: C.line }}
+                    >
+                      <div className="min-w-0 flex-1">
+                        <div className="font-mono text-[13px] font-medium">{s.jobNumber ?? "—"}</div>
+                        <div className="truncate text-[11px] text-[#6b7280]">{s.customerName ?? "—"}</div>
+                      </div>
+                      <span
+                        className={
+                          "rounded px-1.5 py-0.5 text-[10px] font-semibold " +
+                          (s.status === "final" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700")
+                        }
+                      >
+                        {s.status}
+                      </span>
+                      <span className="w-16 text-right text-[11px] tabular-nums text-[#6b7280]">
+                        {s.filledLines} items
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+              {cloning && (
+                <p className="mt-2 text-[11px] text-[#2563eb]">
+                  <Loader2 size={12} className="mr-1 inline animate-spin" /> Cloning…
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {umRows.length > 0 && (

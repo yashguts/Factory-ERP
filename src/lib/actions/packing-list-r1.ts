@@ -143,6 +143,128 @@ export async function getR1Lists(): Promise<R1ListSummary[]> {
 }
 
 // ============================================================================
+// CLONE — copy an already-filled job's R1 list onto another job
+// ============================================================================
+export interface R1CloneSource {
+  jobId: string;
+  jobNumber: string | null;
+  customerName: string | null;
+  status: "draft" | "final";
+  filledLines: number;
+  totalLines: number;
+  updatedAt: string;
+}
+
+/** Jobs that already have an R1 list with at least one item filled in — the
+ *  pick-list for "clone from another job". Counts are aggregated server-side
+ *  (r1_clone_sources RPC) so we never pull the ~37k line rows to the app. */
+export async function getR1CloneSources(excludeJobId: string): Promise<R1CloneSource[]> {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase.rpc("r1_clone_sources");
+  if (error) throw error;
+  const rows: R1CloneSource[] = ((data ?? []) as Record<string, unknown>[])
+    .filter((r) => r.job_id !== excludeJobId && Number(r.filled_lines) > 0)
+    .map(
+      (r): R1CloneSource => ({
+        jobId: r.job_id as string,
+        jobNumber: (r.job_number as string | null) ?? null,
+        customerName: (r.customer_name as string | null) ?? null,
+        status: (r.status as string) === "final" ? "final" : "draft",
+        filledLines: Number(r.filled_lines) || 0,
+        totalLines: Number(r.total_lines) || 0,
+        updatedAt: r.updated_at as string,
+      }),
+    );
+  rows.sort(
+    (a, b) =>
+      (a.status === b.status ? 0 : a.status === "final" ? -1 : 1) ||
+      b.updatedAt.localeCompare(a.updatedAt),
+  );
+  return rows;
+}
+
+/** Replace targetJob's R1 list with a line-for-line copy of sourceJob's list.
+ *  The clone always lands as DRAFT so the factory team reviews it before Mark
+ *  Final. Returns the fresh list view so the client can swap its local state
+ *  in one shot (router.refresh alone wouldn't re-seed the builder's useState). */
+export async function cloneR1List(
+  targetJobId: string,
+  sourceJobId: string,
+): Promise<{ ok: true; list: R1ListView } | { ok: false; error: string }> {
+  if (!targetJobId || !sourceJobId) return { ok: false, error: "Missing job." };
+  if (targetJobId === sourceJobId) return { ok: false, error: "Pick a different source job." };
+  const supabase = await createClient();
+
+  // Target list — the page seeds it on open, but be defensive.
+  const { data: targetList } = await supabase
+    .from("packing_r1_lists")
+    .select("id")
+    .eq("job_id", targetJobId)
+    .maybeSingle();
+  let targetListId = targetList?.id as string | undefined;
+  if (!targetListId) {
+    const { data: created, error } = await supabase
+      .from("packing_r1_lists")
+      .insert({ job_id: targetJobId, status: "draft" })
+      .select("id")
+      .single();
+    if (error) return { ok: false, error: error.message };
+    targetListId = created.id as string;
+  }
+
+  // Source list + its lines.
+  const { data: srcList } = await supabase
+    .from("packing_r1_lists")
+    .select("id")
+    .eq("job_id", sourceJobId)
+    .maybeSingle();
+  if (!srcList) return { ok: false, error: "The source job has no packing list." };
+  const { data: srcLines, error: se } = await supabase
+    .from("packing_r1_lines")
+    .select("part_title, template_line_id, kind, category_id, item_id, label, spec, qty, source, sort_order")
+    .eq("list_id", srcList.id as string)
+    .order("sort_order");
+  if (se) return { ok: false, error: se.message };
+
+  // Replace the target's lines with faithful copies (source flags preserved).
+  const { error: de } = await supabase.from("packing_r1_lines").delete().eq("list_id", targetListId);
+  if (de) return { ok: false, error: de.message };
+  const rows = (srcLines ?? []).map((l, i) => ({
+    list_id: targetListId,
+    part_title: l.part_title,
+    template_line_id: (l.template_line_id as string | null) ?? null,
+    kind: l.kind,
+    category_id: (l.category_id as string | null) ?? null,
+    item_id: (l.item_id as string | null) ?? null,
+    label: (l.label as string | null) ?? null,
+    spec: (l.spec as string | null) ?? null,
+    qty: Number(l.qty) || 0,
+    source: (l.source as string | null) ?? "manual",
+    sort_order: i,
+  }));
+  for (let i = 0; i < rows.length; i += 200) {
+    const { error: ie } = await supabase.from("packing_r1_lines").insert(rows.slice(i, i + 200));
+    if (ie) return { ok: false, error: ie.message };
+  }
+  await supabase
+    .from("packing_r1_lists")
+    .update({ status: "draft", updated_at: new Date().toISOString() })
+    .eq("id", targetListId);
+
+  // Fresh view for the client (job header + category tree needed by readR1List).
+  const [{ data: job }, cats] = await Promise.all([
+    createCacheClient()
+      .from("jobs")
+      .select("job_number, customer_name, mobile_number, location, drive_type")
+      .eq("id", targetJobId)
+      .maybeSingle(),
+    getAllCategories(),
+  ]);
+  const view = await readR1List(targetJobId, targetListId, "draft", job, cats);
+  return { ok: true, list: view };
+}
+
+// ============================================================================
 // TEMPLATE
 // ============================================================================
 export async function getTemplate(): Promise<R1TemplatePart[]> {
