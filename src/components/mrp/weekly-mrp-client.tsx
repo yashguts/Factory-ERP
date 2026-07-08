@@ -46,7 +46,6 @@ const DESIGNER_FINISHES: [RegExp, string][] = [
   [/silver\s*mirror/i, "SS Silver Mirror"],
   [/black\s*mirror/i, "SS Black Mirror"],
   [/black\s*hairline/i, "SS Black Hairline"],
-  [/ti\s*black/i, "SS TI Black"],
   [/champagne/i, "SS Champagne"],
   [/moonrock/i, "SS Moonrock"],
   [/honey\s*com[b]?/i, "SS Honeycomb"],

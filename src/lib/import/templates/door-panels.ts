@@ -7,7 +7,6 @@ const FINISH_CODES: Record<string, string> = {
   golden: "GD",
   "rose gold": "RG",
   rosegold: "RG",
-  "ti black": "TB",
   moonrock: "MR",
   "honey com": "HC",
   honeycomb: "HC",
