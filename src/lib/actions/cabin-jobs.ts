@@ -288,6 +288,8 @@ export interface CabinJobListRow {
   platform: string | null;
   /** Distinct Side Panel finishes for the job, e.g. "SS 430" or "MS + Golden". */
   side_panel_material: string | null;
+  /** Distinct Front Wall (RHS+LHS) finishes for the job, same format. */
+  front_wall_material: string | null;
   created_at: string;
   /** Non-null ISO timestamp when marked ready; ready jobs are excluded from the
    *  cabin requirement (their items are already built). null = still counts. */
@@ -346,6 +348,7 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   const countByJob = new Map<string, number>();
   const platformByJob = new Map<string, string>();
   const finishesByJob = new Map<string, Set<string>>();
+  const fwFinishesByJob = new Map<string, Set<string>>();
   for (const l of lines) {
     const jid = l.cabin_job_id as string;
     countByJob.set(jid, (countByJob.get(jid) ?? 0) + 1);
@@ -358,9 +361,15 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       set.add(it.finish as string);
       finishesByJob.set(jid, set);
     }
+    if ((l.cabin_type === "Front Wall RHS" || l.cabin_type === "Front Wall LHS") && it?.finish) {
+      const set = fwFinishesByJob.get(jid) ?? new Set<string>();
+      set.add(it.finish as string);
+      fwFinishesByJob.set(jid, set);
+    }
   }
   return (jobs ?? []).map((j: any) => {
     const fset = finishesByJob.get(j.id as string);
+    const fwset = fwFinishesByJob.get(j.id as string);
     return {
       id: j.id as string,
       job_number: j.job_number as string,
@@ -368,6 +377,7 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       line_count: countByJob.get(j.id as string) ?? 0,
       platform: platformByJob.get(j.id as string) ?? null,
       side_panel_material: fset ? [...fset].sort().join(" + ") : null,
+      front_wall_material: fwset ? [...fwset].sort().join(" + ") : null,
       created_at: j.created_at as string,
       marked_ready_at: (j.marked_ready_at as string | null) ?? null,
       gad_changed:

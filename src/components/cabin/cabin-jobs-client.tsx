@@ -46,7 +46,7 @@ function splitMaterials(material: string | null): string[] {
   return material.split(" + ").map((s) => s.trim()).filter(Boolean);
 }
 
-type SortKey = "job_number" | "platform" | "side_panel" | "items" | "created";
+type SortKey = "job_number" | "platform" | "side_panel" | "front_wall" | "items" | "created";
 type SortDir = "asc" | "desc";
 type View = "jobs" | "finish" | "category" | "weekly";
 
@@ -126,8 +126,9 @@ export function CabinJobsClient({
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [systemFilter, setSystemFilter] = useState<string>(() => readParam(sp, "sys", "all"));
   const [materialFilter, setMaterialFilter] = useState<string>(() => readParam(sp, "mat", "all"));
+  const [fwFilter, setFwFilter] = useState<string>(() => readParam(sp, "fw", "all"));
   const [sortKey, setSortKey] = useState<SortKey>(
-    () => readParam(sp, "sort", "created", ["job_number", "platform", "side_panel", "items", "created"]) as SortKey,
+    () => readParam(sp, "sort", "created", ["job_number", "platform", "side_panel", "front_wall", "items", "created"]) as SortKey,
   );
   const [sortDir, setSortDir] = useState<SortDir>(
     () => readParam(sp, "dir", "desc", ["asc", "desc"]) as SortDir,
@@ -137,8 +138,8 @@ export function CabinJobsClient({
   const [weeklyFinish, setWeeklyFinish] = useState(() => readParam(sp, "wfin", "all"));
 
   useUrlListSync(
-    { view, q: search, sys: systemFilter, mat: materialFilter, sort: sortKey, dir: sortDir, cumul: cumulative ? "1" : "0", wfin: weeklyFinish },
-    { view: "jobs", q: "", sys: "all", mat: "all", sort: "created", dir: "desc", cumul: "1", wfin: "all" },
+    { view, q: search, sys: systemFilter, mat: materialFilter, fw: fwFilter, sort: sortKey, dir: sortDir, cumul: cumulative ? "1" : "0", wfin: weeklyFinish },
+    { view: "jobs", q: "", sys: "all", mat: "all", fw: "all", sort: "created", dir: "desc", cumul: "1", wfin: "all" },
   );
 
   // Filter option lists, derived from the data so they only show what exists.
@@ -157,20 +158,27 @@ export function CabinJobsClient({
     return Array.from(set).sort();
   }, [jobs]);
 
+  const fwMaterials = useMemo(() => {
+    const set = new Set<string>();
+    jobs.forEach((j) => splitMaterials(j.front_wall_material).forEach((m) => set.add(m)));
+    return Array.from(set).sort();
+  }, [jobs]);
+
   const categoryReq = useMemo(() => buildCategoryGroups(finishReq), [finishReq]);
 
   const filtered = useMemo(() => {
     const tokens = search.trim().toLowerCase().split(/\s+/).filter(Boolean);
     return jobs.filter((j) => {
       if (tokens.length) {
-        const hay = `${j.job_number} ${j.customer_name ?? ""} ${j.platform ?? ""} ${j.side_panel_material ?? ""}`.toLowerCase();
+        const hay = `${j.job_number} ${j.customer_name ?? ""} ${j.platform ?? ""} ${j.side_panel_material ?? ""} ${j.front_wall_material ?? ""}`.toLowerCase();
         if (!tokens.every((t) => hay.includes(t))) return false;
       }
       if (systemFilter !== "all" && platformSystem(j.platform) !== systemFilter) return false;
       if (materialFilter !== "all" && !splitMaterials(j.side_panel_material).includes(materialFilter)) return false;
+      if (fwFilter !== "all" && !splitMaterials(j.front_wall_material).includes(fwFilter)) return false;
       return true;
     });
-  }, [jobs, search, systemFilter, materialFilter]);
+  }, [jobs, search, systemFilter, materialFilter, fwFilter]);
 
   // Cabin jobs whose linked elevator job had its GAD changed — a stale-drawing
   // hazard. Counted across ALL jobs (not just the filtered view) so the banner
@@ -194,6 +202,9 @@ export function CabinJobsClient({
         case "side_panel":
           cmp = (a.side_panel_material ?? "").localeCompare(b.side_panel_material ?? "");
           break;
+        case "front_wall":
+          cmp = (a.front_wall_material ?? "").localeCompare(b.front_wall_material ?? "");
+          break;
         case "items":
           cmp = a.line_count - b.line_count;
           break;
@@ -215,7 +226,8 @@ export function CabinJobsClient({
     }
   };
 
-  const filtersActive = search.trim() !== "" || systemFilter !== "all" || materialFilter !== "all";
+  const filtersActive =
+    search.trim() !== "" || systemFilter !== "all" || materialFilter !== "all" || fwFilter !== "all";
 
   // View-aware export: each tab exports exactly the rows it's showing. The jobs
   // tab exports the filtered+sorted job list; the finish/category tabs export
@@ -279,6 +291,7 @@ export function CabinJobsClient({
       customer_name: j.customer_name ?? "",
       platform: j.platform ?? "",
       side_panel_material: j.side_panel_material ?? "",
+      front_wall_material: j.front_wall_material ?? "",
       line_count: j.line_count,
       gad_changed: j.gad_changed ? "GAD CHANGED — RECHECK" : "",
       created_at: new Date(j.created_at).toLocaleDateString([], {
@@ -294,6 +307,7 @@ export function CabinJobsClient({
         { header: "Customer", field: "customer_name" },
         { header: "Platform", field: "platform" },
         { header: "Side Panel", field: "side_panel_material" },
+        { header: "Front Wall", field: "front_wall_material" },
         { header: "Items", field: "line_count" },
         { header: "GAD Alert", field: "gad_changed" },
         { header: "Created", field: "created_at" },
@@ -428,6 +442,21 @@ export function CabinJobsClient({
               </Select>
             )}
 
+            {fwMaterials.length > 0 && (
+              <Select
+                size="sm"
+                value={fwFilter}
+                onChange={(e) => setFwFilter(e.target.value)}
+                className="w-[160px]"
+                title="Filter by front wall finish"
+              >
+                <option value="all">All Front Walls</option>
+                {fwMaterials.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </Select>
+            )}
+
             {filtersActive && (
               <Button
                 size="sm"
@@ -436,6 +465,7 @@ export function CabinJobsClient({
                   setSearch("");
                   setSystemFilter("all");
                   setMaterialFilter("all");
+                  setFwFilter("all");
                 }}
               >
                 Clear
@@ -465,6 +495,7 @@ export function CabinJobsClient({
                     <TableHead>Customer</TableHead>
                     <SortHeader label="Platform" sortField="platform" />
                     <SortHeader label="Side Panel" sortField="side_panel" />
+                    <SortHeader label="Front Wall" sortField="front_wall" />
                     <SortHeader label="Items" sortField="items" className="text-right" />
                     <SortHeader label="Created" sortField="created" />
                     <TableHead className="text-right">Actions</TableHead>
@@ -499,6 +530,7 @@ export function CabinJobsClient({
                       <TableCell>{j.customer_name || "—"}</TableCell>
                       <TableCell className="font-mono text-[13px]">{j.platform || "—"}</TableCell>
                       <TableCell>{j.side_panel_material || "—"}</TableCell>
+                      <TableCell>{j.front_wall_material || "—"}</TableCell>
                       <TableCell className="text-right tabular-nums">{j.line_count}</TableCell>
                       <TableCell className="text-[var(--muted-foreground)]">
                         {new Date(j.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" })}
