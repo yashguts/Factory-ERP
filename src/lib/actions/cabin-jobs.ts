@@ -6,6 +6,10 @@ import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { CABIN_PARENT } from "@/lib/cabin/cabin-types";
 import { gadAlert, type GadAlertInput } from "@/lib/jobs/gad-alert";
+import { recordTransaction } from "@/lib/actions/inventory";
+import type { TransactionType } from "@/lib/supabase/types";
+
+type Db = Awaited<ReturnType<typeof createClient>>;
 
 /* ------------------------------------------------------------------ *
  * Cabin jobs — a job number with cabin inventory items grouped by the
@@ -848,10 +852,99 @@ export async function deleteCabinJob(
 }
 
 /**
+ * Reconcile a cabin job's stock effect to its READY state. A ready cabin job has
+ * been BUILT, so its items are consumed OUT of Main Store (production_out); an
+ * unmark restores them. Idempotent + reversible — keyed on
+ * reference_type='cabin_job_ready' + reference_id=cabin job id, so re-marking never
+ * double-deducts and unmarking restores exactly what was taken. Mirrors the
+ * program-run / dispatch stock reconcile (post only the DELTA vs what's applied).
+ * Best-effort: the caller wraps it so a posting hiccup never blocks the toggle.
+ */
+async function syncCabinReadyInventory(
+  supabase: Db,
+  cabinJobId: string,
+  ready: boolean,
+): Promise<void> {
+  // Main Store holds finished cabin panels — it's where program runs post the
+  // production_in that builds cabin stock, so that's what a ready job consumes.
+  const { data: whs } = await supabase.from("warehouses").select("id, name");
+  const mainId = (whs ?? []).find((w) => (w.name as string) === "Main Store")?.id as
+    | string
+    | undefined;
+  if (!mainId) return;
+
+  // Desired signed net per item in Main Store: ready => -qty (consumed); else none.
+  const desired = new Map<string, number>();
+  if (ready) {
+    const { data: lines } = await supabase
+      .from("cabin_job_lines")
+      .select("item_id, qty")
+      .eq("cabin_job_id", cabinJobId)
+      .not("item_id", "is", null);
+    for (const l of lines ?? []) {
+      const q = Number(l.qty) || 0;
+      if (q <= 0) continue;
+      const id = l.item_id as string;
+      desired.set(id, (desired.get(id) ?? 0) - q);
+    }
+  }
+
+  // Already-applied net per item from this job's prior cabin_job_ready txns.
+  const { data: posted } = await supabase
+    .from("inventory_transactions")
+    .select("item_id, quantity, transaction_type")
+    .eq("reference_type", "cabin_job_ready")
+    .eq("reference_id", cabinJobId)
+    .eq("warehouse_id", mainId);
+  const applied = new Map<string, number>();
+  for (const p of posted ?? []) {
+    const q = Number(p.quantity) || 0;
+    const type = p.transaction_type as string;
+    const d =
+      type === "adjustment"
+        ? q
+        : type === "production_in" || type === "purchase_in" || type === "transfer"
+          ? Math.abs(q)
+          : -Math.abs(q);
+    applied.set(p.item_id as string, (applied.get(p.item_id as string) ?? 0) + d);
+  }
+
+  for (const itemId of new Set<string>([...desired.keys(), ...applied.keys()])) {
+    const delta = (desired.get(itemId) ?? 0) - (applied.get(itemId) ?? 0);
+    if (Math.abs(delta) < 1e-9) continue;
+    let type: TransactionType;
+    let qty: number;
+    if (applied.has(itemId)) {
+      // This item already has prior postings for the job — steer it with a signed
+      // adjustment so the running total lands exactly on `desired`.
+      type = "adjustment";
+      qty = delta;
+    } else if (delta > 0) {
+      type = "production_in";
+      qty = delta;
+    } else {
+      type = "production_out";
+      qty = -delta;
+    }
+    await recordTransaction({
+      item_id: itemId,
+      warehouse_id: mainId,
+      transaction_type: type,
+      quantity: qty,
+      reference_type: "cabin_job_ready",
+      reference_id: cabinJobId,
+      notes: ready
+        ? "Cabin job marked ready — stock consumed"
+        : "Cabin job unmarked — stock restored",
+    });
+  }
+}
+
+/**
  * Toggle a cabin job's "ready" flag. A ready job's items are EXCLUDED from every
- * cabin requirement / cutting-demand reader (they're already built). Reversible —
- * ready=false clears the timestamp and the job counts again. Busts the cabin-jobs
- * + cabin requirement/MRP/weekly caches so all surfaces agree.
+ * cabin requirement / cutting-demand reader (they're already built) AND consumed
+ * out of Main Store stock; ready=false clears the timestamp and restores the
+ * stock. Busts the cabin-jobs + cabin requirement/MRP/weekly + inventory caches.
  */
 export async function setCabinJobReady(
   id: string,
@@ -868,6 +961,14 @@ export async function setCabinJobReady(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
+  // Consume (ready) / restore (unmark) the job's items in Main Store. Best-effort:
+  // an inventory hiccup must not fail the ready toggle itself.
+  try {
+    await syncCabinReadyInventory(supabase, id, ready);
+  } catch (e) {
+    console.error("cabin ready inventory sync failed", e);
+  }
+
   revalidatePath("/cabin-jobs");
   revalidateTag("cabin-jobs");
   // Requirement / cabin-MRP / weekly demand all key off cabin_job_lines; their
@@ -875,5 +976,11 @@ export async function setCabinJobReady(
   revalidateTag("cabin-programs");
   revalidateTag("cabin-requirements");
   revalidatePath("/jobs");
+  // Stock moved — refresh the inventory surfaces (Cabin Inventory, /inventory,
+  // Daily Changes, per-item ledgers) so the consumption/restore shows at once.
+  revalidateTag("inventory-stock");
+  revalidatePath("/cabin-inventory");
+  revalidatePath("/inventory");
+  revalidatePath("/inventory/changes");
   return { ok: true, id };
 }
