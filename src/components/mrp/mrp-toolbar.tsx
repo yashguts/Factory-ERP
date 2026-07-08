@@ -2,7 +2,7 @@
 
 import { useTransition } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { CalendarDays, CalendarRange, ListChecks, Hammer, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -50,10 +50,20 @@ export function MrpToolbar({
   section?: MrpSection;
 }) {
   const router = useRouter();
+  const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const VIEWS = section === "cabin" ? CABIN_VIEWS : section === "trade" ? TRADE_VIEWS : MAKE_VIEWS;
   const current = VIEWS.find((v) => v.key === view)!;
-  const q = (d: string) => (d ? `?date=${d}` : "");
+  // The cabin section's job-scope selection (?jobs=) must survive switching
+  // between its three views — carry it on every view link and date change.
+  const jobsScope = section === "cabin" ? (sp.get("jobs") ?? "") : "";
+  const q = (d: string) => {
+    const params = new URLSearchParams();
+    if (d) params.set("date", d);
+    if (jobsScope) params.set("jobs", jobsScope);
+    const s = params.toString();
+    return s ? `?${s}` : "";
+  };
   const go = (d: string) => startTransition(() => router.push(`${current.href}${q(d)}`));
 
   const now = new Date();

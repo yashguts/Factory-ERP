@@ -91,6 +91,85 @@ async function getEligibleCabinJobs(
   return eligible;
 }
 
+/**
+ * Scope resolver for all three Cabin-MRP readers. An EXPLICIT selection (the
+ * "?jobs=" picker) takes exactly those cabin jobs — the engineer is asking a
+ * what-if for a chosen set, so the default eligibility gate (in-production /
+ * 2nd-phase / not fully dispatched / not ready) is NOT applied to them; dates
+ * still come from the linked Job Order. No selection = the owner-rule
+ * eligibility gate above (which excludes Hold and fully-dispatched jobs).
+ */
+async function getScopedCabinJobs(
+  supabase: ReturnType<typeof createCacheClient>,
+  jobIds?: string[],
+): Promise<Map<string, EligibleCabinJob>> {
+  if (!jobIds || jobIds.length === 0) return getEligibleCabinJobs(supabase);
+  const { data: cjobs } = await supabase
+    .from("cabin_jobs")
+    .select("id, job_number")
+    .in("id", jobIds);
+  if (!cjobs?.length) return new Map();
+  const { data: jobsRaw } = await supabase
+    .from("jobs")
+    .select("job_number, requirement_dispatch_date");
+  const dateByNumber = new Map<string, string | null>();
+  for (const j of (jobsRaw ?? []) as any[]) {
+    const key = ((j.job_number as string) ?? "").trim().toLowerCase();
+    if (key) dateByNumber.set(key, (j.requirement_dispatch_date as string | null) ?? null);
+  }
+  const out = new Map<string, EligibleCabinJob>();
+  for (const c of cjobs as any[]) {
+    out.set(c.id as string, {
+      requirementDispatchDate:
+        dateByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase()) ?? null,
+    });
+  }
+  return out;
+}
+
+/** Options for the Cabin-MRP job-scope picker: every cabin job with its line
+ *  count, flagged with whether it sits in the DEFAULT eligible set (so the
+ *  picker can mark Hold / fully-dispatched / ready jobs as outside it). */
+export interface CabinScopeOption {
+  id: string;
+  job_number: string;
+  customer_name: string | null;
+  line_count: number;
+  /** In the default all-jobs demand set (in production, 2nd phase, not dispatched, not ready). */
+  eligible: boolean;
+  ready: boolean;
+}
+
+export async function getCabinScopeOptions(): Promise<CabinScopeOption[]> {
+  return unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const [{ data: cjobs }, eligible] = await Promise.all([
+        supabase
+          .from("cabin_jobs")
+          .select("id, job_number, customer_name, marked_ready_at, created_at, cabin_job_lines(count)")
+          .order("created_at", { ascending: false }),
+        getEligibleCabinJobs(supabase),
+      ]);
+      return ((cjobs ?? []) as any[])
+        .map((c) => ({
+          id: c.id as string,
+          job_number: c.job_number as string,
+          customer_name: (c.customer_name as string | null) ?? null,
+          line_count: Array.isArray(c.cabin_job_lines)
+            ? Number((c.cabin_job_lines[0] as any)?.count ?? 0)
+            : 0,
+          eligible: eligible.has(c.id as string),
+          ready: c.marked_ready_at != null,
+        }))
+        // Eligible (default-set) jobs first; stable sort keeps recent-first within groups.
+        .sort((a, b) => Number(b.eligible) - Number(a.eligible));
+    },
+    ["cabin-mrp-scope-options"],
+    { revalidate: 120, tags: ["cabin-programs", "jobs"] },
+  )();
+}
+
 interface ItemInfo {
   code: string;
   name: string;
@@ -101,7 +180,7 @@ interface ItemInfo {
 
 /* ===================== Programs to run (the optimiser plan) ===================== */
 
-const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan> => {
+const _getCabinMrpUncached = async (excludeKeys: string[], jobIds: string[]): Promise<CabinMrpPlan> => {
   const supabase = createCacheClient();
   const excludeSet = new Set(excludeKeys);
 
@@ -110,8 +189,9 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     totals: { demandedItems: 0, inStock: 0, toCut: 0, makeable: 0, blocked: 0, programs: 0, runs: 0, sheets: 0, machineSeconds: 0, auditedPrograms: 0 },
   };
 
-  /* 1. Cabin demand from ELIGIBLE cabin jobs, netted vs stock -> shortfall. */
-  const eligible = await getEligibleCabinJobs(supabase);
+  /* 1. Cabin demand from the SCOPED cabin jobs (explicit ?jobs= selection, else
+   *    the eligibility gate), netted vs stock -> shortfall. */
+  const eligible = await getScopedCabinJobs(supabase, jobIds);
   if (eligible.size === 0) return empty;
   const eligibleIds = [...eligible.keys()];
   const lines = await fetchAllRanged<{ item_id: string | null; qty: number }>((from, to, withCount) =>
@@ -383,9 +463,15 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
   };
 };
 
-export async function getCabinMrp(excludeKeys: string[] = []): Promise<CabinMrpPlan> {
-  const key = excludeKeys.length ? [...excludeKeys].sort().join(",") : "__none__";
-  return unstable_cache(() => _getCabinMrpUncached(excludeKeys), ["cabin-mrp-universe", key], {
+export async function getCabinMrp(
+  excludeKeys: string[] = [],
+  jobIds: string[] = [],
+): Promise<CabinMrpPlan> {
+  const key =
+    (excludeKeys.length ? [...excludeKeys].sort().join(",") : "__none__") +
+    "|" +
+    (jobIds.length ? [...jobIds].sort().join(",") : "__all__");
+  return unstable_cache(() => _getCabinMrpUncached(excludeKeys, jobIds), ["cabin-mrp-universe", key], {
     revalidate: 300,
     tags: ["cabin-programs", "operations", "jobs", "bom-lines", "items", "inventory-stock"],
   })();
@@ -393,9 +479,9 @@ export async function getCabinMrp(excludeKeys: string[] = []): Promise<CabinMrpP
 
 /* ============================ Requirements ============================ */
 
-const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
+const _getCabinRequirementsUncached = async (jobIds: string[]): Promise<CabinReqRow[]> => {
   const supabase = createCacheClient();
-  const eligible = await getEligibleCabinJobs(supabase);
+  const eligible = await getScopedCabinJobs(supabase, jobIds);
   if (eligible.size === 0) return [];
   const eligibleIds = [...eligible.keys()];
 
@@ -444,8 +530,9 @@ const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
   return rows;
 };
 
-export async function getCabinRequirements(): Promise<CabinReqRow[]> {
-  return unstable_cache(_getCabinRequirementsUncached, ["cabin-mrp-requirements"], {
+export async function getCabinRequirements(jobIds: string[] = []): Promise<CabinReqRow[]> {
+  const key = jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  return unstable_cache(() => _getCabinRequirementsUncached(jobIds), ["cabin-mrp-requirements", key], {
     revalidate: 300,
     tags: ["cabin-programs", "jobs", "bom-lines", "items", "inventory-stock"],
   })();
@@ -494,14 +581,14 @@ function buildCabinWeeks(curWeek: Date): WeekMeta[] {
   return weeks;
 }
 
-const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
+const _getCabinWeeklyUncached = async (jobIds: string[]): Promise<CabinWeeklyPlan> => {
   const supabase = createCacheClient();
   const today = istToday();
   const curWeek = startOfWeekSunday(today);
   const weeks = buildCabinWeeks(curWeek);
   const N = weeks.length;
 
-  const eligible = await getEligibleCabinJobs(supabase);
+  const eligible = await getScopedCabinJobs(supabase, jobIds);
   if (eligible.size === 0) return { weeks, rows: [], laterCount: 0, undatedCount: 0 };
   const eligibleIds = [...eligible.keys()];
 
@@ -586,8 +673,9 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
   return { weeks, rows, laterCount: laterJobs.size, undatedCount: undatedJobs.size };
 };
 
-export async function getCabinWeekly(): Promise<CabinWeeklyPlan> {
-  return unstable_cache(_getCabinWeeklyUncached, ["cabin-mrp-weekly"], {
+export async function getCabinWeekly(jobIds: string[] = []): Promise<CabinWeeklyPlan> {
+  const key = jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  return unstable_cache(() => _getCabinWeeklyUncached(jobIds), ["cabin-mrp-weekly", key], {
     revalidate: 300,
     tags: ["cabin-programs", "jobs", "bom-lines", "items", "inventory-stock"],
   })();

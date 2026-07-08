@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition, useMemo } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { LayoutGrid, AlertTriangle, Ban, ChevronRight, Layers, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
@@ -12,14 +12,23 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, SectionHeader } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
+import { CabinScopePicker } from "@/components/mrp/cabin-scope-picker";
 import { formatDuration } from "@/lib/utils";
 import type { CabinMrpPlan, CabinPlanProgram } from "@/lib/actions/cabin-program-plan";
+import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
 
 const MACHINE: Record<string, string> = { cnc_punch: "Punch", cnc_laser: "Laser", assembly_fit: "Assembly" };
 
-export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
+export function CabinMrpClient({
+  plan,
+  scopeOptions,
+}: {
+  plan: CabinMrpPlan;
+  scopeOptions: CabinScopeOption[];
+}) {
   const t = plan.totals;
   const router = useRouter();
+  const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [catFilter, setCatFilter] = useState("all");
   const [finishFilter, setFinishFilter] = useState("all");
@@ -28,6 +37,9 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
   const goWithExclusions = (excl: string[]) => {
     const params = new URLSearchParams();
     if (excl.length) params.set("exclude", excl.join(","));
+    // Keep the job-scope selection (?jobs=) when toggling exclusions.
+    const jobsScope = sp.get("jobs");
+    if (jobsScope) params.set("jobs", jobsScope);
     const qs = params.toString();
     startTransition(() => router.push(`/mrp/cabin/programs${qs ? `?${qs}` : ""}`));
   };
@@ -69,6 +81,7 @@ export function CabinMrpClient({ plan }: { plan: CabinMrpPlan }) {
   return (
     <div>
       <MrpToolbar view="programs" date="" section="cabin" />
+      <CabinScopePicker options={scopeOptions} />
       <PageHeader
         icon={<LayoutGrid size={18} />}
         title="Cabin MRP — programs to cut"

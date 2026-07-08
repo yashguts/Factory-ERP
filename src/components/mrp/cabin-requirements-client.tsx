@@ -14,11 +14,19 @@ import {
 } from "@/components/ui/table";
 import { Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
+import { CabinScopePicker } from "@/components/mrp/cabin-scope-picker";
 import type { CabinReqRow } from "@/lib/actions/cabin-program-plan";
+import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
 
 type ShowFilter = "shortfall" | "all";
 
-export function CabinRequirementsClient({ rows }: { rows: CabinReqRow[] }) {
+export function CabinRequirementsClient({
+  rows,
+  scopeOptions,
+}: {
+  rows: CabinReqRow[];
+  scopeOptions: CabinScopeOption[];
+}) {
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [show, setShow] = useState<ShowFilter>(() => readParam(sp, "show", "shortfall", ["shortfall", "all"]) as ShowFilter);
@@ -84,6 +92,7 @@ export function CabinRequirementsClient({ rows }: { rows: CabinReqRow[] }) {
   return (
     <div>
       <MrpToolbar view="requirements" date="" section="cabin" />
+      <CabinScopePicker options={scopeOptions} />
 
       <PageHeader
         icon={<LayoutGrid size={18} />}
