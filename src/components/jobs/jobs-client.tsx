@@ -147,8 +147,8 @@ export function JobsClient({
   // Tab: active jobs vs. fully-dispatched ones (a job leaves "Active" once every
   // BOM line is fully dispatched — dispatchStatus === "full"). The "plan" tab is
   // a week-by-week dispatch board over the SAME active set (no extra data).
-  const [view, setView] = useState<"active" | "dispatched" | "plan">(
-    () => readParam(sp, "view", "active", ["active", "dispatched", "plan"]) as "active" | "dispatched" | "plan",
+  const [view, setView] = useState<"active" | "dispatched" | "shortfall" | "plan">(
+    () => readParam(sp, "view", "active", ["active", "dispatched", "shortfall", "plan"]) as "active" | "dispatched" | "shortfall" | "plan",
   );
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [statusFilter, setStatusFilter] = useState<JobStatus | "all">(
@@ -177,19 +177,26 @@ export function JobsClient({
   );
 
   // Tab buckets (computed across ALL jobs, independent of the other filters, so
-  // the counts on the tabs always reflect the true split). The Dispatch Plan
-  // additionally drops Hold/New jobs — parked or not-started work isn't
-  // dispatchable, so it doesn't belong on the board.
-  const { activeCount, dispatchedCount, planCount } = useMemo(() => {
-    let a = 0, d = 0, p = 0;
+  // the counts on the tabs always reflect the true split). "Shortfall" = the
+  // 2nd phase has been dispatched (Sent auto-advanced to full_material by
+  // createDispatch) but some BOM quantity is still remaining — the job is
+  // essentially complete, waiting only on shortfall items, so it leaves Active
+  // (and the plan board) for its own tab. The Dispatch Plan additionally drops
+  // Hold/New jobs — parked or not-started work isn't dispatchable.
+  const isShortfall = (j: Job) =>
+    (dispatchStatus[j.id] ?? "none") === "partial" && (j.stage ?? "new") === "full_material";
+  const { activeCount, dispatchedCount, shortfallCount, planCount } = useMemo(() => {
+    let a = 0, d = 0, s = 0, p = 0;
     for (const j of jobs) {
       if ((dispatchStatus[j.id] ?? "none") === "full") d++;
+      else if (isShortfall(j)) s++;
       else {
         a++;
         if (j.status !== "hold" && j.status !== "new") p++;
       }
     }
-    return { activeCount: a, dispatchedCount: d, planCount: p };
+    return { activeCount: a, dispatchedCount: d, shortfallCount: s, planCount: p };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [jobs, dispatchStatus]);
 
   // Jobs whose GAD was changed after the BOM was defined (and not re-audited).
@@ -234,10 +241,18 @@ export function JobsClient({
 
   const filtered = useMemo(() => {
     return jobs.filter((job) => {
-      // Tab gate: the "Fully Dispatched" tab shows only fully-dispatched jobs;
-      // the "Active" tab shows everything else (never-dispatched + partial).
+      // Tab gate: "Fully Dispatched" = every line dispatched; "Full Dispatch
+      // (Shortfall)" = 2nd phase sent but quantity still remaining; "Active"
+      // (and the plan board) = everything else.
       const isFull = (dispatchStatus[job.id] ?? "none") === "full";
-      if (view === "dispatched" ? !isFull : isFull) return false;
+      const isShort = isShortfall(job);
+      if (view === "dispatched") {
+        if (!isFull) return false;
+      } else if (view === "shortfall") {
+        if (!isShort) return false;
+      } else if (isFull || isShort) {
+        return false;
+      }
       // Dispatch Plan shows only jobs actually in production — Hold and New
       // jobs are parked/not-started, so they don't belong on the dispatch board.
       if (view === "plan" && (job.status === "hold" || job.status === "new")) return false;
@@ -403,8 +418,14 @@ export function JobsClient({
         title="Job Orders"
         meta={
           <>
-            {sorted.length} of {view === "dispatched" ? dispatchedCount : activeCount}{" "}
-            {view === "dispatched" ? "fully dispatched" : "active"} jobs
+            {sorted.length} of{" "}
+            {view === "dispatched" ? dispatchedCount : view === "shortfall" ? shortfallCount : activeCount}{" "}
+            {view === "dispatched"
+              ? "fully dispatched"
+              : view === "shortfall"
+                ? "2nd-phase-dispatched (shortfall pending)"
+                : "active"}{" "}
+            jobs
             {savingJobId ? " — saving..." : ""}
           </>
         }
@@ -514,10 +535,11 @@ export function JobsClient({
         variant="underline"
         className="mb-3"
         value={view}
-        onChange={(v) => { setView(v as "active" | "dispatched" | "plan"); resetPage(); }}
+        onChange={(v) => { setView(v as "active" | "dispatched" | "shortfall" | "plan"); resetPage(); }}
         tabs={[
           { value: "active", label: "Active", count: activeCount },
           { value: "dispatched", label: "Fully Dispatched", count: dispatchedCount },
+          { value: "shortfall", label: "Full Dispatch (Shortfall)", count: shortfallCount },
           { value: "plan", label: "Dispatch Plan", count: planCount },
         ]}
       />
@@ -626,14 +648,18 @@ export function JobsClient({
                 ? "No jobs yet"
                 : view === "dispatched" && dispatchedCount === 0
                   ? "No fully dispatched jobs yet"
-                  : "No jobs match your filters"
+                  : view === "shortfall" && shortfallCount === 0
+                    ? "No shortfall jobs"
+                    : "No jobs match your filters"
             }
             description={
               initialJobs.length === 0
                 ? "Import from Excel to get started."
                 : view === "dispatched" && dispatchedCount === 0
                   ? "A job moves here once every BOM line has been dispatched."
-                  : "Try clearing the search or filters."
+                  : view === "shortfall" && shortfallCount === 0
+                    ? "A job moves here once its 2nd phase is dispatched but some quantity is still left to send."
+                    : "Try clearing the search or filters."
             }
           />
         </div>
