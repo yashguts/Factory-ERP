@@ -237,42 +237,46 @@ export function CabinMrpClient({
             </div>
           )}
 
-          {/* Not mapped */}
-          {plan.blocked.length > 0 && (
-            <>
-              <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
-                <Ban className="h-4 w-4 text-[var(--warning)]" /> Not currently mapped ({plan.blocked.length})
-              </h2>
-              <div className="flex items-start gap-2 mb-2 px-4 py-2.5 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] text-xs">
-                <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
-                <span>Short cabin items no audited program can cut — either <strong>no program</strong> produces them, or there&rsquo;s <strong>no sheet</strong> for that finish. Add/audit a program (and a sheet) to unlock them.</span>
-              </div>
-              <Card>
-                <Table density="compact" className="table-fixed">
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="w-32">Code</TableHead>
-                      <TableHead>Item</TableHead>
-                      <TableHead className="w-40">Finish</TableHead>
-                      <TableHead className="text-right w-20">Need</TableHead>
-                      <TableHead className="w-40">Reason</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {plan.blocked.map((b) => (
-                      <TableRow key={b.item_id}>
-                        <TableCell className="font-mono text-[var(--muted-foreground)] truncate" title={b.code}>{b.code}</TableCell>
-                        <TableCell className="font-medium truncate" title={b.name}>{b.name}</TableCell>
-                        <TableCell className="italic text-[var(--muted-foreground)] truncate">{b.finish ?? "—"}</TableCell>
-                        <TableCell className="tabular-nums text-right whitespace-nowrap">need {b.need}</TableCell>
-                        <TableCell>{b.reason === "no-sheet" ? <Badge variant="amber">no sheet for finish</Badge> : <Badge variant="neutral">no program</Badge>}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </Card>
-            </>
-          )}
+        </>
+      )}
+
+      {/* Not mapped — OUTSIDE the audited-programs ternary on purpose: when NO
+          audited program covers any shortfall item (auditedPrograms === 0), the
+          whole shortfall lands here, and hiding it made a scoped plan look
+          empty (the RNLIND-0015 lesson). */}
+      {plan.blocked.length > 0 && (
+        <>
+          <h2 className="text-sm font-semibold mb-2 flex items-center gap-2">
+            <Ban className="h-4 w-4 text-[var(--warning)]" /> Not currently mapped ({plan.blocked.length})
+          </h2>
+          <div className="flex items-start gap-2 mb-2 px-4 py-2.5 rounded-lg border border-[var(--warning-border)] bg-[var(--warning-bg)] text-[var(--warning)] text-xs">
+            <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+            <span>Short cabin items no audited program can cut — either <strong>no program</strong> produces them, or there&rsquo;s <strong>no sheet</strong> for that finish. Add/audit a program (and a sheet) to unlock them.</span>
+          </div>
+          <Card>
+            <Table density="compact" className="table-fixed">
+              <TableHeader>
+                <TableRow>
+                  <TableHead className="w-32">Code</TableHead>
+                  <TableHead>Item</TableHead>
+                  <TableHead className="w-40">Finish</TableHead>
+                  <TableHead className="text-right w-20">Need</TableHead>
+                  <TableHead className="w-40">Reason</TableHead>
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {plan.blocked.map((b) => (
+                  <TableRow key={b.item_id}>
+                    <TableCell className="font-mono text-[var(--muted-foreground)] truncate" title={b.code}>{b.code}</TableCell>
+                    <TableCell className="font-medium truncate" title={b.name}>{b.name}</TableCell>
+                    <TableCell className="italic text-[var(--muted-foreground)] truncate">{b.finish ?? "—"}</TableCell>
+                    <TableCell className="tabular-nums text-right whitespace-nowrap">need {b.need}</TableCell>
+                    <TableCell>{b.reason === "no-sheet" ? <Badge variant="amber">no sheet for finish</Badge> : <Badge variant="neutral">no program</Badge>}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          </Card>
         </>
       )}
     </div>
