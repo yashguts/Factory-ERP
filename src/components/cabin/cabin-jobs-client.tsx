@@ -3,7 +3,7 @@
 import { useState, useMemo } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
-import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers, Check, AlertTriangle } from "lucide-react";
+import { Plus, Search, ClipboardCheck, Copy, ArrowUpDown, ChevronDown, ChevronRight, Palette, Layers, Check, AlertTriangle, Truck } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -24,7 +24,7 @@ import {
 } from "@/components/ui/table";
 import { CabinJobsPopover } from "@/components/cabin/cabin-jobs-popover";
 import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
-import { setCabinJobReady } from "@/lib/actions/cabin-jobs";
+import { setCabinJobReady, setCabinJobDispatched } from "@/lib/actions/cabin-jobs";
 import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
 import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
 import { useToast } from "@/components/ui/toast";
@@ -121,12 +121,40 @@ export function CabinJobsClient({
     toast.success(next ? `${j.job_number} marked ready` : `${j.job_number} reopened`);
     router.refresh();
   }
+  // Optimistic dispatched state overlay. Dispatched = shipped; STATUS ONLY (no
+  // inventory effect — cabin stock is consumed on "ready"). Moves the job to the
+  // Dispatched section.
+  const [dispatchOverride, setDispatchOverride] = useState<Record<string, boolean>>({});
+  const isDispatched = (j: CabinJobListRow) => dispatchOverride[j.id] ?? j.dispatched_at != null;
+  async function toggleDispatched(j: CabinJobListRow) {
+    const next = !isDispatched(j);
+    if (
+      next &&
+      !window.confirm(
+        `Mark cabin job "${j.job_number}" as DISPATCHED?\n\nIt moves to the Dispatched section. This does NOT change inventory (cabin stock is consumed when a job is marked Ready). Click OK to confirm.`,
+      )
+    )
+      return;
+    setDispatchOverride((m) => ({ ...m, [j.id]: next }));
+    const res = await setCabinJobDispatched(j.id, next);
+    if (!res.ok) {
+      setDispatchOverride((m) => ({ ...m, [j.id]: !next }));
+      toast.error(res.error);
+      return;
+    }
+    toast.success(next ? `${j.job_number} marked dispatched` : `${j.job_number} moved back to active`);
+    router.refresh();
+  }
   const sp = useSearchParams();
   const [view, setView] = useState<View>(() => readParam(sp, "view", "jobs", ["jobs", "finish", "category", "weekly"]) as View);
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [systemFilter, setSystemFilter] = useState<string>(() => readParam(sp, "sys", "all"));
   const [materialFilter, setMaterialFilter] = useState<string>(() => readParam(sp, "mat", "all"));
   const [fwFilter, setFwFilter] = useState<string>(() => readParam(sp, "fw", "all"));
+  // Dispatch section: Active (hides dispatched) / Dispatched / All. Default Active.
+  const [statusFilter, setStatusFilter] = useState<"active" | "dispatched" | "all">(
+    () => readParam(sp, "st", "active", ["active", "dispatched", "all"]) as "active" | "dispatched" | "all",
+  );
   const [sortKey, setSortKey] = useState<SortKey>(
     () => readParam(sp, "sort", "created", ["job_number", "platform", "side_panel", "front_wall", "items", "created"]) as SortKey,
   );
@@ -138,8 +166,8 @@ export function CabinJobsClient({
   const [weeklyFinish, setWeeklyFinish] = useState(() => readParam(sp, "wfin", "all"));
 
   useUrlListSync(
-    { view, q: search, sys: systemFilter, mat: materialFilter, fw: fwFilter, sort: sortKey, dir: sortDir, cumul: cumulative ? "1" : "0", wfin: weeklyFinish },
-    { view: "jobs", q: "", sys: "all", mat: "all", fw: "all", sort: "created", dir: "desc", cumul: "1", wfin: "all" },
+    { view, q: search, sys: systemFilter, mat: materialFilter, fw: fwFilter, st: statusFilter, sort: sortKey, dir: sortDir, cumul: cumulative ? "1" : "0", wfin: weeklyFinish },
+    { view: "jobs", q: "", sys: "all", mat: "all", fw: "all", st: "active", sort: "created", dir: "desc", cumul: "1", wfin: "all" },
   );
 
   // Filter option lists, derived from the data so they only show what exists.
@@ -176,14 +204,23 @@ export function CabinJobsClient({
       if (systemFilter !== "all" && platformSystem(j.platform) !== systemFilter) return false;
       if (materialFilter !== "all" && !splitMaterials(j.side_panel_material).includes(materialFilter)) return false;
       if (fwFilter !== "all" && !splitMaterials(j.front_wall_material).includes(fwFilter)) return false;
+      const disp = dispatchOverride[j.id] ?? j.dispatched_at != null;
+      if (statusFilter === "active" && disp) return false;
+      if (statusFilter === "dispatched" && !disp) return false;
       return true;
     });
-  }, [jobs, search, systemFilter, materialFilter, fwFilter]);
+  }, [jobs, search, systemFilter, materialFilter, fwFilter, statusFilter, dispatchOverride]);
 
   // Cabin jobs whose linked elevator job had its GAD changed — a stale-drawing
   // hazard. Counted across ALL jobs (not just the filtered view) so the banner
   // never under-reports if a filter happens to hide one.
   const gadChangedCount = useMemo(() => jobs.filter((j) => j.gad_changed).length, [jobs]);
+
+  const dispatchedCount = useMemo(
+    () => jobs.filter((j) => dispatchOverride[j.id] ?? j.dispatched_at != null).length,
+    [jobs, dispatchOverride],
+  );
+  const activeCount = jobs.length - dispatchedCount;
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
@@ -341,8 +378,8 @@ export function CabinJobsClient({
               ? "Cumulative requirement by cabin part category, across all cabin jobs"
               : view === "weekly"
                 ? "Parts by category (sorted by finish), required week by week"
-                : filtersActive
-                  ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
+                : filtersActive || statusFilter !== "all"
+                  ? `${sorted.length} of ${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}${statusFilter === "active" ? " · active" : statusFilter === "dispatched" ? " · dispatched" : ""}`
                   : `${jobs.length} cabin job${jobs.length === 1 ? "" : "s"}`
         }
         actions={
@@ -472,6 +509,18 @@ export function CabinJobsClient({
               </Button>
             )}
             <ToolbarSpacer />
+
+            <Select
+              size="sm"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value as "active" | "dispatched" | "all")}
+              className="w-[160px]"
+              title="Active hides dispatched jobs; Dispatched shows only shipped ones"
+            >
+              <option value="active">Active ({activeCount})</option>
+              <option value="dispatched">Dispatched ({dispatchedCount})</option>
+              <option value="all">All ({jobs.length})</option>
+            </Select>
           </Toolbar>
 
           {sorted.length === 0 ? (
@@ -508,9 +557,9 @@ export function CabinJobsClient({
                       className={cn(
                         "cursor-pointer",
                         j.gad_changed ? "gad-flash-row" : "hover:bg-[var(--muted)]",
-                        // A GAD-changed row must stand out even when it's Ready,
-                        // so don't dim it in that case.
-                        isReady(j) && !j.gad_changed && "opacity-60",
+                        // A GAD-changed row must stand out even when it's Ready/
+                        // Dispatched, so don't dim it in that case.
+                        (isReady(j) || isDispatched(j)) && !j.gad_changed && "opacity-60",
                       )}
                       onClick={() => router.push(`/cabin-jobs/${j.id}`)}
                     >
@@ -552,6 +601,22 @@ export function CabinJobsClient({
                             }}
                           >
                             <Check size={14} className="mr-1.5" /> {isReady(j) ? "Ready" : "Mark Ready"}
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="secondary"
+                            className={cn("cursor-pointer", isDispatched(j) && "text-[var(--primary)]")}
+                            title={
+                              isDispatched(j)
+                                ? "Dispatched — moved to the Dispatched section. Click to move back to Active. (No inventory effect.)"
+                                : "Mark dispatched — move this job to the Dispatched section. Does not change inventory."
+                            }
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleDispatched(j);
+                            }}
+                          >
+                            <Truck size={14} className="mr-1.5" /> {isDispatched(j) ? "Dispatched" : "Dispatch"}
                           </Button>
                           <Button
                             size="sm"

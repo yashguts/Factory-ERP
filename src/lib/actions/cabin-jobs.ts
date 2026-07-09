@@ -298,6 +298,9 @@ export interface CabinJobListRow {
   /** Non-null ISO timestamp when marked ready; ready jobs are excluded from the
    *  cabin requirement (their items are already built). null = still counts. */
   marked_ready_at: string | null;
+  /** Non-null ISO timestamp when marked dispatched; dispatched jobs move to the
+   *  "Dispatched" section of the list. Status only — no inventory effect. */
+  dispatched_at: string | null;
   /** TRUE when the linked elevator Job Order's GAD drawing was changed after its
    *  BOM was defined (the `jobs`-level GAD-drift alert). Severe: the cabin was
    *  planned/built against a now-stale drawing, so the list flashes it red and
@@ -314,7 +317,7 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
   const [{ data: jobs }, lines, jobOrders] = await Promise.all([
     supabase
       .from("cabin_jobs")
-      .select("id, job_number, customer_name, created_at, marked_ready_at")
+      .select("id, job_number, customer_name, created_at, marked_ready_at, dispatched_at")
       .order("created_at", { ascending: false }),
     fetchAllRanged<{ cabin_job_id: string; cabin_type: string; item: unknown }>(
       (from, to, withCount) =>
@@ -384,6 +387,7 @@ export async function getCabinJobs(): Promise<CabinJobListRow[]> {
       front_wall_material: fwset ? [...fwset].sort().join(" + ") : null,
       created_at: j.created_at as string,
       marked_ready_at: (j.marked_ready_at as string | null) ?? null,
+      dispatched_at: (j.dispatched_at as string | null) ?? null,
       gad_changed:
         gadChangedByNumber.get(((j.job_number as string) ?? "").trim().toLowerCase()) ?? false,
     };
@@ -982,5 +986,31 @@ export async function setCabinJobReady(
   revalidatePath("/cabin-inventory");
   revalidatePath("/inventory");
   revalidatePath("/inventory/changes");
+  return { ok: true, id };
+}
+
+/**
+ * Toggle a cabin job's "dispatched" flag. Dispatched jobs move to the Dispatched
+ * section of the cabin-jobs list. STATUS ONLY — no inventory effect: cabin stock
+ * is consumed when a job is marked READY (see setCabinJobReady), never on dispatch.
+ * Reversible — dispatched=false clears the timestamp and the job returns to Active.
+ */
+export async function setCabinJobDispatched(
+  id: string,
+  dispatched: boolean,
+): Promise<CabinJobResult> {
+  if (!id) return { ok: false, error: "Missing cabin job id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cabin_jobs")
+    .update({
+      dispatched_at: dispatched ? new Date().toISOString() : null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+
+  revalidatePath("/cabin-jobs");
+  revalidateTag("cabin-jobs");
   return { ok: true, id };
 }

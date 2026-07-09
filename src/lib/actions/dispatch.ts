@@ -41,6 +41,31 @@ function flatten<T>(rel: unknown): T | null {
 
 type Db = Awaited<ReturnType<typeof createClient>>;
 
+/** Every category id in the "Cabin" subtree. Cabin items are inventory-managed by
+ *  the Cabin Job "ready" flow, NOT by dispatch, so dispatch must never deduct them. */
+async function cabinCategoryIdSet(supabase: Db): Promise<Set<string>> {
+  const { data: cats } = await supabase.from("item_categories").select("id, name, parent_id");
+  const childrenOf = new Map<string, string[]>();
+  for (const c of cats ?? []) {
+    if (c.parent_id) {
+      const a = childrenOf.get(c.parent_id as string) ?? [];
+      a.push(c.id as string);
+      childrenOf.set(c.parent_id as string, a);
+    }
+  }
+  const root = (cats ?? []).find((c) => c.name === "Cabin" && c.parent_id === null);
+  const ids = new Set<string>();
+  if (root) {
+    const stack = [root.id as string];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      ids.add(id);
+      for (const ch of childrenOf.get(id) ?? []) stack.push(ch);
+    }
+  }
+  return ids;
+}
+
 /** Warehouse ids by the three known store names. */
 async function resolveStores(supabase: Db): Promise<{ finished: string | null; main: string | null; raw: string | null }> {
   const { data } = await supabase.from("warehouses").select("id, name");
@@ -78,7 +103,24 @@ async function postDispatchInventory(supabase: Db, dispatchId: string): Promise<
     .select("item_id, qty")
     .eq("dispatch_id", dispatchId)
     .not("item_id", "is", null);
-  const items = (lines ?? []).filter((l: any) => l.item_id && Number(l.qty) > 0);
+  let items = (lines ?? []).filter((l: any) => l.item_id && Number(l.qty) > 0);
+  if (items.length === 0) return;
+
+  // Cabin items are consumed when their Cabin Job is marked ready — never by a
+  // job-order/R1 dispatch. Drop any cabin-subtree line here so dispatch can't
+  // double-deduct a cabin panel (belt-and-braces: cabin items aren't dispatchable
+  // R1 lines today, but a few legacy BOM lines point at cabin items).
+  const preIds = [...new Set(items.map((l: any) => l.item_id as string))];
+  const cabinCatIds = await cabinCategoryIdSet(supabase);
+  if (cabinCatIds.size) {
+    const { data: itemCats } = await supabase.from("items").select("id, category_id").in("id", preIds);
+    const cabinItemIds = new Set(
+      (itemCats ?? [])
+        .filter((r) => r.category_id && cabinCatIds.has(r.category_id as string))
+        .map((r) => r.id as string),
+    );
+    if (cabinItemIds.size) items = items.filter((l: any) => !cabinItemIds.has(l.item_id as string));
+  }
   if (items.length === 0) return;
 
   const stores = await resolveStores(supabase);
