@@ -424,6 +424,20 @@ export function CabinJobsClient({
         />
       ) : (
         <>
+          {/* Active / Dispatched sections. Dispatched jobs move out of Active. */}
+          <div className="mb-4">
+            <Tabs
+              variant="segmented"
+              value={statusFilter}
+              onChange={(v) => setStatusFilter(v as "active" | "dispatched" | "all")}
+              tabs={[
+                { value: "active", label: "Active", count: activeCount },
+                { value: "dispatched", label: "Dispatched", count: dispatchedCount },
+                { value: "all", label: "All", count: jobs.length },
+              ]}
+            />
+          </div>
+
           {gadChangedCount > 0 && (
             <div className="mb-4 flex items-center gap-3 rounded-lg border-2 border-[var(--destructive)] bg-[color-mix(in_srgb,var(--destructive)_10%,transparent)] px-4 py-3 text-[var(--destructive)]">
               <AlertTriangle size={20} className="shrink-0 gad-flash-badge" />
@@ -509,29 +523,25 @@ export function CabinJobsClient({
               </Button>
             )}
             <ToolbarSpacer />
-
-            <Select
-              size="sm"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value as "active" | "dispatched" | "all")}
-              className="w-[160px]"
-              title="Active hides dispatched jobs; Dispatched shows only shipped ones"
-            >
-              <option value="active">Active ({activeCount})</option>
-              <option value="dispatched">Dispatched ({dispatchedCount})</option>
-              <option value="all">All ({jobs.length})</option>
-            </Select>
           </Toolbar>
 
           {sorted.length === 0 ? (
             <div className="card-surface">
               <EmptyState
                 icon={<ClipboardCheck size={28} />}
-                title={jobs.length === 0 ? "No cabin jobs yet" : "No cabin jobs match your filters"}
+                title={
+                  jobs.length === 0
+                    ? "No cabin jobs yet"
+                    : statusFilter === "dispatched" && dispatchedCount === 0 && !filtersActive
+                      ? "No dispatched cabin jobs yet"
+                      : "No cabin jobs match your filters"
+                }
                 description={
                   jobs.length === 0
                     ? "Create one to start listing cabin items by type."
-                    : "Try clearing the search or filters."
+                    : statusFilter === "dispatched" && dispatchedCount === 0 && !filtersActive
+                      ? 'Use the "Dispatch" button on a job to move it here.'
+                      : "Try clearing the search or filters."
                 }
               />
             </div>
