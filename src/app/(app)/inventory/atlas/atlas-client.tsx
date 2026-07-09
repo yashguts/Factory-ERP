@@ -949,18 +949,9 @@ export default function AtlasClient({
                         <Badge
                           variant="green"
                           className="shrink-0 gap-0.5 px-1 py-0 text-[9px] leading-tight"
-                          title="Produced by an audited program"
+                          title="Produced by an audited program — or a sub-assembly whose make child parts are all covered by audited programs"
                         >
                           <Cpu size={9} /> Programmed
-                        </Badge>
-                      )}
-                      {it.bom_item && (
-                        <Badge
-                          variant="green"
-                          className="shrink-0 gap-0.5 px-1 py-0 text-[9px] leading-tight"
-                          title="BOM item — selectable in a Packing List R1 part"
-                        >
-                          <Check size={9} /> BOM Item
                         </Badge>
                       )}
                       {it.demand_rule && (
@@ -1437,7 +1428,6 @@ function NewItemModal({
       procurement_type: null,
       stock: 0,
       programmed: false,
-      bom_item: false,
       demand_rule: false,
     });
   }
