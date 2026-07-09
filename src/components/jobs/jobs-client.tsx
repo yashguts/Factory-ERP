@@ -854,21 +854,25 @@ export function JobsClient({
                     </select>
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
+                    {/* Fully dispatched = the job already shipped in full; its plan is
+                        history. Req. Dispatch and Status are frozen read-only. */}
                     <input
                       type="date"
-                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors"
+                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-70"
                       value={job.requirement_dispatch_date ?? ""}
                       onChange={(e) => handleDispatchDateChange(job.id, e.target.value || null)}
-                      disabled={savingJobId === job.id}
+                      disabled={savingJobId === job.id || (dispatchStatus[job.id] ?? "none") === "full"}
+                      title={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Req. Dispatch Date is locked" : undefined}
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     <div className="flex items-center gap-1.5">
                       <select
-                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none ${STATUS_SELECT_COLORS[job.status]}`}
+                        className={`text-xs font-medium px-2 py-1 rounded-full border-0 cursor-pointer focus:ring-2 focus:ring-[var(--ring)] focus:outline-none disabled:cursor-not-allowed disabled:opacity-70 ${STATUS_SELECT_COLORS[job.status]}`}
                         value={job.status}
                         onChange={(e) => handleStatusChange(job.id, e.target.value as JobStatus)}
-                        disabled={savingJobId === job.id}
+                        disabled={savingJobId === job.id || (dispatchStatus[job.id] ?? "none") === "full"}
+                        title={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Status is locked" : undefined}
                       >
                         {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
                           <option key={s} value={s}>{STATUS_LABELS[s]}</option>
