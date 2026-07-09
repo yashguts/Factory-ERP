@@ -188,17 +188,31 @@ async function reverseDispatchInventory(supabase: Db, dispatchId: string): Promi
     .limit(1);
   if (undone && undone.length > 0) return; // already reversed
 
+  // Net what this dispatch actually removed: the original dispatch_out posts
+  // MINUS any later per-line qty corrections (signed adjustments tagged
+  // dispatch_correction). Restoring the net keeps undo exact after an edit —
+  // e.g. posted −26, corrected +4 → undo restores 22, not 26.
   const { data: posts } = await supabase
     .from("inventory_transactions")
-    .select("item_id, warehouse_id, quantity")
-    .eq("reference_type", "dispatch")
+    .select("item_id, warehouse_id, quantity, reference_type")
+    .in("reference_type", ["dispatch", "dispatch_correction"])
     .eq("reference_id", dispatchId);
+  const removed = new Map<string, { item_id: string; warehouse_id: string; net: number }>();
   for (const p of posts ?? []) {
+    const key = `${p.item_id}|${p.warehouse_id}`;
+    const ex = removed.get(key) ?? { item_id: p.item_id as string, warehouse_id: p.warehouse_id as string, net: 0 };
+    // dispatch rows are dispatch_out (removed |q|); correction rows are signed
+    // adjustments (positive = restored, so they reduce what's left to restore).
+    ex.net += p.reference_type === "dispatch" ? Math.abs(Number(p.quantity)) : -Number(p.quantity);
+    removed.set(key, ex);
+  }
+  for (const p of removed.values()) {
+    if (Math.abs(p.net) < 1e-9) continue;
     await recordTransaction({
-      item_id: p.item_id as string,
-      warehouse_id: p.warehouse_id as string,
+      item_id: p.item_id,
+      warehouse_id: p.warehouse_id,
       transaction_type: "adjustment",
-      quantity: Math.abs(Number(p.quantity)), // dispatch_out removed this; add it back
+      quantity: p.net, // signed: restores exactly what remains removed
       reference_type: "dispatch_undo",
       reference_id: dispatchId,
       notes: "Dispatch undone — stock restored",
@@ -582,6 +596,101 @@ export async function deleteDispatch(
     .eq("id", dispatchId);
   if (error) return { ok: false, error: error.message };
   // Un-dispatching restores demand to MRP — bust the same caches.
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  revalidatePath("/mrp");
+  return { ok: true };
+}
+
+/**
+ * Correct one line's quantity on an ALREADY-RECORDED dispatch (a marking error —
+ * e.g. 26 entered when only 22 were sent). Updates the line and posts the stock
+ * DELTA as a signed adjustment tagged `dispatch_correction` + the dispatch id,
+ * so the ledger shows an auditable correction and a later full undo restores
+ * exactly the net (reverseDispatchInventory nets these corrections). The item's
+ * "remaining to dispatch" recomputes automatically (required − Σ dispatched).
+ * Cutover-gated and cabin-guarded like every other dispatch stock effect.
+ */
+export async function updateDispatchLineQty(
+  dispatchLineId: string,
+  newQty: number,
+  jobId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!dispatchLineId) return { ok: false, error: "Missing dispatch line id." };
+  if (!Number.isFinite(newQty) || newQty < 0)
+    return { ok: false, error: "Quantity must be 0 or more." };
+  const supabase = await createClient();
+
+  const { data: line } = await supabase
+    .from("job_dispatch_lines")
+    .select("id, dispatch_id, item_id, qty")
+    .eq("id", dispatchLineId)
+    .maybeSingle();
+  if (!line) return { ok: false, error: "Dispatch line not found." };
+  const oldQty = Number(line.qty);
+  const delta = newQty - oldQty; // positive = more was sent; negative = less
+  if (Math.abs(delta) < 1e-9) return { ok: true };
+
+  const { error: ue } = await supabase
+    .from("job_dispatch_lines")
+    .update({ qty: newQty })
+    .eq("id", dispatchLineId);
+  if (ue) return { ok: false, error: ue.message };
+
+  // Stock correction — best-effort (the qty fix must stand even if posting hiccups).
+  try {
+    const dispatchId = line.dispatch_id as string;
+    const itemId = line.item_id as string | null;
+    const { data: head } = await supabase
+      .from("job_dispatches")
+      .select("dispatch_date")
+      .eq("id", dispatchId)
+      .maybeSingle();
+    // Only correct stock when the dispatch itself posted (post-cutover, item
+    // mapped, not a cabin item — cabin stock never moves on dispatch).
+    if (itemId && postsInventory(head?.dispatch_date as string)) {
+      const cabinCatIds = await cabinCategoryIdSet(supabase);
+      const { data: it } = await supabase
+        .from("items")
+        .select("category_id")
+        .eq("id", itemId)
+        .maybeSingle();
+      const isCabin = !!it?.category_id && cabinCatIds.has(it.category_id as string);
+      if (!isCabin) {
+        // Post to the warehouse the dispatch drew this item from (fall back to
+        // the standard preference order for ad-hoc/edge cases).
+        const { data: posted } = await supabase
+          .from("inventory_transactions")
+          .select("warehouse_id")
+          .eq("reference_type", "dispatch")
+          .eq("reference_id", dispatchId)
+          .eq("item_id", itemId)
+          .limit(1);
+        let warehouseId = posted?.[0]?.warehouse_id as string | undefined;
+        if (!warehouseId) {
+          const stores = await resolveStores(supabase);
+          warehouseId = stores.finished ?? stores.main ?? stores.raw ?? undefined;
+        }
+        if (warehouseId) {
+          await recordTransaction({
+            item_id: itemId,
+            warehouse_id: warehouseId,
+            transaction_type: "adjustment",
+            quantity: -delta, // sent LESS than marked → restore; sent MORE → deduct
+            reference_type: "dispatch_correction",
+            reference_id: dispatchId,
+            notes: `Dispatch qty corrected ${oldQty} → ${newQty}`,
+          });
+        }
+      }
+    }
+  } catch (e) {
+    console.error("dispatch qty correction stock post failed", dispatchLineId, e);
+  }
+
+  // Corrected qty changes remaining-to-dispatch → MRP demand; same caches as record/undo.
   revalidateTag("bom-lines");
   revalidateTag("jobs");
   revalidatePath(`/jobs/${jobId}`);

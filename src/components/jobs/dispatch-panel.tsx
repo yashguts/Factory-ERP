@@ -12,10 +12,14 @@ import {
   ChevronRight,
   Plus,
   Printer,
+  Pencil,
+  Check,
+  X,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import {
   deleteDispatch,
+  updateDispatchLineQty,
   type JobDispatchSummary,
   type PhaseScope,
 } from "@/lib/actions/dispatch";
@@ -86,6 +90,36 @@ export function DispatchPanel({
     summary.dispatches[0]?.id ?? null,
   );
   const [busy, setBusy] = useState<string | null>(null);
+  // Inline qty correction on a recorded line (a marking error — e.g. 26 entered
+  // when only 22 went). Saving posts the stock delta and the balance recomputes.
+  const [editLineId, setEditLineId] = useState<string | null>(null);
+  const [editQty, setEditQty] = useState<string>("");
+
+  const saveQty = (lineId: string, oldQty: number) => {
+    const n = Number(editQty);
+    if (!Number.isFinite(n) || n < 0) {
+      toast.error("Enter a quantity of 0 or more.");
+      return;
+    }
+    if (n === oldQty) {
+      setEditLineId(null);
+      return;
+    }
+    setBusy(lineId);
+    startTransition(async () => {
+      const res = await updateDispatchLineQty(lineId, n, jobId);
+      setBusy(null);
+      setEditLineId(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not correct the quantity.");
+        return;
+      }
+      toast.success(
+        `Quantity corrected ${oldQty.toLocaleString()} → ${n.toLocaleString()}. Stock adjusted; the balance now shows what's left.`,
+      );
+      router.refresh();
+    });
+  };
 
   const first = dispatchStat(summary.lines.filter((l) => l.phase === "first"));
   const second = dispatchStat(summary.lines.filter((l) => l.phase === "second"));
@@ -96,7 +130,7 @@ export function DispatchPanel({
   const hasBom = summary.lines.length > 0;
 
   const onDelete = (id: string) => {
-    if (!window.confirm("Undo this dispatch? The recorded items will be removed (inventory is not affected)."))
+    if (!window.confirm("Undo this dispatch? The recorded items will be removed and their stock deduction restored."))
       return;
     setBusy(id);
     startTransition(async () => {
@@ -238,9 +272,59 @@ export function DispatchPanel({
                             </span>
                           )}
                         </span>
-                        <span className="font-medium whitespace-nowrap">
-                          {l.qty.toLocaleString()}
-                        </span>
+                        {editLineId === l.id ? (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <input
+                              type="number"
+                              min={0}
+                              step="any"
+                              autoFocus
+                              value={editQty}
+                              onChange={(e) => setEditQty(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter") saveQty(l.id, l.qty);
+                                if (e.key === "Escape") setEditLineId(null);
+                              }}
+                              className="w-20 rounded border border-[var(--border)] bg-[var(--background)] px-1.5 py-0.5 text-right text-sm focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => saveQty(l.id, l.qty)}
+                              disabled={busy === l.id}
+                              title="Save corrected quantity"
+                              className="p-1 rounded text-[var(--success)] hover:bg-[var(--muted)] cursor-pointer"
+                            >
+                              {busy === l.id ? (
+                                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              ) : (
+                                <Check className="h-3.5 w-3.5" />
+                              )}
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setEditLineId(null)}
+                              title="Cancel"
+                              className="p-1 rounded text-[var(--muted-foreground)] hover:bg-[var(--muted)] cursor-pointer"
+                            >
+                              <X className="h-3.5 w-3.5" />
+                            </button>
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 whitespace-nowrap">
+                            <span className="font-medium">{l.qty.toLocaleString()}</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditLineId(l.id);
+                                setEditQty(String(l.qty));
+                              }}
+                              title="Correct this quantity (marking error) — stock and balance adjust automatically"
+                              className="p-1 rounded text-[var(--muted-foreground)] hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer"
+                            >
+                              <Pencil className="h-3 w-3" />
+                            </button>
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>
