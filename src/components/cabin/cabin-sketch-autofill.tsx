@@ -29,8 +29,13 @@ function readAsBase64(file: File): Promise<{ b64: string; mediaType: string }> {
  */
 export function CabinSketchAutofill({
   onApply,
+  onFileSelected,
 }: {
   onApply: (data: CabinAutofillData) => void;
+  /** The raw sketch file the engineer picked — the parent keeps it to SAVE the
+   *  sketch onto the cabin job (the AI only reads a base64 copy). Fires for any
+   *  valid image, even if the AI read fails. */
+  onFileSelected?: (file: File) => void;
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -45,6 +50,9 @@ export function CabinSketchAutofill({
       setError("Please choose an image (photo) of the sketch.");
       return;
     }
+    // Hand the raw file to the parent so it can be SAVED with the job — do this
+    // before the AI read so the sketch is kept even if the read fails.
+    onFileSelected?.(file);
     let payload: { b64: string; mediaType: string };
     try {
       payload = await readAsBase64(file);

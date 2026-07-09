@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
-import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2, Copy } from "lucide-react";
+import { ArrowLeft, Plus, X, Loader2, Save, Trash2, Container, Link2, Copy, Upload, ImageIcon, ExternalLink } from "lucide-react";
+import { createClient as createBrowserSupabase } from "@/lib/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { PageHeader } from "@/components/ui/page-header";
@@ -20,8 +21,20 @@ import {
   updateCabinJob,
   deleteCabinJob,
   getCabinItemByName,
+  recordCabinSketch,
+  deleteCabinSketch,
   type CabinJobDetail,
 } from "@/lib/actions/cabin-jobs";
+
+const SKETCH_BUCKET = "cabin-sketches";
+const SKETCH_MAX_BYTES = 50 * 1024 * 1024; // 50 MB (matches the bucket limit)
+const SKETCH_MIME = new Set([
+  "application/pdf",
+  "image/png",
+  "image/jpeg",
+  "image/jpg",
+  "image/webp",
+]);
 
 interface Row {
   _key: string;
@@ -94,6 +107,91 @@ export function CabinJobForm({
   const cloning = !job && !!cloneFrom;
   const [isPending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+
+  // Cabin source sketch. `sketchFile` = a freshly picked file pending upload on
+  // save (from autofill or a manual attach); `sketchUrl`/`sketchName` = the
+  // sketch already saved on the job. The AI only reads a base64 copy — this is
+  // what actually gets persisted to the cabin-sketches bucket.
+  const [sketchFile, setSketchFile] = useState<File | null>(null);
+  const [sketchUrl, setSketchUrl] = useState<string | null>(job?.sketch_url ?? null);
+  const [sketchName, setSketchName] = useState<string | null>(job?.sketch_filename ?? null);
+  const [sketchBusy, setSketchBusy] = useState(false);
+  const [sketchError, setSketchError] = useState<string | null>(null);
+  const [pendingPreview, setPendingPreview] = useState<string | null>(null);
+  const sketchInputRef = useRef<HTMLInputElement>(null);
+
+  // Live preview for a not-yet-saved pick (object URL, revoked on change).
+  useEffect(() => {
+    if (!sketchFile) {
+      setPendingPreview(null);
+      return;
+    }
+    const u = URL.createObjectURL(sketchFile);
+    setPendingPreview(u);
+    return () => URL.revokeObjectURL(u);
+  }, [sketchFile]);
+
+  // Validate + stage a picked sketch (accepts autofill's file too).
+  const pickSketch = (file: File | undefined) => {
+    setSketchError(null);
+    if (!file) return;
+    if (file.size === 0) {
+      setSketchError("That file is empty.");
+      return;
+    }
+    if (file.size > SKETCH_MAX_BYTES) {
+      setSketchError(`File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`);
+      return;
+    }
+    if (!SKETCH_MIME.has(file.type)) {
+      setSketchError(`Unsupported type "${file.type || "unknown"}". Use PDF, PNG, JPG or WebP.`);
+      return;
+    }
+    setSketchFile(file);
+  };
+
+  // Upload the staged sketch to storage under the (now-known) job id + record it.
+  const uploadPendingSketch = async (cabinJobId: string): Promise<void> => {
+    if (!sketchFile) return;
+    const safeName = sketchFile.name.replace(/[^A-Za-z0-9._-]/g, "_");
+    const path = `${cabinJobId}/${Date.now()}-${safeName}`;
+    const supabase = createBrowserSupabase();
+    const { error: upErr } = await supabase.storage
+      .from(SKETCH_BUCKET)
+      .upload(path, sketchFile, { contentType: sketchFile.type, upsert: false });
+    if (upErr) throw new Error(upErr.message || "Sketch upload failed.");
+    const rec = await recordCabinSketch({ cabinJobId, path, filename: sketchFile.name });
+    if (!rec.ok) throw new Error(rec.error);
+    setSketchUrl(rec.url);
+    setSketchName(sketchFile.name);
+    setSketchFile(null);
+  };
+
+  // Remove: clear a pending pick, or delete the saved sketch from the job.
+  const removeSketch = () => {
+    setSketchError(null);
+    if (sketchFile) {
+      setSketchFile(null);
+      return;
+    }
+    if (!job || !sketchUrl) {
+      setSketchUrl(null);
+      setSketchName(null);
+      return;
+    }
+    if (!window.confirm("Remove the saved sketch from this cabin job?")) return;
+    setSketchBusy(true);
+    deleteCabinSketch(job.id)
+      .then((res) => {
+        if (!res.ok) {
+          setSketchError(res.error);
+          return;
+        }
+        setSketchUrl(null);
+        setSketchName(null);
+      })
+      .finally(() => setSketchBusy(false));
+  };
 
   // Editing keeps the job's number; cloning starts blank (it's a new job).
   const [jobNumber, setJobNumber] = useState(job?.job_number ?? "");
@@ -270,6 +368,15 @@ export function CabinJobForm({
         setError(res.error);
         return;
       }
+      // Persist the source sketch (from autofill or a manual attach). Best-effort:
+      // the job is already saved, so a sketch hiccup only warns — it never blocks.
+      if (sketchFile) {
+        try {
+          await uploadPendingSketch(res.id);
+        } catch (e) {
+          toast.error(e instanceof Error ? e.message : "Could not save the sketch.");
+        }
+      }
       if (stay) {
         toast.success(`Cabin job ${jobNumber} saved.`);
         // On first save of a new job, switch into edit mode for the saved job
@@ -379,8 +486,88 @@ export function CabinJobForm({
         </p>
       </div>
 
-      {/* AI: upload a hand sketch → resolve panels → pre-fill the rows below */}
-      {!isEditing && <CabinSketchAutofill onApply={applyAutofill} />}
+      {/* AI: upload a hand sketch → resolve panels → pre-fill the rows below.
+          onFileSelected keeps the raw file so it's SAVED with the job. */}
+      {!isEditing && <CabinSketchAutofill onApply={applyAutofill} onFileSelected={pickSketch} />}
+
+      {/* Cabin source sketch — kept on the job (from autofill or attached here). */}
+      <div className="card-surface p-3 mb-3">
+        <div className="flex items-center gap-3 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 text-sm font-medium">
+            <ImageIcon className="h-4 w-4 text-[var(--muted-foreground)]" /> Cabin Sketch
+          </span>
+          {sketchUrl && !sketchFile ? (
+            <a
+              href={sketchUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex items-center gap-1 text-xs text-[var(--primary)] hover:underline"
+            >
+              <ExternalLink className="h-3 w-3" /> {sketchName ?? "View sketch"}
+            </a>
+          ) : sketchFile ? (
+            <span className="text-xs text-[var(--muted-foreground)]">
+              {sketchFile.name} —{" "}
+              <span className="text-[var(--foreground)]">saved when you save the job</span>
+            </span>
+          ) : (
+            <span className="text-xs text-[var(--muted-foreground)]">No sketch saved yet.</span>
+          )}
+          <div className="ml-auto flex items-center gap-1.5">
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => sketchInputRef.current?.click()}
+              disabled={sketchBusy}
+            >
+              {sketchBusy ? (
+                <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+              ) : (
+                <Upload className="h-3.5 w-3.5 mr-1.5" />
+              )}
+              {sketchUrl || sketchFile ? "Replace" : "Attach sketch"}
+            </Button>
+            {(sketchUrl || sketchFile) && (
+              <button
+                type="button"
+                onClick={removeSketch}
+                disabled={sketchBusy}
+                title="Remove sketch"
+                className="p-1.5 rounded text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--destructive-bg)] cursor-pointer"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+              </button>
+            )}
+          </div>
+          <input
+            ref={sketchInputRef}
+            type="file"
+            accept=".pdf,.png,.jpg,.jpeg,.webp,application/pdf,image/*"
+            className="hidden"
+            onChange={(e) => {
+              pickSketch(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </div>
+        {sketchFile && pendingPreview && (
+          <img
+            src={pendingPreview}
+            alt="Cabin sketch (pending)"
+            className="mt-2 max-h-40 rounded border border-[var(--border)]"
+          />
+        )}
+        {!sketchFile && sketchUrl && !/\.pdf$/i.test(sketchName ?? "") && (
+          <a href={sketchUrl} target="_blank" rel="noopener noreferrer" className="mt-2 block w-fit">
+            <img
+              src={sketchUrl}
+              alt="Cabin sketch"
+              className="max-h-40 rounded border border-[var(--border)]"
+            />
+          </a>
+        )}
+        {sketchError && <div className="mt-2 text-xs text-[var(--destructive)]">{sketchError}</div>}
+      </div>
 
       <p className="text-xs text-[var(--muted-foreground)] mb-3">
         {totalItems} item{totalItems === 1 ? "" : "s"} added across{" "}

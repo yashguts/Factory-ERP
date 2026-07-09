@@ -598,6 +598,10 @@ export interface CabinJobDetail {
   customer_name: string | null;
   note: string | null;
   lines: CabinJobLine[];
+  /** The source hand sketch this cabin job was built from (in `cabin-sketches`). */
+  sketch_url: string | null;
+  sketch_filename: string | null;
+  sketch_uploaded_at: string | null;
 }
 
 export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
@@ -607,7 +611,7 @@ export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
   const [{ data: job }, { data: lines }] = await Promise.all([
     supabase
       .from("cabin_jobs")
-      .select("id, job_number, customer_name, note")
+      .select("id, job_number, customer_name, note, sketch_url, sketch_filename, sketch_uploaded_at")
       .eq("id", id)
       .maybeSingle(),
     supabase
@@ -626,6 +630,9 @@ export async function getCabinJob(id: string): Promise<CabinJobDetail | null> {
     job_number: job.job_number as string,
     customer_name: (job.customer_name as string | null) ?? null,
     note: (job.note as string | null) ?? null,
+    sketch_url: (job.sketch_url as string | null) ?? null,
+    sketch_filename: (job.sketch_filename as string | null) ?? null,
+    sketch_uploaded_at: (job.sketch_uploaded_at as string | null) ?? null,
     lines: (lines ?? []).map((l: any) => {
       const it = flatten<any>(l.item);
       return {
@@ -1013,4 +1020,77 @@ export async function setCabinJobDispatched(
   revalidatePath("/cabin-jobs");
   revalidateTag("cabin-jobs");
   return { ok: true, id };
+}
+
+/* ------------------------------------------------------------------ *
+ * Cabin sketch — the hand drawing a cabin job was built from. Saved to
+ * the `cabin-sketches` bucket. The browser uploads the bytes client-side
+ * (dodging the serverless request-body cap); these actions only record /
+ * clear the pointer on the cabin job. Mirrors lib/actions/gad-drawings.ts.
+ * ------------------------------------------------------------------ */
+const CABIN_SKETCH_BUCKET = "cabin-sketches";
+
+/** Record a sketch the browser has already uploaded to `cabin-sketches`. The
+ *  object must live under the job's own folder (`{cabinJobId}/…`). */
+export async function recordCabinSketch(input: {
+  cabinJobId: string;
+  path: string;
+  filename: string;
+}): Promise<{ ok: true; url: string } | { ok: false; error: string }> {
+  const { cabinJobId, path, filename } = input;
+  if (!cabinJobId || !path) return { ok: false, error: "Missing cabin job or storage path." };
+  if (!path.startsWith(`${cabinJobId}/`)) {
+    return { ok: false, error: "Invalid storage path for this cabin job." };
+  }
+  const supabase = await createClient();
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(CABIN_SKETCH_BUCKET).getPublicUrl(path);
+  const { error } = await supabase
+    .from("cabin_jobs")
+    .update({
+      sketch_url: publicUrl,
+      sketch_filename: filename,
+      sketch_uploaded_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", cabinJobId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/cabin-jobs/${cabinJobId}`);
+  revalidateTag("cabin-jobs");
+  return { ok: true, url: publicUrl };
+}
+
+/** Remove a cabin job's sketch: delete the stored object (best-effort) and clear
+ *  the pointer on the job. */
+export async function deleteCabinSketch(cabinJobId: string): Promise<CabinJobResult> {
+  if (!cabinJobId) return { ok: false, error: "Missing cabin job id." };
+  const supabase = await createClient();
+  const { data: job } = await supabase
+    .from("cabin_jobs")
+    .select("sketch_url")
+    .eq("id", cabinJobId)
+    .maybeSingle();
+  const url = (job?.sketch_url as string | null) ?? null;
+  if (url) {
+    const marker = `/${CABIN_SKETCH_BUCKET}/`;
+    const idx = url.indexOf(marker);
+    if (idx >= 0) {
+      const objectPath = decodeURIComponent(url.slice(idx + marker.length));
+      await supabase.storage.from(CABIN_SKETCH_BUCKET).remove([objectPath]);
+    }
+  }
+  const { error } = await supabase
+    .from("cabin_jobs")
+    .update({
+      sketch_url: null,
+      sketch_filename: null,
+      sketch_uploaded_at: null,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", cabinJobId);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/cabin-jobs/${cabinJobId}`);
+  revalidateTag("cabin-jobs");
+  return { ok: true, id: cabinJobId };
 }
