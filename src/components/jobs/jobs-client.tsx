@@ -113,6 +113,12 @@ export function JobsClient({
   // R1 list status per job (Final / Audited label under the Spec). Client-
   // fetched — the (parallel-owned) server page needs no new props; one tiny read.
   const [r1Status, setR1Status] = useState<Record<string, R1JobStatus>>({});
+  // Jobs with 0 items in their Packing List R1 / BOM — flagged so the team can
+  // spot empty jobs at a glance. `bomJobIds` = jobs with ≥1 BOM line, and R1 item
+  // fills mirror into job_bom_lines, so a job NOT in the set has no items. The
+  // label clears itself once any item is added (the R1 save revalidates the
+  // bom-lines/jobs caches this readiness read is tagged with).
+  const bomJobSet = useMemo(() => new Set(readiness.bomJobIds), [readiness.bomJobIds]);
   useEffect(() => {
     let alive = true;
     getR1StatusMap()
@@ -731,6 +737,14 @@ export function JobsClient({
                         >
                           <AlertTriangle size={10} />
                           GAD
+                        </span>
+                      )}
+                      {!bomJobSet.has(job.id) && (
+                        <span
+                          title="No items filled in the Packing List R1 / BOM yet. Add items on the job's Packing List R1 to clear this."
+                          className="inline-flex items-center rounded bg-amber-100 px-1 py-0.5 text-[10px] font-semibold leading-none text-amber-700"
+                        >
+                          No items
                         </span>
                       )}
                     </span>
