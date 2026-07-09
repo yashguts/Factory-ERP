@@ -5,7 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
-import { alertKind } from "@/lib/jobs/status-alert";
+import { alertKind, reasonRequired } from "@/lib/jobs/status-alert";
 
 export interface BomLineInput {
   category: string;
@@ -793,16 +793,42 @@ export async function updateJob(
     structure_included?: "NA" | "Factory-made" | "Site-fabricated";
   },
   operator?: string | null,
+  /** Mandatory when the update CHANGES status or requirement_dispatch_date —
+   *  per management, neither may move without a written reason. */
+  changeReason?: string | null,
 ) {
   const supabase = await createClient();
+  const cleanReason = changeReason?.trim() || null;
 
   // The status dropdowns use changeJobStatus(); the edit form comes through
-  // here — snapshot the prior status so an edit-form status change is still
-  // logged (and alerted) in job_status_changes, never unrecorded.
+  // here — snapshot the prior status/date so a change is still gated on a
+  // reason and logged, never unrecorded.
   let prevStatus: JobStatus | undefined;
-  if (data.status !== undefined) {
-    const { data: cur } = await supabase.from("jobs").select("status").eq("id", id).maybeSingle();
+  let prevDispatchDate: string | null | undefined;
+  if (data.status !== undefined || data.requirement_dispatch_date !== undefined) {
+    const { data: cur } = await supabase
+      .from("jobs")
+      .select("status, requirement_dispatch_date")
+      .eq("id", id)
+      .maybeSingle();
     prevStatus = (cur?.status as JobStatus) ?? undefined;
+    prevDispatchDate = (cur?.requirement_dispatch_date as string | null) ?? null;
+  }
+
+  const statusChanged =
+    data.status !== undefined && prevStatus !== undefined && prevStatus !== data.status;
+  const dateChanged =
+    data.requirement_dispatch_date !== undefined &&
+    prevDispatchDate !== undefined &&
+    (prevDispatchDate ?? null) !== (data.requirement_dispatch_date ?? null);
+
+  // Hard gate: no status / dispatch-date change without a reason. The UI asks
+  // before calling; this is the backstop so no path can slip a silent change.
+  if (statusChanged && !cleanReason && reasonRequired(prevStatus ?? null, data.status!)) {
+    throw new Error("A reason is required to change a job's status.");
+  }
+  if (dateChanged && !cleanReason) {
+    throw new Error("A reason is required to change the Req. Dispatch Date.");
   }
 
   const { data: job, error } = await supabase
@@ -814,13 +840,22 @@ export async function updateJob(
 
   if (error) throw error;
 
-  if (data.status !== undefined && prevStatus !== undefined && prevStatus !== data.status) {
+  if (statusChanged) {
     await supabase.from("job_status_changes").insert({
       job_id: id, from_status: prevStatus, to_status: data.status,
-      alert_kind: alertKind(prevStatus, data.status), reason: null, changed_by: operator ?? null,
+      alert_kind: alertKind(prevStatus ?? null, data.status!), reason: cleanReason, changed_by: operator ?? null,
     });
     revalidateTag("status-alerts");
     revalidatePath("/jobs/status-alerts");
+  }
+  if (dateChanged) {
+    await supabase.from("job_date_changes").insert({
+      job_id: id,
+      from_date: prevDispatchDate ?? null,
+      to_date: data.requirement_dispatch_date ?? null,
+      reason: cleanReason,
+      changed_by: operator ?? null,
+    });
   }
 
   revalidateTag("jobs");

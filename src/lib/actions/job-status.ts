@@ -41,7 +41,7 @@ export async function changeJobStatus(
 
   const cleanReason = reason?.trim() || null;
   if (reasonRequired(from, toStatus) && !cleanReason) {
-    return { ok: false, error: "A reason is required to put a job on Hold or revert it to New." };
+    return { ok: false, error: "A reason is required to change a job's status." };
   }
   const kind = alertKind(from, toStatus);
 

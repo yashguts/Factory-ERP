@@ -374,7 +374,11 @@ export function JobsClient({
     });
   };
 
-  const handleInlineUpdate = (jobId: string, data: Record<string, any>) => {
+  const handleInlineUpdate = (
+    jobId: string,
+    data: Record<string, any>,
+    audit?: { operator?: string | null; reason?: string | null },
+  ) => {
     const jobNumber = jobs.find((j) => j.id === jobId)?.job_number ?? "";
     // Optimistic: update local state instantly so UI never blocks
     setJobs((prev) =>
@@ -384,7 +388,7 @@ export function JobsClient({
     // Fire-and-forget server save; refresh in background
     startTransition(async () => {
       try {
-        await updateJob(jobId, data);
+        await updateJob(jobId, data, audit?.operator ?? null, audit?.reason ?? null);
       } catch {
         // Revert on error — reload from server, and SAY so (silently losing
         // the edit made people think the app "forgot" their change).
@@ -396,6 +400,24 @@ export function JobsClient({
         setSavingJobId(null);
       }
     });
+  };
+
+  // Req. Dispatch Date is production-critical: per management it may not move
+  // without a written reason. Ask BEFORE the optimistic update; cancelling
+  // leaves the row untouched (controlled input snaps back on its own).
+  const handleDispatchDateChange = (jobId: string, newDate: string | null) => {
+    const job = jobs.find((j) => j.id === jobId);
+    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return;
+    const operator = ensureOperator();
+    const r = window.prompt(
+      `Reason for changing Req. Dispatch Date on job ${job?.job_number ?? ""} (required):`,
+      "",
+    );
+    if (r === null || !r.trim()) {
+      toast.error("Date change cancelled — a reason is required.");
+      return;
+    }
+    handleInlineUpdate(jobId, { requirement_dispatch_date: newDate }, { operator, reason: r.trim() });
   };
 
   const SortHeader = ({ label, sortField, hint }: { label: string; sortField: SortKey; hint?: string }) => (
@@ -822,7 +844,7 @@ export function JobsClient({
                       type="date"
                       className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors"
                       value={job.requirement_dispatch_date ?? ""}
-                      onChange={(e) => handleInlineUpdate(job.id, { requirement_dispatch_date: e.target.value || null })}
+                      onChange={(e) => handleDispatchDateChange(job.id, e.target.value || null)}
                       disabled={savingJobId === job.id}
                     />
                   </TableCell>

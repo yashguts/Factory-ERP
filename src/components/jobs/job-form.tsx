@@ -149,6 +149,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   const [requirementDispatchDate, setRequirementDispatchDate] = useState(
     job?.requirement_dispatch_date ?? "",
   );
+  // Last PERSISTED dispatch date — a change vs this needs a mandatory reason
+  // (per management). Updated after every successful save so repeated saves
+  // don't re-prompt.
+  const savedDispatchDate = useRef<string | null>(job?.requirement_dispatch_date ?? null);
 
   // ── Elevator spec (controls which BOM sections are visible) ──────
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
@@ -639,15 +643,37 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
    * metadata changes (customer name, door type, capacity, …) are persisted
    * along with the BOM — the three save buttons share one source of truth.
    */
+  /**
+   * Mandatory reason when this save would MOVE the Req. Dispatch Date off its
+   * last-persisted value. Returns null when the date is unchanged (or the job
+   * is new — the initial date isn't a "change"). Throws to abort the save
+   * when the operator refuses to give a reason.
+   */
+  function dispatchDateChangeReason(): string | null {
+    if (!savedJobId) return null;
+    const next = requirementDispatchDate || null;
+    if ((savedDispatchDate.current ?? null) === next) return null;
+    const r = window.prompt(
+      `Reason for changing Req. Dispatch Date${jobNumber ? ` on job ${jobNumber}` : ""} (required):`,
+      "",
+    );
+    if (r === null || !r.trim())
+      throw new Error("Save cancelled — changing the Req. Dispatch Date requires a reason.");
+    return r.trim();
+  }
+
   async function ensureJob(): Promise<string> {
     if (!jobNumber.trim()) throw new Error("Job Number is required");
     if (savedJobId) {
-      await updateJob(savedJobId, buildJobData());
+      const reason = dispatchDateChangeReason();
+      await updateJob(savedJobId, buildJobData(), readOperator(), reason);
+      savedDispatchDate.current = requirementDispatchDate || null;
       setJobSaved(true);
       return savedJobId;
     }
     const created = await createJob({ ...buildJobData(), created_by: readOperator() });
     setSavedJobId(created.id);
+    savedDispatchDate.current = requirementDispatchDate || null;
     setJobSaved(true);
     return created.id;
   }
@@ -669,10 +695,13 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     startTransition(async () => {
       try {
         if (savedJobId) {
-          await updateJob(savedJobId, buildJobData());
+          const reason = dispatchDateChangeReason();
+          await updateJob(savedJobId, buildJobData(), readOperator(), reason);
+          savedDispatchDate.current = requirementDispatchDate || null;
         } else {
           const created = await createJob({ ...buildJobData(), created_by: readOperator() });
           setSavedJobId(created.id);
+          savedDispatchDate.current = requirementDispatchDate || null;
         }
         setJobSaved(true);
       } catch (err: any) {

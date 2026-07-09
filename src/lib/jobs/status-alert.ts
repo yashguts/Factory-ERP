@@ -39,14 +39,18 @@ export interface AlertMeta {
 }
 
 export const ALERT_META: Record<StatusAlertKind, AlertMeta> = {
-  started: { label: "Production Started", short: "Started", icon: "▶", tone: "green", requiresReason: false },
+  started: { label: "Production Started", short: "Started", icon: "▶", tone: "green", requiresReason: true },
   held: { label: "Put on Hold", short: "Held", icon: "⏸", tone: "red", requiresReason: true },
   reverted: { label: "Reverted to New", short: "Reverted", icon: "↩", tone: "amber", requiresReason: true },
-  resumed: { label: "Production Resumed", short: "Resumed", icon: "▶", tone: "blue", requiresReason: false },
+  resumed: { label: "Production Resumed", short: "Resumed", icon: "▶", tone: "blue", requiresReason: true },
 };
 
-/** Whether a transition needs a reason captured (Hold / revert-to-New). */
+/**
+ * Whether a transition needs a reason captured. Per management (2026-07-09):
+ * EVERY real status change requires a written reason — not just Hold/Revert.
+ * (ALERT_META.requiresReason is kept true across the board for the UI copy;
+ * this helper is the single gate both the actions and the UI consult.)
+ */
 export function reasonRequired(from: JobStatus | null, to: JobStatus): boolean {
-  const k = alertKind(from, to);
-  return k != null && ALERT_META[k].requiresReason;
+  return from !== null && from !== to;
 }
