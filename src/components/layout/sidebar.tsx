@@ -26,6 +26,7 @@ import {
   LayoutGrid,
   Archive,
   UserRound,
+  Bell,
   LucideIcon,
 } from "lucide-react";
 
@@ -60,6 +61,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
     label: "Orders",
     items: [
       { href: "/jobs", label: "Job Orders", icon: ClipboardList },
+      // Permanent home for status/date-change alerts + their full history —
+      // the amber open-alert count lives here (GAD red stays on Job Orders).
+      { href: "/jobs/status-alerts", label: "Status Alerts", icon: Bell },
       { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
       // Read-only archive of the pre-cutover Job Order BOMs (2026-07-03) —
       // a transition-period reference; remove once the team stops needing it.
@@ -178,7 +182,7 @@ export function Sidebar() {
                   const Icon = item.icon;
                   const isActive = item.href === activeHref;
                   const badge = item.href === "/jobs" ? gadDrift : 0;
-                  const statusBadge = item.href === "/jobs" ? statusAlerts : 0;
+                  const statusBadge = item.href === "/jobs/status-alerts" ? statusAlerts : 0;
                   const hasAlert = badge > 0 || statusBadge > 0;
                   return (
                     <Link

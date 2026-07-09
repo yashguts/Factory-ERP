@@ -129,6 +129,92 @@ export async function acknowledgeStatusAlert(
   return { ok: true };
 }
 
+/**
+ * Unified, immutable change history — every STATUS change (job_status_changes,
+ * acknowledged or not) and every Req. Dispatch DATE change (job_date_changes),
+ * merged newest-first. Nothing is ever deleted by acknowledging: the alerts
+ * page's History tab reads this so the office can trace who moved what, when
+ * and why. Baseline backfill rows (from_status null) are skipped — they mark
+ * table creation, not a real change.
+ */
+export interface ChangeHistoryRow {
+  id: string;
+  kind: "status" | "date";
+  job_id: string;
+  job_number: string;
+  customer_name: string | null;
+  /** Status labels for kind=status; ISO dates (or null = unset) for kind=date. */
+  from: string | null;
+  to: string | null;
+  alert_kind: StatusAlertKind | null;
+  reason: string | null;
+  changed_by: string | null;
+  changed_at: string;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
+}
+
+const _getChangeHistoryUncached = async (): Promise<ChangeHistoryRow[]> => {
+  const supabase = createCacheClient();
+  const [statusRes, dateRes] = await Promise.all([
+    supabase
+      .from("job_status_changes")
+      .select(
+        "id, job_id, from_status, to_status, alert_kind, reason, changed_by, changed_at, acknowledged_at, acknowledged_by, jobs(job_number, customer_name)",
+      )
+      .not("from_status", "is", null)
+      .order("changed_at", { ascending: false })
+      .limit(400),
+    supabase
+      .from("job_date_changes")
+      .select("id, job_id, from_date, to_date, reason, changed_by, changed_at, jobs(job_number, customer_name)")
+      .order("changed_at", { ascending: false })
+      .limit(400),
+  ]);
+
+  const jobOf = (row: Record<string, unknown>) =>
+    (Array.isArray(row.jobs) ? row.jobs[0] : row.jobs) as
+      | { job_number: string; customer_name: string | null }
+      | null;
+
+  const rows: ChangeHistoryRow[] = [];
+  for (const r of statusRes.data ?? []) {
+    const row = r as Record<string, unknown>;
+    const j = jobOf(row);
+    rows.push({
+      id: row.id as string, kind: "status", job_id: row.job_id as string,
+      job_number: j?.job_number ?? "—", customer_name: j?.customer_name ?? null,
+      from: (row.from_status as string) ?? null, to: (row.to_status as string) ?? null,
+      alert_kind: (row.alert_kind as StatusAlertKind) ?? null,
+      reason: (row.reason as string) ?? null,
+      changed_by: (row.changed_by as string) ?? null, changed_at: row.changed_at as string,
+      acknowledged_at: (row.acknowledged_at as string) ?? null,
+      acknowledged_by: (row.acknowledged_by as string) ?? null,
+    });
+  }
+  for (const r of dateRes.data ?? []) {
+    const row = r as Record<string, unknown>;
+    const j = jobOf(row);
+    rows.push({
+      id: row.id as string, kind: "date", job_id: row.job_id as string,
+      job_number: j?.job_number ?? "—", customer_name: j?.customer_name ?? null,
+      from: (row.from_date as string) ?? null, to: (row.to_date as string) ?? null,
+      alert_kind: null,
+      reason: (row.reason as string) ?? null,
+      changed_by: (row.changed_by as string) ?? null, changed_at: row.changed_at as string,
+      acknowledged_at: null, acknowledged_by: null,
+    });
+  }
+  rows.sort((a, b) => b.changed_at.localeCompare(a.changed_at));
+  return rows.slice(0, 500);
+};
+
+export const getChangeHistory = unstable_cache(
+  _getChangeHistoryUncached,
+  ["job-change-history"],
+  { revalidate: 120, tags: ["jobs", "status-alerts"] },
+);
+
 /** Full ordered status history for one job (the detail timeline). Always fresh. */
 export async function getJobStatusHistory(jobId: string): Promise<JobStatusChange[]> {
   const supabase = createCacheClient();
