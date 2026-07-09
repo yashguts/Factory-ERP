@@ -32,6 +32,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { CabinAddItemModal } from "@/components/inventory/cabin-add-item-modal";
+import { CabinExportButton } from "@/components/inventory/cabin-export-button";
 import { InlineStockAdjust } from "@/components/inventory/inline-stock-adjust";
 import { StockLedgerPopover } from "@/components/inventory/stock-ledger-popover";
 import { getCabinTypeView } from "@/lib/actions/cabin-type-view";
@@ -212,9 +213,12 @@ export function CabinTypeClient({
           </>
         }
         actions={
-          <Button size="sm" onClick={() => setShowAdd(true)}>
-            <Plus className="h-4 w-4 mr-1.5" /> Add item
-          </Button>
+          <div className="flex items-center gap-2">
+            <CabinExportButton typeId={typeId} typeName={typeName} />
+            <Button size="sm" onClick={() => setShowAdd(true)}>
+              <Plus className="h-4 w-4 mr-1.5" /> Add item
+            </Button>
+          </div>
         }
       />
 

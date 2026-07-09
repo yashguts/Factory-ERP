@@ -293,6 +293,103 @@ export async function getCabinTypeFirstPage(
   )();
 }
 
+/* ------------------------------------------------------------------ *
+ * Excel export — every active cabin item, with its type + sub-type.
+ * Fetched on demand (button click), so deliberately NOT cached: the full
+ * set is ~10k rows and would blow the 2MB unstable_cache entry cap.
+ * ------------------------------------------------------------------ */
+
+export interface CabinExportRow {
+  type: string;
+  sub_category: string | null;
+  code: string;
+  name: string;
+  finish: string | null;
+  uom: string;
+  stock: number;
+}
+
+/** All active cabin items for export — whole Cabin subtree, or one type. */
+export async function getCabinExportRows(
+  typeId?: string | null,
+): Promise<CabinExportRow[]> {
+  const supabase = createCacheClient();
+
+  const cats = await fetchAllRanged<{ id: string; name: string; parent_id: string | null }>(
+    (from, to, withCount) =>
+      supabase
+        .from("item_categories")
+        .select("id, name, parent_id", withCount ? { count: "exact" } : {})
+        .order("id")
+        .range(from, to),
+  );
+  const parent = cats.find((c) => c.name === CABIN_PARENT && c.parent_id === null);
+  if (!parent) return [];
+  const childrenOf = new Map<string, string[]>();
+  for (const c of cats) {
+    if (c.parent_id) {
+      const arr = childrenOf.get(c.parent_id) ?? [];
+      arr.push(c.id);
+      childrenOf.set(c.parent_id, arr);
+    }
+  }
+  const nameById = new Map(cats.map((c) => [c.id, c.name]));
+
+  // Every category in scope → its type name + its own name (the sub-type).
+  const types = cats.filter(
+    (c) => c.parent_id === parent.id && (!typeId || c.id === typeId),
+  );
+  const catInfo = new Map<string, { type: string; cat: string }>();
+  for (const t of types) {
+    const stack = [t.id];
+    while (stack.length) {
+      const id = stack.pop() as string;
+      catInfo.set(id, { type: t.name, cat: nameById.get(id) ?? "" });
+      for (const ch of childrenOf.get(id) ?? []) stack.push(ch);
+    }
+  }
+  if (catInfo.size === 0) return [];
+  const catIds = [...catInfo.keys()];
+
+  const items = await fetchAllRanged<any>((from, to, withCount) =>
+    supabase
+      .from("items")
+      .select(
+        "id, code, name, finish, category_id, uom:units_of_measurement!items_uom_id_fkey(abbreviation), inventory(quantity)",
+        withCount ? { count: "exact" } : {},
+      )
+      .eq("is_active", true)
+      .in("category_id", catIds)
+      .order("id")
+      .range(from, to),
+  );
+
+  const rows: CabinExportRow[] = items.map((it: any) => {
+    const info = catInfo.get(it.category_id as string);
+    const uomRel = Array.isArray(it.uom) ? it.uom[0] : it.uom;
+    const type = info?.type ?? "";
+    return {
+      type,
+      // The type category itself isn't a sub-type — blank there.
+      sub_category: info && info.cat !== type ? info.cat : null,
+      code: it.code as string,
+      name: it.name as string,
+      finish: (it.finish as string | null) ?? null,
+      uom: (uomRel?.abbreviation as string) ?? "",
+      stock: Array.isArray(it.inventory)
+        ? it.inventory.reduce((s: number, r: any) => s + Number(r.quantity ?? 0), 0)
+        : 0,
+    };
+  });
+  rows.sort(
+    (a, b) =>
+      a.type.localeCompare(b.type) ||
+      (a.sub_category ?? "").localeCompare(b.sub_category ?? "") ||
+      a.name.localeCompare(b.name),
+  );
+  return rows;
+}
+
 export type CabinItemCreateResult =
   | { ok: true; id: string; code: string }
   | { ok: false; error: string };
