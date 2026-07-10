@@ -1,19 +1,20 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { AlertTriangle, RotateCw } from "lucide-react";
-import {
-  isStaleChunkError,
-  reloadOnceForStaleChunks,
-} from "@/components/layout/stale-deploy-guard";
+import { reloadOnceForStaleChunks } from "@/components/layout/stale-deploy-guard";
 
 /**
  * Friendly per-page error screen (replaces Next's cryptic "Application
  * error: a client-side exception has occurred").
  *
- * Most of these in practice are stale-chunk errors: a redeploy removed the
- * JS files a long-open tab still references. Those self-heal with a single
- * reload, so we do it automatically (guarded against loops).
+ * Most of these in practice are NOT bugs: a tab loaded before a redeploy
+ * navigates client-side (e.g. the Cabin-MRP scope picker) and asks the server
+ * for page data from a build that no longer exists — or a fetch hiccups in
+ * transit. One reload fixes both completely, so try it automatically for ANY
+ * error, not just recognisable stale-chunk ones (in production the message is
+ * masked anyway). reloadOnceForStaleChunks rate-limits to one reload per 30s,
+ * so a genuine persistent crash shows the card instead of reload-looping.
  */
 export default function AppError({
   error,
@@ -22,11 +23,18 @@ export default function AppError({
   error: Error & { digest?: string };
   reset: () => void;
 }) {
+  const [autoReloading, setAutoReloading] = useState(true);
   useEffect(() => {
-    if (isStaleChunkError(error.message ?? "")) {
-      reloadOnceForStaleChunks();
-    }
-  }, [error]);
+    if (!reloadOnceForStaleChunks()) setAutoReloading(false);
+  }, []);
+
+  if (autoReloading) {
+    return (
+      <div className="min-h-[60vh] flex items-center justify-center p-8 text-sm text-[var(--muted-foreground)]">
+        <RotateCw className="h-4 w-4 animate-spin mr-2" /> Reloading…
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-[60vh] flex items-center justify-center p-8">
