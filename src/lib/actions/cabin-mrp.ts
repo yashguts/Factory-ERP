@@ -538,6 +538,71 @@ export async function getCabinRequirements(jobIds: string[] = []): Promise<Cabin
   })();
 }
 
+/* ==================== Per-item job breakdown (hover) ==================== */
+
+export interface CabinItemJob {
+  cabin_job_id: string;
+  job_number: string;
+  customer_name: string | null;
+  line_count: number;
+  total_qty: number;
+}
+
+/** Which scoped cabin jobs demand one item — powers the Required-cell hover on
+ *  the Requirements view. Scope (explicit ?jobs= picker vs the eligibility
+ *  gate) matches getCabinRequirements exactly, so the numbers agree. */
+const _getCabinItemJobsUncached = async (
+  itemId: string,
+  jobIds: string[],
+): Promise<CabinItemJob[]> => {
+  const supabase = createCacheClient();
+  const eligible = await getScopedCabinJobs(supabase, jobIds);
+  if (eligible.size === 0) return [];
+
+  const lines = await fetchAllRanged<{ cabin_job_id: string; qty: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("cabin_job_lines")
+        .select("cabin_job_id, qty", withCount ? { count: "exact" } : {})
+        .eq("item_id", itemId)
+        .range(from, to),
+  );
+  const agg = new Map<string, { line_count: number; total_qty: number }>();
+  for (const l of lines) {
+    if (!eligible.has(l.cabin_job_id)) continue;
+    const ex = agg.get(l.cabin_job_id) ?? { line_count: 0, total_qty: 0 };
+    ex.line_count += 1;
+    ex.total_qty += Number(l.qty) || 0;
+    agg.set(l.cabin_job_id, ex);
+  }
+  if (agg.size === 0) return [];
+
+  const { data: cjobs } = await supabase
+    .from("cabin_jobs")
+    .select("id, job_number, customer_name")
+    .in("id", [...agg.keys()]);
+  const rows: CabinItemJob[] = ((cjobs ?? []) as any[]).map((c) => ({
+    cabin_job_id: c.id as string,
+    job_number: c.job_number as string,
+    customer_name: (c.customer_name as string | null) ?? null,
+    line_count: agg.get(c.id as string)!.line_count,
+    total_qty: agg.get(c.id as string)!.total_qty,
+  }));
+  rows.sort((a, b) => b.total_qty - a.total_qty || a.job_number.localeCompare(b.job_number));
+  return rows;
+};
+
+export async function getCabinItemJobs(
+  itemId: string,
+  jobIds: string[] = [],
+): Promise<CabinItemJob[]> {
+  const key = itemId + "|" + (jobIds.length ? [...jobIds].sort().join(",") : "__all__");
+  return unstable_cache(() => _getCabinItemJobsUncached(itemId, jobIds), ["cabin-mrp-item-jobs", key], {
+    revalidate: 300,
+    tags: ["cabin-programs", "jobs", "bom-lines", "items"],
+  })();
+}
+
 /* ============================ Weekly ============================ */
 
 const DAY_MS = 86_400_000;

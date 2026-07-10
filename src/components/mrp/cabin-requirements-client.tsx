@@ -15,6 +15,7 @@ import {
 import { Search, LayoutGrid, ChevronDown, ChevronRight } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { CabinScopePicker } from "@/components/mrp/cabin-scope-picker";
+import { CabinItemJobsPopover } from "@/components/mrp/cabin-item-jobs-popover";
 import type { CabinReqRow } from "@/lib/actions/cabin-program-plan";
 import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
 
@@ -32,6 +33,13 @@ export function CabinRequirementsClient({
   const [show, setShow] = useState<ShowFilter>(() => readParam(sp, "show", "shortfall", ["shortfall", "all"]) as ShowFilter);
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   useUrlListSync({ q: search, show }, { q: "", show: "shortfall" });
+
+  // The ?jobs= scope the table was computed for — the Required-cell hover must
+  // ask for the same scope so its per-job split sums to the number shown.
+  const jobIds = useMemo(
+    () => (sp.get("jobs") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
+    [sp],
+  );
 
   const tokens = useMemo(() => search.trim().toLowerCase().split(/\s+/).filter(Boolean), [search]);
 
@@ -141,7 +149,7 @@ export function CabinRequirementsClient({
               {groups.map((g) => {
                 const open = !collapsed.has(g.type);
                 return (
-                  <CabinTypeGroup key={g.type} group={g} open={open} onToggle={() => toggle(g.type)} />
+                  <CabinTypeGroup key={g.type} group={g} open={open} onToggle={() => toggle(g.type)} jobIds={jobIds} />
                 );
               })}
             </TableBody>
@@ -156,10 +164,12 @@ function CabinTypeGroup({
   group,
   open,
   onToggle,
+  jobIds,
 }: {
   group: { type: string; finishes: { finish: string; items: CabinReqRow[]; shortfall: number }[]; shortfall: number; count: number };
   open: boolean;
   onToggle: () => void;
+  jobIds: string[];
 }) {
   return (
     <>
@@ -175,13 +185,13 @@ function CabinTypeGroup({
       </TableRow>
       {open &&
         group.finishes.map((f) => (
-          <FinishRows key={f.finish} type={group.type} finish={f.finish} items={f.items} shortfall={f.shortfall} />
+          <FinishRows key={f.finish} type={group.type} finish={f.finish} items={f.items} shortfall={f.shortfall} jobIds={jobIds} />
         ))}
     </>
   );
 }
 
-function FinishRows({ type, finish, items, shortfall }: { type: string; finish: string; items: CabinReqRow[]; shortfall: number }) {
+function FinishRows({ type, finish, items, shortfall, jobIds }: { type: string; finish: string; items: CabinReqRow[]; shortfall: number; jobIds: string[] }) {
   return (
     <>
       <TableRow className="bg-[var(--muted)]/20">
@@ -194,7 +204,13 @@ function FinishRows({ type, finish, items, shortfall }: { type: string; finish: 
         <TableRow key={r.item_id}>
           <TableCell className="font-mono text-xs pl-8">{r.code}</TableCell>
           <TableCell><div className="font-medium">{r.name}</div></TableCell>
-          <TableCell className="text-right">{r.required.toLocaleString()}</TableCell>
+          <TableCell className="text-right">
+            <CabinItemJobsPopover itemId={r.item_id} itemName={r.name} jobIds={jobIds}>
+              <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
+                {r.required.toLocaleString()}
+              </span>
+            </CabinItemJobsPopover>
+          </TableCell>
           <TableCell className="text-right">{r.stock.toLocaleString()}</TableCell>
           <TableCell className="text-right font-bold">
             {r.shortfall > 0 ? <span className="text-[var(--destructive)]">-{r.shortfall.toLocaleString()}</span> : <span className="text-[var(--success)]">+{(r.stock - r.required).toLocaleString()}</span>}
