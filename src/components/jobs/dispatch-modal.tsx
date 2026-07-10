@@ -15,6 +15,7 @@ import {
   type PhaseScope,
 } from "@/lib/actions/dispatch";
 import { getR1DispatchView } from "@/lib/actions/r1-bom-sync";
+import { getLatestPackingPrint } from "@/lib/actions/packing-print";
 import { downloadDispatchNotePdf } from "@/lib/export/dispatch-pdf";
 
 interface Props {
@@ -217,6 +218,61 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
   const bomRows = rows.filter((r) => r.job_bom_line_id != null);
   const extraRows = rows.filter((r) => r.job_bom_line_id == null);
 
+  /** Cross-check this dispatch against the newest printed packing list (≤72h).
+   *  The printed list is the dispatcher's declared "material going out" — any
+   *  item-wise difference (qty changed / extra / missing) is shown for an
+   *  explicit OK before recording. No print in the window → no prompt. */
+  const confirmAgainstPrint = async (): Promise<boolean> => {
+    if (dispatchRows.length === 0) return true; // revise-only save, nothing physical
+    let print;
+    try {
+      print = await getLatestPackingPrint(jobId);
+    } catch {
+      return true; // the check must never block a dispatch
+    }
+    if (!print || print.lines.length === 0) return true;
+
+    // Aggregate both sides by item (an item can appear on several lines).
+    const printedQty = new Map<string, { name: string; qty: number }>();
+    for (const l of print.lines) {
+      const ex = printedQty.get(l.item_id);
+      printedQty.set(l.item_id, {
+        name: l.name ?? l.code ?? "(item)",
+        qty: (ex?.qty ?? 0) + Number(l.qty),
+      });
+    }
+    const sendQty = new Map<string, { name: string; qty: number }>();
+    for (const r of dispatchRows) {
+      if (!r.item_id) continue;
+      const ex = sendQty.get(r.item_id);
+      sendQty.set(r.item_id, {
+        name: r.item_name ?? r.item_code ?? "(item)",
+        qty: (ex?.qty ?? 0) + r.qty,
+      });
+    }
+
+    const diffs: string[] = [];
+    for (const [id, s] of sendQty) {
+      const p = printedQty.get(id);
+      if (!p) diffs.push(`• ${s.name}: NOT on the printed list (dispatching ${s.qty})`);
+      else if (Math.abs(p.qty - s.qty) > 1e-9)
+        diffs.push(`• ${s.name}: printed ${p.qty}, dispatching ${s.qty}`);
+    }
+    for (const [id, p] of printedQty) {
+      if (!sendQty.has(id)) diffs.push(`• ${p.name}: printed ${p.qty}, NOT in this dispatch`);
+    }
+    if (diffs.length === 0) return true;
+
+    const shown = diffs.slice(0, 15);
+    const more = diffs.length - shown.length;
+    return window.confirm(
+      `This dispatch differs from the packing list printed on ${new Date(print.printed_at).toLocaleString("en-IN", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" })}:\n\n` +
+        shown.join("\n") +
+        (more > 0 ? `\n…and ${more} more difference${more === 1 ? "" : "s"}` : "") +
+        `\n\nDispatch anyway?`,
+    );
+  };
+
   const save = () => {
     setError(null);
     if (sendRows.length === 0) {
@@ -224,6 +280,7 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
       return;
     }
     startTransition(async () => {
+      if (!(await confirmAgainstPrint())) return;
       const res = await createDispatch({
         job_id: jobId,
         dispatch_date: date,

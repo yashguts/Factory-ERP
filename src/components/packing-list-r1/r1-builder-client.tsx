@@ -2,7 +2,7 @@
 
 import { Fragment, useRef, useState, useEffect, useMemo, useCallback, useTransition, type ReactNode, type KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useRouter } from "next/navigation";
-import { Save, FileSpreadsheet, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2, X, Copy } from "lucide-react";
+import { Save, FileText, CheckCircle2, RotateCcw, Trash2, FolderTree, Loader2, X, Copy } from "lucide-react";
 import { CategoryPickerModal } from "@/components/jobs/category-picker-modal";
 import {
   saveR1List,
@@ -22,7 +22,6 @@ import { dismissUnmappedItem } from "@/lib/actions/packing-list-r1-unmapped";
 import { syncR1ToBom, getR1JobPanel, setR1Audited, getR1DispatchView, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
 import { useOperator } from "@/lib/jobs/use-operator";
 import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
-import { exportRowsToXlsx } from "@/lib/export/xlsx";
 import type { CategoryNode } from "@/lib/actions/categories";
 import type { PackingLineKind } from "@/lib/supabase/types";
 
@@ -648,179 +647,14 @@ export function R1BuilderClient({
     });
   };
 
-  // Cabin Job items (read-only mirror) — emitted under the Cabin part in exports.
-  type ExportRow = {
-    part: string; group: string; particular: string; code: string; item: string; qty: number | string; uom: string;
+  // "PDF Export" opens the SCRATCH print tab: everything there (section/item
+  // selection, quantities) is temporary and never writes back to the job.
+  // Confirming the print saves a snapshot (packing_r1_prints) that dispatches
+  // are cross-checked against for 72 hours. Live data changes only through
+  // Mark Dispatched on the job page.
+  const openPrintTab = () => {
+    window.open(`/print/packing-list/${list.jobId}`, "_blank");
   };
-  const cabinExportRows: ExportRow[] = cabinPanels.groups.flatMap((g): ExportRow[] =>
-    g.lines.length
-      ? g.lines.map((l) => ({ part: "Cabin", group: g.type, particular: "", code: l.code ?? "", item: l.name, qty: l.qty, uom: l.uom ?? "" }))
-      : [{ part: "Cabin", group: g.type, particular: "", code: "", item: "", qty: "", uom: "" }],
-  );
-  const exportRows = parts.flatMap((p) => {
-    const rows = p.lines.map((l) => ({
-      part: p.title, group: l.group ?? "", particular: l.label ?? l.category_name ?? "",
-      code: l.item_code ?? "", item: l.item_name ?? "", qty: l.qty as number | string, uom: l.uom ?? "",
-    }));
-    return p.title === "Cabin" ? [...cabinExportRows, ...rows] : rows;
-  });
-  const exportExcel = () =>
-    exportRowsToXlsx({
-      rows: exportRows,
-      columns: [
-        { header: "Part", field: "part" }, { header: "Group", field: "group" },
-        { header: "Particular", field: "particular" }, { header: "Item Code", field: "code" },
-        { header: "Item", field: "item" }, { header: "Qty", field: "qty" }, { header: "UOM", field: "uom" },
-      ],
-      filename: `PackingList_R1_${list.jobNumber ?? list.jobId}`,
-      sheetName: "Packing List R1",
-    });
-  const exportPdf = async () => {
-    const { jsPDF } = await import("jspdf");
-    const autoTable = (await import("jspdf-autotable")).default;
-    const doc = new jsPDF({ unit: "mm", format: "a4", orientation: "portrait" });
-    const pageW = doc.internal.pageSize.getWidth();
-    const pageH = doc.internal.pageSize.getHeight();
-    const M = 12;
-    const HEADER_H = 40; // top band reserved for the client + company letterhead
-    const FOOTER_H = 32; // bottom band reserved for the company footer
-
-    const drawHeader = () => {
-      doc.setTextColor(0);
-      // Left: client party details.
-      let ly = M + 2;
-      const label = (k: string, v: string | null) => {
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(9);
-        doc.text(k, M, ly);
-        const kw = doc.getTextWidth(k) + 1.5;
-        doc.setFont("helvetica", "normal");
-        const wrapped = doc.splitTextToSize(v || "—", pageW / 2 - M - kw) as string[];
-        doc.text(wrapped, M + kw, ly);
-        ly += Math.max(1, wrapped.length) * 4.2;
-      };
-      label("Client Name:", list.customerName);
-      label("Contact No.:", list.mobileNumber);
-      label("Address:", list.address);
-
-      // Right: company name + CIN (right-aligned).
-      const rx = pageW - M;
-      const ry = M + 4;
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.text("L.T. ELEVATOR LIMITED", rx, ry, { align: "right" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(7.5);
-      doc.text("CIN: L31909WB2008PLC128871", rx, ry + 4.2, { align: "right" });
-
-      // Centered title (below both blocks) + divider.
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(12);
-      doc.text(`PACKING LIST R1  —  ${list.jobNumber ?? ""}`, pageW / 2, HEADER_H - 5.5, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(8);
-      doc.setTextColor(90);
-      doc.text(`Status: ${status}   |   ${new Date().toLocaleDateString()}`, pageW / 2, HEADER_H - 1.5, { align: "center" });
-      doc.setTextColor(0);
-      doc.setDrawColor(34, 51, 68);
-      doc.setLineWidth(0.4);
-      doc.line(M, HEADER_H, pageW - M, HEADER_H);
-    };
-
-    const drawFooter = (pageNum: number, pageCount: number) => {
-      const fy = pageH - FOOTER_H;
-      doc.setDrawColor(34, 51, 68);
-      doc.setLineWidth(0.4);
-      doc.line(M, fy, pageW - M, fy);
-      const col = (x: number, title: string, lines: string[]) => {
-        let cy = fy + 4;
-        doc.setTextColor(40);
-        doc.setFont("helvetica", "bold");
-        doc.setFontSize(7);
-        doc.text(title, x, cy);
-        cy += 3.2;
-        doc.setFont("helvetica", "normal");
-        doc.setFontSize(6.3);
-        doc.setTextColor(70);
-        for (const ln of lines) {
-          if (ln) doc.text(ln, x, cy);
-          cy += 2.8;
-        }
-      };
-      col(M, "REGISTERED OFFICE:", [
-        "Capricorn Nest, 3 Gobinda Auddy Road,",
-        "P.O.: Alipore Kolkata – 700027,",
-        "West Bengal India, Phone: 033-2448-0447",
-        "Email: govtender.ltelevator@gmail.com",
-        "Email: sales@ltelevator.com",
-        "Web: www.ltelevator.com",
-      ]);
-      col(85, "WORKS:", [
-        "Works – 1 Vill: Chak Chata, PO.: Raipur",
-        "Maheshtala, Kolkata – 700141",
-        "",
-        "Works – 2 P-2, Gangarampur Road, Jhoutala,",
-        "P.O. – Raipur, Maheshtala, Kolkata - 700141",
-      ]);
-      col(150, "BSE:", [
-        "Security Name: LTELEVATOR",
-        "Code: 544518",
-        "ISIN: INE0TJ801010",
-      ]);
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(6.3);
-      doc.setTextColor(120);
-      doc.text(`Page ${pageNum} of ${pageCount}`, pageW - M, pageH - 3, { align: "right" });
-      doc.setTextColor(0);
-    };
-
-    let y = HEADER_H + 4;
-    parts.forEach((p, pi) => {
-      // PDF lists ONLY packed items (positive qty) so it stays short — zero/empty
-      // lines are dropped, and any part left with nothing is skipped below. The
-      // Excel export (exportRows) is unaffected and still includes every line.
-      const cabinBody =
-        p.title === "Cabin"
-          ? cabinPanels.groups.flatMap((g) =>
-              g.lines
-                .filter((l) => Number(l.qty) > 0)
-                .map((l) => [g.type, "", l.code ?? "", l.name, String(l.qty)]),
-            )
-          : [];
-      const lineBody = p.lines
-        .filter((l) => Number(l.qty) > 0)
-        .map((l) => [l.group ?? "", l.label ?? l.category_name ?? "", l.item_code ?? "", l.item_name ?? "", String(l.qty)]);
-      const body = [...cabinBody, ...lineBody];
-      if (body.length === 0) return;
-      // Keep a part heading off the footer zone.
-      if (y > pageH - FOOTER_H - 14) {
-        doc.addPage();
-        y = HEADER_H + 4;
-      }
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(11);
-      doc.setTextColor(0);
-      doc.text(`PART ${pi + 1}  ${p.title.toUpperCase()}`, M, y);
-      autoTable(doc, {
-        startY: y + 2, theme: "grid", styles: { fontSize: 8, cellPadding: 1.2 },
-        headStyles: { fillColor: [34, 51, 68] },
-        head: [["Group", "Particular", "Code", "Item", "Qty"]],
-        body,
-        margin: { top: HEADER_H + 4, bottom: FOOTER_H + 4, left: M, right: M },
-      });
-      y = ((doc as unknown as { lastAutoTable?: { finalY: number } }).lastAutoTable?.finalY ?? y) + 6;
-    });
-
-    // Stamp the letterhead on every page (fixed top/bottom bands).
-    const pageCount = doc.getNumberOfPages();
-    for (let i = 1; i <= pageCount; i++) {
-      doc.setPage(i);
-      drawHeader();
-      drawFooter(i, pageCount);
-    }
-    doc.save(`PackingList_R1_${list.jobNumber ?? list.jobId}.pdf`);
-  };
-
   const filled = parts.reduce((s, p) => s + p.lines.filter((l) => l.item_id).length, 0);
   const totalLines = parts.reduce((s, p) => s + p.lines.length, 0);
 
@@ -888,11 +722,8 @@ export function R1BuilderClient({
           <ToolbarBtn onClick={openClone} disabled={pending || cloning}>
             <Copy size={14} /> Clone from job
           </ToolbarBtn>
-          <ToolbarBtn onClick={exportExcel}>
-            <FileSpreadsheet size={14} /> Excel
-          </ToolbarBtn>
-          <ToolbarBtn onClick={exportPdf}>
-            <FileText size={14} /> PDF
+          <ToolbarBtn onClick={openPrintTab}>
+            <FileText size={14} /> PDF Export
           </ToolbarBtn>
           {status === "draft" ? (
             <ToolbarBtn onClick={() => save("final")} disabled={pending}>
