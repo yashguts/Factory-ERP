@@ -726,10 +726,15 @@ async function _getJobsDispatchStatusUncached(
   // Dispatches and BOM headers both only need jobIds — independent reads,
   // one round-trip each, fetch concurrently.
   const [{ data: disp }, { data: allHeaders }] = await Promise.all([
-    supabase.from("job_dispatches").select("id, job_id").in("job_id", jobIds),
+    supabase.from("job_dispatches").select("id, job_id, phase_scope").in("job_id", jobIds),
     supabase.from("job_bom_headers").select("id, job_id").in("job_id", jobIds),
   ]);
   if (!disp || disp.length === 0) return out;
+
+  // Jobs with an explicit "entire job" dispatch on record.
+  const fullScopeJobs = new Set(
+    disp.filter((d: any) => d.phase_scope === "full").map((d: any) => d.job_id as string),
+  );
 
   const dispJobIds = [...new Set(disp.map((d: any) => d.job_id as string))];
   const dispIds = disp.map((d: any) => d.id as string);
@@ -796,7 +801,11 @@ async function _getJobsDispatchStatusUncached(
   for (const job of dispJobIds) {
     const lineIds = linesByJob.get(job) ?? [];
     if (lineIds.length === 0) {
-      out[job] = "partial"; // dispatched, but no BOM to measure completeness
+      // No BOM to measure completeness against. An explicit "entire job"
+      // dispatch is the user saying nothing is pending — count it as full
+      // (how no-BOM jobs like RNLBLR-0054 get marked fully dispatched);
+      // phase-scoped dispatches stay partial.
+      out[job] = fullScopeJobs.has(job) ? "full" : "partial";
       continue;
     }
     const open = lineIds.some(
