@@ -64,12 +64,19 @@ export function R1PrintClient({
         }
       }
       for (const l of p.lines) {
-        if (l.item_id && l.qty > 0)
+        // Anything with a positive qty prints — including label-only lines with
+        // no inventory item: free-text fixtures (Fish Plate, GI Wire, Cotton
+        // Wire…), hardware (Nut-Bolts/Screws) and category lines where only a
+        // qty was typed. Same rule as the old PDF export. Label-only rows have
+        // no item_id, so they print but stay out of the 72h dispatch-diff
+        // snapshot (the diff keys on inventory items).
+        const name = l.item_name ?? l.label ?? l.category_name;
+        if (name && l.qty > 0)
           rows.push({
             key: l.id,
             item_id: l.item_id,
             code: l.item_code,
-            name: l.item_name ?? l.label ?? "(item)",
+            name,
             uom: l.uom,
             qty: l.qty,
             checked: true,
