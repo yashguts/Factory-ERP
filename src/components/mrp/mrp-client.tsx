@@ -16,7 +16,8 @@ import {
 } from "@/components/ui/table";
 import { Search, Calculator, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
-import type { MrpRow, PlanLeaf } from "@/lib/actions/mrp";
+import { JobScopePicker } from "@/components/mrp/job-scope-picker";
+import type { MrpRow, PlanLeaf, JobScopeOption } from "@/lib/actions/mrp";
 import { MrpJobsPopover } from "@/components/mrp/mrp-jobs-popover";
 
 type ShortfallFilter = "shortfall" | "all" | "excess";
@@ -40,6 +41,8 @@ interface Props {
    * page. These never appear on a job BOM, so they're shown but carry no job links.
    */
   sheets?: PlanLeaf[];
+  /** Job Orders for the scope picker (?jobs=). Absent = no picker rendered. */
+  scopeOptions?: JobScopeOption[];
 }
 
 /** Unified display row — a trade/make item or an exploded sheet. */
@@ -59,7 +62,7 @@ type ViewRow = {
   is_sheet: boolean;
 };
 
-export function MrpClient({ initialData, initialCutoffDate, section, sheets }: Props) {
+export function MrpClient({ initialData, initialCutoffDate, section, sheets, scopeOptions }: Props) {
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>(
@@ -207,6 +210,7 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets }: P
   return (
     <div>
       <MrpToolbar view="requirements" date={cutoffDate} section={section} />
+      {scopeOptions && <JobScopePicker options={scopeOptions} />}
 
       <PageHeader
         title={title}

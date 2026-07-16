@@ -129,24 +129,28 @@ const empty = (c: string | null, excluded: string[] = []): MakeProductionPlan =>
 export async function getMakeProductionPlan(
   cutoffDate?: string,
   excludeCodes?: string[],
+  /** Optional explicit job scope (the MRP job picker): the plan is optimised
+   *  for exactly these jobs' demand (status + cutoff ignored — owner picked). */
+  jobIds?: string[],
 ): Promise<MakeProductionPlan> {
   const excl = [...new Set((excludeCodes ?? []).map((c) => c.trim()).filter(Boolean))].sort();
-  const key = `${cutoffDate ?? "__all__"}|${excl.join("§")}`;
+  const scope = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  const key = `${cutoffDate ?? "__all__"}|${excl.join("§")}|${scope}`;
   return unstable_cache(_getPlanUncached, ["make-production-plan", key], {
     revalidate: 1800,
     // "cabin-jobs": Car Linton demand (from cabin_job_lines) folds into the MRP
     // rows this plan consumes, so cabin edits must refresh the plan.
     tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations", "cabin-jobs"],
-  })(cutoffDate, excl);
+  })(cutoffDate, excl, jobIds);
 }
 
-async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = []): Promise<MakeProductionPlan> {
+async function _getPlanUncached(cutoffDate?: string, excludeCodes: string[] = [], jobIds?: string[]): Promise<MakeProductionPlan> {
   // Un-nested read: this fn is wrapped in unstable_cache, and calling the cached
   // getMrpData here would nest unstable_cache and make the OUTER make-plan cache
   // degrade to pass-through — re-running the whole optimiser on every request.
   // Passed UN-awaited: the core launches its own prefetches first, so the MRP
   // chain's round-trips overlap them instead of running strictly before.
-  const mrp = _getMrpDataUncached(cutoffDate);
+  const mrp = _getMrpDataUncached(cutoffDate, false, jobIds && jobIds.length ? jobIds : null);
   const core = await computeMakePlanCore(excludeCodes, mrp);
   if (core.empty) return empty(cutoffDate ?? null, excludeCodes);
 

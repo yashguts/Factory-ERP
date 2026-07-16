@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { Hammer, AlertTriangle, Ban, ChevronRight, Layers, Loader2, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
@@ -11,9 +11,11 @@ import { EmptyState } from "@/components/ui/empty-state";
 import { Card, CardBody, SectionHeader } from "@/components/ui/card";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
+import { JobScopePicker } from "@/components/mrp/job-scope-picker";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
 import { formatDuration } from "@/lib/utils";
 import type { MakeProductionPlan, PlanProgram } from "@/lib/actions/production-plan";
+import type { JobScopeOption } from "@/lib/actions/mrp";
 
 const MACHINE: Record<string, string> = {
   cnc_punch: "Punch",
@@ -22,9 +24,10 @@ const MACHINE: Record<string, string> = {
   assembly_fit: "Assembly",
 };
 
-export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
+export function MakePlanClient({ plan, scopeOptions }: { plan: MakeProductionPlan; scopeOptions?: JobScopeOption[] }) {
   const t = plan.totals;
   const router = useRouter();
+  const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
   const [filter, setFilter] = useState<PlanFilterValue>(EMPTY_PLAN_FILTER);
   // "Search by sheet": narrow the plan to programs that consume a chosen raw sheet.
@@ -37,6 +40,9 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   const goWithExclusions = (excl: string[]) => {
     const params = new URLSearchParams();
     if (plan.cutoffDate) params.set("date", plan.cutoffDate);
+    // Keep the job-scope pick — an exclusion tweaks the SAME plan.
+    const jobsScope = sp.get("jobs");
+    if (jobsScope) params.set("jobs", jobsScope);
     if (excl.length) params.set("exclude", excl.join(","));
     const qs = params.toString();
     startTransition(() => router.push(`/mrp/make-plan${qs ? `?${qs}` : ""}`));
@@ -110,6 +116,7 @@ export function MakePlanClient({ plan }: { plan: MakeProductionPlan }) {
   return (
     <div>
       <MrpToolbar view="programs" date={plan.cutoffDate ?? ""} />
+      {scopeOptions && <JobScopePicker options={scopeOptions} />}
 
       <PageHeader
         title="Programs to Run"

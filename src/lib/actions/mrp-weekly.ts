@@ -185,7 +185,12 @@ interface LoadedDemand {
  * horizon end, so Σ_weeks === getMrpData(horizonEnd).total_required.
  */
 // exported for scripts/verify-weekly-mrp.ts (read-only helpers)
-export async function loadWeeklyDemand(): Promise<LoadedDemand> {
+export async function loadWeeklyDemand(
+  /** Optional explicit job scope (the MRP job picker): demand comes from exactly
+   *  these jobs — the in-production status gate is skipped for them (an
+   *  explicitly picked job counts even on Hold, mirroring the cabin picker). */
+  jobIds?: string[],
+): Promise<LoadedDemand> {
   const supabase = createCacheClient();
   const today = istToday();
   const curWeek = startOfWeekSunday(today);
@@ -230,15 +235,17 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   );
   // Cabin Car Linton demand (owner 2026-07-10) — cut by the MAKE door-panel
   // nests, so it feeds the weekly make board too (mirrors getMrpData's fold).
-  const carLintonPromise = inFlight(fetchCarLintonDemand(supabase));
+  const scoped = !!(jobIds && jobIds.length);
+  const carLintonPromise = inFlight(fetchCarLintonDemand(supabase, undefined, scoped ? jobIds! : null));
 
   const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; requirement_dispatch_date: string | null }>(
-    (from, to, withCount) =>
-      supabase
+    (from, to, withCount) => {
+      let q = supabase
         .from("jobs")
-        .select("id, requirement_stage, requirement_dispatch_date", withCount ? { count: "exact" } : {})
-        .eq("status", "in_production")
-        .range(from, to),
+        .select("id, requirement_stage, requirement_dispatch_date", withCount ? { count: "exact" } : {});
+      q = scoped ? q.in("id", jobIds!) : q.eq("status", "in_production");
+      return q.range(from, to);
+    },
   );
 
   let laterCount = 0;
@@ -487,7 +494,7 @@ const emptyPlan = (l: LoadedDemand, excluded: string[]): WeeklyMrpPlan => ({
   laterCount: l.laterCount, undatedCount: l.undatedCount, excluded,
 });
 
-export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<WeeklyMrpPlan> {
+export async function _getWeeklyUncached(excludeCodes: string[] = [], jobIds?: string[]): Promise<WeeklyMrpPlan> {
   // The PO-outstanding read is independent of the demand loader (the
   // time-phasing below only needs curWeek) — start it now so it overlaps the
   // loader's chain instead of running after it. The no-op catch keeps the
@@ -495,7 +502,7 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   // below still surfaces the real error at the same program point as before.
   const ooLinesPromise = _getOutstandingLinesUncached();
   ooLinesPromise.catch(() => {});
-  const l = await loadWeeklyDemand();
+  const l = await loadWeeklyDemand(jobIds);
   if (l.demandByItemWeek.size === 0) return emptyPlan(l, excludeCodes);
   const N = l.N;
 
@@ -711,11 +718,16 @@ export async function _getWeeklyUncached(excludeCodes: string[] = []): Promise<W
   };
 }
 
-export async function getWeeklyMrpPlan(excludeCodes?: string[]): Promise<WeeklyMrpPlan> {
+export async function getWeeklyMrpPlan(
+  excludeCodes?: string[],
+  /** Optional explicit job scope (the MRP job picker). */
+  jobIds?: string[],
+): Promise<WeeklyMrpPlan> {
   const excl = [...new Set((excludeCodes ?? []).map((c) => c.trim()).filter(Boolean))].sort();
-  return unstable_cache(_getWeeklyUncached, ["weekly-mrp-plan", excl.join("§")], {
+  const scope = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  return unstable_cache(_getWeeklyUncached, ["weekly-mrp-plan", `${excl.join("§")}|${scope}`], {
     revalidate: 1800,
     // "cabin-jobs": Car Linton demand comes from cabin_job_lines now.
     tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations", "cabin-jobs"],
-  })(excl);
+  })(excl, jobIds);
 }

@@ -86,6 +86,53 @@ export async function getAdHocShortfall(jobIds: string[]): Promise<MrpRow[]> {
   return _getMrpDataUncached(undefined, true, jobIds);
 }
 
+/** One Job Order in the MRP job-scope picker (mirrors the Cabin MRP picker). */
+export interface JobScopeOption {
+  id: string;
+  job_number: string;
+  customer_name: string | null;
+  /** BOM (Packing List R1 mirror) line count — a feel for the job's size. */
+  line_count: number;
+  /** In the DEFAULT demand set: status = In Production and Required ≠ New.
+   *  A job outside it still counts when explicitly picked (what-if). */
+  eligible: boolean;
+}
+
+/** Options for the Make/Trade MRP job-scope picker. Cached lightly — one small
+ *  jobs read + a per-header line count. */
+export async function getJobScopeOptions(): Promise<JobScopeOption[]> {
+  return unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const [{ data: jobs }, { data: headers }] = await Promise.all([
+        supabase
+          .from("jobs")
+          .select("id, job_number, customer_name, status, requirement_stage, created_at")
+          .order("created_at", { ascending: false }),
+        supabase.from("job_bom_headers").select("job_id, job_bom_lines(count)"),
+      ]);
+      const lineCount = new Map<string, number>();
+      for (const h of (headers ?? []) as any[]) {
+        const n = Array.isArray(h.job_bom_lines) ? Number((h.job_bom_lines[0] as any)?.count ?? 0) : 0;
+        if (h.job_id) lineCount.set(h.job_id as string, (lineCount.get(h.job_id as string) ?? 0) + n);
+      }
+      return ((jobs ?? []) as any[])
+        .map((j) => ({
+          id: j.id as string,
+          job_number: j.job_number as string,
+          customer_name: (j.customer_name as string | null) ?? null,
+          line_count: lineCount.get(j.id as string) ?? 0,
+          eligible:
+            (j.status as string) === "in_production" &&
+            ((j.requirement_stage as string | null) ?? "new") !== "new",
+        }))
+        .sort((a, b) => Number(b.eligible) - Number(a.eligible));
+    },
+    ["mrp-job-scope-options"],
+    { revalidate: 300, tags: ["jobs", "bom-lines"] },
+  )();
+}
+
 /** The hard-coded drive-type demand rules, exposed for the Settings rule doc.
  *  (Can't export the const itself from a "use server" module.) */
 export async function getJobDriveDemandRules(): Promise<
@@ -1030,17 +1077,22 @@ export interface ProgramRunPlan {
 
 export async function getProductionPlan(
   cutoffDate?: string,
+  /** Optional explicit job scope (the MRP job picker): the sheet/buy plan is
+   *  computed for exactly these jobs (status + cutoff ignored — owner picked). */
+  jobIds?: string[],
 ): Promise<ProductionPlan> {
-  const key = cutoffDate ?? "__all__";
+  const scope = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  const key = `${cutoffDate ?? "__all__"}|${scope}`;
   return unstable_cache(
     _getProductionPlanUncached,
     ["production-plan", key],
     { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"] },
-  )(cutoffDate);
+  )(cutoffDate, jobIds);
 }
 
 async function _getProductionPlanUncached(
   cutoffDate?: string,
+  jobIds?: string[],
 ): Promise<ProductionPlan> {
   const supabase = createCacheClient();
 
@@ -1049,7 +1101,7 @@ async function _getProductionPlanUncached(
   // nesting unstable_cache (getMrpData / the slim plan-items read) makes the OUTER
   // production-plan cache degrade to pass-through (re-running on every request).
   const [demand, items] = await Promise.all([
-    _getMrpDataUncached(cutoffDate),
+    _getMrpDataUncached(cutoffDate, false, jobIds && jobIds.length ? jobIds : null),
     _getPlanItemsSlimUncached(),
   ]);
   const itemById = new Map(items.map((i) => [i.id, i]));
