@@ -751,9 +751,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           router.push(`/jobs/${jobId}/items`);
           return;
         }
-        const categories = visibleSections.map((s) => s.category);
-        const lines = collectBomLines(visibleSections);
-        await saveBomSection(jobId, categories, lines);
+        // Edit mode saves METADATA ONLY (job details + elevator spec). Items
+        // are edited on the Packing List R1 — rewriting job_bom_lines from this
+        // form would clobber the R1 mirror's source/dispatch_phase columns.
         captureOutcome(jobId);
         // Invalidate client-side Router Cache so detail page shows fresh data
         router.refresh();
@@ -804,7 +804,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           <span className="text-xs text-[var(--muted-foreground)]">
             {totalPickedItems} item{totalPickedItems !== 1 ? "s" : ""}
           </span>
-          {(mode === "create" || totalPickedItems === 0) && (
+          {mode === "create" && (
             <Button
               size="sm"
               variant="secondary"
@@ -859,7 +859,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
             ) : (
               <Save className="h-3.5 w-3.5 mr-1.5" />
             )}
-            {mode === "create" ? "Create Job → Packing List" : "Save All & Finish"}
+            {mode === "create" ? "Create Job → Packing List" : "Save Details & Close"}
           </Button>
         </div>
       </div>
@@ -961,102 +961,30 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         </div>
       )}
 
-      {/* ── BOM Sections by Phase (edit mode only — the legacy escape hatch;
-             since the R1 cutover the Packing List R1 is the item editor and
-             overwrites these lines on its next save) ── */}
-      {mode === "edit" && Array.from(sectionsByPhase.entries()).map(([phase, sections]) => {
-        const isSaving = savingPhase === phase;
-        const isSaved = savedPhases[phase] === true;
-        const phaseItemCount = sections.reduce(
-          (n, s) =>
-            n + (pickerState[s.category] ?? []).filter((r) => r.item_id).length,
-          0,
-        );
-
-        return (
-          <div
-            key={phase}
-            className="rounded-md border border-[var(--border)] bg-[var(--card)]"
-          >
-            {/* Phase header — sticky-ish, compact */}
-            <div className="flex items-center justify-between px-4 py-2.5 border-b border-[var(--border)] bg-[var(--muted)]/40">
-              <div className="flex items-center gap-2">
-                <h2 className="text-sm font-semibold uppercase tracking-wide text-[var(--foreground)]">
-                  {phase}
-                </h2>
-                {phaseItemCount > 0 && (
-                  <span className="text-[10px] px-1.5 py-0.5 rounded-full bg-[var(--background)] text-[var(--muted-foreground)] border border-[var(--border)]">
-                    {phaseItemCount}
-                  </span>
-                )}
-              </div>
-              <Button
-                size="sm"
-                variant={isSaved ? "secondary" : "primary"}
-                onClick={() => handleSavePhase(phase)}
-                disabled={isPending || !isFormValid}
-              >
-                {isSaving ? (
-                  <Loader2 className="h-3 w-3 mr-1 animate-spin" />
-                ) : isSaved ? (
-                  <Check className="h-3 w-3 mr-1 text-[var(--success)]" />
-                ) : (
-                  <Save className="h-3 w-3 mr-1" />
-                )}
-                {isSaved ? "Saved" : "Save Phase"}
-              </Button>
-            </div>
-
-            {/* Sections — single column, no inner cards, thin dividers */}
-            <div className="px-4">
-              {sections.map((section) => {
-                const isAdHoc = phase === AD_HOC_PHASE;
-                // Determine mapping status. Ad-hoc sections were picked
-                // from the live tree so they always resolve. Hardcoded
-                // sections rely on resolvedPaths (loaded async). Until
-                // it loads, assume mapped to avoid a flash of warnings.
-                const paths = section.defaultItemCategories ?? [];
-                const isUnmapped =
-                  !isAdHoc &&
-                  resolvedPaths !== null &&
-                  paths.length > 0 &&
-                  !paths.some((p) => resolvedPaths.has(p));
-                return (
-                  <ItemPickerSection
-                    key={section.category}
-                    category={section.category}
-                    description={section.description}
-                    defaultItemCategories={section.defaultItemCategories}
-                    items={pickerState[section.category] ?? []}
-                    onItemsChange={(items) =>
-                      setPickerItems(section.category, items)
-                    }
-                    onRemoveSection={
-                      isAdHoc
-                        ? () => removeAdHocSection(section.category)
-                        : undefined
-                    }
-                    isUnmapped={isUnmapped}
-                  />
-                );
-              })}
-            </div>
-          </div>
-        );
-      })}
-
-      {/* +Add Section — opens an inventory category picker so the user can
-          add any sub-category as an ad-hoc section. (Edit mode only.) */}
+      {/* ── Items pointer (edit mode): this page edits details + spec ONLY.
+             The old BOM-section pickers are retired — since the R1 cutover the
+             Packing List R1 is the job's item editor (saving sections here
+             would clobber the R1 mirror's source/phase data). ── */}
       {mode === "edit" && (
-        <div className="flex justify-center">
-          <Button
-            size="sm"
-            variant="secondary"
-            onClick={() => setPickerModalOpen(true)}
-          >
-            <Plus className="h-3.5 w-3.5 mr-1.5" />
-            Add Section From Inventory
-          </Button>
+        <div className="rounded-lg border px-3.5 py-3 flex items-center gap-3" style={{ background: "#223344", borderColor: "#223344", color: "#fff" }}>
+          <ClipboardList className="h-5 w-5 shrink-0 opacity-90" />
+          <div className="min-w-0 flex-1">
+            <div className="text-[13px] font-semibold leading-tight">Items are edited on the Packing List R1</div>
+            <p className="text-[10px] opacity-85 leading-tight">
+              This page saves the job details and elevator specification only. The packing
+              list is the job&rsquo;s item data (it drives MRP, dispatch and the balance view).
+            </p>
+          </div>
+          {savedJobId && (
+            <Button
+              size="sm"
+              variant="secondary"
+              onClick={() => router.push(`/jobs/${savedJobId}/items`)}
+              className="shrink-0"
+            >
+              Open Packing List R1
+            </Button>
+          )}
         </div>
       )}
 
@@ -1096,7 +1024,7 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           ) : (
             <Save className="h-3.5 w-3.5 mr-1.5" />
           )}
-          {mode === "create" ? "Create Job → Packing List" : "Save All & Finish"}
+          {mode === "create" ? "Create Job → Packing List" : "Save Details & Close"}
         </Button>
       </div>
 

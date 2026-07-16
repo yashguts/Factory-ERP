@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink } from "lucide-react";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink, Settings2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
@@ -508,6 +508,12 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               title="The Packing List R1 is this job's item list — edits there update MRP, dispatch and this page"
             >
               <Pencil className="h-3.5 w-3.5" /> Packing List R1
+            </HeaderBtn>
+            <HeaderBtn
+              onClick={() => router.push(`/jobs/${job.id}/edit`)}
+              title="Edit the job details + elevator specification (floors, drive type, capacity, structure, dates)"
+            >
+              <Settings2 className="h-3.5 w-3.5" /> Edit Details
             </HeaderBtn>
             <HeaderBtn
               onClick={() => setSplitView((v) => !v)}
