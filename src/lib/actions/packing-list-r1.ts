@@ -502,7 +502,7 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
   // independent reads — the job header + category tree (both consumed by the
   // final readR1List) never depend on the list row, so fetch them alongside
   // the existence check instead of serially after it.
-  const [{ data: existing }, { data: job }, cats] = await Promise.all([
+  const [{ data: existing, error: existErr }, { data: job }, cats] = await Promise.all([
     supabase
       .from("packing_r1_lists")
       .select("id, status")
@@ -515,6 +515,11 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
       .maybeSingle(),
     getAllCategories(),
   ]);
+  // A failed existence check must NEVER fall through to the create+seed path:
+  // treating a transient/aborted read as "no list yet" sends a job that already
+  // HAS a saved list into the insert below, where the UNIQUE(job_id) constraint
+  // kills the whole render (the "packing list went blank" bug).
+  if (existErr) throw existErr;
 
   let listId = existing?.id as string | undefined;
   let status = (existing?.status as "draft" | "final") ?? "draft";
@@ -525,7 +530,25 @@ export async function getR1List(jobId: string): Promise<R1ListView> {
       .insert({ job_id: jobId, status: "draft" })
       .select("id, status")
       .single();
-    if (error) throw error;
+    if (error) {
+      // 23505 = the list exists after all (a concurrent render created it, or
+      // it existed and the check above was raced). Use it as-is and DO NOT
+      // seed — seeding here would sit on top of the operator's saved lines.
+      if (error.code !== "23505") throw error;
+      const { data: won, error: reErr } = await supabase
+        .from("packing_r1_lists")
+        .select("id, status")
+        .eq("job_id", jobId)
+        .single();
+      if (reErr) throw reErr;
+      return readR1List(
+        jobId,
+        won.id as string,
+        ((won.status as "draft" | "final") ?? "draft"),
+        job,
+        cats,
+      );
+    }
     listId = created.id as string;
     status = "draft";
     // seed from template + BOM auto-fill — template tables and the job's BOM
