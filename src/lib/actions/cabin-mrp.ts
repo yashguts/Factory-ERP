@@ -100,39 +100,23 @@ async function getEligibleCabinJobs(
 }
 
 /**
- * Scope resolver for all three Cabin-MRP readers. An EXPLICIT selection (the
- * "?jobs=" picker) takes exactly those cabin jobs — the engineer is asking a
- * what-if for a chosen set, so the default eligibility gate (in-production /
- * 2nd-phase / not fully dispatched / not ready) is NOT applied to them; dates
- * still come from the linked Job Order. No selection = the owner-rule
- * eligibility gate above (which excludes Hold and fully-dispatched jobs).
+ * Scope resolver for all three Cabin-MRP readers. An explicit selection (the
+ * "?jobs=" picker or a saved job set) NARROWS the eligible set — it never
+ * bypasses it (owner rule, 2026-07-16): a picked cabin job still counts ONLY
+ * if it passes the demand eligibility above (not ready + linked Job Order in
+ * production + Required = full_material + not fully dispatched). The cabin is
+ * only ever dispatched in the 2nd phase, so a 1st-phase job must contribute
+ * no cabin demand even when explicitly picked. No selection = the full
+ * eligible set.
  */
 async function getScopedCabinJobs(
   supabase: ReturnType<typeof createCacheClient>,
   jobIds?: string[],
 ): Promise<Map<string, EligibleCabinJob>> {
-  if (!jobIds || jobIds.length === 0) return getEligibleCabinJobs(supabase);
-  const { data: cjobs } = await supabase
-    .from("cabin_jobs")
-    .select("id, job_number")
-    .in("id", jobIds);
-  if (!cjobs?.length) return new Map();
-  const { data: jobsRaw } = await supabase
-    .from("jobs")
-    .select("job_number, requirement_dispatch_date");
-  const dateByNumber = new Map<string, string | null>();
-  for (const j of (jobsRaw ?? []) as any[]) {
-    const key = ((j.job_number as string) ?? "").trim().toLowerCase();
-    if (key) dateByNumber.set(key, (j.requirement_dispatch_date as string | null) ?? null);
-  }
-  const out = new Map<string, EligibleCabinJob>();
-  for (const c of cjobs as any[]) {
-    out.set(c.id as string, {
-      requirementDispatchDate:
-        dateByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase()) ?? null,
-    });
-  }
-  return out;
+  const eligible = await getEligibleCabinJobs(supabase);
+  if (!jobIds || jobIds.length === 0) return eligible;
+  const picked = new Set(jobIds);
+  return new Map([...eligible].filter(([id]) => picked.has(id)));
 }
 
 /** Options for the Cabin-MRP job-scope picker: every cabin job with its line

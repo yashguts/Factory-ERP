@@ -44,12 +44,14 @@ export async function fetchCarLintonDemand(
   let q = supabase
     .from("jobs")
     .select("id, job_number, requirement_dispatch_date")
-    .eq("requirement_stage", "full_material");
+    .eq("requirement_stage", "full_material")
+    // In Production is a hard demand rule — an explicit pick doesn't bypass
+    // it (owner, 2026-07-16); only the date cutoff is scope-local.
+    .eq("status", "in_production");
   if (adHocJobIds) {
     q = q.in("id", adHocJobIds);
-  } else {
-    q = q.eq("status", "in_production");
-    if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+  } else if (cutoffDate) {
+    q = q.lte("requirement_dispatch_date", cutoffDate);
   }
   const { data: jobsRaw } = await q;
   const jobByNumber = new Map<string, { id: string; date: string | null }>();

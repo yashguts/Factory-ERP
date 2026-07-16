@@ -93,8 +93,9 @@ export interface JobScopeOption {
   customer_name: string | null;
   /** BOM (Packing List R1 mirror) line count — a feel for the job's size. */
   line_count: number;
-  /** In the DEFAULT demand set: status = In Production and Required ≠ New.
-   *  A job outside it still counts when explicitly picked (what-if). */
+  /** In the demand set: status = In Production and Required ≠ New. A job
+   *  outside it adds NO demand even when explicitly picked (owner rule,
+   *  2026-07-16) — the picker badges it "no demand". */
   eligible: boolean;
 }
 
@@ -152,11 +153,12 @@ export async function _getMrpDataUncached(
   cutoffDate?: string,
   includeDerivedTrade = false,
   /**
-   * Ad-hoc scope: when a non-null list is given, demand is computed for EXACTLY
-   * these job ids (the status=in_production filter and the cutoff date are both
-   * ignored — the owner explicitly picked the jobs). Requirement-stage scoping and
-   * dispatch netting still apply, so the result matches what MRP would attribute to
-   * those jobs. Used by getAdHocShortfall; null/undefined keeps the normal behaviour.
+   * Ad-hoc scope: when a non-null list is given, demand is computed for exactly
+   * these job ids; only the cutoff date is ignored (the owner picked the jobs).
+   * The demand RULES still apply in full (owner rule, 2026-07-16): a picked job
+   * counts only if it's In Production, and only for its Required stage's items
+   * (new = nothing, 1st phase = first-phase lines, full = everything), with
+   * dispatch netting. Used by getAdHocShortfall; null/undefined = normal mode.
    */
   jobIds?: string[] | null,
 ): Promise<MrpRow[]> {
@@ -178,12 +180,14 @@ export async function _getMrpDataUncached(
       (from, to, withCount) => {
         let q = supabase
           .from("jobs")
-          .select("id, requirement_stage, drive_type, door_type, capacity, floors", withCount ? { count: "exact" } : {});
+          .select("id, requirement_stage, drive_type, door_type, capacity, floors", withCount ? { count: "exact" } : {})
+          // In Production is a hard demand rule — an explicit pick doesn't
+          // bypass it (owner, 2026-07-16); only the date cutoff is scope-local.
+          .eq("status", "in_production");
         if (adHoc) {
           q = q.in("id", jobIds!);
-        } else {
-          q = q.eq("status", "in_production");
-          if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        } else if (cutoffDate) {
+          q = q.lte("requirement_dispatch_date", cutoffDate);
         }
         return q.range(from, to);
       },
@@ -1470,8 +1474,9 @@ export async function getMrpItemJobs(
   itemId: string,
   cutoffDate?: string,
   /** Ad-hoc scope (the ?jobs=/?set= picker): restrict the breakdown to these
-   *  jobs and skip the in-production/cutoff filters — same contract as
-   *  getAdHocShortfall, so the popover tells the scoped table's story. */
+   *  jobs and skip the cutoff — same contract as getAdHocShortfall (the
+   *  In-Production + Required-stage demand rules still apply), so the popover
+   *  tells the scoped table's story. */
   jobIds?: string[],
 ): Promise<MrpJobBreakdown[]> {
   const scope = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "__all__";
@@ -1502,13 +1507,12 @@ async function jobDriveBreakdown(
       let q = supabase
         .from("jobs")
         .select("id, job_number, customer_name, requirement_dispatch_date", withCount ? { count: "exact" } : {})
-        .in("drive_type", rule.driveTypes);
-      // Explicit scope = the owner picked the jobs; status/cutoff don't apply.
+        .in("drive_type", rule.driveTypes)
+        // In Production is a hard demand rule — an explicit pick doesn't
+        // bypass it (owner, 2026-07-16); only the date cutoff is scope-local.
+        .eq("status", "in_production");
       if (adHoc) q = q.in("id", adHocJobIds!);
-      else {
-        q = q.eq("status", "in_production");
-        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
-      }
+      else if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
       return q.range(from, to);
     },
   );
@@ -1623,8 +1627,8 @@ async function _getMrpItemJobsUncached(
   // and (optionally) the dispatch-date cutoff. requirement_stage comes along
   // for the stage scoping below.
   let candidateJobIds = Array.from(new Set(headerToJob.values()));
-  // Explicit ?jobs=/?set= scope: only the picked jobs count (and the
-  // in-production/cutoff filters below don't apply — same as getAdHocShortfall).
+  // Explicit ?jobs=/?set= scope: only the picked jobs count (the date cutoff
+  // doesn't apply, but In Production still does — same as getAdHocShortfall).
   if (adHoc) {
     const scopeSet = new Set(adHocJobIds!);
     candidateJobIds = candidateJobIds.filter((id) => scopeSet.has(id));
@@ -1649,11 +1653,11 @@ async function _getMrpItemJobsUncached(
           .select(
             "id, job_number, customer_name, requirement_dispatch_date, requirement_stage",
           )
-          .in("id", ids);
-        if (!adHoc) {
-          q = q.eq("status", "in_production");
-          if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
-        }
+          .in("id", ids)
+          // In Production is a hard demand rule — an explicit pick doesn't
+          // bypass it (owner, 2026-07-16); only the date cutoff is scope-local.
+          .eq("status", "in_production");
+        if (!adHoc && cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
         return q;
       }),
     );

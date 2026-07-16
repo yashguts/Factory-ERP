@@ -18,9 +18,10 @@ import {
  * picker. Default = ALL in-production jobs with a Required stage (the normal
  * MRP demand set). Or pick specific Job Orders and every Make/Trade view
  * (requirements, programs-to-run optimiser, buy list, weekly) recomputes
- * server-side for exactly that set — an explicitly picked job counts even if
- * it's outside the default set (Hold / New required — a what-if). NOTE: the
- * date cutoff does not apply to a picked set (the owner chose the jobs).
+ * server-side for exactly that set. A pick NARROWS the demand set, it never
+ * bypasses the demand rules (owner, 2026-07-16): a picked job still counts
+ * only if it's In Production, and only for its Required stage's items. Only
+ * the date cutoff is ignored for a picked set (the owner chose the jobs).
  *
  * A selection can be SAVED as a named set (e.g. "Urgent") — one chip-click
  * on every MRP surface, Cabin MRP included (there it resolves to the cabin
@@ -279,9 +280,9 @@ export function JobScopePicker({ scope }: { scope: JobScopeData }) {
                     {!o.eligible && (
                       <span
                         className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-300"
-                        title="Outside the default all-jobs set (not In Production, or Required is still New); counts only if you pick it here"
+                        title="Adds no demand even if picked — the job is not In Production, or its Required is still New. Update the job's status/Required to count it."
                       >
-                        excluded
+                        no demand
                       </span>
                     )}
                   </button>

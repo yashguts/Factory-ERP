@@ -242,8 +242,11 @@ export async function loadWeeklyDemand(
     (from, to, withCount) => {
       let q = supabase
         .from("jobs")
-        .select("id, requirement_stage, requirement_dispatch_date", withCount ? { count: "exact" } : {});
-      q = scoped ? q.in("id", jobIds!) : q.eq("status", "in_production");
+        .select("id, requirement_stage, requirement_dispatch_date", withCount ? { count: "exact" } : {})
+        // In Production is a hard demand rule — an explicit pick doesn't
+        // bypass it (owner, 2026-07-16).
+        .eq("status", "in_production");
+      if (scoped) q = q.in("id", jobIds!);
       return q.range(from, to);
     },
   );

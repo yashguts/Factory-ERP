@@ -11,8 +11,11 @@ import type { CabinScopeData } from "@/lib/actions/job-sets";
  * Cabin-MRP job-scope picker. Default = ALL jobs in the demand-eligible set
  * (excludes Hold, fully-dispatched and Ready jobs). Or pick specific cabin
  * jobs and every Cabin-MRP view (requirements, programs-to-run optimiser,
- * weekly) recomputes server-side for exactly that set — an explicitly picked
- * job counts even if it's outside the default set (what-if).
+ * weekly) recomputes server-side for exactly that set. A pick NARROWS the
+ * eligible set, it never bypasses it (owner, 2026-07-16): the cabin ships in
+ * the 2nd phase only, so a picked cabin job still counts ONLY if its linked
+ * Job Order is In Production with Required = 2nd phase, not fully dispatched,
+ * and the cabin job isn't marked Ready.
  *
  * Saved job sets (e.g. "Urgent", created in Make/Trade MRP over Job Orders)
  * appear as chips: picking one scopes the cabin plan to the cabin jobs whose
@@ -208,11 +211,11 @@ export function CabinScopePicker({ scope }: { scope: CabinScopeData }) {
                         className="shrink-0 px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wide bg-amber-100 text-amber-800 border border-amber-300"
                         title={
                           o.ready
-                            ? "Marked Ready — outside the default all-jobs set; counts only if you pick it here"
-                            : "Outside the default all-jobs set (job on Hold / not in production / 2nd phase not required / fully dispatched); counts only if you pick it here"
+                            ? "Marked Ready — its cabin items are already built; adds no demand even if picked"
+                            : "Adds no demand even if picked (job on Hold / not in production / 2nd phase not required / fully dispatched) — the cabin ships in the 2nd phase only"
                         }
                       >
-                        {o.ready ? "ready" : "excluded"}
+                        {o.ready ? "ready" : "no demand"}
                       </span>
                     )}
                   </button>
