@@ -33,7 +33,8 @@ import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
 import { gadAlert } from "@/lib/jobs/gad-alert";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
-import { getRicardoFinancialsForJobs, type RicardoListSummary } from "@/lib/actions/ricardo";
+import { type RicardoListSummary } from "@/lib/actions/ricardo";
+import { getCrmFinancialsForJobs } from "@/lib/actions/crm-financials";
 
 // Compact rupee display for the CRM column: lakhs/crores keep the cell narrow.
 function fmtL(n: number | null | undefined): string {
@@ -130,12 +131,13 @@ export function JobsClient({
       alive = false;
     };
   }, []);
-  // Ricardo CRM money per job number (contract / received / transport scope).
-  // Client-fetched in one batch call — live from the CRM, never blocks the list.
+  // CRM money per job number (contract / received / transport scope), live
+  // from whichever CRM the job number belongs to (Ricardo or LT Elevator).
+  // Client-fetched in one batch call — never blocks the list.
   const [crm, setCrm] = useState<Record<string, RicardoListSummary>>({});
   useEffect(() => {
     let alive = true;
-    getRicardoFinancialsForJobs(initialJobs.map((j) => j.job_number))
+    getCrmFinancialsForJobs(initialJobs.map((j) => j.job_number))
       .then((m) => {
         if (alive) setCrm(m);
       })
@@ -701,7 +703,7 @@ export function JobsClient({
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
-                <TableHead title="Live from Ricardo CRM — money received (approved) / contract value, plus transport scope. Only Ricardo jobs.">CRM ₹</TableHead>
+                <TableHead title="Live from the CRM (Ricardo / LT Elevator) — money received (approved) / contract value, plus transport scope. CRM-linked jobs only.">CRM ₹</TableHead>
                 <TableHead title="Structure supply: Factory-made / Site-fabricated / none">Structure</TableHead>
                 <SortHeader
                   label="Sent"

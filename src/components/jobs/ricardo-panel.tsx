@@ -3,16 +3,18 @@
 import { useEffect, useState } from "react";
 import { IndianRupee, AlertTriangle } from "lucide-react";
 import {
-  getRicardoFinancials,
-  type RicardoFinancials,
-} from "@/lib/actions/ricardo";
+  getCrmFinancials,
+  type CrmFinancials,
+} from "@/lib/actions/crm-financials";
 import { ricardoKeyOf } from "@/lib/ricardo/job-number";
+import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
 
 /**
- * Live money panel for Ricardo jobs — contract value, transport scope and
- * customer payments read straight from the Ricardo CRM at view time.
- * Self-contained: fetches on mount (same pattern as the R1 chip) so the
- * server page needs no new props; renders nothing for non-Ricardo jobs.
+ * Live money panel for CRM-linked jobs — contract value, transport scope and
+ * customer payments read straight from the owning CRM (Ricardo or LT
+ * Elevator) at view time. Self-contained: fetches on mount (same pattern as
+ * the R1 chip) so the server page needs no new props; renders nothing for
+ * jobs neither CRM knows.
  */
 
 const inr = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -30,14 +32,14 @@ function Stat({ label, value, sub }: { label: string; value: React.ReactNode; su
 }
 
 export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
-  const isRicardo = ricardoKeyOf(jobNumber) !== null;
-  const [data, setData] = useState<RicardoFinancials | null>(null);
+  const isCrm = ricardoKeyOf(jobNumber) !== null || ltCrmKeyOf(jobNumber) !== null;
+  const [data, setData] = useState<CrmFinancials | null>(null);
   const [loaded, setLoaded] = useState(false);
 
   useEffect(() => {
-    if (!isRicardo) return;
+    if (!isCrm) return;
     let alive = true;
-    getRicardoFinancials(jobNumber)
+    getCrmFinancials(jobNumber)
       .then((d) => {
         if (alive) {
           setData(d);
@@ -48,17 +50,19 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
     return () => {
       alive = false;
     };
-  }, [jobNumber, isRicardo]);
+  }, [jobNumber, isCrm]);
 
-  // Non-Ricardo job, still loading, or integration not configured — no panel.
-  if (!isRicardo || !loaded || data === null) return null;
+  // Job neither CRM knows, still loading, or integration not configured — no panel.
+  if (!isCrm || !loaded || data === null) return null;
+
+  const crmName = data.source === "ltcrm" ? "LT CRM" : "Ricardo CRM";
 
   if (!data.found) {
     return (
       <div className="mb-3 flex items-center gap-2 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-700">
         <AlertTriangle size={14} />
         <span>
-          <span className="font-medium">Ricardo CRM:</span> no live job found for{" "}
+          <span className="font-medium">{crmName}:</span> no live job found for{" "}
           <span className="font-medium">{jobNumber}</span> — financials unavailable.
         </span>
       </div>
@@ -90,7 +94,7 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
       <div className="mb-2 flex flex-wrap items-center gap-2">
         <span className="inline-flex items-center gap-1 text-xs font-semibold">
           <IndianRupee size={13} />
-          Ricardo CRM
+          {crmName}
         </span>
         <span className="text-[10px] text-[var(--muted-foreground)]">
           {data.fullJobNumber}
