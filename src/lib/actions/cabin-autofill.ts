@@ -28,6 +28,7 @@ import {
   isFinishSplitType,
   CABIN_PARENT,
 } from "@/lib/cabin/cabin-types";
+import { canonicalFinish } from "@/lib/cabin/finish-alias";
 
 const MODEL = "claude-opus-4-8";
 // Bounded so a slow read can't let the serverless platform kill the whole function.
@@ -146,7 +147,7 @@ BLOCK — classify each item into one cabin block:
 
 LABEL — copy the identity EXACTLY as written but WITHOUT the finish words. Keep the code, size, and every variant token (STD, BIG, R1, COP, TOUCH, LHO, RHO, Blower, Glass). Examples: "P2C 350", "P4 100", "P6C 350", "ACO P1R 200 COP TOUCH R1 STD", "AT P1L 50 LHO STD", "ACO 1100X1300", "1100X300 Blower R1", "CO 800 R1". Do NOT normalise separators — write what you see.
 
-FINISH — expand the legend to the FULL finish name (BM -> "Black Mirror", RGL -> "Rose Gold Linen"). If a panel has no finish marked (Platform, Canopy, and often the Linton), return null.
+FINISH — expand the legend to the FULL finish name (BM -> "Black Mirror", RGL -> "Rose Gold Linen"). If a panel has no finish marked (Platform, Canopy, and often the Linton), return null. NAMING: "White Mirror", "Silver Mirror", "White Silver Mirror" and "Mirror Silver" are all the SAME finish — return it as "White Mirror Silver". Plain "Mirror" is a different finish; keep it as "Mirror".
 
 QTY — count how many of that exact panel are drawn. If a panel appears on both side walls, that is qty 2. Canopy segments carry an explicit QTY. Default 1.
 
@@ -304,6 +305,11 @@ async function resolveOne(
   finish: string | null,
   height: string | null,
 ): Promise<{ row: Omit<AutofillRow, "qty"> } | { unresolved: Omit<AutofillUnresolved, "qty"> }> {
+  // Normalise written finish variants to the canonical inventory finish first
+  // ("White Mirror" / "Silver Mirror" / "White Silver Mirror" → "White Mirror
+  // Silver") — cabin items carry ONE canonical finish string, and the match
+  // below is exact-equality.
+  finish = canonicalFinish(finish);
   const invType = cabinInventoryType(block);
   const ids = subtreeIds(cats, invType);
   const useFamily = isFinishSplitType(block);
