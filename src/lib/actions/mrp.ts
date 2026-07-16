@@ -6,6 +6,7 @@ import { _getPlanItemsSlimUncached } from "@/lib/actions/inventory";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { linePhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { fetchCarLintonDemand, type CarLintonDemandRow } from "@/lib/mrp/car-linton-demand";
 
 export interface MrpRow {
   item_id: string;
@@ -66,7 +67,9 @@ export async function getMrpData(cutoffDate?: string): Promise<MrpRow[]> {
     // "purchase-orders" tag: MRP now nets outstanding POs into on_order/to_buy,
     // so a PO create/receive must refresh the figures (procurement mutations
     // revalidate this tag).
-    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock", "purchase-orders"] },
+    // "cabin-jobs": Car Linton demand comes from cabin_job_lines now, so cabin
+    // job edits / ready-toggles must refresh the MRP figures.
+    { revalidate: 1800, tags: ["jobs", "bom-lines", "items", "inventory-stock", "purchase-orders", "cabin-jobs"] },
   )(cutoffDate);
 }
 
@@ -197,6 +200,12 @@ export async function _getMrpDataUncached(
     return p;
   };
   const componentRulesPromise = inFlight(fetchComponentRules(supabase));
+  // Cabin Car Linton demand (owner 2026-07-10): cut by the MAKE door-panel
+  // nests, so it feeds Make MRP + the run optimiser — common path, NOT the
+  // includeDerivedTrade opt-in (the optimiser must see it).
+  const carLintonPromise = inFlight(
+    fetchCarLintonDemand(supabase, cutoffDate, adHoc ? jobIds! : null),
+  );
   const tradeLeafPromise = includeDerivedTrade
     ? inFlight(fetchTradeLeafData(supabase))
     : null;
@@ -268,6 +277,13 @@ export async function _getMrpDataUncached(
   // a listed child means the job's need is explicitly tracked — the rule must not
   // re-derive it, even after it ships.
   const childDirectJobs = new Map<string, Set<string>>();
+  // For the Car Linton fold: per-job remaining net demand (presence in the map =
+  // the job has scope-passing BOM lines; 0 total = fully dispatched, so its cabin
+  // items no longer count — same "left the Active tab" rule as Cabin MRP) and the
+  // job's directly-listed items (a cabin line whose linked job's own BOM lists the
+  // same item is skipped — the 3 legacy post-merge linton BOM lines).
+  const remainingByJob = new Map<string, number>();
+  const jobLineItems = new Set<string>();
 
   // total = sum of NET required_quantity across all BOM lines for the item,
   // where net = required − dispatched (floored at 0). Lines fully dispatched
@@ -289,9 +305,11 @@ export async function _getMrpDataUncached(
       s.add(jobId);
       childDirectJobs.set(line.item_id, s);
     }
+    if (jobId) jobLineItems.add(`${jobId}|${line.item_id}`);
     const required = Number(line.required_quantity) || 0;
     const dispatched = dispatchedByLine.get(line.id) ?? 0;
     const qty = Math.max(0, required - dispatched);
+    if (jobId) remainingByJob.set(jobId, (remainingByJob.get(jobId) ?? 0) + qty);
     if (qty <= 0) continue; // fully dispatched — no remaining demand
     if (jobId && ruleParentIds.has(line.item_id)) {
       const perJob = parentPerJob.get(line.item_id) ?? new Map<string, { qty: number; headers: Set<string> }>();
@@ -339,6 +357,13 @@ export async function _getMrpDataUncached(
   // and these rules are deliberately NOT in item_bom_lines. Must run before
   // addTradeLeafDemand so a rule-added child's own trade leaves get exploded below.
   addComponentRuleDemand(componentRules, reqMap, parentPerJob, childDirectJobs);
+  // Cabin Car Linton demand (owner 2026-07-10): Car Linton panels are demanded
+  // by cabin jobs but CUT by the regular CNC door-panel nests, so their demand
+  // folds into MAKE MRP — the Requirements tab AND the locked run optimiser
+  // (production-plan calls this uncached entry too), which then plans those
+  // nests jointly with door-panel demand. Cabin MRP excludes Car Linton
+  // correspondingly (cabin-mrp.ts), so the demand lives in exactly one place.
+  await addCarLintonDemand(carLintonPromise, reqMap, remainingByJob, jobLineItems);
   if (includeDerivedTrade) {
     await addTradeLeafDemand(tradeLeafPromise!, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
@@ -572,6 +597,34 @@ async function fetchTradeLeafData(
     })(),
   ]);
   return { bomByParent, effProc, stock };
+}
+
+/** Fold cabin Car Linton demand into the requirement map (see the call site).
+ *  Gates applied here: the linked job still has something left to dispatch
+ *  (`remainingByJob` — present-but-0 = fully dispatched, mirroring the Cabin
+ *  MRP "still in the Active tab" rule; a job with no BOM lines is kept), and
+ *  the job's own BOM doesn't already list the item (`jobLineItems` — the
+ *  legacy post-merge linton BOM lines would double-count otherwise). */
+async function addCarLintonDemand(
+  dataPromise: Promise<CarLintonDemandRow[]>,
+  reqMap: Map<string, ReqEntry>,
+  remainingByJob: Map<string, number>,
+  jobLineItems: Set<string>,
+): Promise<void> {
+  const rows = await dataPromise;
+  for (const r of rows) {
+    if (r.qty <= 0) continue;
+    const rem = remainingByJob.get(r.jobId);
+    if (rem !== undefined && rem <= 0) continue; // job fully dispatched
+    if (jobLineItems.has(`${r.jobId}|${r.item_id}`)) continue; // BOM lists it directly
+    const existing = reqMap.get(r.item_id);
+    if (existing) {
+      existing.total += r.qty;
+      (existing.jobIds ??= new Set()).add(r.jobId);
+    } else {
+      reqMap.set(r.item_id, { total: r.qty, bomIds: new Set(), jobIds: new Set([r.jobId]) });
+    }
+  }
 }
 
 async function addTradeLeafDemand(

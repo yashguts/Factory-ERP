@@ -19,6 +19,14 @@
  * agree. (The Cabin Jobs page's own weekly widget is NOT filtered by this — it
  * still uses the dormant cabin-program-plan.ts reader.)
  *
+ * CAR LINTON EXCEPTION (owner 2026-07-10): cabin_type='Car Linton' is EXCLUDED
+ * from all three readers here. Car Linton panels are cut by the regular CNC
+ * door-panel nests (Make programs, re-pointed onto the LINTON items by the
+ * 2026-07-07 merge), so their demand folds into MAKE MRP instead — see
+ * addCarLintonDemand in mrp.ts + the weekly fold in mrp-weekly.ts (same
+ * eligibility rule, applied there). One home for the demand, one optimiser
+ * planning those nests.
+ *
  * Deliberately a separate file: cabin-program-plan.ts is left untouched (a
  * parallel session has uncommitted edits there; it also still powers the Cabin
  * Jobs page + Cabin Jobs "by finish" tab).
@@ -199,6 +207,10 @@ const _getCabinMrpUncached = async (excludeKeys: string[], jobIds: string[]): Pr
       .from("cabin_job_lines")
       .select("item_id, qty", withCount ? { count: "exact" } : {})
       .not("item_id", "is", null)
+      // Car Linton is cut by the MAKE door-panel nests, not cabin programs —
+      // its demand moved to Make MRP (owner 2026-07-10; see mrp.ts's
+      // addCarLintonDemand). Excluded here so it isn't planned twice.
+      .neq("cabin_type", "Car Linton")
       .in("cabin_job_id", eligibleIds)
       .range(from, to),
   );
@@ -491,6 +503,8 @@ const _getCabinRequirementsUncached = async (jobIds: string[]): Promise<CabinReq
         .from("cabin_job_lines")
         .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
         .not("item_id", "is", null)
+        // Car Linton demand lives in MAKE MRP now (owner 2026-07-10).
+        .neq("cabin_type", "Car Linton")
         .in("cabin_job_id", eligibleIds)
         .range(from, to),
   );
@@ -663,6 +677,8 @@ const _getCabinWeeklyUncached = async (jobIds: string[]): Promise<CabinWeeklyPla
         .from("cabin_job_lines")
         .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
         .not("item_id", "is", null)
+        // Car Linton demand lives in MAKE MRP now (owner 2026-07-10).
+        .neq("cabin_type", "Car Linton")
         .in("cabin_job_id", eligibleIds)
         .range(from, to),
   );

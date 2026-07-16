@@ -21,6 +21,7 @@ import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { linePhase } from "@/lib/bom/bom-sections";
 import { computeMakePlanCore, explodeToLeaves } from "@/lib/actions/make-plan-core";
 import { _getOutstandingLinesUncached } from "@/lib/actions/po-outstanding";
+import { fetchCarLintonDemand } from "@/lib/mrp/car-linton-demand";
 import type { MrpRow } from "@/lib/actions/mrp";
 
 const HORIZON_WEEKS = 8; // this week (w0) + 7 more
@@ -227,6 +228,9 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
       return data ?? [];
     })(),
   );
+  // Cabin Car Linton demand (owner 2026-07-10) — cut by the MAKE door-panel
+  // nests, so it feeds the weekly make board too (mirrors getMrpData's fold).
+  const carLintonPromise = inFlight(fetchCarLintonDemand(supabase));
 
   const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; requirement_dispatch_date: string | null }>(
     (from, to, withCount) =>
@@ -293,6 +297,11 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
   const parentJobArr = new Map<string, Map<string, number[]>>();
   /** Jobs whose own BOM directly lists a rule child (scope-passing lines). */
   const childDirectJobs = new Map<string, Set<string>>();
+  // For the Car Linton fold (mirrors getMrpData): per-job remaining net demand
+  // (present-but-0 = fully dispatched → its cabin items no longer count) and the
+  // job's directly-listed items (skip cabin lines the job's BOM already carries).
+  const remainingByJob = new Map<string, number>();
+  const jobLineItems = new Set<string>();
 
   // accumulate net demand per (item, bucket-pos)
   const demandByItemWeek = new Map<string, number[]>();
@@ -308,9 +317,11 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
       s.add(jobId);
       childDirectJobs.set(line.item_id, s);
     }
+    if (jobId) jobLineItems.add(`${jobId}|${line.item_id}`);
     const required = Number(line.required_quantity) || 0;
     const dispatched = dispatchedByLine.get(line.id) ?? 0;
     const qty = Math.max(0, required - dispatched);
+    if (jobId) remainingByJob.set(jobId, (remainingByJob.get(jobId) ?? 0) + qty);
     if (qty <= 0) continue;
     if (jobId && ruleParentIds.has(line.item_id)) {
       const perJob = parentJobArr.get(line.item_id) ?? new Map<string, number[]>();
@@ -360,6 +371,32 @@ export async function loadWeeklyDemand(): Promise<LoadedDemand> {
       const arr = demandByItemWeek.get(child) ?? new Array(N).fill(0);
       for (let i = 0; i < N; i++) arr[i] += add[i];
       demandByItemWeek.set(child, arr);
+    }
+  }
+
+  // ── Cabin Car Linton fold (owner 2026-07-10) ─────────────────────────────
+  // Same demand getMrpData folds in (cabin jobs → Car Linton lines, eligibility
+  // = linked Job Order in production + full_material + not fully dispatched +
+  // cabin job not ready), bucketed by the linked job's Req.-Dispatch week so
+  // the weekly make board schedules the door-panel nests for it. Undated /
+  // beyond-horizon linked jobs are skipped (their jobs were already counted in
+  // the board's later/undated totals by the jobs pass above).
+  {
+    const rows = await carLintonPromise;
+    for (const r of rows) {
+      if (r.qty <= 0) continue;
+      const rem = remainingByJob.get(r.jobId);
+      if (rem !== undefined && rem <= 0) continue; // fully dispatched
+      if (jobLineItems.has(`${r.jobId}|${r.item_id}`)) continue; // BOM lists it directly
+      const d = r.date ? parseDate(r.date) : null;
+      if (!d) continue;
+      if (d.getTime() > horizonEndDate.getTime()) continue;
+      const bucket = d.getTime() < today.getTime()
+        ? -1
+        : Math.floor((startOfWeekSunday(d).getTime() - curWeek.getTime()) / (7 * DAY_MS));
+      const arr = demandByItemWeek.get(r.item_id) ?? new Array(N).fill(0);
+      arr[pos(Math.min(7, Math.max(-1, bucket)))] += r.qty;
+      demandByItemWeek.set(r.item_id, arr);
     }
   }
 
@@ -678,6 +715,7 @@ export async function getWeeklyMrpPlan(excludeCodes?: string[]): Promise<WeeklyM
   const excl = [...new Set((excludeCodes ?? []).map((c) => c.trim()).filter(Boolean))].sort();
   return unstable_cache(_getWeeklyUncached, ["weekly-mrp-plan", excl.join("§")], {
     revalidate: 1800,
-    tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"],
+    // "cabin-jobs": Car Linton demand comes from cabin_job_lines now.
+    tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations", "cabin-jobs"],
   })(excl);
 }

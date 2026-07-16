@@ -134,7 +134,9 @@ export async function getMakeProductionPlan(
   const key = `${cutoffDate ?? "__all__"}|${excl.join("§")}`;
   return unstable_cache(_getPlanUncached, ["make-production-plan", key], {
     revalidate: 1800,
-    tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations"],
+    // "cabin-jobs": Car Linton demand (from cabin_job_lines) folds into the MRP
+    // rows this plan consumes, so cabin edits must refresh the plan.
+    tags: ["jobs", "bom-lines", "items", "inventory-stock", "operations", "cabin-jobs"],
   })(cutoffDate, excl);
 }
 
