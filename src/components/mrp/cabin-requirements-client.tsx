@@ -17,16 +17,16 @@ import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { CabinScopePicker } from "@/components/mrp/cabin-scope-picker";
 import { CabinItemJobsPopover } from "@/components/mrp/cabin-item-jobs-popover";
 import type { CabinReqRow } from "@/lib/actions/cabin-program-plan";
-import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
+import type { CabinScopeData } from "@/lib/actions/job-sets";
 
 type ShowFilter = "shortfall" | "all";
 
 export function CabinRequirementsClient({
   rows,
-  scopeOptions,
+  scope,
 }: {
   rows: CabinReqRow[];
-  scopeOptions: CabinScopeOption[];
+  scope: CabinScopeData;
 }) {
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
@@ -34,11 +34,17 @@ export function CabinRequirementsClient({
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   useUrlListSync({ q: search, show }, { q: "", show: "shortfall" });
 
-  // The ?jobs= scope the table was computed for — the Required-cell hover must
-  // ask for the same scope so its per-job split sums to the number shown.
+  // The scope the table was computed for — the Required-cell hover must ask
+  // for the same scope so its per-job split sums to the number shown. Use the
+  // server-resolved scope (covers both ?jobs= and saved-set ?set= modes); for
+  // a set matching 0 cabin jobs, mirror the server's NIL sentinel so the
+  // popover can't fall back to the all-eligible-jobs default.
   const jobIds = useMemo(
-    () => (sp.get("jobs") ?? "").split(",").map((s) => s.trim()).filter(Boolean),
-    [sp],
+    () =>
+      scope.activeSet && scope.selectedIds.length === 0
+        ? ["00000000-0000-0000-0000-000000000000"]
+        : scope.selectedIds,
+    [scope],
   );
 
   const tokens = useMemo(() => search.trim().toLowerCase().split(/\s+/).filter(Boolean), [search]);
@@ -100,7 +106,7 @@ export function CabinRequirementsClient({
   return (
     <div>
       <MrpToolbar view="requirements" date="" section="cabin" />
-      <CabinScopePicker options={scopeOptions} />
+      <CabinScopePicker scope={scope} />
 
       <PageHeader
         icon={<LayoutGrid size={18} />}

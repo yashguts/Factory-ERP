@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { JobScopePicker } from "@/components/mrp/job-scope-picker";
-import type { JobScopeOption } from "@/lib/actions/mrp";
+import type { JobScopeData } from "@/lib/actions/job-sets";
 import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
 import { MiniChip } from "@/components/mrp/weekly-board";
 import { PageHeader } from "@/components/ui/page-header";
@@ -21,7 +21,7 @@ const SHEET_GROUP = "Raw steel / sheets";
  * to see each item's quantity week by week). Cumulative (have-bought-by) or
  * per-week. Reuses the same cached getWeeklyMrpPlan as the Make weekly view.
  */
-export function TradeWeeklyClient({ plan, scopeOptions }: { plan: WeeklyMrpPlan; scopeOptions?: JobScopeOption[] }) {
+export function TradeWeeklyClient({ plan, scope }: { plan: WeeklyMrpPlan; scope?: JobScopeData }) {
   const sp = useSearchParams();
   const [cumulative, setCumulative] = useState(() => readParam(sp, "cumul", "1") !== "0");
   const [cat, setCat] = useState(() => readParam(sp, "cat", "all"));
@@ -66,7 +66,7 @@ export function TradeWeeklyClient({ plan, scopeOptions }: { plan: WeeklyMrpPlan;
   return (
     <div>
       <MrpToolbar view="weekly" date="" section="trade" />
-      {scopeOptions && <JobScopePicker options={scopeOptions} />}
+      {scope && <JobScopePicker scope={scope} />}
 
       <PageHeader
         title="Trade MRP — Weekly plan"

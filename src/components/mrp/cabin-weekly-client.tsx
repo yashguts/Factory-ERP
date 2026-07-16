@@ -10,14 +10,14 @@ import { PageHeader } from "@/components/ui/page-header";
 import { Select } from "@/components/ui/select";
 import { LayoutGrid } from "lucide-react";
 import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
-import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
+import type { CabinScopeData } from "@/lib/actions/job-sets";
 
 export function CabinWeeklyClient({
   plan,
-  scopeOptions,
+  scope,
 }: {
   plan: CabinWeeklyPlan;
-  scopeOptions: CabinScopeOption[];
+  scope: CabinScopeData;
 }) {
   const sp = useSearchParams();
   const [cumulative, setCumulative] = useState(() => readParam(sp, "cumul", "1") !== "0");
@@ -47,7 +47,7 @@ export function CabinWeeklyClient({
   return (
     <div>
       <MrpToolbar view="weekly" date="" section="cabin" />
-      <CabinScopePicker options={scopeOptions} />
+      <CabinScopePicker scope={scope} />
 
       <PageHeader
         icon={<LayoutGrid size={18} />}

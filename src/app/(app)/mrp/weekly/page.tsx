@@ -1,22 +1,19 @@
 import { getWeeklyMrpPlan } from "@/lib/actions/mrp-weekly";
-import { getJobScopeOptions } from "@/lib/actions/mrp";
+import { getJobScopeData } from "@/lib/actions/job-sets";
 import { WeeklyMrpClient } from "@/components/mrp/weekly-mrp-client";
 
 interface Props {
-  searchParams: Promise<{ exclude?: string; jobs?: string }>;
+  searchParams: Promise<{ exclude?: string; jobs?: string; set?: string }>;
 }
 
 export default async function WeeklyMrpPage({ searchParams }: Props) {
-  const { exclude, jobs } = await searchParams;
+  const { exclude, jobs, set } = await searchParams;
   const excludeCodes = (exclude ?? "")
     .split(",")
     .map((s) => s.trim())
     .filter(Boolean);
-  // ?jobs=id1,id2 scopes the weekly demand to just those Job Orders.
-  const jobIds = (jobs ?? "").split(",").map((s) => s.trim()).filter(Boolean);
-  const [plan, scopeOptions] = await Promise.all([
-    getWeeklyMrpPlan(excludeCodes, jobIds.length ? jobIds : undefined),
-    getJobScopeOptions(),
-  ]);
-  return <WeeklyMrpClient plan={plan} scopeOptions={scopeOptions} />;
+  // ?jobs= (ad-hoc pick) or ?set= (saved set) scopes the weekly demand.
+  const { scope, jobIds } = await getJobScopeData(jobs, set);
+  const plan = await getWeeklyMrpPlan(excludeCodes, jobIds.length ? jobIds : undefined);
+  return <WeeklyMrpClient plan={plan} scope={scope} />;
 }

@@ -15,7 +15,7 @@ import { JobScopePicker } from "@/components/mrp/job-scope-picker";
 import { PlanFilters, planMatches, EMPTY_PLAN_FILTER, type PlanFilterValue } from "@/components/mrp/plan-filters";
 import { formatDuration } from "@/lib/utils";
 import type { MakeProductionPlan, PlanProgram } from "@/lib/actions/production-plan";
-import type { JobScopeOption } from "@/lib/actions/mrp";
+import type { JobScopeData } from "@/lib/actions/job-sets";
 
 const MACHINE: Record<string, string> = {
   cnc_punch: "Punch",
@@ -24,7 +24,7 @@ const MACHINE: Record<string, string> = {
   assembly_fit: "Assembly",
 };
 
-export function MakePlanClient({ plan, scopeOptions }: { plan: MakeProductionPlan; scopeOptions?: JobScopeOption[] }) {
+export function MakePlanClient({ plan, scope }: { plan: MakeProductionPlan; scope?: JobScopeData }) {
   const t = plan.totals;
   const router = useRouter();
   const sp = useSearchParams();
@@ -40,9 +40,11 @@ export function MakePlanClient({ plan, scopeOptions }: { plan: MakeProductionPla
   const goWithExclusions = (excl: string[]) => {
     const params = new URLSearchParams();
     if (plan.cutoffDate) params.set("date", plan.cutoffDate);
-    // Keep the job-scope pick — an exclusion tweaks the SAME plan.
+    // Keep the job-scope pick (ad-hoc or saved set) — an exclusion tweaks the SAME plan.
     const jobsScope = sp.get("jobs");
     if (jobsScope) params.set("jobs", jobsScope);
+    const setScope = sp.get("set");
+    if (setScope) params.set("set", setScope);
     if (excl.length) params.set("exclude", excl.join(","));
     const qs = params.toString();
     startTransition(() => router.push(`/mrp/make-plan${qs ? `?${qs}` : ""}`));
@@ -116,7 +118,7 @@ export function MakePlanClient({ plan, scopeOptions }: { plan: MakeProductionPla
   return (
     <div>
       <MrpToolbar view="programs" date={plan.cutoffDate ?? ""} />
-      {scopeOptions && <JobScopePicker options={scopeOptions} />}
+      {scope && <JobScopePicker scope={scope} />}
 
       <PageHeader
         title="Programs to Run"

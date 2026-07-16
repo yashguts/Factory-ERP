@@ -2,10 +2,10 @@
 
 import { useMemo, useRef, useState, useEffect, useTransition } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { Briefcase, Check, ChevronDown, Loader2, Search, X } from "lucide-react";
+import { Bookmark, Briefcase, Check, ChevronDown, Loader2, Search, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
+import type { CabinScopeData } from "@/lib/actions/job-sets";
 
 /**
  * Cabin-MRP job-scope picker. Default = ALL jobs in the demand-eligible set
@@ -14,29 +14,33 @@ import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
  * weekly) recomputes server-side for exactly that set — an explicitly picked
  * job counts even if it's outside the default set (what-if).
  *
- * Selection lives in the URL (?jobs=id1,id2) so it survives the view switcher
- * (MrpToolbar carries it across the three cabin views) and Back/refresh.
+ * Saved job sets (e.g. "Urgent", created in Make/Trade MRP over Job Orders)
+ * appear as chips: picking one scopes the cabin plan to the cabin jobs whose
+ * job number matches a member Job Order (?set=<id>, resolved server-side).
+ * Sets are edited from Make/Trade MRP — here they're select-only; editing
+ * the selection forks it into a plain ad-hoc pick (?jobs=id1,id2).
  */
-export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
+export function CabinScopePicker({ scope }: { scope: CabinScopeData }) {
+  const { options, sets, activeSet, selectedIds } = scope;
   const router = useRouter();
   const pathname = usePathname();
   const sp = useSearchParams();
   const [isPending, startTransition] = useTransition();
 
-  const selected = useMemo(
-    () => new Set((sp.get("jobs") ?? "").split(",").map((s) => s.trim()).filter(Boolean)),
-    [sp],
-  );
+  const selected = useMemo(() => new Set(selectedIds), [selectedIds]);
 
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState<Set<string>>(selected);
   const [search, setSearch] = useState("");
   const boxRef = useRef<HTMLDivElement>(null);
 
-  // Re-seed the draft from the URL whenever the panel opens.
-  useEffect(() => {
-    if (open) setDraft(new Set(selected));
-  }, [open, selected]);
+  // Open the panel, seeding the draft from the resolved scope. Seeding ONLY on
+  // the closed→open transition (not whenever `selected` changes) so an in-flight
+  // navigation can't rewrite the draft underneath an open panel.
+  const togglePanel = () => {
+    if (!open) setDraft(new Set(selected));
+    setOpen((v) => !v);
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -47,16 +51,28 @@ export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
     return () => document.removeEventListener("mousedown", h);
   }, [open]);
 
-  const apply = (ids: Set<string>) => {
+  const navigate = (mutate: (params: URLSearchParams) => void) => {
     const params = new URLSearchParams(sp.toString());
-    if (ids.size > 0) params.set("jobs", [...ids].join(","));
-    else params.delete("jobs");
+    mutate(params);
     // A different scope invalidates a programs-page "don't run" exclusion set.
     params.delete("exclude");
     const qs = params.toString();
     setOpen(false);
     startTransition(() => router.push(qs ? `${pathname}?${qs}` : pathname));
   };
+
+  const apply = (ids: Set<string>) =>
+    navigate((params) => {
+      if (ids.size > 0) params.set("jobs", [...ids].join(","));
+      else params.delete("jobs");
+      params.delete("set");
+    });
+
+  const applySetId = (id: string) =>
+    navigate((params) => {
+      params.set("set", id);
+      params.delete("jobs");
+    });
 
   const toggle = (id: string) =>
     setDraft((prev) => {
@@ -73,8 +89,9 @@ export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
     return tokens.every((t) => hay.includes(t));
   });
 
-  const selectedLabel =
-    selected.size > 0
+  const selectedLabel = activeSet
+    ? `${activeSet.name} · ${selected.size} cabin job${selected.size === 1 ? "" : "s"}`
+    : selected.size > 0
       ? `${selected.size} job${selected.size === 1 ? "" : "s"} selected`
       : "All jobs";
 
@@ -83,10 +100,10 @@ export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
       <div className="flex items-center gap-2 flex-wrap">
         <button
           type="button"
-          onClick={() => setOpen((v) => !v)}
+          onClick={togglePanel}
           className={cn(
             "inline-flex items-center gap-1.5 h-8 px-3 rounded-md border text-sm font-medium cursor-pointer transition-colors",
-            selected.size > 0
+            selected.size > 0 || activeSet
               ? "border-[var(--primary)] bg-[var(--primary)]/10 text-[var(--foreground)]"
               : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
           )}
@@ -96,10 +113,37 @@ export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
           Plan for: <strong>{selectedLabel}</strong>
           {isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <ChevronDown className="h-3.5 w-3.5" />}
         </button>
-        {selected.size > 0 ? (
+
+        {/* Saved job sets (defined over Job Orders in Make/Trade MRP). */}
+        {sets.map((s) => {
+          const active = activeSet?.id === s.id;
+          return (
+            <button
+              key={s.id}
+              type="button"
+              onClick={() => {
+                if (!active) applySetId(s.id);
+              }}
+              className={cn(
+                "inline-flex items-center gap-1 h-7 px-2 rounded-full border text-xs font-medium cursor-pointer transition-colors",
+                active
+                  ? "border-[var(--primary)] bg-[var(--primary)] text-white"
+                  : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]",
+              )}
+              title={`Plan for the cabin jobs of the "${s.name}" set (${s.member_count} job orders)`}
+            >
+              <Bookmark className="h-3 w-3" />
+              {s.name} ({s.member_count})
+            </button>
+          );
+        })}
+
+        {selected.size > 0 || activeSet ? (
           <>
             <span className="text-xs text-[var(--muted-foreground)] truncate max-w-[440px]">
-              {options.filter((o) => selected.has(o.id)).map((o) => o.job_number).join(", ")}
+              {activeSet
+                ? `${activeSet.matched} of the set's job orders have a cabin job`
+                : options.filter((o) => selected.has(o.id)).map((o) => o.job_number).join(", ")}
             </span>
             <button
               type="button"
@@ -179,12 +223,22 @@ export function CabinScopePicker({ options }: { options: CabinScopeOption[] }) {
           <div className="flex items-center gap-2 p-2 border-t border-[var(--border)]">
             <span className="text-xs text-[var(--muted-foreground)] flex-1">
               {draft.size > 0 ? `${draft.size} selected` : "None selected = all jobs"}
+              {activeSet ? " · applying forks off the set (edit sets in Make MRP)" : ""}
             </span>
             <Button size="sm" variant="secondary" onClick={() => setDraft(new Set())}>
               Clear
             </Button>
-            <Button size="sm" onClick={() => apply(draft)}>
-              Apply
+            <Button
+              size="sm"
+              onClick={() => apply(draft)}
+              disabled={!!activeSet && draft.size === 0}
+              title={
+                activeSet && draft.size === 0
+                  ? "Nothing selected — tick jobs to fork off the set, or use the All jobs button to leave it"
+                  : undefined
+              }
+            >
+              {activeSet ? "Apply without saving" : "Apply"}
             </Button>
           </div>
         </div>

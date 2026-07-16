@@ -1469,13 +1469,18 @@ export interface MrpJobBreakdown {
 export async function getMrpItemJobs(
   itemId: string,
   cutoffDate?: string,
+  /** Ad-hoc scope (the ?jobs=/?set= picker): restrict the breakdown to these
+   *  jobs and skip the in-production/cutoff filters — same contract as
+   *  getAdHocShortfall, so the popover tells the scoped table's story. */
+  jobIds?: string[],
 ): Promise<MrpJobBreakdown[]> {
-  const key = `${itemId}:${cutoffDate ?? "__all__"}`;
+  const scope = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "__all__";
+  const key = `${itemId}:${cutoffDate ?? "__all__"}:${scope}`;
   return unstable_cache(
-    (id: string, date?: string) => _getMrpItemJobsUncached(id, date),
+    (id: string, date?: string, ids?: string[]) => _getMrpItemJobsUncached(id, date, ids),
     ["mrp-item-jobs", key],
     { revalidate: 1800, tags: ["jobs", "bom-lines"] },
-  )(itemId, cutoffDate);
+  )(itemId, cutoffDate, jobIds);
 }
 
 /** If `itemId` is a JOB_DRIVE_DEMAND item, the matching in-production jobs as a
@@ -1484,20 +1489,26 @@ async function jobDriveBreakdown(
   supabase: ReturnType<typeof createCacheClient>,
   itemId: string,
   cutoffDate?: string,
+  adHocJobIds?: string[],
 ): Promise<MrpJobBreakdown[]> {
   if (JOB_DRIVE_DEMAND.length === 0) return [];
   const { data: item } = await supabase.from("items").select("code").eq("id", itemId).maybeSingle();
   const code = (item?.code as string | undefined) ?? undefined;
   const rule = code ? JOB_DRIVE_DEMAND.find((r) => r.code === code) : undefined;
   if (!rule) return [];
+  const adHoc = !!(adHocJobIds && adHocJobIds.length);
   const jobs = await fetchAllRanged<{ id: string; job_number: string; customer_name: string | null; requirement_dispatch_date: string | null }>(
     (from, to, withCount) => {
       let q = supabase
         .from("jobs")
         .select("id, job_number, customer_name, requirement_dispatch_date", withCount ? { count: "exact" } : {})
-        .eq("status", "in_production")
         .in("drive_type", rule.driveTypes);
-      if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+      // Explicit scope = the owner picked the jobs; status/cutoff don't apply.
+      if (adHoc) q = q.in("id", adHocJobIds!);
+      else {
+        q = q.eq("status", "in_production");
+        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+      }
       return q.range(from, to);
     },
   );
@@ -1516,12 +1527,14 @@ async function jobDriveBreakdown(
 async function _getMrpItemJobsUncached(
   itemId: string,
   cutoffDate?: string,
+  adHocJobIds?: string[],
 ): Promise<MrpJobBreakdown[]> {
   const supabase = createCacheClient();
+  const adHoc = !!(adHocJobIds && adHocJobIds.length);
 
   // Job-attribute (drive_type) demand items aren't on any BOM — list their matching
   // in-production jobs directly so the popover matches the table's job count.
-  const driveJobs = await jobDriveBreakdown(supabase, itemId, cutoffDate);
+  const driveJobs = await jobDriveBreakdown(supabase, itemId, cutoffDate, adHocJobIds);
 
   // Demand for `itemId` may come directly (its own job-BOM lines) AND/OR via
   // assemblies that are "built from" it (e.g. a door shoe inside a collapsible
@@ -1609,7 +1622,13 @@ async function _getMrpItemJobsUncached(
   // table, so it applies getMrpData's exact job filters: status=in_production
   // and (optionally) the dispatch-date cutoff. requirement_stage comes along
   // for the stage scoping below.
-  const candidateJobIds = Array.from(new Set(headerToJob.values()));
+  let candidateJobIds = Array.from(new Set(headerToJob.values()));
+  // Explicit ?jobs=/?set= scope: only the picked jobs count (and the
+  // in-production/cutoff filters below don't apply — same as getAdHocShortfall).
+  if (adHoc) {
+    const scopeSet = new Set(adHocJobIds!);
+    candidateJobIds = candidateJobIds.filter((id) => scopeSet.has(id));
+  }
   const jobMeta = new Map<
     string,
     {
@@ -1630,9 +1649,11 @@ async function _getMrpItemJobsUncached(
           .select(
             "id, job_number, customer_name, requirement_dispatch_date, requirement_stage",
           )
-          .in("id", ids)
-          .eq("status", "in_production");
-        if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+          .in("id", ids);
+        if (!adHoc) {
+          q = q.eq("status", "in_production");
+          if (cutoffDate) q = q.lte("requirement_dispatch_date", cutoffDate);
+        }
         return q;
       }),
     );

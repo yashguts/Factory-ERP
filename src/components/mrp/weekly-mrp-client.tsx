@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { readParam, useUrlListSync } from "@/lib/hooks/use-url-list-state";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { JobScopePicker } from "@/components/mrp/job-scope-picker";
-import type { JobScopeOption } from "@/lib/actions/mrp";
+import type { JobScopeData } from "@/lib/actions/job-sets";
 import { WeeklyMatrix, CumulativeToggle, type MatrixRow } from "@/components/mrp/weekly-matrix";
 import { MiniChip } from "@/components/mrp/weekly-board";
 import { WeeklyCapacity } from "@/components/mrp/weekly-capacity";
@@ -66,7 +66,7 @@ function deriveFinishFromName(name: string | null | undefined): string | null {
   return null;
 }
 
-export function WeeklyMrpClient({ plan, scopeOptions }: { plan: WeeklyMrpPlan; scopeOptions?: JobScopeOption[] }) {
+export function WeeklyMrpClient({ plan, scope }: { plan: WeeklyMrpPlan; scope?: JobScopeData }) {
   const sp = useSearchParams();
   const [tab, setTab] = useState<Tab>(
     () => readParam(sp, "tab", "programs", ["programs", "make", "capacity"]) as Tab,
@@ -179,7 +179,7 @@ export function WeeklyMrpClient({ plan, scopeOptions }: { plan: WeeklyMrpPlan; s
   return (
     <div>
       <MrpToolbar view="weekly" date="" section="make" />
-      {scopeOptions && <JobScopePicker options={scopeOptions} />}
+      {scope && <JobScopePicker scope={scope} />}
 
       <PageHeader
         title="Make MRP — Weekly plan"

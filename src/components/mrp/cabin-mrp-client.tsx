@@ -15,16 +15,16 @@ import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { CabinScopePicker } from "@/components/mrp/cabin-scope-picker";
 import { formatDuration } from "@/lib/utils";
 import type { CabinMrpPlan, CabinPlanProgram } from "@/lib/actions/cabin-program-plan";
-import type { CabinScopeOption } from "@/lib/actions/cabin-mrp";
+import type { CabinScopeData } from "@/lib/actions/job-sets";
 
 const MACHINE: Record<string, string> = { cnc_punch: "Punch", cnc_laser: "Laser", assembly_fit: "Assembly" };
 
 export function CabinMrpClient({
   plan,
-  scopeOptions,
+  scope,
 }: {
   plan: CabinMrpPlan;
-  scopeOptions: CabinScopeOption[];
+  scope: CabinScopeData;
 }) {
   const t = plan.totals;
   const router = useRouter();
@@ -37,9 +37,11 @@ export function CabinMrpClient({
   const goWithExclusions = (excl: string[]) => {
     const params = new URLSearchParams();
     if (excl.length) params.set("exclude", excl.join(","));
-    // Keep the job-scope selection (?jobs=) when toggling exclusions.
+    // Keep the job-scope selection (?jobs= or saved ?set=) when toggling exclusions.
     const jobsScope = sp.get("jobs");
     if (jobsScope) params.set("jobs", jobsScope);
+    const setScope = sp.get("set");
+    if (setScope) params.set("set", setScope);
     const qs = params.toString();
     startTransition(() => router.push(`/mrp/cabin/programs${qs ? `?${qs}` : ""}`));
   };
@@ -81,7 +83,7 @@ export function CabinMrpClient({
   return (
     <div>
       <MrpToolbar view="programs" date="" section="cabin" />
-      <CabinScopePicker options={scopeOptions} />
+      <CabinScopePicker scope={scope} />
       <PageHeader
         icon={<LayoutGrid size={18} />}
         title="Cabin MRP — programs to cut"

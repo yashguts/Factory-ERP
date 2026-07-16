@@ -54,14 +54,16 @@ export function MrpToolbar({
   const [isPending, startTransition] = useTransition();
   const VIEWS = section === "cabin" ? CABIN_VIEWS : section === "trade" ? TRADE_VIEWS : MAKE_VIEWS;
   const current = VIEWS.find((v) => v.key === view)!;
-  // The job-scope selection (?jobs=) must survive switching between a
-  // section's views — carry it on every view link and date change. All three
-  // sections have a scope picker now (cabin jobs / job orders).
+  // The job-scope selection (?jobs= ad-hoc pick, or ?set= saved set) must
+  // survive switching between a section's views — carry it on every view
+  // link and date change. All three sections have a scope picker now.
   const jobsScope = sp.get("jobs") ?? "";
+  const setScope = sp.get("set") ?? "";
   const q = (d: string) => {
     const params = new URLSearchParams();
     if (d) params.set("date", d);
     if (jobsScope) params.set("jobs", jobsScope);
+    if (setScope) params.set("set", setScope);
     const s = params.toString();
     return s ? `?${s}` : "";
   };

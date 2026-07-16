@@ -17,7 +17,8 @@ import {
 import { Search, Calculator, ChevronDown, ChevronRight, Layers } from "lucide-react";
 import { MrpToolbar } from "@/components/mrp/mrp-toolbar";
 import { JobScopePicker } from "@/components/mrp/job-scope-picker";
-import type { MrpRow, PlanLeaf, JobScopeOption } from "@/lib/actions/mrp";
+import type { MrpRow, PlanLeaf } from "@/lib/actions/mrp";
+import type { JobScopeData } from "@/lib/actions/job-sets";
 import { MrpJobsPopover } from "@/components/mrp/mrp-jobs-popover";
 
 type ShortfallFilter = "shortfall" | "all" | "excess";
@@ -41,8 +42,8 @@ interface Props {
    * page. These never appear on a job BOM, so they're shown but carry no job links.
    */
   sheets?: PlanLeaf[];
-  /** Job Orders for the scope picker (?jobs=). Absent = no picker rendered. */
-  scopeOptions?: JobScopeOption[];
+  /** Scope-picker data (?jobs= / ?set=). Absent = no picker rendered. */
+  scope?: JobScopeData;
 }
 
 /** Unified display row — a trade/make item or an exploded sheet. */
@@ -62,7 +63,7 @@ type ViewRow = {
   is_sheet: boolean;
 };
 
-export function MrpClient({ initialData, initialCutoffDate, section, sheets, scopeOptions }: Props) {
+export function MrpClient({ initialData, initialCutoffDate, section, sheets, scope }: Props) {
   const sp = useSearchParams();
   const [search, setSearch] = useState(() => readParam(sp, "q", ""));
   const [shortfallFilter, setShortfallFilter] = useState<ShortfallFilter>(
@@ -70,6 +71,15 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets, sco
   );
   const [collapsed, setCollapsed] = useState<Set<string>>(() => new Set());
   const cutoffDate = initialCutoffDate ?? "";
+  // The explicit scope the table was computed for (?jobs= pick or ?set= saved
+  // set) — threaded to the Jobs-cell hover so its breakdown matches the rows.
+  // A set emptied of jobs mirrors the server's NIL sentinel (empty ≠ all).
+  const scopeJobIds =
+    scope?.activeSet && scope.selectedIds.length === 0
+      ? ["00000000-0000-0000-0000-000000000000"]
+      : scope?.selectedIds.length
+        ? scope.selectedIds
+        : undefined;
   const isTrade = section === "trade";
   // On-order / To-buy (outstanding-PO netting) only matters for purchased Trade
   // items; the Make side never has POs.
@@ -210,7 +220,7 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets, sco
   return (
     <div>
       <MrpToolbar view="requirements" date={cutoffDate} section={section} />
-      {scopeOptions && <JobScopePicker options={scopeOptions} />}
+      {scope && <JobScopePicker scope={scope} />}
 
       <PageHeader
         title={title}
@@ -316,6 +326,7 @@ export function MrpClient({ initialData, initialCutoffDate, section, sheets, sco
                     showPo={showPo}
                     colCount={colCount}
                     cutoffDate={cutoffDate}
+                    scopeJobIds={scopeJobIds}
                     onToggle={() => toggle(g.name)}
                   />
                 );
@@ -336,6 +347,7 @@ function GroupRows({
   showPo,
   colCount,
   cutoffDate,
+  scopeJobIds,
   onToggle,
 }: {
   group: { name: string; rows: ViewRow[]; shortfall: number; toBuy: number };
@@ -345,6 +357,7 @@ function GroupRows({
   showPo: boolean;
   colCount: number;
   cutoffDate: string;
+  scopeJobIds?: string[];
   onToggle: () => void;
 }) {
   return (
@@ -430,7 +443,9 @@ function GroupRows({
                   itemId={row.item_id}
                   itemName={row.item_name}
                   uom={row.uom}
-                  cutoffDate={cutoffDate || undefined}
+                  // A scoped table ignores the date cutoff — so must the hover.
+                  cutoffDate={scopeJobIds?.length ? undefined : cutoffDate || undefined}
+                  jobIds={scopeJobIds}
                 >
                   <span className="cursor-help underline decoration-dotted underline-offset-2 hover:text-[var(--primary)]">
                     {row.job_count}

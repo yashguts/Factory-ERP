@@ -13,6 +13,9 @@ interface Props {
   itemName: string;
   uom: string | null;
   cutoffDate?: string;
+  /** Explicit ?jobs=/?set= scope the table was computed for — the popover
+   *  must ask for the same scope so its list sums to the row it annotates. */
+  jobIds?: string[];
   /**
    * Element to attach the popover to. The child is the trigger and
    * receives the hover/focus events.
@@ -30,6 +33,7 @@ export function MrpJobsPopover({
   itemName,
   uom,
   cutoffDate,
+  jobIds,
   children,
 }: Props) {
   const router = useRouter();
@@ -42,21 +46,29 @@ export function MrpJobsPopover({
   const closeTimer = useRef<ReturnType<typeof setTimeout>>(null);
   const hasFetched = useRef(false);
 
-  // The component is NOT remounted when the date filter changes (same route,
-  // router.push) — drop the cached breakdown so the next hover refetches with
-  // the new cutoff instead of showing the previous date's job list.
+  // Value-stable key so a re-render with an equal jobIds array doesn't
+  // invalidate the cached breakdown.
+  const scopeKey = jobIds && jobIds.length ? [...jobIds].sort().join(",") : "";
+
+  // The component is NOT remounted when the date filter or job scope changes
+  // (same route, router.push) — drop the cached breakdown so the next hover
+  // refetches with the new scope instead of showing the previous list.
   useEffect(() => {
     hasFetched.current = false;
     setData(null);
     setError(null);
-  }, [itemId, cutoffDate]);
+  }, [itemId, cutoffDate, scopeKey]);
 
   const fetchData = useCallback(async () => {
     if (hasFetched.current) return;
     hasFetched.current = true;
     setLoading(true);
     try {
-      const result = await getMrpItemJobs(itemId, cutoffDate);
+      const result = await getMrpItemJobs(
+        itemId,
+        cutoffDate,
+        scopeKey ? scopeKey.split(",") : undefined,
+      );
       setData(result);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load jobs");
@@ -64,7 +76,7 @@ export function MrpJobsPopover({
     } finally {
       setLoading(false);
     }
-  }, [itemId, cutoffDate]);
+  }, [itemId, cutoffDate, scopeKey]);
 
   const handleEnter = () => {
     if (closeTimer.current) clearTimeout(closeTimer.current);
