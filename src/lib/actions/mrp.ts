@@ -1528,6 +1528,55 @@ async function jobDriveBreakdown(
     .sort((a, b) => (a.job_number || "").localeCompare(b.job_number || ""));
 }
 
+/** Net remaining (required − dispatched, floored per line) across a job's whole
+ *  BOM, per job. Mirrors the Car Linton fold's `remainingByJob` gate: a job
+ *  whose lines all net to 0 is fully dispatched; a job with NO BOM lines is
+ *  absent from the map (the caller keeps it). */
+async function jobsRemaining(
+  supabase: ReturnType<typeof createCacheClient>,
+  jobIds: string[],
+): Promise<Map<string, number>> {
+  const out = new Map<string, number>();
+  if (jobIds.length === 0) return out;
+  const { data: headers } = await supabase
+    .from("job_bom_headers")
+    .select("id, job_id")
+    .in("job_id", jobIds);
+  const headerToJob = new Map(
+    ((headers ?? []) as any[]).map((h) => [h.id as string, h.job_id as string]),
+  );
+  if (headerToJob.size === 0) return out;
+  const lines = await fetchAllRanged<{ id: string; job_bom_id: string; required_quantity: number }>(
+    (from, to, withCount) =>
+      supabase
+        .from("job_bom_lines")
+        .select("id, job_bom_id, required_quantity", withCount ? { count: "exact" } : {})
+        .in("job_bom_id", [...headerToJob.keys()])
+        .gt("required_quantity", 0)
+        .range(from, to),
+  );
+  const dispatched = new Map<string, number>();
+  const lineIds = lines.map((l) => l.id);
+  for (let i = 0; i < lineIds.length; i += 200) {
+    const { data } = await supabase
+      .from("job_dispatch_lines")
+      .select("job_bom_line_id, qty")
+      .in("job_bom_line_id", lineIds.slice(i, i + 200));
+    for (const d of (data ?? []) as any[])
+      dispatched.set(
+        d.job_bom_line_id as string,
+        (dispatched.get(d.job_bom_line_id as string) ?? 0) + (Number(d.qty) || 0),
+      );
+  }
+  for (const l of lines) {
+    const jobId = headerToJob.get(l.job_bom_id);
+    if (!jobId) continue;
+    const net = Math.max(0, (Number(l.required_quantity) || 0) - (dispatched.get(l.id) ?? 0));
+    out.set(jobId, (out.get(jobId) ?? 0) + net);
+  }
+  return out;
+}
+
 async function _getMrpItemJobsUncached(
   itemId: string,
   cutoffDate?: string,
@@ -1535,6 +1584,12 @@ async function _getMrpItemJobsUncached(
 ): Promise<MrpJobBreakdown[]> {
   const supabase = createCacheClient();
   const adHoc = !!(adHocJobIds && adHocJobIds.length);
+
+  // Car Linton items live on CABIN jobs, not job BOMs — their Make-table
+  // demand comes from the fold (addCarLintonDemand). Fetch the same rows so
+  // the hover can attribute them to the linked Job Orders (same args as the
+  // table's fold call; empty for every non-linton item).
+  const carLintonPromise = fetchCarLintonDemand(supabase, cutoffDate, adHoc ? adHocJobIds! : null);
 
   // Job-attribute (drive_type) demand items aren't on any BOM — list their matching
   // in-production jobs directly so the popover matches the table's job count.
@@ -1569,9 +1624,12 @@ async function _getMrpItemJobsUncached(
       .gt("required_quantity", 0)
       .range(from, to),
   );
-  // No BOM lines reference this item: if it's a job-attribute item, its breakdown
+  // Cabin (Car Linton) demand rows for THIS item — [] for everything else.
+  const cabinRows = (await carLintonPromise).filter((r) => r.item_id === itemId && r.qty > 0);
+
+  // No BOM lines and no cabin demand: if it's a job-attribute item, its breakdown
   // is the drive-type job list; otherwise there's nothing to show.
-  if (allLines.length === 0) return driveJobs;
+  if (allLines.length === 0 && cabinRows.length === 0) return driveJobs;
 
   // The dispatched-qty batches and the header->job batches both depend only on
   // `allLines` (not on each other), and the chunks within each are independent.
@@ -1626,7 +1684,30 @@ async function _getMrpItemJobsUncached(
   // table, so it applies getMrpData's exact job filters: status=in_production
   // and (optionally) the dispatch-date cutoff. requirement_stage comes along
   // for the stage scoping below.
-  let candidateJobIds = Array.from(new Set(headerToJob.values()));
+  // Cabin (Car Linton) contributions, mirroring addCarLintonDemand's gates:
+  // skip a job whose own BOM lists the item (those lines are counted below),
+  // and skip a job that is fully dispatched (has BOM lines, 0 remaining).
+  const cabinAgg = new Map<string, { line_count: number; total_quantity: number }>();
+  if (cabinRows.length) {
+    const directJobs = new Set(
+      allLines
+        .filter((l) => l.item_id === itemId)
+        .map((l) => headerToJob.get(l.job_bom_id))
+        .filter(Boolean),
+    );
+    const rem = await jobsRemaining(supabase, [...new Set(cabinRows.map((r) => r.jobId))]);
+    for (const r of cabinRows) {
+      if (directJobs.has(r.jobId)) continue;
+      const jrem = rem.get(r.jobId);
+      if (jrem !== undefined && jrem <= 0) continue; // job fully dispatched
+      const agg = cabinAgg.get(r.jobId) ?? { line_count: 0, total_quantity: 0 };
+      agg.line_count += 1;
+      agg.total_quantity += r.qty;
+      cabinAgg.set(r.jobId, agg);
+    }
+  }
+
+  let candidateJobIds = Array.from(new Set([...headerToJob.values(), ...cabinAgg.keys()]));
   // Explicit ?jobs=/?set= scope: only the picked jobs count (the date cutoff
   // doesn't apply, but In Production still does — same as getAdHocShortfall).
   if (adHoc) {
@@ -1674,7 +1755,7 @@ async function _getMrpItemJobsUncached(
         });
     }
   }
-  if (jobMeta.size === 0) return [];
+  if (jobMeta.size === 0) return driveJobs;
 
   // 4) Aggregate per job — same demand rules as getMrpData: only qualifying
   // jobs; "new" requirement contributes nothing; "first_phase" counts only
@@ -1710,7 +1791,17 @@ async function _getMrpItemJobsUncached(
     agg.total_quantity += net;
     byJob.set(jobId, agg);
   }
-  if (byJob.size === 0) return [];
+
+  // Fold in the cabin (Car Linton) contributions — only for jobs that passed
+  // the meta gate (In Production, and the scope/cutoff above).
+  for (const [jobId, agg] of cabinAgg) {
+    if (!jobMeta.has(jobId)) continue;
+    const a = byJob.get(jobId) ?? { line_count: 0, total_quantity: 0 };
+    a.line_count += agg.line_count;
+    a.total_quantity += agg.total_quantity;
+    byJob.set(jobId, a);
+  }
+  if (byJob.size === 0) return driveJobs;
 
   // 5) Merge and return, sorted by largest contribution first.
   const out: MrpJobBreakdown[] = Array.from(byJob.entries()).map(
