@@ -409,11 +409,12 @@ export function JobsClient({
   };
 
   // Req. Dispatch Date is production-critical: per management it may not move
-  // without a written reason. Ask BEFORE the optimistic update; cancelling
-  // leaves the row untouched (controlled input snaps back on its own).
-  const handleDispatchDateChange = (jobId: string, newDate: string | null) => {
+  // without a written reason. Asked at COMMIT time (the cell's blur/Enter, see
+  // DispatchDateCell) — never while the user is still navigating the picker.
+  // Returns false when cancelled so the cell snaps back to the saved date.
+  const handleDispatchDateChange = (jobId: string, newDate: string | null): boolean => {
     const job = jobs.find((j) => j.id === jobId);
-    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return;
+    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return true;
     const operator = ensureOperator();
     const r = window.prompt(
       `Reason for changing Req. Dispatch Date on job ${job?.job_number ?? ""} (required):`,
@@ -421,9 +422,10 @@ export function JobsClient({
     );
     if (r === null || !r.trim()) {
       toast.error("Date change cancelled — a reason is required.");
-      return;
+      return false;
     }
     handleInlineUpdate(jobId, { requirement_dispatch_date: newDate }, { operator, reason: r.trim() });
+    return true;
   };
 
   const SortHeader = ({ label, sortField, hint }: { label: string; sortField: SortKey; hint?: string }) => (
@@ -856,13 +858,11 @@ export function JobsClient({
                   <TableCell onClick={(e) => e.stopPropagation()}>
                     {/* Fully dispatched = the job already shipped in full; its plan is
                         history. Req. Dispatch and Status are frozen read-only. */}
-                    <input
-                      type="date"
-                      className="text-xs bg-transparent border border-[var(--border)] rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-70"
-                      value={job.requirement_dispatch_date ?? ""}
-                      onChange={(e) => handleDispatchDateChange(job.id, e.target.value || null)}
+                    <DispatchDateCell
+                      saved={job.requirement_dispatch_date ?? null}
                       disabled={savingJobId === job.id || (dispatchStatus[job.id] ?? "none") === "full"}
-                      title={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Req. Dispatch Date is locked" : undefined}
+                      lockedTitle={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Req. Dispatch Date is locked" : undefined}
+                      onCommit={(next) => handleDispatchDateChange(job.id, next)}
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -920,5 +920,55 @@ export function JobsClient({
         </div>
       )}
     </div>
+  );
+}
+
+/**
+ * Req. Dispatch Date cell. Native date inputs fire onChange on EVERY
+ * month/segment change while the user is still picking, which used to pop the
+ * mandatory-reason prompt before a date was even chosen. Edits therefore stay
+ * LOCAL (amber = not saved yet) and only commit — reason prompt included —
+ * when the user leaves the field or presses Enter. Escape reverts.
+ */
+function DispatchDateCell({
+  saved,
+  disabled,
+  lockedTitle,
+  onCommit,
+}: {
+  saved: string | null;
+  disabled: boolean;
+  lockedTitle?: string;
+  /** Returns false when the change was cancelled — the cell snaps back. */
+  onCommit: (next: string | null) => boolean;
+}) {
+  const [draft, setDraft] = useState(saved ?? "");
+  // Follow the saved value after an optimistic update / external refresh.
+  useEffect(() => setDraft(saved ?? ""), [saved]);
+  const dirty = (draft || null) !== (saved ?? null);
+
+  return (
+    <input
+      type="date"
+      className={`text-xs bg-transparent border rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
+        dirty ? "border-amber-400 bg-amber-50" : "border-[var(--border)]"
+      }`}
+      value={draft}
+      onChange={(e) => setDraft(e.target.value)}
+      onBlur={() => {
+        if (dirty && !onCommit(draft || null)) setDraft(saved ?? "");
+      }}
+      onKeyDown={(e) => {
+        if (e.key === "Enter") e.currentTarget.blur();
+        else if (e.key === "Escape") setDraft(saved ?? "");
+      }}
+      disabled={disabled}
+      title={
+        lockedTitle ??
+        (dirty
+          ? "New date not saved yet — click away or press Enter to save (you'll be asked for the reason)"
+          : undefined)
+      }
+    />
   );
 }
