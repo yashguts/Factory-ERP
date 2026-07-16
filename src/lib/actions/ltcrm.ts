@@ -25,6 +25,7 @@ interface FeedRow {
   transport_amount: number | string | null;
   transport_tbd: boolean;
   is_audited: boolean;
+  is_government: boolean;
   received_approved: number | string;
   received_pending: number | string;
   payments: {
@@ -74,6 +75,7 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
     transportAmount: num(row.transport_amount),
     transportTbd: row.transport_tbd,
     isAudited: row.is_audited,
+    isGovernment: row.is_government ?? false,
     receivedApproved: num(row.received_approved) ?? 0,
     receivedPending: num(row.received_pending) ?? 0,
     payments: (row.payments ?? []).map((p) => ({
@@ -121,6 +123,7 @@ async function fetchFinancialsBatch(
       transportAmount: num(row.transport_amount),
       transportTbd: row.transport_tbd,
       isAudited: row.is_audited,
+      isGovernment: row.is_government ?? false,
     };
   }
   return byKey;
@@ -173,6 +176,7 @@ export async function getLtCrmFinancialsForJobs(
       transportAmount: null,
       transportTbd: false,
       isAudited: false,
+      isGovernment: false,
     };
   }
   return out;

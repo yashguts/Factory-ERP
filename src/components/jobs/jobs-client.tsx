@@ -734,6 +734,12 @@ export function JobsClient({
                   <TableCell className="font-mono text-sm font-medium">
                     <span className="inline-flex items-center gap-1.5">
                       {job.job_number}
+                      {crm[job.job_number]?.isGovernment && (
+                        <span title="Government job (live from LT CRM)" className="relative flex h-2 w-2">
+                          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-500 opacity-75" />
+                          <span className="relative inline-flex h-2 w-2 rounded-full bg-orange-500" />
+                        </span>
+                      )}
                       {gadAlert(job) && (
                         <span
                           title="GAD changed after the BOM was defined — open the job to review and Mark Audited"

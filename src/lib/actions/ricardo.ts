@@ -34,6 +34,8 @@ export interface RicardoFinancials {
   transportAmount?: number | null;
   transportTbd?: boolean;
   isAudited?: boolean;
+  /** Government-sector job (LT CRM only; Ricardo has no such marker). */
+  isGovernment?: boolean;
   receivedApproved?: number;
   receivedPending?: number;
   payments?: RicardoPayment[];
@@ -127,6 +129,7 @@ export interface RicardoListSummary {
   transportAmount: number | null;
   transportTbd: boolean;
   isAudited: boolean;
+  isGovernment: boolean;
 }
 
 async function fetchFinancialsBatch(
@@ -158,6 +161,7 @@ async function fetchFinancialsBatch(
       transportAmount: num(row.transport_amount),
       transportTbd: row.transport_tbd,
       isAudited: row.is_audited,
+      isGovernment: false,
     };
   }
   return byKey;
@@ -210,6 +214,7 @@ export async function getRicardoFinancialsForJobs(
       transportAmount: null,
       transportTbd: false,
       isAudited: false,
+      isGovernment: false,
     };
   }
   return out;

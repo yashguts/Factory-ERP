@@ -100,6 +100,15 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
           {data.fullJobNumber}
           {data.customerName ? ` · ${data.customerName}` : ""}
         </span>
+        {data.isGovernment && (
+          <span className="inline-flex items-center gap-1 rounded-full border border-orange-200 bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-orange-500 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-orange-500" />
+            </span>
+            Government
+          </span>
+        )}
         {data.isAudited ? (
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
             Audited
