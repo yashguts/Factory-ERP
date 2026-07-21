@@ -35,6 +35,7 @@ import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
 import { type RicardoListSummary } from "@/lib/actions/ricardo";
 import { getCrmFinancialsForJobs } from "@/lib/actions/crm-financials";
+import { getCrmPaymentEventJobs } from "@/lib/actions/crm-payment-event-count";
 
 // Compact rupee display for the CRM column: lakhs/crores keep the cell narrow.
 function fmtL(n: number | null | undefined): string {
@@ -146,6 +147,20 @@ export function JobsClient({
       alive = false;
     };
   }, [initialJobs]);
+  // Jobs with unacknowledged CRM payment events → pulsing emerald dot on the
+  // CRM ₹ cell (the sidebar's "CRM Payments" blinker, localised to the row).
+  const [payAlertJobs, setPayAlertJobs] = useState<Set<string>>(new Set());
+  useEffect(() => {
+    let alive = true;
+    getCrmPaymentEventJobs()
+      .then((list) => {
+        if (alive) setPayAlertJobs(new Set(list));
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, []);
   // Optimistic local copy so inline edits are instant
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
@@ -815,6 +830,15 @@ export function JobsClient({
                           className="whitespace-nowrap leading-tight"
                           title={`Ricardo CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
                         >
+                          {payAlertJobs.has(job.job_number) && (
+                            <span
+                              title="New payment update from the CRM — see CRM Payments in the sidebar"
+                              className="relative mr-1 inline-flex h-2 w-2"
+                            >
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500" />
+                            </span>
+                          )}
                           <span className="text-xs font-medium text-emerald-700">
                             {fmtL(s.receivedApproved)}
                           </span>

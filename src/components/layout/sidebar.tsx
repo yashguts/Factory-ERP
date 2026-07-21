@@ -7,6 +7,8 @@ import { cn } from "@/lib/utils";
 import { useOperator } from "@/lib/jobs/use-operator";
 import { getGadDriftCount } from "@/lib/actions/gad-alert-count";
 import { getStatusAlertCount } from "@/lib/actions/status-alert-count";
+import { getCrmPaymentEventCount } from "@/lib/actions/crm-payment-event-count";
+import { isStaleActionError } from "@/components/layout/stale-deploy-guard";
 import {
   Package,
   ClipboardList,
@@ -27,6 +29,7 @@ import {
   Archive,
   UserRound,
   Bell,
+  IndianRupee,
   LucideIcon,
 } from "lucide-react";
 
@@ -64,6 +67,9 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       // Permanent home for status/date-change alerts + their full history —
       // the amber open-alert count lives here (GAD red stays on Job Orders).
       { href: "/jobs/status-alerts", label: "Status Alerts", icon: Bell },
+      // Payment updates flowing in live from the Ricardo / LT Elevator CRMs —
+      // the emerald badge blinks until every event is acknowledged.
+      { href: "/jobs/crm-payments", label: "CRM Payments", icon: IndianRupee },
       { href: "/cabin-jobs", label: "Cabin Jobs", icon: ClipboardCheck },
       // Read-only archive of the pre-cutover Job Order BOMs (2026-07-03) —
       // a transition-period reference; remove once the team stops needing it.
@@ -110,6 +116,36 @@ export function Sidebar() {
       .catch(() => {});
     return () => {
       alive = false;
+    };
+  }, [pathname]);
+
+  // Unacknowledged CRM payment events → blinking emerald badge. This is the
+  // app's one interval poll: payments land in the CRMs while the user sits on
+  // a single ERP page, so navigation-triggered refetches alone would never
+  // blink. 60s matches the CRM feed's server-side cache TTL. Stale-deploy
+  // errors are re-thrown so StaleDeployGuard prompts a reload instead of the
+  // poll failing silently forever (see stale-deploy-guard.tsx).
+  const [payEvents, setPayEvents] = useState(0);
+  useEffect(() => {
+    let alive = true;
+    const tick = () => {
+      getCrmPaymentEventCount()
+        .then((n) => {
+          if (alive) setPayEvents(n);
+        })
+        .catch((e) => {
+          if (isStaleActionError(e)) throw e;
+        });
+    };
+    tick();
+    const id = setInterval(tick, 60_000);
+    // The CRM Payments page fires this right after an acknowledge so the
+    // blinker clears immediately instead of on the next tick.
+    window.addEventListener("crm-payments-refresh", tick);
+    return () => {
+      alive = false;
+      clearInterval(id);
+      window.removeEventListener("crm-payments-refresh", tick);
     };
   }, [pathname]);
 
@@ -183,7 +219,8 @@ export function Sidebar() {
                   const isActive = item.href === activeHref;
                   const badge = item.href === "/jobs" ? gadDrift : 0;
                   const statusBadge = item.href === "/jobs/status-alerts" ? statusAlerts : 0;
-                  const hasAlert = badge > 0 || statusBadge > 0;
+                  const payBadge = item.href === "/jobs/crm-payments" ? payEvents : 0;
+                  const hasAlert = badge > 0 || statusBadge > 0 || payBadge > 0;
                   return (
                     <Link
                       key={item.href}
@@ -199,16 +236,23 @@ export function Sidebar() {
                       <span className="relative shrink-0">
                         <Icon size={16} strokeWidth={isActive ? 2.25 : 1.75} />
                         {/* Collapsed: a single alert dot on the icon (red for
-                            GAD drift, else amber for status). Hidden once the
-                            panel opens and the full counts show inline. */}
-                        {hasAlert && (
-                          <span
-                            className={cn(
-                              "absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-[var(--sidebar)] group-hover:hidden group-focus-within:hidden",
-                              badge > 0 ? "bg-red-600" : "bg-amber-500"
-                            )}
-                          />
-                        )}
+                            GAD drift, amber for status, pulsing emerald for
+                            new CRM payments). Hidden once the panel opens and
+                            the full counts show inline. */}
+                        {hasAlert &&
+                          (payBadge > 0 ? (
+                            <span className="absolute -right-1 -top-1 flex h-2 w-2 group-hover:hidden group-focus-within:hidden">
+                              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+                              <span className="relative inline-flex h-2 w-2 rounded-full bg-emerald-500 ring-2 ring-[var(--sidebar)]" />
+                            </span>
+                          ) : (
+                            <span
+                              className={cn(
+                                "absolute -right-1 -top-1 h-2 w-2 rounded-full ring-2 ring-[var(--sidebar)] group-hover:hidden group-focus-within:hidden",
+                                badge > 0 ? "bg-red-600" : "bg-amber-500"
+                              )}
+                            />
+                          ))}
                       </span>
                       <span className={cn("flex-1", labelReveal)}>{item.label}</span>
                       {statusBadge > 0 && (
@@ -225,6 +269,14 @@ export function Sidebar() {
                           className={cn("inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-600 px-1 text-[10px] font-bold leading-none text-white", labelReveal)}
                         >
                           {badge > 99 ? "99+" : badge}
+                        </span>
+                      )}
+                      {payBadge > 0 && (
+                        <span
+                          title={`${payBadge} new CRM payment update${payBadge === 1 ? "" : "s"}`}
+                          className={cn("notif-blink inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-emerald-600 px-1 text-[10px] font-bold leading-none text-white", labelReveal)}
+                        >
+                          {payBadge > 99 ? "99+" : payBadge}
                         </span>
                       )}
                     </Link>

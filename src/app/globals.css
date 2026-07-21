@@ -199,6 +199,18 @@ body {
   .gad-flash-badge { animation: none; }
 }
 
+/* CRM payment notification blink — new payment activity arrived from the
+   Ricardo / LT Elevator CRMs. Softer than the GAD red flash (good news, not
+   an emergency); reduced-motion users keep the solid emerald badge. */
+@keyframes notif-blink {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.35; }
+}
+.notif-blink { animation: notif-blink 1.1s ease-in-out infinite; }
+@media (prefers-reduced-motion: reduce) {
+  .notif-blink { animation: none; }
+}
+
 /* Skeleton shimmer */
 .skeleton {
   position: relative;

@@ -1,11 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import Link from "next/link";
 import { IndianRupee, AlertTriangle } from "lucide-react";
 import {
   getCrmFinancials,
   type CrmFinancials,
 } from "@/lib/actions/crm-financials";
+import { getCrmPaymentEventJobs } from "@/lib/actions/crm-payment-event-count";
 import { ricardoKeyOf } from "@/lib/ricardo/job-number";
 import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
 
@@ -35,6 +37,8 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
   const isCrm = ricardoKeyOf(jobNumber) !== null || ltCrmKeyOf(jobNumber) !== null;
   const [data, setData] = useState<CrmFinancials | null>(null);
   const [loaded, setLoaded] = useState(false);
+  // Unacknowledged payment events on THIS job → "New payment" pill.
+  const [hasNewPayment, setHasNewPayment] = useState(false);
 
   useEffect(() => {
     if (!isCrm) return;
@@ -45,6 +49,11 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
           setData(d);
           setLoaded(true);
         }
+      })
+      .catch(() => {});
+    getCrmPaymentEventJobs()
+      .then((list) => {
+        if (alive) setHasNewPayment(list.includes(jobNumber));
       })
       .catch(() => {});
     return () => {
@@ -108,6 +117,19 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
             </span>
             Government
           </span>
+        )}
+        {hasNewPayment && (
+          <Link
+            href="/jobs/crm-payments"
+            title="New payment update from the CRM — open CRM Payments to review and acknowledge"
+            className="inline-flex items-center gap-1 rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 hover:bg-emerald-100"
+          >
+            <span className="relative flex h-1.5 w-1.5">
+              <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-500 opacity-75" />
+              <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+            </span>
+            New payment
+          </Link>
         )}
         {data.isAudited ? (
           <span className="rounded-full border border-emerald-200 bg-emerald-50 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700">
