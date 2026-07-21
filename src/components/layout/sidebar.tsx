@@ -128,23 +128,32 @@ export function Sidebar() {
   const [payEvents, setPayEvents] = useState(0);
   useEffect(() => {
     let alive = true;
+    let id: ReturnType<typeof setInterval> | undefined;
     const tick = () => {
       getCrmPaymentEventCount()
         .then((n) => {
           if (alive) setPayEvents(n);
         })
         .catch((e) => {
-          if (isStaleActionError(e)) throw e;
+          // After a redeploy the action id is stale. Stop polling BEFORE
+          // re-throwing so StaleDeployGuard shows its reload banner once
+          // instead of the poll re-summoning it every 60s (a dismissed
+          // banner would otherwise reappear each minute).
+          if (isStaleActionError(e)) {
+            if (id) clearInterval(id);
+            window.removeEventListener("crm-payments-refresh", tick);
+            throw e;
+          }
         });
     };
     tick();
-    const id = setInterval(tick, 60_000);
+    id = setInterval(tick, 60_000);
     // The CRM Payments page fires this right after an acknowledge so the
     // blinker clears immediately instead of on the next tick.
     window.addEventListener("crm-payments-refresh", tick);
     return () => {
       alive = false;
-      clearInterval(id);
+      if (id) clearInterval(id);
       window.removeEventListener("crm-payments-refresh", tick);
     };
   }, [pathname]);

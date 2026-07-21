@@ -29,7 +29,9 @@ const fmtDate = (s: string | null) =>
 
 const KIND_META: Record<CrmPaymentEvent["kind"], { label: string; cls: string }> = {
   approved: { label: "Payment approved", cls: "bg-emerald-500/15 text-emerald-600" },
-  updated: { label: "Payment edited", cls: "bg-blue-500/15 text-blue-600" },
+  // Neutral wording: an 'updated' event is any post-approval change to an
+  // approved payment's details, not necessarily a hand edit.
+  updated: { label: "Payment updated", cls: "bg-blue-500/15 text-blue-600" },
 };
 
 export function CrmPaymentsClient({ events }: { events: CrmPaymentEvent[] }) {
@@ -63,7 +65,7 @@ export function CrmPaymentsClient({ events }: { events: CrmPaymentEvent[] }) {
       <PageHeader
         icon={<IndianRupee size={18} />}
         title="CRM Payments"
-        meta="New approved customer payments, live from the Ricardo and LT Elevator CRMs — the sidebar blinks until each update is acknowledged. Full payment history stays on each job's money panel."
+        meta="New approved customer payments from the last 14 days, live from the Ricardo and LT Elevator CRMs — the sidebar blinks until each is acknowledged. Full payment history stays on each job's money panel."
       />
 
       {events.length === 0 ? (
@@ -71,7 +73,7 @@ export function CrmPaymentsClient({ events }: { events: CrmPaymentEvent[] }) {
           <EmptyState
             icon={<CheckCircle2 size={28} className="text-emerald-600" />}
             title="No new payment updates"
-            description="When a customer payment is approved (or an approved payment is edited) in either CRM for a job the ERP carries, it appears here and blinks in the sidebar until acknowledged."
+            description="When a customer payment is approved (or an approved payment is updated) in either CRM for a job the ERP carries, it appears here for 14 days and blinks in the sidebar until acknowledged."
           />
         </Card>
       ) : (

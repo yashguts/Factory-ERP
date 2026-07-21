@@ -23,7 +23,12 @@ import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
  */
 
 export interface CrmPaymentEvent {
-  /** Globally unique ack key: "<source>:<payment-or-log-id>:<kind>". */
+  /**
+   * Globally unique ack key. Approved events: "<source>:<payment-id>:approved:
+   * <approved_at-epoch>" (the epoch versions it, so a re-approval after a
+   * revert is a new, un-acknowledged event). Post-approval edits: the bare
+   * "<source>:<log-row-id>".
+   */
   id: string;
   source: "ricardo" | "ltcrm";
   kind: "approved" | "updated";
@@ -61,7 +66,17 @@ interface RawCrmPaymentEvent extends Omit<CrmPaymentEvent, "erpJobId" | "erpJobN
   key: string;
 }
 
-const LOOKBACK_DAYS = 7;
+// How far back the feed looks. Wide enough to survive a week-plus factory
+// closure (a payment approved just before Diwali still blinks on reopening);
+// the ack table (no TTL) keeps re-entering events subtracted, and the RPC's
+// approved-only output stays well under the 500-row cap at observed volumes.
+const LOOKBACK_DAYS = 14;
+// Hard ceiling per CRM poll — matches the RPC's own clamp. Passed explicitly so
+// a busy week can't fall back to the RPC's lower default.
+const EVENT_LIMIT = 500;
+// A hung CRM must not stall the app: server actions share a serial queue, and
+// this feed is polled every 60s, so cap each RPC round-trip.
+const RPC_TIMEOUT_MS = 8000;
 
 /** Stable per-UTC-day watermark so the cached CRM fetches keep a stable key. */
 function sinceIso(): string {
@@ -104,10 +119,13 @@ async function fetchRicardoEvents(since: string): Promise<RawCrmPaymentEvent[]> 
   if (!url || !anonKey || !secret) return [];
 
   const supabase = createExternalClient(url, anonKey);
-  const { data, error } = await supabase.rpc("erp_recent_payment_events", {
-    p_secret: secret,
-    p_since: since,
-  });
+  const { data, error } = await supabase
+    .rpc("erp_recent_payment_events", {
+      p_secret: secret,
+      p_since: since,
+      p_limit: EVENT_LIMIT,
+    })
+    .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
   if (error) {
     console.error("[ricardo] payment events feed error:", error.message);
     return [];
@@ -122,10 +140,13 @@ async function fetchLtCrmEvents(since: string): Promise<RawCrmPaymentEvent[]> {
   if (!url || !anonKey || !secret) return [];
 
   const supabase = createExternalClient(url, anonKey);
-  const { data, error } = await supabase.rpc("erp_recent_payment_events", {
-    p_secret: secret,
-    p_since: since,
-  });
+  const { data, error } = await supabase
+    .rpc("erp_recent_payment_events", {
+      p_secret: secret,
+      p_since: since,
+      p_limit: EVENT_LIMIT,
+    })
+    .abortSignal(AbortSignal.timeout(RPC_TIMEOUT_MS));
   if (error) {
     console.error("[ltcrm] payment events feed error:", error.message);
     return [];
@@ -178,13 +199,20 @@ export async function getOpenCrmPaymentEvents(): Promise<CrmPaymentEvent[]> {
   const acked = new Set<string>();
   for (let i = 0; i < candidates.length; i += 100) {
     const chunk = candidates.slice(i, i + 100);
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from("crm_payment_event_acks")
       .select("event_id")
       .in(
         "event_id",
         chunk.map((c) => c.id),
       );
+    // Fail quiet: if the acks read fails we must NOT treat everything as
+    // unacknowledged (that re-blinks already-cleared events and can't be
+    // cleared). Skip this cycle; the next 60s poll retries.
+    if (error) {
+      console.error("[crm-payments] ack subtraction failed:", error.message);
+      return [];
+    }
     for (const a of data ?? []) acked.add(a.event_id as string);
   }
 

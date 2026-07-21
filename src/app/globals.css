@@ -201,10 +201,14 @@ body {
 
 /* CRM payment notification blink — new payment activity arrived from the
    Ricardo / LT Elevator CRMs. Softer than the GAD red flash (good news, not
-   an emergency); reduced-motion users keep the solid emerald badge. */
+   an emergency). Animates BACKGROUND (emerald-600 <-> emerald-400), never
+   opacity: the sidebar count pill also carries `labelReveal` (opacity-0 until
+   the rail expands), and a CSS animation on opacity would override that gate
+   and leak a blinking sliver onto the collapsed 64px rail. Reduced-motion
+   users keep the solid emerald badge. */
 @keyframes notif-blink {
-  0%, 100% { opacity: 1; }
-  50%      { opacity: 0.35; }
+  0%, 100% { background-color: #059669; }
+  50%      { background-color: #34d399; }
 }
 .notif-blink { animation: notif-blink 1.1s ease-in-out infinite; }
 @media (prefers-reduced-motion: reduce) {
