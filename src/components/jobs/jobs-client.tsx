@@ -253,6 +253,14 @@ export function JobsClient({
     return Array.from(s).sort();
   }, [setMembership]);
 
+  // Cabin jobs marked ready, keyed by normalized job number (same trim+lower
+  // link the Dispatch Plan board and Cabin MRP use).
+  const cabinReadySet = useMemo(
+    () => new Set(readiness.cabinReadyJobNumbers),
+    [readiness.cabinReadyJobNumbers],
+  );
+  const isCabinReady = (job: Job) => cabinReadySet.has(job.job_number.trim().toLowerCase());
+
   // Filter options = the full canonical drive-type list (so every type is
   // always selectable, including a new one like R1000 that may have no jobs
   // yet), plus any legacy code still present in the data so a stray job stays
@@ -535,6 +543,7 @@ export function JobsClient({
                 },
                 { header: "GAD Alert", field: (j) => (gadAlert(j) ? "CHANGED" : "") },
                 { header: "Job Set", field: (j) => (setMembership[j.id] ?? []).join(", ") },
+                { header: "Cabin Ready", field: (j) => (isCabinReady(j) ? "Yes" : "") },
                 { header: "CRM Contract Value", field: (j) => crm[j.job_number]?.contractValue ?? "" },
                 { header: "CRM Received (approved)", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedApproved : "") },
                 {
@@ -823,6 +832,14 @@ export function JobsClient({
                           {setName}
                         </span>
                       ))}
+                      {isCabinReady(job) && (
+                        <span
+                          title="This job's Cabin Job is marked ready — cabin items are built and deducted from stock"
+                          className="inline-flex items-center rounded bg-blue-600 px-1 py-0.5 text-[10px] font-bold leading-none text-white"
+                        >
+                          Cabin Ready
+                        </span>
+                      )}
                     </span>
                   </TableCell>
                   <TableCell>
