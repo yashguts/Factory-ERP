@@ -33,6 +33,29 @@ export type JobSetSaveResult =
   | { ok: true; id: string; updated: boolean }
   | { ok: false; error: string };
 
+/** job_id -> names of the saved sets it belongs to. Drives the set chip on the
+ *  Job Orders list (e.g. "Urgent"). Tiny tables, one nested read, 5-min cache
+ *  invalidated by every set save/delete via the "job-sets" tag. */
+export async function getJobSetMembershipMap(): Promise<Record<string, string[]>> {
+  return unstable_cache(
+    async () => {
+      const supabase = createCacheClient();
+      const { data } = await supabase
+        .from("job_sets")
+        .select("name, job_set_members(job_id)");
+      const map: Record<string, string[]> = {};
+      for (const s of (data ?? []) as any[]) {
+        for (const m of ((s.job_set_members ?? []) as any[])) {
+          (map[m.job_id as string] ??= []).push(s.name as string);
+        }
+      }
+      return map;
+    },
+    ["job-set-membership"],
+    { revalidate: 300, tags: ["job-sets"] },
+  )();
+}
+
 /** All saved sets, for the picker chips. */
 export async function getJobSets(): Promise<JobSetSummary[]> {
   return unstable_cache(

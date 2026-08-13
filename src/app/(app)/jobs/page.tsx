@@ -1,6 +1,7 @@
 import { getJobs, getJobReadinessFlags } from "@/lib/actions/jobs";
 import { getUnmatchedCount } from "@/lib/actions/bom-mapping";
 import { getJobsDispatchStatus } from "@/lib/actions/dispatch";
+import { getJobSetMembershipMap } from "@/lib/actions/job-sets";
 import { JobsClient } from "@/components/jobs/jobs-client";
 
 export default async function JobsPage() {
@@ -8,11 +9,12 @@ export default async function JobsPage() {
   // the chain runs concurrently with the other independent fetches instead of
   // starting only after all of them have resolved.
   const jobsPromise = getJobs();
-  const [jobs, unmatchedCount, readiness, dispatchStatus] = await Promise.all([
+  const [jobs, unmatchedCount, readiness, dispatchStatus, setMembership] = await Promise.all([
     jobsPromise,
     getUnmatchedCount(),
     getJobReadinessFlags(),
     jobsPromise.then((js) => getJobsDispatchStatus(js.map((j) => j.id))),
+    getJobSetMembershipMap(),
   ]);
   return (
     <JobsClient
@@ -20,6 +22,7 @@ export default async function JobsPage() {
       unmatchedCount={unmatchedCount}
       dispatchStatus={dispatchStatus}
       readiness={readiness}
+      setMembership={setMembership}
     />
   );
 }

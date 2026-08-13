@@ -101,6 +101,8 @@ interface Props {
   unmatchedCount?: number;
   dispatchStatus?: Record<string, DispatchStatus>;
   readiness?: JobReadinessFlags;
+  /** job_id -> saved MRP job-set names (e.g. "Urgent") — rendered as a chip. */
+  setMembership?: Record<string, string[]>;
 }
 
 export function JobsClient({
@@ -108,6 +110,7 @@ export function JobsClient({
   unmatchedCount = 0,
   dispatchStatus = {},
   readiness = { bomJobIds: [], cabinJobNumbers: [], cabinReadyJobNumbers: [] },
+  setMembership = {},
 }: Props) {
   const router = useRouter();
   const toast = useToast();
@@ -509,6 +512,7 @@ export function JobsClient({
                   },
                 },
                 { header: "GAD Alert", field: (j) => (gadAlert(j) ? "CHANGED" : "") },
+                { header: "Job Set", field: (j) => (setMembership[j.id] ?? []).join(", ") },
                 { header: "CRM Contract Value", field: (j) => crm[j.job_number]?.contractValue ?? "" },
                 { header: "CRM Received (approved)", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedApproved : "") },
                 {
@@ -772,6 +776,15 @@ export function JobsClient({
                           No items
                         </span>
                       )}
+                      {(setMembership[job.id] ?? []).map((setName) => (
+                        <span
+                          key={setName}
+                          title={`In the "${setName}" MRP job set — this job is scoped by the ${setName} chip on Make/Trade/Cabin MRP`}
+                          className="inline-flex items-center rounded bg-violet-600 px-1 py-0.5 text-[10px] font-bold leading-none text-white"
+                        >
+                          {setName}
+                        </span>
+                      ))}
                     </span>
                   </TableCell>
                   <TableCell>
