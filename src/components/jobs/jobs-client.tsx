@@ -189,6 +189,12 @@ export function JobsClient({
   const [structureFilter, setStructureFilter] = useState<string>(
     () => readParam(sp, "structure", "all", ["all", "Factory-made", "Site-fabricated", "NA"]),
   );
+  // Job-set view: "all" | "first:<name>" (pin set members to the top) |
+  // "only:<name>" (show members only). Name-validated lazily — an unknown set
+  // name (stale URL after a set was deleted) simply has no effect.
+  const [setFilter, setSetFilter] = useState<string>(() => readParam(sp, "set", "all"));
+  const setFilterMode = setFilter.startsWith("first:") ? "first" : setFilter.startsWith("only:") ? "only" : "off";
+  const setFilterName = setFilterMode === "off" ? "" : setFilter.slice(setFilter.indexOf(":") + 1);
   const [sortKey, setSortKey] = useState<SortKey>(
     () => readParam(sp, "sort", "req_dispatch", ["job_number", "customer", "status", "stage", "req_stage", "req_dispatch"]) as SortKey,
   );
@@ -198,8 +204,8 @@ export function JobsClient({
   const [page, setPage] = useState(() => readIntParam(sp, "page", 1));
 
   useUrlListSync(
-    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, drive: driveTypeFilter, brand: brandFilter, structure: structureFilter, sort: sortKey, dir: sortDir, page },
-    { view: "active", q: "", status: "all", stage: "all", door: "all", drive: "all", brand: "all", structure: "all", sort: "req_dispatch", dir: "asc", page: 1 },
+    { view, q: search, status: statusFilter, stage: stageFilter, door: doorTypeFilter, drive: driveTypeFilter, brand: brandFilter, structure: structureFilter, set: setFilter, sort: sortKey, dir: sortDir, page },
+    { view: "active", q: "", status: "all", stage: "all", door: "all", drive: "all", brand: "all", structure: "all", set: "all", sort: "req_dispatch", dir: "asc", page: 1 },
   );
 
   // Tab buckets (computed across ALL jobs, independent of the other filters, so
@@ -239,6 +245,13 @@ export function JobsClient({
     jobs.forEach((j) => { if (j.brand) set.add(j.brand); });
     return Array.from(set).sort();
   }, [jobs]);
+
+  // Saved MRP job-set names present in the membership map (e.g. "Urgent").
+  const setNames = useMemo(() => {
+    const s = new Set<string>();
+    Object.values(setMembership).forEach((names) => names.forEach((n) => s.add(n)));
+    return Array.from(s).sort();
+  }, [setMembership]);
 
   // Filter options = the full canonical drive-type list (so every type is
   // always selectable, including a new one like R1000 that may have no jobs
@@ -303,13 +316,22 @@ export function JobsClient({
       if (driveTypeFilter !== "all" && job.drive_type !== driveTypeFilter) return false;
       if (brandFilter !== "all" && job.brand !== brandFilter) return false;
       if (structureFilter !== "all" && (job.structure_included ?? "NA") !== structureFilter) return false;
+      if (setFilterMode === "only" && !(setMembership[job.id] ?? []).includes(setFilterName)) return false;
       return true;
     });
-  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, driveTypeFilter, brandFilter, structureFilter]);
+  }, [jobs, view, dispatchStatus, searchTokens, statusFilter, stageFilter, doorTypeFilter, driveTypeFilter, brandFilter, structureFilter, setFilterMode, setFilterName, setMembership]);
 
   const sorted = useMemo(() => {
     const copy = [...filtered];
     copy.sort((a, b) => {
+      // "<set> first": members of the chosen job set pin to the top, and the
+      // normal sort then orders each group. Overrides direction on purpose —
+      // flipping a column must never bury the urgent group.
+      if (setFilterMode === "first") {
+        const am = (setMembership[a.id] ?? []).includes(setFilterName) ? 1 : 0;
+        const bm = (setMembership[b.id] ?? []).includes(setFilterName) ? 1 : 0;
+        if (am !== bm) return bm - am;
+      }
       // Dispatch date: undated jobs always sink to the bottom, regardless of
       // sort direction — otherwise blanks would crowd the top of an ascending
       // list and bury the soonest-due jobs.
@@ -343,7 +365,7 @@ export function JobsClient({
       return sortDir === "asc" ? cmp : -cmp;
     });
     return copy;
-  }, [filtered, sortKey, sortDir]);
+  }, [filtered, sortKey, sortDir, setFilterMode, setFilterName, setMembership]);
 
   const totalPages = Math.ceil(sorted.length / PAGE_SIZE);
   const paginated = sorted.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
@@ -607,6 +629,22 @@ export function JobsClient({
             className="pl-8"
           />
         </div>
+
+        {setNames.length > 0 && (
+          <Select
+            size="sm"
+            value={setFilter}
+            onChange={(e) => { setSetFilter(e.target.value); resetPage(); }}
+            className="w-[150px]"
+            title="Saved MRP job set — show its jobs first, or only them"
+          >
+            <option value="all">All Jobs</option>
+            {setNames.flatMap((n) => [
+              <option key={`first:${n}`} value={`first:${n}`}>{n} first</option>,
+              <option key={`only:${n}`} value={`only:${n}`}>{n} only</option>,
+            ])}
+          </Select>
+        )}
 
         <Select
           size="sm"
