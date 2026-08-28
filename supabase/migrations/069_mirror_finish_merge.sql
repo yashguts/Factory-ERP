@@ -1,0 +1,9 @@
+-- 2026-08-28 White Silver Mirror normalization (owner rule: White Mirror =
+-- Mirror = SS Mirror = Silver Mirror = Grade 430 Mirror = White Mirror Silver
+-- are ONE finish, canonically "White Silver Mirror").
+-- Executed via MCP execute_sql on 2026-08-28; this file is the record.
+-- 2,647 active items -> 1,113 kept+renamed, 1,534 duplicates retired
+-- (references repointed, stock merged). Rollback data:
+-- table mirror_merge_backup_20260828 (id, old_name, new_name, action, keeper_id).
+-- Cabin program finish labels normalized + deduped in the same transaction.
+-- See the session log for the full executed SQL.
