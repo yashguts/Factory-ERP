@@ -20,10 +20,12 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import type { AuditedProgramHit } from "@/lib/actions/operation-runs";
 
-// Latest-generation model — handwriting + catalog matching in one pass. If a
-// sheet reads badly, the one-line fallback is "claude-opus-4-8" (what the
-// cabin-sketch reader uses).
-const MODEL = "claude-sonnet-5";
+// Opus 4.8 — the fallback this file always documented, promoted 2026-08-28
+// after the Sonnet 5 + `thinking: {type:"disabled"}` request began returning
+// 400s. On Opus 4.8, omitting `thinking` runs WITHOUT thinking, so the forced
+// tool call and the full max_tokens budget need no special flag at all (the
+// disabled flag existed only because Sonnet 5 defaults to adaptive thinking).
+const MODEL = "claude-opus-4-8";
 // Bounded so a slow read can't let the serverless platform kill the function.
 const VISION_TIMEOUT_MS = 40_000;
 
@@ -151,11 +153,9 @@ async function callVision(
       },
       body: JSON.stringify({
         model: MODEL,
-        // Sonnet 5 runs ADAPTIVE THINKING by default, and thinking spends from
-        // the same max_tokens budget as the tool JSON — a long sheet would get
-        // silently truncated. The tool call is forced anyway; disable thinking
-        // and give the rows the whole budget.
-        thinking: { type: "disabled" },
+        // No `thinking` param: Opus 4.8 runs without thinking when it's
+        // omitted, so the whole max_tokens budget goes to the rows and the
+        // forced tool call needs no thinking-disable flag.
         max_tokens: 8192,
         system: SYSTEM_PROMPT,
         tool_choice: { type: "tool", name: "report_run_sheet" },
@@ -197,7 +197,19 @@ async function callVision(
   if (!resp.ok) {
     if (resp.status === 429) return { error: "AI is busy — try again in a moment." };
     if (resp.status === 401) return { error: "AI key rejected — check the Anthropic API key." };
-    return { error: `AI sheet-reading failed (${resp.status}).` };
+    // Surface the API's own error message — a bare status code turns every
+    // failure into a guessing game (the lesson of the 2026-08-28 400s).
+    let detail = "";
+    try {
+      const body = (await resp.json()) as { error?: { message?: string } };
+      detail = body?.error?.message ?? "";
+      console.error("run-sheet vision API error", resp.status, JSON.stringify(body));
+    } catch {
+      /* body unreadable — keep the status-only message */
+    }
+    return {
+      error: `AI sheet-reading failed (${resp.status}${detail ? `: ${detail.slice(0, 200)}` : ""}).`,
+    };
   }
   const data = (await resp.json()) as {
     content?: Array<{ type: string; input?: unknown }>;
