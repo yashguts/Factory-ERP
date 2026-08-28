@@ -311,9 +311,15 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
           ? `Dispatch recorded for Job ${jobNumber} — ${SCOPE_LABEL[scope]}, ${dispatchRows.length} item${dispatchRows.length === 1 ? "" : "s"}, ${totalQty.toLocaleString()} qty.${reviseNote}`
           : `Job ${jobNumber} updated — ${reviseOnlyRows.length} item${reviseOnlyRows.length === 1 ? "" : "s"} no longer required.`,
       );
-      // The factory prints the dispatch list with every dispatch — download it
-      // automatically. Best-effort: a print hiccup never blocks the record.
-      if (dispatchRows.length > 0) {
+      // Offer the dispatch-note PDF (owner 2026-08-28: ask, don't auto-download
+      // — not every dispatch needs the printout). Best-effort: a print hiccup
+      // never blocks the record, which is already saved at this point.
+      if (
+        dispatchRows.length > 0 &&
+        window.confirm(
+          `Dispatch recorded for Job ${jobNumber}.\n\nDownload the dispatch note PDF?`,
+        )
+      ) {
         try {
           await downloadDispatchNotePdf({
             info: { jobNumber, customerName, location },
