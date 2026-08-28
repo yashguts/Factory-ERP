@@ -195,6 +195,9 @@ const _getCabinMrpUncached = async (excludeKeys: string[], jobIds: string[]): Pr
       // its demand moved to Make MRP (owner 2026-07-10; see mrp.ts's
       // addCarLintonDemand). Excluded here so it isn't planned twice.
       .neq("cabin_type", "Car Linton")
+      // Cabin Glass is BOUGHT — its demand moved to Trade MRP (owner 2026-08-28;
+      // see mrp.ts's cabin-glass fold). Excluded here so it isn't demanded twice.
+      .neq("cabin_type", "Cabin Glass")
       .in("cabin_job_id", eligibleIds)
       .range(from, to),
   );
@@ -489,6 +492,9 @@ const _getCabinRequirementsUncached = async (jobIds: string[]): Promise<CabinReq
         .not("item_id", "is", null)
         // Car Linton demand lives in MAKE MRP now (owner 2026-07-10).
         .neq("cabin_type", "Car Linton")
+      // Cabin Glass is BOUGHT — its demand moved to Trade MRP (owner 2026-08-28;
+      // see mrp.ts's cabin-glass fold). Excluded here so it isn't demanded twice.
+      .neq("cabin_type", "Cabin Glass")
         .in("cabin_job_id", eligibleIds)
         .range(from, to),
   );
@@ -663,6 +669,9 @@ const _getCabinWeeklyUncached = async (jobIds: string[]): Promise<CabinWeeklyPla
         .not("item_id", "is", null)
         // Car Linton demand lives in MAKE MRP now (owner 2026-07-10).
         .neq("cabin_type", "Car Linton")
+      // Cabin Glass is BOUGHT — its demand moved to Trade MRP (owner 2026-08-28;
+      // see mrp.ts's cabin-glass fold). Excluded here so it isn't demanded twice.
+      .neq("cabin_type", "Cabin Glass")
         .in("cabin_job_id", eligibleIds)
         .range(from, to),
   );

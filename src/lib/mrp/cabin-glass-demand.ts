@@ -1,34 +1,26 @@
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import type { createCacheClient } from "@/lib/supabase/cache-client";
+import type { CarLintonDemandRow } from "./car-linton-demand";
 
 /**
- * Car Linton demand for MAKE MRP (owner rule, 2026-07-10).
+ * Cabin Glass demand for TRADE MRP (owner rule, 2026-08-28).
  *
- * Car Linton panels are demanded by CABIN jobs (cabin_job_lines, type
- * "Car Linton") but they are CUT by the regular CNC door-panel nests — the
- * programs the MAKE run-optimiser schedules (the 2026-07-07 Car Linton merge
- * re-pointed those nests' outputs onto the cabin LINTON items). So their
- * demand belongs in Make MRP, where the one optimiser plans the nests jointly
- * with door-panel demand. Cabin MRP EXCLUDES Car Linton correspondingly
- * (cabin-mrp.ts) so the demand lives in exactly one place.
+ * Cabin Glass is BOUGHT, not cut: it's demanded by CABIN jobs (cabin_job_lines,
+ * type "Cabin Glass") but no cabin program produces it, so its demand belongs
+ * on the Trade side — the Trade requirement table and procurement, via the
+ * same fold mechanism as Car Linton (mrp.ts). Cabin MRP EXCLUDES Cabin Glass
+ * correspondingly (cabin-mrp.ts) so the demand lives in exactly one place.
  *
- * Eligibility mirrors Cabin MRP's owner rule (2026-07-03): the cabin job is
- * NOT marked ready, and its linked Job Order (matched by job_number) is
- * in production with Required = full_material (+ the caller's cutoff date).
- * The remaining two gates — the linked job isn't fully dispatched, and its
- * own BOM doesn't already list the item — are applied by the callers, which
- * already hold the per-line dispatch netting.
+ * Eligibility differs from the Car Linton fetch in ONE gate: glass stays
+ * demanded until the cabin job is DISPATCHED — not until it's marked ready.
+ * The matching stock rule (cabin-jobs.ts, same date) consumes glass from Main
+ * Store at dispatch while every other cabin item is consumed at ready: a
+ * built-but-undispatched cabin still needs its glass bought and allocated.
+ * The linked-Job-Order gates (in production, Required = full_material, cutoff,
+ * not fully dispatched, not directly on the job BOM) mirror the linton fetch;
+ * the last two are applied by the callers.
  */
-export interface CarLintonDemandRow {
-  item_id: string;
-  qty: number;
-  /** The linked Job Order's id (for the fully-dispatched gate + job_count). */
-  jobId: string;
-  /** The linked Job Order's requirement_dispatch_date (weekly bucketing). */
-  date: string | null;
-}
-
-export async function fetchCarLintonDemand(
+export async function fetchCabinGlassDemand(
   supabase: ReturnType<typeof createCacheClient>,
   cutoffDate?: string,
   /** Ad-hoc scope (the /mrp/shortfall tool): restrict to these Job Order ids
@@ -37,15 +29,15 @@ export async function fetchCarLintonDemand(
 ): Promise<CarLintonDemandRow[]> {
   // Paged — cabin_jobs grows unbounded (PostgREST caps a single select at 1000
   // rows; a plain read would silently drop demand once the table outgrows it).
-  const cjobs = await fetchAllRanged<{ id: string; job_number: string; marked_ready_at: string | null }>(
+  const cjobs = await fetchAllRanged<{ id: string; job_number: string; dispatched_at: string | null }>(
     (from, to, withCount) =>
       supabase
         .from("cabin_jobs")
-        .select("id, job_number, marked_ready_at", withCount ? { count: "exact" } : {})
+        .select("id, job_number, dispatched_at", withCount ? { count: "exact" } : {})
         .range(from, to),
   );
-  const notReady = cjobs.filter((c) => !c.marked_ready_at);
-  if (notReady.length === 0) return [];
+  const notDispatched = cjobs.filter((c) => !c.dispatched_at);
+  if (notDispatched.length === 0) return [];
 
   let q = supabase
     .from("jobs")
@@ -72,7 +64,7 @@ export async function fetchCarLintonDemand(
   if (jobByNumber.size === 0) return [];
 
   const linkByCabin = new Map<string, { id: string; date: string | null }>();
-  for (const c of notReady) {
+  for (const c of notDispatched) {
     const link = jobByNumber.get(((c.job_number as string) ?? "").trim().toLowerCase());
     if (link) linkByCabin.set(c.id as string, link);
   }
@@ -84,7 +76,7 @@ export async function fetchCarLintonDemand(
       supabase
         .from("cabin_job_lines")
         .select("cabin_job_id, item_id, qty", withCount ? { count: "exact" } : {})
-        .eq("cabin_type", "Car Linton")
+        .eq("cabin_type", "Cabin Glass")
         .not("item_id", "is", null)
         .gt("qty", 0)
         .in("cabin_job_id", cabinIds)

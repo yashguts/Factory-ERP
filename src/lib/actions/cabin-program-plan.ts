@@ -115,7 +115,10 @@ const _getCabinMrpUncached = async (excludeKeys: string[]): Promise<CabinMrpPlan
     const base = supabase
       .from("cabin_job_lines")
       .select("item_id, qty", withCount ? { count: "exact" } : {})
-      .not("item_id", "is", null);
+      .not("item_id", "is", null)
+      // Cabin Glass is BOUGHT — its demand lives on Trade MRP only (owner
+      // 2026-08-28), never in the cabin cutting plan.
+      .neq("cabin_type", "Cabin Glass");
     const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
     return q.range(from, to);
   });
@@ -411,7 +414,10 @@ const _getCabinRequirementsUncached = async (): Promise<CabinReqRow[]> => {
       const base = supabase
         .from("cabin_job_lines")
         .select("cabin_type, item_id, qty, cabin_job_id", withCount ? { count: "exact" } : {})
-        .not("item_id", "is", null);
+        .not("item_id", "is", null)
+        // Cabin Glass is BOUGHT — its requirement lives on Trade MRP only
+        // (owner 2026-08-28).
+        .neq("cabin_type", "Cabin Glass");
       const q = readyIds.length ? base.not("cabin_job_id", "in", `(${readyIds.join(",")})`) : base;
       return q.range(from, to);
     },
@@ -566,6 +572,8 @@ const _getCabinWeeklyUncached = async (): Promise<CabinWeeklyPlan> => {
           .from("cabin_job_lines")
           .select("cabin_type, item_id, qty, cabin_job_id, cj:cabin_jobs!inner()", withCount ? { count: "exact" } : {})
           .not("item_id", "is", null)
+          // Cabin Glass is BOUGHT — Trade MRP only (owner 2026-08-28).
+          .neq("cabin_type", "Cabin Glass")
           .is("cj.marked_ready_at", null)
           .range(from, to),
     ),

@@ -299,7 +299,9 @@ export interface CabinJobListRow {
    *  cabin requirement (their items are already built). null = still counts. */
   marked_ready_at: string | null;
   /** Non-null ISO timestamp when marked dispatched; dispatched jobs move to the
-   *  "Dispatched" section of the list. Status only — no inventory effect. */
+   *  "Dispatched" section of the list. Dispatch consumes the job's CABIN GLASS
+   *  from Main Store and ends its Trade-MRP glass demand (owner 2026-08-28);
+   *  all other items were consumed at Mark Ready. */
   dispatched_at: string | null;
   /** TRUE when the linked elevator Job Order's GAD drawing was changed after its
    *  BOM was defined (the `jobs`-level GAD-drift alert). Severe: the cabin was
@@ -445,6 +447,10 @@ export async function getCabinFinishRequirement(): Promise<CabinFinishGroup[]> {
         withCount ? { count: "exact" } : {},
       )
       .not("item_id", "is", null)
+      // Cabin Glass is BOUGHT and dispatch-timed — its requirement lives on
+      // Trade MRP only (owner 2026-08-28), so it never shows here (this view
+      // keys on ready, which would drop glass too early).
+      .neq("cabin_type", "Cabin Glass")
       .is("cj.marked_ready_at", null)
       .range(from, to),
   );
@@ -863,19 +869,36 @@ export async function deleteCabinJob(
 }
 
 /**
- * Reconcile a cabin job's stock effect to its READY state. A ready cabin job has
- * been BUILT, so its items are consumed OUT of Main Store (production_out); an
- * unmark restores them. Idempotent + reversible — keyed on
- * reference_type='cabin_job_ready' + reference_id=cabin job id, so re-marking never
- * double-deducts and unmarking restores exactly what was taken. Mirrors the
- * program-run / dispatch stock reconcile (post only the DELTA vs what's applied).
- * Best-effort: the caller wraps it so a posting hiccup never blocks the toggle.
+ * Reconcile a cabin job's stock effect to its current READY + DISPATCHED state.
+ * Owner rule (2026-08-28): a ready cabin job has been BUILT, so its items are
+ * consumed OUT of Main Store — EXCEPT Cabin Glass, which is only allocated to
+ * the job when it is DISPATCHED (glass ships with the cabin, it isn't consumed
+ * by the build). Two independent ledgers ("buckets"):
+ *   - non-glass lines ↔ reference_type 'cabin_job_ready'    (consumed while ready)
+ *   - Cabin Glass lines ↔ reference_type 'cabin_job_dispatch' (consumed while dispatched)
+ * Each bucket posts only the DELTA between its desired net and what its ledger
+ * already holds (reference_id = cabin job id), so re-marking never
+ * double-deducts and unmarking restores exactly what was taken. Legacy jobs
+ * whose glass was consumed at ready time (the pre-2026-08-28 rule posted glass
+ * under 'cabin_job_ready') migrate themselves on their next toggle: the ready
+ * bucket restores the glass the old rule took, the dispatch bucket consumes it
+ * when the job is dispatched — double deduction is impossible because each
+ * bucket lands exactly on its desired net.
+ * Best-effort: the callers wrap it so a posting hiccup never blocks the toggle.
  */
-async function syncCabinReadyInventory(
-  supabase: Db,
-  cabinJobId: string,
-  ready: boolean,
-): Promise<void> {
+async function syncCabinStockToState(supabase: Db, cabinJobId: string): Promise<void> {
+  const { data: job, error: jobErr } = await supabase
+    .from("cabin_jobs")
+    .select("marked_ready_at, dispatched_at")
+    .eq("id", cabinJobId)
+    .maybeSingle();
+  // A failed state read must THROW (the callers log it) — silently returning
+  // would leave stock diverged from the flags with no trace.
+  if (jobErr) throw jobErr;
+  if (!job) return;
+  const ready = job.marked_ready_at != null;
+  const dispatched = job.dispatched_at != null;
+
   // Main Store holds finished cabin panels — it's where program runs post the
   // production_in that builds cabin stock, so that's what a ready job consumes.
   const { data: whs } = await supabase.from("warehouses").select("id, name");
@@ -884,77 +907,99 @@ async function syncCabinReadyInventory(
     | undefined;
   if (!mainId) return;
 
-  // Desired signed net per item in Main Store: ready => -qty (consumed); else none.
-  const desired = new Map<string, number>();
-  if (ready) {
-    const { data: lines } = await supabase
-      .from("cabin_job_lines")
-      .select("item_id, qty")
-      .eq("cabin_job_id", cabinJobId)
-      .not("item_id", "is", null);
-    for (const l of lines ?? []) {
-      const q = Number(l.qty) || 0;
-      if (q <= 0) continue;
-      const id = l.item_id as string;
-      desired.set(id, (desired.get(id) ?? 0) - q);
-    }
-  }
+  const { data: lines } = await supabase
+    .from("cabin_job_lines")
+    .select("item_id, qty, cabin_type")
+    .eq("cabin_job_id", cabinJobId)
+    .not("item_id", "is", null);
 
-  // Already-applied net per item from this job's prior cabin_job_ready txns.
-  const { data: posted } = await supabase
-    .from("inventory_transactions")
-    .select("item_id, quantity, transaction_type")
-    .eq("reference_type", "cabin_job_ready")
-    .eq("reference_id", cabinJobId)
-    .eq("warehouse_id", mainId);
-  const applied = new Map<string, number>();
-  for (const p of posted ?? []) {
-    const q = Number(p.quantity) || 0;
-    const type = p.transaction_type as string;
-    const d =
-      type === "adjustment"
-        ? q
-        : type === "production_in" || type === "purchase_in" || type === "transfer"
-          ? Math.abs(q)
-          : -Math.abs(q);
-    applied.set(p.item_id as string, (applied.get(p.item_id as string) ?? 0) + d);
-  }
+  const buckets = [
+    {
+      ref: "cabin_job_ready",
+      active: ready,
+      glass: false,
+      noteOn: "Cabin job marked ready — stock consumed",
+      noteOff: "Cabin job not ready — stock restored",
+    },
+    {
+      ref: "cabin_job_dispatch",
+      active: dispatched,
+      glass: true,
+      noteOn: "Cabin job dispatched — glass consumed",
+      noteOff: "Cabin job not dispatched — glass restored",
+    },
+  ];
 
-  for (const itemId of new Set<string>([...desired.keys(), ...applied.keys()])) {
-    const delta = (desired.get(itemId) ?? 0) - (applied.get(itemId) ?? 0);
-    if (Math.abs(delta) < 1e-9) continue;
-    let type: TransactionType;
-    let qty: number;
-    if (applied.has(itemId)) {
-      // This item already has prior postings for the job — steer it with a signed
-      // adjustment so the running total lands exactly on `desired`.
-      type = "adjustment";
-      qty = delta;
-    } else if (delta > 0) {
-      type = "production_in";
-      qty = delta;
-    } else {
-      type = "production_out";
-      qty = -delta;
+  for (const bucket of buckets) {
+    // Desired signed net per item in Main Store for THIS bucket's lines:
+    // active => -qty (consumed); else none.
+    const desired = new Map<string, number>();
+    if (bucket.active) {
+      for (const l of lines ?? []) {
+        const q = Number(l.qty) || 0;
+        if (q <= 0) continue;
+        if (((l.cabin_type as string) === "Cabin Glass") !== bucket.glass) continue;
+        const id = l.item_id as string;
+        desired.set(id, (desired.get(id) ?? 0) - q);
+      }
     }
-    await recordTransaction({
-      item_id: itemId,
-      warehouse_id: mainId,
-      transaction_type: type,
-      quantity: qty,
-      reference_type: "cabin_job_ready",
-      reference_id: cabinJobId,
-      notes: ready
-        ? "Cabin job marked ready — stock consumed"
-        : "Cabin job unmarked — stock restored",
-    });
+
+    // Already-applied net per item from this job's prior txns in this bucket.
+    const { data: posted } = await supabase
+      .from("inventory_transactions")
+      .select("item_id, quantity, transaction_type")
+      .eq("reference_type", bucket.ref)
+      .eq("reference_id", cabinJobId)
+      .eq("warehouse_id", mainId);
+    const applied = new Map<string, number>();
+    for (const p of posted ?? []) {
+      const q = Number(p.quantity) || 0;
+      const type = p.transaction_type as string;
+      const d =
+        type === "adjustment"
+          ? q
+          : type === "production_in" || type === "purchase_in" || type === "transfer"
+            ? Math.abs(q)
+            : -Math.abs(q);
+      applied.set(p.item_id as string, (applied.get(p.item_id as string) ?? 0) + d);
+    }
+
+    for (const itemId of new Set<string>([...desired.keys(), ...applied.keys()])) {
+      const delta = (desired.get(itemId) ?? 0) - (applied.get(itemId) ?? 0);
+      if (Math.abs(delta) < 1e-9) continue;
+      let type: TransactionType;
+      let qty: number;
+      if (applied.has(itemId)) {
+        // This item already has prior postings for the job — steer it with a signed
+        // adjustment so the running total lands exactly on `desired`.
+        type = "adjustment";
+        qty = delta;
+      } else if (delta > 0) {
+        type = "production_in";
+        qty = delta;
+      } else {
+        type = "production_out";
+        qty = -delta;
+      }
+      await recordTransaction({
+        item_id: itemId,
+        warehouse_id: mainId,
+        transaction_type: type,
+        quantity: qty,
+        reference_type: bucket.ref,
+        reference_id: cabinJobId,
+        notes: bucket.active ? bucket.noteOn : bucket.noteOff,
+      });
+    }
   }
 }
 
 /**
  * Toggle a cabin job's "ready" flag. A ready job's items are EXCLUDED from every
  * cabin requirement / cutting-demand reader (they're already built) AND consumed
- * out of Main Store stock; ready=false clears the timestamp and restores the
+ * out of Main Store stock — EXCEPT Cabin Glass, which stays demanded (Trade MRP)
+ * and in stock until DISPATCH (owner 2026-08-28, see syncCabinStockToState);
+ * ready=false clears the timestamp and restores the
  * stock. Busts the cabin-jobs + cabin requirement/MRP/weekly + inventory caches.
  */
 export async function setCabinJobReady(
@@ -972,10 +1017,11 @@ export async function setCabinJobReady(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
-  // Consume (ready) / restore (unmark) the job's items in Main Store. Best-effort:
+  // Consume (ready) / restore (unmark) the job's non-glass items in Main Store
+  // (Cabin Glass moves on DISPATCH — see syncCabinStockToState). Best-effort:
   // an inventory hiccup must not fail the ready toggle itself.
   try {
-    await syncCabinReadyInventory(supabase, id, ready);
+    await syncCabinStockToState(supabase, id);
   } catch (e) {
     console.error("cabin ready inventory sync failed", e);
   }
@@ -998,9 +1044,12 @@ export async function setCabinJobReady(
 
 /**
  * Toggle a cabin job's "dispatched" flag. Dispatched jobs move to the Dispatched
- * section of the cabin-jobs list. STATUS ONLY — no inventory effect: cabin stock
- * is consumed when a job is marked READY (see setCabinJobReady), never on dispatch.
- * Reversible — dispatched=false clears the timestamp and the job returns to Active.
+ * section of the cabin-jobs list. Owner rule (2026-08-28): dispatch consumes the
+ * job's CABIN GLASS from Main Store (all other items were consumed at Mark
+ * Ready — see setCabinJobReady) and drops the glass from the Trade MRP
+ * requirement (mrp.ts's cabin-glass fold keys on dispatched_at). Reversible —
+ * dispatched=false clears the timestamp, restores the glass, and the job
+ * returns to Active.
  */
 export async function setCabinJobDispatched(
   id: string,
@@ -1017,8 +1066,23 @@ export async function setCabinJobDispatched(
     .eq("id", id);
   if (error) return { ok: false, error: error.message };
 
+  // Consume (dispatch) / restore (undo) the job's Cabin Glass in Main Store.
+  // Best-effort: an inventory hiccup must not fail the dispatch toggle itself.
+  try {
+    await syncCabinStockToState(supabase, id);
+  } catch (e) {
+    console.error("cabin dispatch inventory sync failed", e);
+  }
+
   revalidatePath("/cabin-jobs");
   revalidateTag("cabin-jobs");
+  // Glass demand (Trade MRP) keys on dispatched_at; stock moved too — refresh
+  // the requirement + inventory surfaces.
+  revalidateTag("cabin-requirements");
+  revalidateTag("inventory-stock");
+  revalidatePath("/cabin-inventory");
+  revalidatePath("/inventory");
+  revalidatePath("/inventory/changes");
   return { ok: true, id };
 }
 

@@ -22,6 +22,7 @@ import { linePhase } from "@/lib/bom/bom-sections";
 import { computeMakePlanCore, explodeToLeaves } from "@/lib/actions/make-plan-core";
 import { _getOutstandingLinesUncached } from "@/lib/actions/po-outstanding";
 import { fetchCarLintonDemand } from "@/lib/mrp/car-linton-demand";
+import { fetchCabinGlassDemand } from "@/lib/mrp/cabin-glass-demand";
 import type { MrpRow } from "@/lib/actions/mrp";
 
 const HORIZON_WEEKS = 8; // this week (w0) + 7 more
@@ -237,6 +238,9 @@ export async function loadWeeklyDemand(
   // nests, so it feeds the weekly make board too (mirrors getMrpData's fold).
   const scoped = !!(jobIds && jobIds.length);
   const carLintonPromise = inFlight(fetchCarLintonDemand(supabase, undefined, scoped ? jobIds! : null));
+  // Cabin Glass (owner 2026-08-28): bought, demanded until the cabin job is
+  // DISPATCHED — folds into the trade weekly the same way.
+  const cabinGlassPromise = inFlight(fetchCabinGlassDemand(supabase, undefined, scoped ? jobIds! : null));
 
   const jobs = await fetchAllRanged<{ id: string; requirement_stage: string | null; requirement_dispatch_date: string | null }>(
     (from, to, withCount) => {
@@ -391,8 +395,10 @@ export async function loadWeeklyDemand(
   // the weekly make board schedules the door-panel nests for it. Undated /
   // beyond-horizon linked jobs are skipped (their jobs were already counted in
   // the board's later/undated totals by the jobs pass above).
-  {
-    const rows = await carLintonPromise;
+  // (Cabin Glass — owner 2026-08-28 — rides the same fold: bought item demanded
+  // by cabin jobs until DISPATCH, surfacing on the trade weekly.)
+  for (const foldPromise of [carLintonPromise, cabinGlassPromise]) {
+    const rows = await foldPromise;
     for (const r of rows) {
       if (r.qty <= 0) continue;
       const rem = remainingByJob.get(r.jobId);

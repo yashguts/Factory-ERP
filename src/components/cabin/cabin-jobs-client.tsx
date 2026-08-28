@@ -107,7 +107,7 @@ export function CabinJobsClient({
     if (
       next &&
       !window.confirm(
-        `Mark cabin job "${j.job_number}" as READY?\n\nIts items will stop counting in the cabin requirement and cutting plans. Click OK to confirm.`,
+        `Mark cabin job "${j.job_number}" as READY?\n\nIts items (except Cabin Glass) are consumed from stock and stop counting in the cabin requirement. Cabin Glass stays in the Trade requirement and is consumed only on Dispatch. Click OK to confirm.`,
       )
     )
       return;
@@ -121,9 +121,9 @@ export function CabinJobsClient({
     toast.success(next ? `${j.job_number} marked ready` : `${j.job_number} reopened`);
     router.refresh();
   }
-  // Optimistic dispatched state overlay. Dispatched = shipped; STATUS ONLY (no
-  // inventory effect — cabin stock is consumed on "ready"). Moves the job to the
-  // Dispatched section.
+  // Optimistic dispatched state overlay. Dispatched = shipped: consumes the
+  // job's CABIN GLASS from stock (other items were consumed on "ready" — owner
+  // rule 2026-08-28) and moves the job to the Dispatched section.
   const [dispatchOverride, setDispatchOverride] = useState<Record<string, boolean>>({});
   const isDispatched = (j: CabinJobListRow) => dispatchOverride[j.id] ?? j.dispatched_at != null;
   async function toggleDispatched(j: CabinJobListRow) {
@@ -131,7 +131,7 @@ export function CabinJobsClient({
     if (
       next &&
       !window.confirm(
-        `Mark cabin job "${j.job_number}" as DISPATCHED?\n\nIt moves to the Dispatched section. This does NOT change inventory (cabin stock is consumed when a job is marked Ready). Click OK to confirm.`,
+        `Mark cabin job "${j.job_number}" as DISPATCHED?\n\nIt moves to the Dispatched section and its Cabin Glass is consumed from stock (all other items were consumed at Mark Ready). Click OK to confirm.`,
       )
     )
       return;
@@ -618,8 +618,8 @@ export function CabinJobsClient({
                             className={cn("cursor-pointer", isDispatched(j) && "text-[var(--primary)]")}
                             title={
                               isDispatched(j)
-                                ? "Dispatched — moved to the Dispatched section. Click to move back to Active. (No inventory effect.)"
-                                : "Mark dispatched — move this job to the Dispatched section. Does not change inventory."
+                                ? "Dispatched — its Cabin Glass was consumed from stock. Click to move back to Active (restores the glass)."
+                                : "Mark dispatched — consumes the job's Cabin Glass from stock and moves it to the Dispatched section (other items were consumed at Mark Ready)."
                             }
                             onClick={(e) => {
                               e.stopPropagation();

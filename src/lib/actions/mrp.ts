@@ -7,6 +7,7 @@ import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { linePhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { fetchCarLintonDemand, type CarLintonDemandRow } from "@/lib/mrp/car-linton-demand";
+import { fetchCabinGlassDemand } from "@/lib/mrp/cabin-glass-demand";
 
 export interface MrpRow {
   item_id: string;
@@ -257,6 +258,13 @@ export async function _getMrpDataUncached(
   const carLintonPromise = inFlight(
     fetchCarLintonDemand(supabase, cutoffDate, adHoc ? jobIds! : null),
   );
+  // Cabin Glass demand (owner 2026-08-28): BOUGHT, not cut — demanded by cabin
+  // jobs until they're DISPATCHED, folds into the TRADE table. Common path like
+  // the linton fold: harmless to Make consumers (trade items are never planned
+  // by the optimiser), and the Trade views read this same requirement map.
+  const cabinGlassPromise = inFlight(
+    fetchCabinGlassDemand(supabase, cutoffDate, adHoc ? jobIds! : null),
+  );
   const tradeLeafPromise = includeDerivedTrade
     ? inFlight(fetchTradeLeafData(supabase))
     : null;
@@ -415,6 +423,10 @@ export async function _getMrpDataUncached(
   // nests jointly with door-panel demand. Cabin MRP excludes Car Linton
   // correspondingly (cabin-mrp.ts), so the demand lives in exactly one place.
   await addCarLintonDemand(carLintonPromise, reqMap, remainingByJob, jobLineItems);
+  // Cabin Glass (owner 2026-08-28): bought item demanded by cabin jobs until
+  // DISPATCH — same fold + gates, lands in the Trade tab via its category's
+  // procurement type. Cabin MRP excludes Cabin Glass correspondingly.
+  await addCarLintonDemand(cabinGlassPromise, reqMap, remainingByJob, jobLineItems);
   if (includeDerivedTrade) {
     await addTradeLeafDemand(tradeLeafPromise!, reqMap);
     // Job-attribute demand (e.g. Home/Belt lifts need guide-shoe liners): added
@@ -1484,7 +1496,10 @@ export async function getMrpItemJobs(
   return unstable_cache(
     (id: string, date?: string, ids?: string[]) => _getMrpItemJobsUncached(id, date, ids),
     ["mrp-item-jobs", key],
-    { revalidate: 1800, tags: ["jobs", "bom-lines"] },
+    // "cabin-jobs": the Car Linton + Cabin Glass folds read cabin_job_lines, and
+    // ready/dispatch toggles revalidate that tag — keeps the popover in step
+    // with the table it hangs off.
+    { revalidate: 1800, tags: ["jobs", "bom-lines", "cabin-jobs"] },
   )(itemId, cutoffDate, jobIds);
 }
 
@@ -1589,7 +1604,17 @@ async function _getMrpItemJobsUncached(
   // demand comes from the fold (addCarLintonDemand). Fetch the same rows so
   // the hover can attribute them to the linked Job Orders (same args as the
   // table's fold call; empty for every non-linton item).
-  const carLintonPromise = fetchCarLintonDemand(supabase, cutoffDate, adHoc ? adHocJobIds! : null);
+  // No-op catch (see `inFlight` in getMrpData): both promises are awaited later,
+  // and an early rejection while other awaits are pending must not become an
+  // unhandled rejection — the error still surfaces at the await.
+  const swallow = <T,>(p: Promise<T>): Promise<T> => {
+    p.catch(() => {});
+    return p;
+  };
+  const carLintonPromise = swallow(fetchCarLintonDemand(supabase, cutoffDate, adHoc ? adHocJobIds! : null));
+  // Same for Cabin Glass (owner 2026-08-28) — its Trade-table demand comes from
+  // the cabin-glass fold, so the hover attributes it to the linked Job Orders.
+  const cabinGlassPromise = swallow(fetchCabinGlassDemand(supabase, cutoffDate, adHoc ? adHocJobIds! : null));
 
   // Job-attribute (drive_type) demand items aren't on any BOM — list their matching
   // in-production jobs directly so the popover matches the table's job count.
@@ -1624,8 +1649,10 @@ async function _getMrpItemJobsUncached(
       .gt("required_quantity", 0)
       .range(from, to),
   );
-  // Cabin (Car Linton) demand rows for THIS item — [] for everything else.
-  const cabinRows = (await carLintonPromise).filter((r) => r.item_id === itemId && r.qty > 0);
+  // Cabin (Car Linton + Cabin Glass) demand rows for THIS item — [] for everything else.
+  const cabinRows = [...(await carLintonPromise), ...(await cabinGlassPromise)].filter(
+    (r) => r.item_id === itemId && r.qty > 0,
+  );
 
   // No BOM lines and no cabin demand: if it's a job-attribute item, its breakdown
   // is the drive-type job list; otherwise there's nothing to show.
