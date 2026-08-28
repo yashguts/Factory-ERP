@@ -24,10 +24,11 @@ function fmtDate(iso: string): string {
 const num = (n: number) => Number(n).toLocaleString("en-IN");
 
 /** Short prefix shown before a resolved source reference. */
-const REF_PREFIX: Record<"po" | "job" | "program", string> = {
+const REF_PREFIX: Record<"po" | "job" | "program" | "cabin", string> = {
   po: "PO ",
   job: "Job ",
   program: "Prog ",
+  cabin: "Cabin ",
 };
 
 /**

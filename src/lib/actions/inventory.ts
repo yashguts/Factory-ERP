@@ -1495,7 +1495,7 @@ export async function recordTransaction(data: {
 
 /** Resolved source document a movement traces to, with a deep link. */
 export interface LedgerReference {
-  kind: "po" | "job" | "program";
+  kind: "po" | "job" | "program" | "cabin";
   /** The document number shown to the user (PO no / Job no / Program name). */
   label: string;
   /** Secondary context (supplier / customer / machine). */
@@ -1581,6 +1581,7 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
   const receiptIds = new Set<string>();
   const dispatchIds = new Set<string>();
   const runIds = new Set<string>();
+  const cabinJobIds = new Set<string>();
   for (const t of txns) {
     const rt = t.reference_type as string | null;
     const rid = t.reference_id as string | null;
@@ -1588,13 +1589,15 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
     if (rt === "po_receipt" || rt === "po_receipt_undo") receiptIds.add(rid);
     else if (rt === "dispatch" || rt === "dispatch_undo") dispatchIds.add(rid);
     else if (rt === "program_run") runIds.add(rid);
+    else if (rt === "cabin_job_ready" || rt === "cabin_job_dispatch") cabinJobIds.add(rid);
   }
 
   const refByReceipt = new Map<string, LedgerReference>();
   const refByDispatch = new Map<string, LedgerReference>();
   const refByRun = new Map<string, LedgerReference>();
+  const refByCabinJob = new Map<string, LedgerReference>();
 
-  const [receiptRes, dispatchRes, runRes] = await Promise.all([
+  const [receiptRes, dispatchRes, runRes, cabinRes] = await Promise.all([
     receiptIds.size
       ? supabase.from("purchase_order_receipts").select("id, po_id").in("id", [...receiptIds])
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
@@ -1603,6 +1606,9 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
     runIds.size
       ? supabase.from("operation_runs").select("id, operation_id").in("id", [...runIds])
+      : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
+    cabinJobIds.size
+      ? supabase.from("cabin_jobs").select("id, job_number, customer_name").in("id", [...cabinJobIds])
       : Promise.resolve({ data: [] as Array<Record<string, unknown>> }),
   ]);
 
@@ -1669,11 +1675,24 @@ export async function getItemLedger(itemId: string): Promise<ItemLedger> {
     }
   }
 
+  // Cabin chain: the reference IS the cabin job (ready consumes the panels,
+  // dispatch consumes the glass — both post with reference_id = cabin job id).
+  for (const c of (cabinRes.data ?? []) as Array<{ id: string; job_number: string | null; customer_name: string | null }>) {
+    refByCabinJob.set(c.id, {
+      kind: "cabin",
+      label: (c.job_number as string | null) || "(cabin job)",
+      sublabel: (c.customer_name as string | null) ?? null,
+      href: `/cabin-jobs/${c.id}`,
+      by: null,
+    });
+  }
+
   const resolveRef = (rt: string | null, rid: string | null): LedgerReference | null => {
     if (!rid) return null;
     if (rt === "po_receipt" || rt === "po_receipt_undo") return refByReceipt.get(rid) ?? null;
     if (rt === "dispatch" || rt === "dispatch_undo") return refByDispatch.get(rid) ?? null;
     if (rt === "program_run") return refByRun.get(rid) ?? null;
+    if (rt === "cabin_job_ready" || rt === "cabin_job_dispatch") return refByCabinJob.get(rid) ?? null;
     return null;
   };
 

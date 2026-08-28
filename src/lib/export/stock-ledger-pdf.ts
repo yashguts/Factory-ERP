@@ -21,10 +21,11 @@ function safeName(s: string): string {
   return (s || "item").replace(/[^a-z0-9]+/gi, "_");
 }
 
-const REF_PREFIX: Record<"po" | "job" | "program", string> = {
+const REF_PREFIX: Record<"po" | "job" | "program" | "cabin", string> = {
   po: "PO ",
   job: "Job ",
   program: "Prog ",
+  cabin: "Cabin ",
 };
 
 /** "PO 123 (Supplier)" / "Job RNLCHA-0057 (Customer)" / the note, for the Ref column. */
