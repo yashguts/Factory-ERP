@@ -1,94 +1,131 @@
-# Session Handoff — 2026-06-20 (Factory ERP)
+# Session Handoff — 2026-09-05 (Factory ERP)
 
-Live: **https://lt-factory-erp.netlify.app** · `main` · auto-deploys ~1 min on push (hard-refresh tabs).
-Owner is a **non-developer** — reviews the deployed app, not code. **Read `CLAUDE.md`** (deep reference) and
-the auto-memory index (`~/.claude/.../memory/MEMORY.md`); this file is the quick orientation + what's fresh.
+Live: **https://lt-factory-erp.netlify.app** · `main` · Netlify auto-deploys ~1 min on push (hard-refresh tabs).
+Owner is a **non-developer** — reviews the deployed app, not code. **`CLAUDE.md` is the deep reference**;
+this file is quick orientation + what's fresh. Also read the auto-memory index
+(`~/.claude/projects/H--Anthropic-Access-ERPFACTORY/memory/MEMORY.md`).
 
-This session built one big feature end-to-end: the **Auto Part List generator**. Everything below is the state of it.
-
----
-
-## 0 — Headline: Auto Part List (the per-job "Part List" tab) — LIVE
-
-**What it does.** On a job's **Part List** tab (`/jobs/[id]/packing-list`), the engineer clicks **Generate**
-and the system drafts the full Mechanical Part List from **rules + the job's BOM + the GA drawing**, each line
-linked to a real inventory item (or marked non-stock). It's a **watertight checklist**: the whole universe of
-~501 particulars is shown in order (not-applicable ones greyed, click to add), every active line must be
-**✓ checked**, every part-group **confirmed**, every BOM item placed, before it can be **Marked Ready**.
-
-**How it generates (RULES-ONLY — important):**
-- **Presence**: the door/drive **template skeleton** (`templates.json`) + a door-independent core.
-- **Spec/size**: **band-conditioned mined sizing** (`sizing-bands.json` — most-common size per part per
-  capacity band) + the drawing's door-opening width; falls back to each particular's standard spec.
-- **Quantity**: mined formulas (`quantity-models.json`: header=stops+1, sill=stops, …) and **travel-scaled**
-  models (`travel-models.json`) when the drawing gives travel.
-- **Inventory link**: `resolve.ts` matches (category + size). Category corrections + genuine non-inventory
-  flags come from `partlist-overrides.json` (research-grounded). **BOM is read-only** and blended on top
-  (BOM item wins; conflicts flagged).
-- The old **"similar jobs" (k-NN neighbour copy) was removed** — it produced wrong/bloated lists. Evidence
-  it was right to drop: `scripts/partlist-brain/compare-rules-vs-neighbor.js` (band-mode ties/beats neighbour
-  on specs, e.g. counter rail 23%→90%; rules win on quantities 79% vs 62%).
-
-**Drawing reads are cached.** On drawing upload, `ensureDrawingRead` fires (background) and stores the vision
-read in `job_drawing_extractions`; Generate uses the **cached** read (NEVER inline vision — that caused a
-serverless-timeout "unexpected response" bug). All 151 drawing-jobs are pre-cached. Needs `ANTHROPIC_API_KEY`
-in Netlify for *new* reads (graceful spec+BOM fallback if absent). A "Read drawing" button is the catch-up.
-
-**Re-upload = spec change**: replacing a drawing wipes the cached read + the existing Part List, then re-reads
-(panel confirms first).
-
-### Files
-- Runtime brain: `src/lib/partlist/` — `predict.ts` (rules), `resolve.ts` (inventory match), `types.ts`,
-  + committed JSON artifacts (`sizing-bands`, `quantity-models`, `travel-models`, `templates`,
-  `section-groups`, `partlist-overrides`; `rules.json` is legacy, superseded by sizing-bands).
-- Server actions: `src/lib/actions/partlist.ts` (getPartList, savePartList, **savePartListSection**,
-  markPartListReady, reopenPartList, searchPartItems, **resetPartListForNewDrawing**) and
-  `partlist-generate.ts` (`generatePartListDraft` — the blend engine). `spec-vision.ts` has
-  `extractDrawingData` + `ensureDrawingRead`.
-- UI: `src/components/jobs/partlist-client.tsx` (the checklist) + the route `page.tsx`.
-  `gad-drawing-panel.tsx` auto-reads on upload.
-- DB: `packing_lists` / `packing_list_lines` (migrations 039 + **040 watertight** + **041 non_inventory**).
-- Offline pipeline (`scripts/partlist-brain/`, run in order): `parse-corpus` → `mine-quantities` →
-  `mine-sizing` → `extract-rules` → `gen-compact-corpus` (copies artifacts to `src/lib/partlist/`).
-  Research/aliases: `dump-research-inputs` → (Workflow) → `build-overrides`. Drawing backfill:
-  `dl-pending-drawings` → (Workflow) → `cache-extractions`. Evidence: `compare-rules-vs-neighbor`,
-  `backtest`. Merge-time: `wipe-old-partlists`. Full write-up: `scripts/partlist-brain/ACCURACY-REPORT.md`
-  + memory `project_auto_partlist.md`.
-
-### Locked design decisions (owner)
-Blend per line (no single backbone) · on-demand Generate · replace-from-scratch with confirm · cached drawing
-read · **RULES not similar-jobs** · non-inventory lines allowed (engineer marks "non-stock"; not every line
-needs a SKU).
+> **Read this first.** The previous version of this file was dated **2026-06-20** and led with the Auto Part
+> List build. **352 commits landed between then and today**, so that headline stopped being "what's fresh"
+> months ago — §2 replaces it. The June→September span in §1–§2 is reconstructed from commit history and the
+> current source tree; it is *not* re-verified feature by feature. Treat §0 and §4 as the checked parts.
 
 ---
 
-## 1 — Stack / commands / tools (condensed; see CLAUDE.md)
-- Next.js 15.5 App Router · React 19 · TS · Tailwind 4. Supabase Postgres (`qwzisnmueuqnzzokkpmn`, ap-south-1).
-- `npx tsc --noEmit` (the gate) · `rm -rf .next && npm run build` (OneDrive corrupts `.next`; clear first).
-- Supabase MCP (`execute_sql`/`apply_migration`/`get_logs`); confirm >1-row writes with a count first.
-- Preview MCP for verifying UI — but flaky here (see gotchas); prefer the **prod** launch config over dev.
+## 0 — This session (2026-09-05): SS Grade 316 sheets
 
-## 2 — Open / carried forward
-- **Verify on the live deploy** (couldn't fully click-test locally — preview bounces to `/jobs`): Save,
-  Mark Ready (gate), the **non-stock** toggle, **Save section**, and **re-upload reset**. Generate itself is
-  verified (job 4732: 98 lines, counter rail 5X45X45, fish plate→non-stock, BOM 52/53).
-- **Confirm `ANTHROPIC_API_KEY` is set in Netlify** (for reading newly-uploaded drawings).
-- **Flywheel not built yet**: a `mine-from-ready.js` to re-mine rules (sizing/quantity/presence) from Part
-  Lists the engineers mark **Ready**, so accuracy compounds over months. Owner explicitly wants this.
-- ~7 unscoped particulars still have no category mapping (engineer links or marks non-stock at review).
-- **Pre-existing, still undone** (from the prior handoff, unrelated to part list): `saveBomSection`
-  (`lib/actions/jobs.ts`) delete+reinserts BOM lines, nulling dispatch→line FK links; a
-  `relinkOrphanedDispatchLines` helper was drafted but never added. Grep confirms still missing.
+Small, self-contained data change. Already live on `main` — commit `4be3dc6`, migration `071_ss_grade_316_category.sql`.
 
-## 3 — Gotchas (recurring)
-- **OneDrive** corrupts `.next` and makes dev/preview flaky; the Preview tool intermittently bounces the tab
-  to `/jobs` (re-`location.href` + poll fast to catch state). Prefer verifying on the deploy.
-- **Shared DB**: SQL/wipes hit the live site immediately (the old part-list data was wiped at this merge).
-- **Generate must stay serverless-fast** — never call inline Claude vision inside it (timeout). Use cached
-  `job_drawing_extractions`; parallelise item fetches.
-- Staging: many untracked scratch files (`scripts/_*`, `_*.png`, `*.xlsx`, `scripts/partlist-brain/_*`
-  gitignored) — `git add` explicit paths, never `-A`.
-- Co-author trailer: `Claude Opus 4.8 <noreply@anthropic.com>`.
+- `SS Sheet` had grade buckets for **304 / 430 / 441 / J1** but **not 316**, so the two Grade-316 sheets sat
+  loose under the parent and showed as plain "SS Sheet" in the inventory list — unfilterable by grade.
+- Created **`SS Sheet > SS Grade 316`** (Trade) and refiled **RM-218** (1.2mm) and **RM-219** (1mm) into it.
+  Stock and costs untouched (RM-219 still 6 pcs @ ₹11,800).
+- Created **RM-222 — `2500x1250x1.5mm/SS/Grade 316`** · raw_material · Pieces · Trade (inherited) · stock 0.
+- The owner also asked for a 1.2mm sheet: that **already exists as RM-218**. Active item names are unique
+  (`items_active_name_unique_idx`), so nothing new was created for it — worth re-confirming they didn't mean
+  a *different* 1.2mm sheet (other width, or a finish variant).
+- **Deliberately left blank on RM-222: suppliers and cost price.** Both sibling 316 sheets list
+  *Indinox Stainless & Alloys LLP*, but purchasing data is the owner's call. **Still needs filling in.**
+
+`item_change_log` rows are written by hand inside the migration, so the create + the two category moves appear
+on `/inventory/changes` like any in-app edit. Follow that pattern for future SQL-side item edits.
 
 ---
-**Next obvious step:** owner verifies the flow on the live job pages; then build the **Ready→rules flywheel**.
+
+## 1 — What the app is now (current sidebar IA)
+
+Four nav groups (`src/components/layout/sidebar.tsx`), collapsed to a hover-expanding icon rail:
+
+| Group | Pages |
+|---|---|
+| **Inventory** | Inventory · Cabin Inventory · Sub-assemblies · Daily Changes |
+| **Production** | Programs · Program Runs · Child Parts |
+| **Orders** | Job Orders · Status Alerts · CRM Payments · Cabin Jobs · BOM (old) |
+| **Planning** | Make MRP · Trade MRP · Cabin MRP · Job Shortfall · Demand Rules · Procurement |
+
+Not in the nav but live: `/packing-list-r1` (+ `/template`, `/[jobId]`), `/jobs/[id]/packing-list`,
+`/jobs/gad-alerts`, `/inventory/atlas`, `/inventory/health`, `/mrp/plan`, `/mrp/make-plan`, `/mrp/weekly`,
+`/mrp/trade/buy`, `/mrp/cabin/programs`, `/mrp/cabin/weekly`, `/cabin-programs`, `/settings`,
+`/print/packing-list/[jobId]`.
+
+Badges on the rail are live counts: **red** = GAD drawing drift (Job Orders), **amber** = open status alerts,
+**blinking emerald** = unacknowledged CRM payment events.
+
+Server actions have grown to ~50 domain files under `src/lib/actions/` — one per domain, still no monolith.
+
+## 2 — Biggest shift since the June handoff: **Packing List R1 is the BOM**
+
+Migration `058_r1_is_the_bom_foundation.sql` (cutover ~2026-07-03) made **Packing List R1 the primary editor**
+for what a job needs. It **mirrors into `job_bom_lines`**, which stays the demand/dispatch backbone, so every
+downstream consumer (MRP, weekly, dispatch, cabin, procurement) reads the same rows as before. Sync logic:
+**`src/lib/actions/r1-bom-sync.ts`**.
+
+- `job_bom_lines.source` = `'r1'` for mirrored lines, `NULL` for legacy lines from the old BOM form (reviewed
+  and crossed off via R1's **Unmapped Items** panel; removals snapshot into `removed_bom_lines` so they're
+  reversible).
+- `packing_r1_lists.audited_at` / `audited_by` record who marked a list final.
+- **`/bom` is now "BOM (old)"** — a read-only archive of the pre-cutover Job Order BOMs, kept as a transition
+  reference. The sidebar comment says to remove it once the team stops needing it.
+
+Other significant arrivals in that window (from commit subjects): Ricardo **+ LT Elevator CRM** live financials
+and payment notifications · **saved job sets** (e.g. "Urgent") usable across MRP · job-scope pickers on Make /
+Trade / Cabin MRP · **Procurement** (POs, GST landed cost, PO photo/vision reading) · **Demand Rules** ·
+cabin jobs mark-ready consuming stock + dispatch-time Cabin Glass movement · **Child Parts** · Inventory
+**Atlas** and **Health** · assembly runs · run-sheet photo reading · line-level dispatch phases · R1 print tab.
+
+The June headline (Auto Part List, rules-based, cached drawing reads) still exists at
+`/jobs/[id]/packing-list`, with the brain in `src/lib/partlist/` and the pipeline in `scripts/partlist-brain/`.
+Its **locked design decisions still stand**: blend per line · on-demand Generate · replace-from-scratch with
+confirm · **cached** drawing read (never inline vision — that caused a serverless timeout) · **rules, not
+similar-jobs** · non-inventory lines allowed.
+
+## 3 — Stack / commands / tools
+
+- Next.js 15.5 App Router · React 19 · TS · Tailwind 4 · Supabase Postgres (`qwzisnmueuqnzzokkpmn`, ap-south-1).
+- **`npx tsc --noEmit` is the gate.** `npm run build` **cannot run locally** — see §5.
+- Supabase MCP (`execute_sql` / `apply_migration` / `get_logs`). Always preview with a count before any write
+  touching more than one row.
+- Branch rubric is in `CLAUDE.md` §0. Typos, small fixes and small additions on `main`; risky schema changes,
+  >10-file refactors and speculative work on a branch + PR. **Tell the owner when you start a branch.**
+- After SQL run outside the app, **push a commit** to wipe the Netlify build-tier cache; otherwise cached
+  reads stay stale for the 60s TTL.
+
+## 4 — Open / carried forward (each re-verified 2026-09-05)
+
+- **RM-222 has no supplier and no cost price** (§0). Owner needs to supply both.
+- **`saveBomSection` still nulls dispatch links.** `src/lib/actions/jobs.ts` still does delete-then-reinsert
+  over the affected categories, so `job_dispatch_lines.job_bom_line_id` (FK `ON DELETE SET NULL`) is cleared
+  when a section is re-saved. A `relinkOrphanedDispatchLines` helper was drafted in a much earlier session and
+  **still does not exist anywhere in `src/` or `scripts/`** — grep confirms. Carried forward since ~June.
+  The R1 cutover (§2) reduced how often the old BOM form is the editor, but did not fix this path.
+- **Part List flywheel still not built.** `scripts/partlist-brain/` has `mine-quantities.js`, `mine-sizing.js`
+  and `remine-with-features.js`, but **no `mine-from-ready.js`** — nothing re-mines rules from Part Lists the
+  engineers mark Ready, so accuracy doesn't compound over time. The owner explicitly asked for this.
+- **`ANTHROPIC_API_KEY` on Netlify** was an open question in June. Six surfaces now depend on it
+  (`spec-vision`, `run-sheet-vision`, `po-vision`, `cabin-autofill`, `demand-rules`, `partlist-client`), and
+  the 2026-08-28 run-sheet fix implies it is working — but **this was not directly verified** this session.
+- ~7 unscoped Part List particulars still have no category mapping (engineer links or marks non-stock at review).
+
+## 5 — Gotchas (recurring)
+
+- **`npm run build` fails locally — the drive, not the repo.** `H:` is **FAT32 on a removable disk**; webpack's
+  resolver gets `EISDIR` from `readlink` where it expects `EINVAL` and aborts. `npm run dev` and
+  `npx tsc --noEmit` work fine, and Netlify builds `main` on Linux, so nothing real is broken. Don't debug it
+  as a dependency problem. For a genuine local production build, copy the project to an NTFS drive first.
+  (`--turbopack` gets past the resolver but then trips a Turbopack-only check on a type-only re-export in
+  `src/lib/actions/bom-predict.ts` — also not a real bug.)
+- **Shared DB**: SQL runs against the live site immediately. There is no staging copy.
+- **Generate must stay serverless-fast** — never call inline Claude vision inside it. Use the cached
+  `job_drawing_extractions` read.
+- **PostgREST caps a select at 1000 rows** — page with `.range()` on anything that can exceed it.
+- **`unstable_cache` silently drops entries over ~2MB** — the read then re-runs on every request and the page
+  feels broken-slow. Project to the fields the consumer actually needs.
+- **Every route needs a `loading.tsx`**, or soft navigation paints nothing and reads as a freeze.
+- Staging has many untracked scratch files (`scripts/_*`, `_*.png`, `*.xlsx`) — **`git add` explicit paths,
+  never `-A`**.
+- CRLF warnings on Windows: ignore.
+- Co-author trailer: **`Claude Opus 5 <noreply@anthropic.com>`**.
+
+---
+**Next obvious step:** get supplier + cost onto RM-222, then pick up the two long-carried items — the
+`saveBomSection` dispatch-relink fix and the Part List Ready→rules flywheel.
