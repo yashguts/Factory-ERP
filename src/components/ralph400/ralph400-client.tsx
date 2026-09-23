@@ -179,13 +179,14 @@ export function Ralph400Client() {
       return row;
     });
 
-    const panelRows: FlatRow[] = m.panels.map((r) => {
-      const row: FlatRow = { Description: r.desc };
-      LEVELS.forEach((l, i) => {
-        row[l] = cellText(r.cells[i]);
+    const panelRowsFor = (rows: typeof m.panels): FlatRow[] =>
+      rows.map((r) => {
+        const row: FlatRow = { Description: r.desc };
+        LEVELS.forEach((l, i) => {
+          row[l] = cellText(r.cells[i]);
+        });
+        return row;
       });
-      return row;
-    });
 
     exportSheetsToXlsx({
       filename: `RALPH400-BOM-${(inp.jobNo || "job").replace(/[^\w-]+/g, "_")}`,
@@ -204,8 +205,13 @@ export function Ralph400Client() {
           columns: [{ header: "Description", field: "Description" }, ...levelHeaders],
         },
         {
-          name: "Glass & sheet panels",
-          rows: panelRows,
+          name: "Glass panels",
+          rows: panelRowsFor(m.panels.filter((p) => p.desc.startsWith("GLASS"))),
+          columns: [{ header: "Description", field: "Description" }, ...levelHeaders],
+        },
+        {
+          name: "Sheet covers",
+          rows: panelRowsFor(m.panels.filter((p) => !p.desc.startsWith("GLASS"))),
           columns: [{ header: "Description", field: "Description" }, ...levelHeaders],
         },
         {
@@ -260,6 +266,40 @@ export function Ralph400Client() {
 
   const numCell = "text-right tabular-nums whitespace-nowrap";
   const offCol = "bg-[var(--muted)]/40 text-[var(--muted-foreground)]";
+
+  const glassPanels = m.panels.filter((p) => p.desc.startsWith("GLASS"));
+  const coverPanels = m.panels.filter((p) => !p.desc.startsWith("GLASS"));
+
+  /** One panel table. Same columns for both, so the two cards line up. */
+  const panelCard = (title: string, rows: typeof m.panels) => (
+    <Card>
+      <SectionHeader title={title} count="mm" />
+      <Table density="compact">
+        <TableHeader>
+          <TableRow>
+            <TableHead>Description</TableHead>
+            {levelHead.map((h) => (
+              <TableHead key={h.label} className={cn(numCell, h.off && offCol)}>
+                {h.label}
+              </TableHead>
+            ))}
+          </TableRow>
+        </TableHeader>
+        <TableBody>
+          {rows.map((r) => (
+            <TableRow key={r.desc}>
+              <TableCell className="font-medium whitespace-nowrap">{r.desc}</TableCell>
+              {r.cells.map((c, i) => (
+                <TableCell key={i} className={cn(numCell, levelHead[i].off && offCol)}>
+                  <PanelFigure cell={c} />
+                </TableCell>
+              ))}
+            </TableRow>
+          ))}
+        </TableBody>
+      </Table>
+    </Card>
+  );
 
   return (
     <div>
@@ -441,34 +481,11 @@ export function Ralph400Client() {
             </Table>
           </Card>
 
-          {/* panels */}
-          <Card>
-            <SectionHeader title="Glass & sheet panels — height × width" count="mm" />
-            <Table density="compact">
-              <TableHeader>
-                <TableRow>
-                  <TableHead>Description</TableHead>
-                  {levelHead.map((h) => (
-                    <TableHead key={h.label} className={cn(numCell, h.off && offCol)}>
-                      {h.label}
-                    </TableHead>
-                  ))}
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {m.panels.map((r) => (
-                  <TableRow key={r.desc}>
-                    <TableCell className="font-medium whitespace-nowrap">{r.desc}</TableCell>
-                    {r.cells.map((c, i) => (
-                      <TableCell key={i} className={cn(numCell, levelHead[i].off && offCol)}>
-                        <PanelFigure cell={c} />
-                      </TableCell>
-                    ))}
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </Card>
+          {/* Glass and sheet cover are two different materials cut on two
+              different machines, so they get a card each rather than one
+              mixed table. Split on the description; the model is untouched. */}
+          {panelCard("Glass panels — height × width", glassPanels)}
+          {panelCard("Sheet covers — height × width", coverPanels)}
 
           {/* channels */}
           <Card>
