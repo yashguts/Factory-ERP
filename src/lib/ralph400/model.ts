@@ -465,34 +465,43 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { dwg: "D102-0001", desc: "BACK LEFT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D103-0001", desc: "BACK RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { desc: "HZ CHANNEL SILL 142", qty: F, len: W - 200 },
+    /* QTY carries the same counterweight gate as LEN. Until 2026-09-23 the
+       workbook gated only the length (column I) and left column H a flat 1 /
+       2*C8-1 / 2*C8, so the side with no glass still shipped a quantity — at
+       3 floors with CWT=BACK that was 1+5 pieces of back glass and 6 right-hand
+       covers on the cut list. H53:H58, H61 and H62 now hold the gate and these
+       mirror them, so app and sheet agree in BOTH modes.
+       SHEET COVER LEFT (H60) is deliberately NOT gated: its length reads
+       "GLASS", meaning those pieces are glass rather than sheet, so its
+       quantity is real. */
     {
       desc: "GLASS BACK COMMON 1098 X (1ST)",
-      qty: 1,
+      qty: pick<Figure>(1, NA, 1),
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
       desc: "GLASS LEFT COMMON 1098 X (1ST)",
-      qty: 1,
+      qty: pick<Figure>(NA, 1, 1),
       len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
     },
     {
       desc: "GLASS RIGHT COMMON 1098 X (1ST)",
-      qty: 1,
+      qty: pick<Figure>(1, 1, NA),
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
     },
     {
       desc: "GLASS LEFT COMMON 1128 X",
-      qty: 2 * F - 1,
+      qty: pick<Figure>(NA, 2 * F - 1, 2 * F - 1),
       len: pick<Figure>(NA, strict ? W - 200 + 35 : D - 200 + 35, D - 200 + 35), // I56 drift
     },
     {
       desc: "GLASS RIGHT COMMON 1128 X",
-      qty: 2 * F - 1,
+      qty: pick<Figure>(2 * F - 1, 2 * F - 1, NA),
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
     },
     {
       desc: "GLASS BACK COMMON 1128 X",
-      qty: 2 * F - 1,
+      qty: pick<Figure>(2 * F - 1, NA, 2 * F - 1),
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
@@ -502,12 +511,12 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     },
     {
       desc: "SHEET COVER RIGHT COMMON 1.2MM 1090MM",
-      qty: 2 * F,
+      qty: pick<Figure>(NA, NA, 2 * F),
       len: pick<Figure>(NA, NA, D - 200),
     },
     {
       desc: "SHEET COVER BACK COMMON 1.2MM 1090MM",
-      qty: 2 * F,
+      qty: pick<Figure>(NA, 2 * F, NA),
       len: pick<Figure>(NA, W - 200, NA),
     },
   ];
