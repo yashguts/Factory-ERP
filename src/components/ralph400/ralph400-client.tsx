@@ -8,6 +8,7 @@ import { StatStrip, StatTile } from "@/components/ui/stat-strip";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
+import { Toolbar, ToolbarSpacer } from "@/components/ui/toolbar";
 import {
   Table,
   TableBody,
@@ -265,34 +266,35 @@ export function Ralph400Client() {
       <PageHeader
         icon={<Ruler size={18} />}
         title="RALPH 400 BOM"
-        meta={`${m.liveFloors} of ${inp.floors} level${inp.floors === 1 ? "" : "s"} with a height`}
-        subtitle="Shaft bill of materials, computed from Sheet2 of the RALPH 400 workbook. Reads and writes nothing in the ERP."
-        actions={
-          <>
-            <Select
-              size="sm"
-              value={mode}
-              onChange={(e) => setMode(e.target.value as Mode)}
-              title="Which formula set to evaluate"
-              className="w-56"
-            >
-              <option value="sheet">Match workbook</option>
-              <option value="clean">Apply consistent geometry</option>
-            </Select>
-            <Button type="button" variant="secondary" size="sm" onClick={exportXlsx}>
-              <Download size={14} className="mr-1.5" /> Export
-            </Button>
-            <Button
-              type="button"
-              variant="secondary"
-              size="sm"
-              onClick={() => window.print()}
-            >
-              <Printer size={14} className="mr-1.5" /> Print
-            </Button>
-          </>
-        }
+        subtitle="Shaft bill of materials, from Sheet2 of the RALPH 400 workbook."
+        className="mb-3"
       />
+
+      {/* Controls sit on their own row rather than in the header's actions
+          slot: the mode selector is wide, and sharing a line with the title
+          squeezed it to one word per line on a narrow window. */}
+      <Toolbar>
+        <Select
+          size="sm"
+          value={mode}
+          onChange={(e) => setMode(e.target.value as Mode)}
+          title="Which formula set to evaluate"
+          className="w-auto min-w-[13rem]"
+        >
+          <option value="sheet">Match workbook</option>
+          <option value="clean">Apply consistent geometry</option>
+        </Select>
+        <span className="text-sm text-[var(--muted-foreground)]">
+          {m.liveFloors} of {inp.floors} level{inp.floors === 1 ? "" : "s"} with a height
+        </span>
+        <ToolbarSpacer />
+        <Button type="button" variant="secondary" size="sm" onClick={exportXlsx}>
+          <Download size={14} className="mr-1.5" /> Export
+        </Button>
+        <Button type="button" variant="secondary" size="sm" onClick={() => window.print()}>
+          <Printer size={14} className="mr-1.5" /> Print
+        </Button>
+      </Toolbar>
 
       <div className="grid gap-3 lg:grid-cols-[19rem_minmax(0,1fr)] items-start">
         {/* ---------------- inputs ---------------- */}
