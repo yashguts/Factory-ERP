@@ -1,34 +1,60 @@
-# Session Handoff — 2026-09-05 (Factory ERP)
+# Session Handoff — 2026-09-23 (Factory ERP)
 
 Live: **https://lt-factory-erp.netlify.app** · `main` · Netlify auto-deploys ~1 min on push (hard-refresh tabs).
 Owner is a **non-developer** — reviews the deployed app, not code. **`CLAUDE.md` is the deep reference**;
 this file is quick orientation + what's fresh. Also read the auto-memory index
-(`~/.claude/projects/H--Anthropic-Access-ERPFACTORY/memory/MEMORY.md`).
+(`~/.claude/projects/E--Anthropic-Access-ERPFACTORY/memory/MEMORY.md`).
 
-> **Read this first.** The previous version of this file was dated **2026-06-20** and led with the Auto Part
-> List build. **352 commits landed between then and today**, so that headline stopped being "what's fresh"
-> months ago — §2 replaces it. The June→September span in §1–§2 is reconstructed from commit history and the
-> current source tree; it is *not* re-verified feature by feature. Treat §0 and §4 as the checked parts.
+> **Read this first.** §0 is this session and is fully verified. §1–§2 describe the June→September span and
+> are reconstructed from commit history and the source tree; they are *not* re-verified feature by feature.
+> Treat §0 and §4 as the checked parts. The previous §0 (SS Grade 316 sheets, `4be3dc6`, 2026-09-05) shipped
+> and is done apart from the RM-222 supplier/cost gap still listed in §4.
+>
+> **The project moved from `H:` to `E:`.** Paths in older docs that say `H:\Anthropic Access\ERPFACTORY`
+> mean `E:\…` now; the memory folder likewise moved to `E--Anthropic-Access-ERPFACTORY`.
 
 ---
 
-## 0 — This session (2026-09-05): SS Grade 316 sheets
+## 0 — This session (2026-09-23): RALPH 400 BOM moved into the ERP
 
-Small, self-contained data change. Already live on `main` — commit `4be3dc6`, migration `071_ss_grade_316_category.sql`.
+New page **`/ralph400`** — sidebar **Orders → RALPH 400 BOM**, after "BOM (old)". Commits `562f22f` (port),
+`c6c3d39`, `ac93ef7`, `29c9d59`, `c36b810`, `d05a6bd`. All on `main`, all deployed.
 
-- `SS Sheet` had grade buckets for **304 / 430 / 441 / J1** but **not 316**, so the two Grade-316 sheets sat
-  loose under the parent and showed as plain "SS Sheet" in the inventory list — unfilterable by grade.
-- Created **`SS Sheet > SS Grade 316`** (Trade) and refiled **RM-218** (1.2mm) and **RM-219** (1mm) into it.
-  Stock and costs untouched (RM-219 still 6 pcs @ ₹11,800).
-- Created **RM-222 — `2500x1250x1.5mm/SS/Grade 316`** · raw_material · Pieces · Trade (inherited) · stock 0.
-- The owner also asked for a 1.2mm sheet: that **already exists as RM-218**. Active item names are unique
-  (`items_active_name_unique_idx`), so nothing new was created for it — worth re-confirming they didn't mean
-  a *different* 1.2mm sheet (other width, or a finish variant).
-- **Deliberately left blank on RM-222: suppliers and cost price.** Both sibling 316 sheets list
-  *Indinox Stainless & Alloys LLP*, but purchasing data is the owner's call. **Still needs filling in.**
+**What it is.** `RALPH400_BOM` is a **separate repo** at `E:\Anthropic Access\RAPLH400 BOM\`
+(GitHub `KCodesbabinmaj/RALPH400_BOM`) whose README calls it "a sub program of Factory ERP": a shaft
+bill-of-materials calculator for the RICARDO RALPH 400 lift. It existed as `RALPH 400 BOM.xlsx` plus a
+standalone browser app run by hand from `python web/serve.py` on localhost:8765. It is now also a page in
+this app. **Pure client-side arithmetic — it opens no Supabase connection and writes nothing**, so it cannot
+affect jobs, items or MRP. Inputs persist to `localStorage` under `ralph400.inputs`.
 
-`item_change_log` rows are written by hand inside the migration, so the create + the two category moves appear
-on `/inventory/changes` like any in-app edit. Follow that pattern for future SQL-side item edits.
+Code: `src/lib/ralph400/model.ts` (the calculation), `src/components/ralph400/ralph400-client.tsx` (all UI),
+`src/app/(app)/ralph400/` (route + `loading.tsx`).
+
+**THREE COPIES OF THE SAME CALCULATION NOW EXIST** — the workbook, that repo's `web/model.js`, and this
+repo's `model.ts`. **A change to one must go to all three.** This is the single most important fact about
+this feature.
+
+**How to verify a change to it** (none of this is committed; rebuild it in the scratchpad when needed):
+1. *model vs model* — run both `web/model.js` and a `tsc`-compiled `model.ts` over a scenario sweep and diff
+   every cell. Current baseline: 36,000 scenarios / 9,960,675 numeric cells / **0 diffs, 0 negatives**.
+2. *app vs workbook* — evaluate the `.xlsx` formulas directly and compare against the model. Baseline: 768
+   values across 3 counterweights × 4 shaft/floor configurations, **0 mismatches**.
+   Note the evaluator must handle arithmetic *after* a call (`IF(...)-1`, as `H31` has) — a naive version
+   mis-parsed that and wrongly reported the app as off by one.
+
+**Two fixes to the workbook itself this session**, both mirrored into both models:
+- **Glass quantity ignored the counterweight.** Length cells (column I) were gated on `C15`; quantity cells
+  (column H) were not. Every counterweight position shipped a quantity for a face that does not exist — at 3
+  floors with CWT=BACK, 1 + 5 pieces of back glass and 6 right-hand covers. `H53:H58`, `H61`, `H62` now carry
+  their length cell's gate. **`H60` must stay ungated** — its length reads `GLASS`, meaning those pieces are
+  glass rather than sheet, so its quantity is real.
+- **The owner's own Excel edits were merged in** — two new channel rows, `H29` filled in, `I26` +30, `H37`
+  text cleaned. See §4 for the trap that came with them.
+
+**UI shape**: inputs down the left; Corner verticals / Glass panels / Sheet covers / Horizontal channels /
+2450 console module / Doors & fasteners / Source audit as separate cards. Two modes in the toolbar —
+"Match workbook" reproduces the sheet including its drift, "Apply consistent geometry" applies the consistent
+value to the cells in the Source audit table. Export is a multi-sheet `.xlsx` via `exportSheetsToXlsx`.
 
 ---
 
@@ -40,7 +66,7 @@ Four nav groups (`src/components/layout/sidebar.tsx`), collapsed to a hover-expa
 |---|---|
 | **Inventory** | Inventory · Cabin Inventory · Sub-assemblies · Daily Changes |
 | **Production** | Programs · Program Runs · Child Parts |
-| **Orders** | Job Orders · Status Alerts · CRM Payments · Cabin Jobs · BOM (old) |
+| **Orders** | Job Orders · Status Alerts · CRM Payments · Cabin Jobs · BOM (old) · RALPH 400 BOM |
 | **Planning** | Make MRP · Trade MRP · Cabin MRP · Job Shortfall · Demand Rules · Procurement |
 
 Not in the nav but live: `/packing-list-r1` (+ `/template`, `/[jobId]`), `/jobs/[id]/packing-list`,
@@ -90,9 +116,37 @@ similar-jobs** · non-inventory lines allowed.
 - After SQL run outside the app, **push a commit** to wipe the Netlify build-tier cache; otherwise cached
   reads stay stale for the 60s TTL.
 
-## 4 — Open / carried forward (each re-verified 2026-09-05)
+## 4 — Open / carried forward
 
-- **RM-222 has no supplier and no cost price** (§0). Owner needs to supply both.
+### From this session (RALPH 400)
+
+- **The owner edits the WRONG WORKBOOK.** `RALPH 400 BOM.BACKUP-2026-09-22.xlsx` is the **pre-fix original
+  and must never be edited**, but it is the file Excel has open, and this session's owner changes were typed
+  into it. An exact three-way diff found **88 corrected cells missing from it** — taking it as the new working
+  copy would have silently reverted every fix. The changes were merged the other way instead. **Check
+  `ls -a | grep '^~\$'` in that repo to see which file Excel holds a lock on before trusting any formula.**
+  That backup is **still modified and uncommitted** — the owner has not yet said whether to restore it to
+  pristine (its content is redundant now; the merge preserved everything).
+- **Three unexplained offsets on the two new cover-channel rows.** `HZ CHANNEL COVER LEFT` uses `C5-200+35`
+  for BACK but `C5-200+30` for RIGHT; `HZ CHANNEL COVER RIGHT` uses `C5-200+30` for LEFT but plain `C5-200`
+  for BACK. Neighbouring `135` channels are all plain and every glass row is `+35`, so these match nothing
+  else on the sheet. **Reproduced exactly as written, in both modes, pending the owner confirming the 5 mm
+  differences are deliberate** — if any is a slip it is a wrong cut length on a real part. Logged as audit
+  entry `I33 / I35`.
+- **The glass-quantity defect is still open in steel.** Post-merge cell refs: **`H39`**
+  (`HZ TOP CHANNEL FRONT`, row 39) holds a flat `1` with no counterweight test while `I39` reads `NO` for
+  CWT=BACK; **`H38`** (`HZ TOP CHANNEL BACK`, row 38) *is* gated but returns the text `"BRACKET,  1"` where
+  `I38` reads `NO`. Deliberately out of scope — different material, different order sheet. **Ask before
+  widening.** (Separately, `H36` still holds `" 1"` with a leading space — text in a quantity column, audit
+  entry `H36 / H38`.)
+- **`Qty / level` is not in the Excel export.** The Corner verticals sheet has Description + the seven level
+  columns only; the `1/EACH` column is screen-only.
+- **The verification sweeps are not committed anywhere.** Both the model-vs-model and app-vs-workbook checks
+  are throwaway scratchpad scripts. The RALPH400_BOM handoff has asked twice for them to be made permanent.
+
+### Carried forward
+
+- **RM-222 has no supplier and no cost price.** Owner needs to supply both.
 - **`saveBomSection` still nulls dispatch links.** `src/lib/actions/jobs.ts` still does delete-then-reinsert
   over the affected categories, so `job_dispatch_lines.job_bom_line_id` (FK `ON DELETE SET NULL`) is cleared
   when a section is re-saved. A `relinkOrphanedDispatchLines` helper was drafted in a much earlier session and
@@ -108,8 +162,11 @@ similar-jobs** · non-inventory lines allowed.
 
 ## 5 — Gotchas (recurring)
 
-- **`npm run build` fails locally — the drive, not the repo.** `H:` is **FAT32 on a removable disk**; webpack's
-  resolver gets `EISDIR` from `readlink` where it expects `EINVAL` and aborts. `npm run dev` and
+- **`npm run build` fails locally — the drive, not the repo.** The project now sits on `E:` and it still
+  fails the same way: webpack's resolver gets `EISDIR` from `readlink` on
+  `node_modules/next/dist/pages/_app.js` (a perfectly normal file) where it expects `EINVAL`, and aborts.
+  **Re-confirmed 2026-09-23 by stashing all work and building a pristine `main` — it fails identically there,
+  so never attribute it to your own changes.** `npm run dev` and
   `npx tsc --noEmit` work fine, and Netlify builds `main` on Linux, so nothing real is broken. Don't debug it
   as a dependency problem. For a genuine local production build, copy the project to an NTFS drive first.
   (`--turbopack` gets past the resolver but then trips a Turbopack-only check on a type-only re-export in
@@ -123,9 +180,21 @@ similar-jobs** · non-inventory lines allowed.
 - **Every route needs a `loading.tsx`**, or soft navigation paints nothing and reads as a freeze.
 - Staging has many untracked scratch files (`scripts/_*`, `_*.png`, `*.xlsx`) — **`git add` explicit paths,
   never `-A`**.
+- **A dead dev server looks exactly like an app bug.** The Next dev server died mid-session and kept serving
+  HTML that never hydrated: every input was inert, and a dropdown "doing nothing" was chased as a real defect
+  for several rounds. **Before believing a React page is unresponsive, check
+  `Object.keys(el).some(k => k.startsWith('__react'))` and read the console for `ERR_CONNECTION_REFUSED`/500s.**
+  Clearing `.next` and restarting fixed it.
+- **Stop the dev server before `git merge` or `npm run build`** — it holds locks on `.next` and on new
+  directories, and both fail with bare "Permission denied" / `EPERM` that look like something else.
+- **Verify a deploy by its commit, not by page text.** A grep for a phrase that existed in *both* versions
+  reported a fix as live when the old build was still published. Read `commit_ref` from the Netlify API (or
+  the MCP `get-deploy-for-site`) and compare it to `git rev-parse HEAD`.
 - CRLF warnings on Windows: ignore.
 - Co-author trailer: **`Claude Opus 5 <noreply@anthropic.com>`**.
 
 ---
-**Next obvious step:** get supplier + cost onto RM-222, then pick up the two long-carried items — the
-`saveBomSection` dispatch-relink fix and the Part List Ready→rules flywheel.
+**Next obvious step:** get the owner to confirm the three RALPH 400 cover-row offsets (§4) and decide what
+happens to the edited backup workbook — both are cheap and both are blocking nothing else. Then supplier +
+cost onto RM-222, and the two long-carried items: the `saveBomSection` dispatch-relink fix and the Part List
+Ready→rules flywheel.
