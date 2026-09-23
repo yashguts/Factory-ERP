@@ -25,6 +25,7 @@ import {
   Truck,
   PackageSearch,
   Network,
+  Ruler,
   LayoutGrid,
   Archive,
   UserRound,
@@ -74,6 +75,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       // Read-only archive of the pre-cutover Job Order BOMs (2026-07-03) —
       // a transition-period reference; remove once the team stops needing it.
       { href: "/bom", label: "BOM (old)", icon: Archive },
+      // Shaft BOM calculator for the RALPH 400 model — the RALPH400_BOM
+      // sub-program. Self-contained arithmetic: it reads and writes nothing,
+      // so it carries no badge and never touches job data.
+      { href: "/ralph400", label: "RALPH 400 BOM", icon: Ruler },
     ],
   },
   {
