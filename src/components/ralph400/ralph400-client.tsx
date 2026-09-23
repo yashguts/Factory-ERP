@@ -473,8 +473,9 @@ export function Ralph400Client() {
                         <Fig value={c} />
                       </TableCell>
                     ))}
-                    {/* Hardcoded, as in the source app — see VerticalRow.qty. */}
-                    <TableCell className={numCell}>1</TableCell>
+                    {/* Hardcoded, as in the source app — see VerticalRow.qty.
+                        Reads "1/EACH": one post per level, unit EACH. */}
+                    <TableCell className={numCell}>1/EACH</TableCell>
                   </TableRow>
                 ))}
               </TableBody>
