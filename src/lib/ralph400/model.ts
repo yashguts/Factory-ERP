@@ -81,18 +81,11 @@ export interface AuditRow {
 /** Cells where the workbook still disagrees with its own row/column rule. */
 export const AUDIT: AuditRow[] = [
   {
-    cell: "I56",
+    cell: "I58",
     what: "GLASS LEFT COMMON 1128, CWT=BACK",
     sheet: "C4-200+35",
     clean: "C5-200+35",
     note: "A left-hand panel spans the depth (C5). Row 57, its right-hand twin, uses C5.",
-  },
-  {
-    cell: "H29",
-    what: "HZ CH COVER RIGHT 170 - QTY",
-    sheet: "(blank)",
-    clean: "1",
-    note: "Length is computed but the quantity cell was never filled in.",
   },
   {
     cell: "T8:T11",
@@ -109,6 +102,13 @@ export const AUDIT: AuditRow[] = [
     note: "U and V carry no CWT condition, so the left-cover row still emits an overhead panel when every other level of that row reads \"NO\".",
   },
   {
+    cell: "I33 / I35",
+    what: "HZ CHANNEL COVER LEFT / RIGHT length offsets",
+    sheet: "+35 / +30 / none",
+    clean: "(unconfirmed)",
+    note: "Added 2026-09-23. COVER LEFT uses C5-200+35 for BACK but C5-200+30 for RIGHT; COVER RIGHT uses C5-200+30 for LEFT but plain C5-200 for BACK. The neighbouring 135 channels are all plain C5-200 and the glass rows are all +35, so these three offsets match nothing else on the sheet. Reproduced exactly as written in both views pending confirmation.",
+  },
+  {
     cell: "T13",
     what: "4RT glass-left WIDTH",
     sheet: "(cell missing)",
@@ -116,11 +116,11 @@ export const AUDIT: AuditRow[] = [
     note: "S13 computes a 4th-floor height but the matching width cell was never created, so the panel has no width.",
   },
   {
-    cell: "H35 / H36",
+    cell: "H36 / H38",
     what: "Top-channel QTY",
-    sheet: '"BRACKET 3MM,   1"',
+    sheet: '" 1" / "BRACKET,  1"',
     clean: "bracket flag + 1",
-    note: "Text in a quantity column. Both views split this into a BRACKET tag and a numeric 1 so the column stays summable.",
+    note: "Text in a quantity column. H37 was cleaned to \"1\" on 2026-09-23; H36 still holds a leading space and H38 still holds prose. Both views split these into a BRACKET tag and a numeric 1 so the column stays summable.",
   },
 ];
 
@@ -401,15 +401,20 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
   const channels: ChannelRow[] = [
     { desc: "HZ CHANNEL LEFT 170", br: L, qty: 1, len: D - 200 },
     {
+      // I26's RIGHT branch gained +30 on 2026-09-23 (C5-200 -> C5-200+30).
       desc: "HZ CH LEFT COVER 170",
       qty: pick<Figure>(NA, 1, 1),
-      len: pick<Figure>(NA, W - 200, D - 200),
+      len: pick<Figure>(NA, W - 200, D - 200 + 30),
     },
     { desc: "HZ SILL CHANNEL 142", qty: F, len: W - 200 },
     { desc: "HZ CHANNEL RIGHT 170", br: R, qty: 1, len: D - 200 },
     {
+      // H29 was blank until 2026-09-23; the workbook now carries
+      // =IF(C15="LEFT","1", IF(C15="BACK",1, IF(C15="RIGHT","NO",""))). The
+      // LEFT branch stores "1" as text — normalised to a number here so the
+      // column stays summable, same as the top-channel rows.
       desc: "HZ CH COVER RIGHT 170",
-      qty: strict ? "" : 1,
+      qty: pick<Figure>(1, 1, NA),
       len: pick<Figure>(D - 200, W - 200, NA),
     },
     {
@@ -431,9 +436,24 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(NA, D - 200, D - 200),
     },
     {
+      // Added to the workbook 2026-09-23 (row 33). NB the two offsets differ:
+      // +35 for BACK, +30 for RIGHT. Reproduced exactly as written — see the
+      // AUDIT note; do not "tidy" them to match without asking.
+      desc: "HZ CHANNEL COVER LEFT (1.5MM)",
+      qty: pick<Figure>(NA, F * 3 - 1, F * 3 - 1),
+      len: pick<Figure>(NA, D - 200 + 35, D - 200 + 30),
+    },
+    {
       desc: "HZ CHANNEL 135 RIGHT (1.5MM)",
       qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
       len: pick<Figure>(D - 200, D - 200, NA),
+    },
+    {
+      // Added to the workbook 2026-09-23 (row 35). Its LEFT branch carries
+      // +30 while BACK carries none — again reproduced as written.
+      desc: "HZ CHANNEL COVER RIGHT (1.5MM)",
+      qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
+      len: pick<Figure>(D - 200 + 30, D - 200, NA),
     },
     {
       desc: "HZ TOP CHANNEL LEFT (3MM)",
@@ -454,7 +474,7 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(W - 200, NA, W - 200),
     },
     { desc: "HZ 2ND LAST CHANNEL 135X1.5MM LEFT", br: L, qty: 1, len: D - 200 },
-    { desc: "HZ 2ND LAST CHANNEL 135X3MM RIGHT", br: R, qty: 1, len: D - 200 },
+    { desc: "HZ 2ND LAST CHANNEL 135X3 MM RIGHT", br: R, qty: 1, len: D - 200 },
     { desc: "HZ 2ND LAST CHANNEL 135X1.5MM FRONT", qty: 1, len: W - 200 },
   ];
 
