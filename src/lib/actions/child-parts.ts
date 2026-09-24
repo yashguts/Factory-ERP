@@ -123,7 +123,7 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   // cut-piece output WITH its operation_id (so the cutover gate below becomes
   // a pure in-memory intersection instead of a second outputs query), the Main
   // Store id, and the post-cutover runs.
-  const [bomLines, { data: cats }, cutRows, main, { data: recentRuns }] = await Promise.all([
+  const [bomLines, { data: cats }, cutRows, main, recentRuns] = await Promise.all([
     fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>((from, to, withCount) =>
       supabase
         .from("item_bom_lines")
@@ -146,7 +146,18 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
       // labels on a transient read failure rather than error the whole page.
     ).catch(() => [] as { item_id: string; operation_id: string }[]),
     mainStoreId(supabase),
-    supabase.from("operation_runs").select("operation_id").gte("run_date", CUTOVER_DATE),
+    // Paged — post-cutover runs outgrew PostgREST's 1000-row cap (1,249 by
+    // Sep 2026). The un-paged read silently dropped the newest runs, which made
+    // recently-cut sub-assemblies (e.g. Buffer Stand Main after its 16-Sep run)
+    // vanish from this page entirely.
+    fetchAllRanged<{ operation_id: string }>((from, to, withCount) =>
+      supabase
+        .from("operation_runs")
+        .select("operation_id", withCount ? { count: "exact" } : {})
+        .gte("run_date", CUTOVER_DATE)
+        .order("id")
+        .range(from, to),
+    ),
   ]);
 
   // Group children per parent.
@@ -183,7 +194,7 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   // sub-assemblies are omitted for now (owner: "only going forward we'll keep
   // adding here"). producedSince = cut_part outputs of the post-cutover runs —
   // intersected in memory from the wave-1 reads.
-  const recentOpIds = new Set((recentRuns ?? []).map((r) => r.operation_id as string));
+  const recentOpIds = new Set(recentRuns.map((r) => r.operation_id as string));
   const producedSince = new Set<string>();
   for (const o of cutRows) if (recentOpIds.has(o.operation_id)) producedSince.add(o.item_id);
 
