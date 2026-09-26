@@ -15,7 +15,7 @@ import { CUTOVER_DATE } from "@/lib/inventory/cutover";
  * A group = a "true sub-assembly" (an item_bom_lines parent with >=1 MAKE child;
  * glass-only door panels, whose children are all trade, are NOT assemblies). Each
  * group shows its FULL parts list, every child labelled by kind:
- *   - cut   : a piece a program cuts (a `cut_part` output) — stocked by runs.
+ *   - cut   : a piece a program cuts (`items.part_role = 'cut_part'`) — stocked by runs.
  *   - made  : a made sub-part produced by a program `component` output.
  *   - trade : a bought/procured part (effective procurement = 'trade').
  * Building CONSUMES every child from Main Store and produces the parent, so all
@@ -81,20 +81,26 @@ async function mainStock(supabase: Db, itemIds: string[], main: string): Promise
   return out;
 }
 
+interface ItemMeta {
+  code: string | null;
+  name: string;
+  procurement_type: string | null;
+  category_id: string | null;
+  /** The structural kind of the part — see `items.part_role`. */
+  part_role: string | null;
+}
+
 /** Fetch a column set for many item ids — chunked, all chunks concurrent. */
-async function fetchItemsChunked(
-  supabase: Db,
-  ids: string[],
-): Promise<Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>> {
+async function fetchItemsChunked(supabase: Db, ids: string[]): Promise<Map<string, ItemMeta>> {
   const results = await Promise.all(
     chunked(ids).map((batch) =>
       supabase
         .from("items")
-        .select("id, code, name, procurement_type, category_id")
+        .select("id, code, name, procurement_type, category_id, part_role")
         .in("id", batch),
     ),
   );
-  const out = new Map<string, { code: string | null; name: string; procurement_type: string | null; category_id: string | null }>();
+  const out = new Map<string, ItemMeta>();
   for (const { data } of results)
     for (const it of data ?? [])
       out.set(it.id as string, {
@@ -102,6 +108,7 @@ async function fetchItemsChunked(
         name: (it.name as string) ?? "(item)",
         procurement_type: (it.procurement_type as string | null) ?? null,
         category_id: (it.category_id as string | null) ?? null,
+        part_role: (it.part_role as string | null) ?? null,
       });
   return out;
 }
@@ -134,11 +141,16 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
         .range(from, to),
     ),
     supabase.from("item_categories").select("id, procurement_type"),
+    // Every output that actually PRODUCES stock — the same two roles
+    // operation-runs.ts posts to Main Store. Which of them is a cut piece is
+    // decided by `items.part_role` below, NOT by this row's own role: the two
+    // disagreed on ~85 rows (an output saved as "Finished part" for an item
+    // that is really a cut piece), which silently hid whole sub-assemblies.
     fetchAllRanged<{ item_id: string; operation_id: string }>((from, to, withCount) =>
       supabase
         .from("operation_outputs")
         .select("item_id, operation_id", withCount ? { count: "exact" } : {})
-        .eq("role", "cut_part")
+        .in("role", ["component", "cut_part"])
         .not("item_id", "is", null)
         .order("id")
         .range(from, to),
@@ -182,7 +194,8 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
     main ? mainStock(supabase, allIds, main) : Promise.resolve(new Map<string, number>()),
   ]);
   const catProc = new Map((cats ?? []).map((c) => [c.id as string, (c.procurement_type as string | null) ?? null]));
-  const cutIds = new Set(cutRows.map((o) => o.item_id));
+  /** `items.part_role` is the single source of truth for structural kind. */
+  const isCutPart = (id: string): boolean => meta.get(id)?.part_role === "cut_part";
   const effProc = (id: string): string | null => {
     const it = meta.get(id);
     return it?.procurement_type ?? (it?.category_id ? catProc.get(it.category_id) ?? null : null);
@@ -192,11 +205,12 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
   // parts has been CUT by a program run on/after the cutover (CUTOVER_DATE). The
   // page starts from the cutover and grows as more runs happen — older / never-run
   // sub-assemblies are omitted for now (owner: "only going forward we'll keep
-  // adding here"). producedSince = cut_part outputs of the post-cutover runs —
-  // intersected in memory from the wave-1 reads.
+  // adding here"). producedSince = cut pieces (by `items.part_role`) output by
+  // the post-cutover runs — intersected in memory from the wave-1 reads.
   const recentOpIds = new Set(recentRuns.map((r) => r.operation_id as string));
   const producedSince = new Set<string>();
-  for (const o of cutRows) if (recentOpIds.has(o.operation_id)) producedSince.add(o.item_id);
+  for (const o of cutRows)
+    if (recentOpIds.has(o.operation_id) && isCutPart(o.item_id)) producedSince.add(o.item_id);
 
   const groups: ChildPartGroup[] = [];
   for (const pid of parentIds) {
@@ -208,7 +222,7 @@ export async function getChildPartGroups(): Promise<ChildPartGroup[]> {
 
     const children: ChildPartRow[] = [...kids.entries()].map(([cid, perBuild]) => {
       const ep = effProc(cid);
-      const kind: ChildKind = ep === "trade" ? "trade" : cutIds.has(cid) ? "cut" : "made";
+      const kind: ChildKind = ep === "trade" ? "trade" : isCutPart(cid) ? "cut" : "made";
       return {
         item_id: cid,
         code: meta.get(cid)?.code ?? null,
