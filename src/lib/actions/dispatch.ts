@@ -256,6 +256,10 @@ export interface DispatchHistory {
   driver_name: string | null;
   driver_phone: string | null;
   vehicle_number: string | null;
+  /** Completion: the date the material was actually received on site (NULL = not
+   *  delivered yet), and who recorded it. Set by the office or by Construction. */
+  delivered_date: string | null;
+  delivered_by: string | null;
   created_at: string;
   lines: DispatchHistoryLine[];
 }
@@ -348,7 +352,7 @@ async function _getJobDispatchSummaryUncached(
       // Dispatch events + their lines.
       const { data: disp } = await supabase
         .from("job_dispatches")
-        .select("id, dispatch_date, phase_scope, note, driver_name, driver_phone, vehicle_number, created_at")
+        .select("id, dispatch_date, phase_scope, note, driver_name, driver_phone, vehicle_number, delivered_date, delivered_by, created_at")
         .eq("job_id", jobId)
         .order("dispatch_date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -411,6 +415,8 @@ async function _getJobDispatchSummaryUncached(
     driver_name: (d.driver_name as string | null) ?? null,
     driver_phone: (d.driver_phone as string | null) ?? null,
     vehicle_number: (d.vehicle_number as string | null) ?? null,
+    delivered_date: (d.delivered_date as string | null) ?? null,
+    delivered_by: (d.delivered_by as string | null) ?? null,
     created_at: d.created_at as string,
     lines: linesByDispatch.get(d.id) ?? [],
   }));
@@ -651,6 +657,39 @@ export async function updateDispatchDriver(
 
   // Driver isn't demand/stock — but the cached dispatch summary carries it, so
   // bust the same tags the other dispatch mutations do.
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  return { ok: true };
+}
+
+/**
+ * Mark a dispatch as DELIVERED (material received on site) on a date, or clear it
+ * (pass null to undo). This is the COMPLETION signal — distinct from the
+ * scheduling "delivery confirmation". Set by the office here, or by Construction
+ * via cx_mark_dispatch_delivered. No stock/stage effect.
+ */
+export async function setDispatchDelivered(
+  dispatchId: string,
+  deliveredDate: string | null,
+  deliveredBy: string | null,
+  jobId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!dispatchId) return { ok: false, error: "Missing dispatch id." };
+  const date = deliveredDate?.trim() || null;
+  if (date && !/^\d{4}-\d{2}-\d{2}$/.test(date))
+    return { ok: false, error: "Delivered date must be a valid date." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("job_dispatches")
+    .update({
+      delivered_date: date,
+      // Clearing the date clears the recorder too.
+      delivered_by: date ? deliveredBy?.trim() || null : null,
+    })
+    .eq("id", dispatchId);
+  if (error) return { ok: false, error: error.message };
   revalidateTag("bom-lines");
   revalidateTag("jobs");
   revalidatePath(`/jobs/${jobId}`);

@@ -18,6 +18,7 @@ import {
   User,
   Phone,
   CalendarCheck,
+  PackageCheck,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { useOperator } from "@/lib/jobs/use-operator";
@@ -25,6 +26,7 @@ import {
   deleteDispatch,
   updateDispatchLineQty,
   updateDispatchDriver,
+  setDispatchDelivered,
   getJobDeliveryConfirmations,
   acknowledgeDeliveryConfirmation,
   type JobDispatchSummary,
@@ -217,6 +219,9 @@ export function DispatchPanel({
   const [edName, setEdName] = useState("");
   const [edPhone, setEdPhone] = useState("");
   const [edVehicle, setEdVehicle] = useState("");
+  // Inline "mark delivered" (completion) — the date the material reached site.
+  const [deliverId, setDeliverId] = useState<string | null>(null);
+  const [deliverDate, setDeliverDate] = useState<string>("");
 
   const startEditDriver = (d: JobDispatchSummary["dispatches"][number]) => {
     setEditDriverId(d.id);
@@ -245,6 +250,47 @@ export function DispatchPanel({
         return;
       }
       toast.success("Driver details saved.");
+      router.refresh();
+    });
+  };
+
+  const startMarkDelivered = (d: JobDispatchSummary["dispatches"][number]) => {
+    setDeliverId(d.id);
+    setDeliverDate(d.delivered_date ?? new Date().toISOString().slice(0, 10));
+  };
+
+  const saveDelivered = (dispatchId: string) => {
+    if (!deliverDate) {
+      toast.error("Pick the delivery date.");
+      return;
+    }
+    const who = ensureOperator();
+    const key = "deliver:" + dispatchId;
+    setBusy(key);
+    startTransition(async () => {
+      const res = await setDispatchDelivered(dispatchId, deliverDate, who, jobId);
+      setBusy(null);
+      setDeliverId(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not mark delivered.");
+        return;
+      }
+      toast.success("Marked delivered.");
+      router.refresh();
+    });
+  };
+
+  const undoDelivered = (dispatchId: string) => {
+    const key = "deliver:" + dispatchId;
+    setBusy(key);
+    startTransition(async () => {
+      const res = await setDispatchDelivered(dispatchId, null, null, jobId);
+      setBusy(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not remove the delivered mark.");
+        return;
+      }
+      toast.success("Delivered mark removed.");
       router.refresh();
     });
   };
@@ -282,6 +328,10 @@ export function DispatchPanel({
   // job page's BALANCE tab — the panel only signals the overall state.
   const pendingCount = summary.lines.filter((l) => l.remaining > 0).length;
   const hasBom = summary.lines.length > 0;
+
+  // Delivery completion roll-up across this job's dispatches.
+  const dispatchCount = summary.dispatches.length;
+  const deliveredCount = summary.dispatches.filter((d) => d.delivered_date).length;
 
   const onDelete = (id: string) => {
     if (!window.confirm("Undo this dispatch? The recorded items will be removed and their stock deduction restored."))
@@ -323,6 +373,20 @@ export function DispatchPanel({
                 {pendingCount} item{pendingCount === 1 ? "" : "s"} pending — see Balance below
               </span>
             ))}
+          {dispatchCount > 0 && deliveredCount > 0 && (
+            <span
+              className={`text-[11px] inline-flex items-center gap-1 ${
+                deliveredCount === dispatchCount
+                  ? "font-medium text-[var(--success)]"
+                  : "text-[var(--muted-foreground)]"
+              }`}
+            >
+              <PackageCheck className="h-3 w-3" />
+              {deliveredCount === dispatchCount
+                ? "all delivered ✓"
+                : `Delivered ${deliveredCount}/${dispatchCount}`}
+            </span>
+          )}
         </div>
         <div className="flex items-center gap-1.5">
           <button
@@ -491,6 +555,76 @@ export function DispatchPanel({
                     )}
                     {conf && (
                       <ConfirmationLine conf={conf} busy={busy} isPending={isPending} onAck={onAcknowledge} />
+                    )}
+                    {d.delivered_date ? (
+                      <div className="flex items-center gap-2 flex-wrap text-[11px]">
+                        <span className="inline-flex items-center gap-1 font-medium text-[var(--success)]">
+                          <PackageCheck className="h-3.5 w-3.5" />
+                          Delivered on{" "}
+                          {new Date(d.delivered_date).toLocaleDateString([], {
+                            day: "2-digit",
+                            month: "short",
+                            year: "numeric",
+                          })}
+                          {d.delivered_by ? ` · by ${d.delivered_by}` : ""}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => undoDelivered(d.id)}
+                          disabled={busy === "deliver:" + d.id || isPending}
+                          title="Remove the delivered mark"
+                          className="inline-flex items-center gap-1 rounded px-1 py-0.5 text-[var(--muted-foreground)] hover:text-[var(--destructive)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          {busy === "deliver:" + d.id ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <X className="h-3 w-3" />
+                          )}
+                          Undo
+                        </button>
+                      </div>
+                    ) : deliverId === d.id ? (
+                      <div className="flex items-center gap-1.5 flex-wrap text-[11px]">
+                        <span className="text-[var(--muted-foreground)]">Delivered on</span>
+                        <input
+                          type="date"
+                          value={deliverDate}
+                          max={new Date().toISOString().slice(0, 10)}
+                          onChange={(e) => setDeliverDate(e.target.value)}
+                          className="h-7 rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveDelivered(d.id)}
+                          disabled={busy === "deliver:" + d.id}
+                          title="Confirm delivered"
+                          className="p-1 rounded text-[var(--success)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          {busy === "deliver:" + d.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setDeliverId(null)}
+                          title="Cancel"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startMarkDelivered(d)}
+                        disabled={deliverId !== null && deliverId !== d.id}
+                        title="Mark this shipment as received on site"
+                        className="self-start inline-flex items-center gap-1 rounded border border-dashed border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--success)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
+                        <PackageCheck className="h-3 w-3" /> Mark delivered
+                      </button>
                     )}
                   </div>
                 {isOpen && (
