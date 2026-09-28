@@ -89,12 +89,20 @@ export interface DispatchNoteLine {
   adhoc?: boolean;
 }
 
+/** Driver details printed on the dispatch note (and shared with Construction). */
+export interface DispatchDriverInfo {
+  name?: string | null;
+  phone?: string | null;
+  vehicle?: string | null;
+}
+
 /** One dated dispatch → the DISPATCH LIST that travels with the material. */
 export async function downloadDispatchNotePdf(opts: {
   info: JobHeaderInfo;
   dispatchDate: string;
   phaseScope: PhaseScope;
   note?: string | null;
+  driver?: DispatchDriverInfo | null;
   lines: DispatchNoteLine[];
 }): Promise<void> {
   const { jsPDF } = await import("jspdf");
@@ -108,6 +116,18 @@ export async function downloadDispatchNotePdf(opts: {
     opts.info,
     `${fmtDate(opts.dispatchDate)}  ·  ${SCOPE_LABEL[opts.phaseScope]}${opts.note ? `  ·  ${opts.note}` : ""}`,
   );
+
+  // Driver strip — who is carrying it + contact, for the site to expect.
+  const driverBits: string[] = [];
+  if (opts.driver?.name) driverBits.push(`Driver: ${opts.driver.name}`);
+  if (opts.driver?.phone) driverBits.push(`Phone: ${opts.driver.phone}`);
+  if (opts.driver?.vehicle) driverBits.push(`Vehicle: ${opts.driver.vehicle}`);
+  if (driverBits.length) {
+    doc.setFontSize(9);
+    doc.setFont("helvetica", "normal");
+    doc.text(driverBits.join("   ·   "), margin, y);
+    y += 5;
+  }
 
   const total = opts.lines.reduce((a, l) => a + (Number(l.qty) || 0), 0);
   autoTable(doc, {
@@ -140,6 +160,7 @@ export async function downloadDispatchHistoryPdf(info: JobHeaderInfo, d: Dispatc
     dispatchDate: d.dispatch_date,
     phaseScope: d.phase_scope,
     note: d.note,
+    driver: { name: d.driver_name, phone: d.driver_phone, vehicle: d.vehicle_number },
     lines: d.lines.map((l) => ({
       code: l.item_code,
       name: l.item_name ?? l.label,

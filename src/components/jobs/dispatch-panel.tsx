@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -15,13 +15,21 @@ import {
   Pencil,
   Check,
   X,
+  User,
+  Phone,
+  CalendarCheck,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
+import { useOperator } from "@/lib/jobs/use-operator";
 import {
   deleteDispatch,
   updateDispatchLineQty,
+  updateDispatchDriver,
+  getJobDeliveryConfirmations,
+  acknowledgeDeliveryConfirmation,
   type JobDispatchSummary,
   type PhaseScope,
+  type DeliveryConfirmation,
 } from "@/lib/actions/dispatch";
 import {
   dispatchStat,
@@ -64,6 +72,66 @@ function PhaseStatus({ name, stat }: { name: string; stat: DispatchStat | null }
   );
 }
 
+/** The green "Delivery confirmed by construction" line + Acknowledge control.
+ *  Shared by the per-dispatch strip and the job-level "unlinked" list so a
+ *  confirmation posted with only a job key (no dispatch id) is still visible
+ *  and acknowledgeable. */
+function ConfirmationLine({
+  conf,
+  busy,
+  isPending,
+  onAck,
+}: {
+  conf: DeliveryConfirmation;
+  busy: string | null;
+  isPending: boolean;
+  onAck: (c: DeliveryConfirmation) => void;
+}) {
+  return (
+    <div className="flex items-center gap-2 flex-wrap text-[11px]">
+      <span className="inline-flex items-center gap-1 font-medium text-[var(--success)]">
+        <CalendarCheck className="h-3.5 w-3.5" />
+        Delivery confirmed
+        {conf.confirmed_date &&
+          `: ${new Date(conf.confirmed_date).toLocaleDateString([], {
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+          })}`}
+        {conf.confirmed_time && ` · ${conf.confirmed_time}`}
+      </span>
+      {conf.confirmed_by && (
+        <span className="text-[var(--muted-foreground)]">by {conf.confirmed_by}</span>
+      )}
+      {conf.note && (
+        <span className="text-[var(--muted-foreground)] italic truncate max-w-[40%]">
+          · {conf.note}
+        </span>
+      )}
+      {conf.acknowledged_at ? (
+        <span className="inline-flex items-center gap-1 text-[var(--muted-foreground)]">
+          <Check className="h-3 w-3" /> seen
+          {conf.acknowledged_by ? ` by ${conf.acknowledged_by}` : ""}
+        </span>
+      ) : (
+        <button
+          type="button"
+          onClick={() => onAck(conf)}
+          disabled={busy === conf.id || isPending}
+          className="inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-0.5 font-medium hover:bg-[var(--muted)] cursor-pointer"
+        >
+          {busy === conf.id ? (
+            <Loader2 className="h-3 w-3 animate-spin" />
+          ) : (
+            <Check className="h-3 w-3" />
+          )}
+          Acknowledge
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function DispatchPanel({
   jobId,
   summary,
@@ -83,7 +151,56 @@ export function DispatchPanel({
   const pdfInfo = { jobNumber: jobNumber ?? null, customerName, location };
   const router = useRouter();
   const toast = useToast();
+  const { ensureOperator } = useOperator();
   const [isPending, startTransition] = useTransition();
+  // Delivery confirmations posted back by the Construction team (LT AMC) after
+  // they call the driver. Client-fetched (written outside the ERP, so the cached
+  // dispatch summary never carries them) — matches the R1-chip pattern.
+  const [confirmations, setConfirmations] = useState<DeliveryConfirmation[]>([]);
+  useEffect(() => {
+    let alive = true;
+    getJobDeliveryConfirmations(jobId)
+      .then((rows) => {
+        if (alive) setConfirmations(rows);
+      })
+      .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [jobId]);
+  // Newest confirmation per dispatch (list is already newest-first from the server).
+  const confirmByDispatch = new Map<string, DeliveryConfirmation>();
+  for (const c of confirmations) {
+    if (c.dispatch_id && !confirmByDispatch.has(c.dispatch_id))
+      confirmByDispatch.set(c.dispatch_id, c);
+  }
+  // Confirmations construction posted with only a job key (no dispatch id), or
+  // whose dispatch isn't in this list, would otherwise be invisible and could
+  // never be acknowledged — surface them at the job level.
+  const dispatchIdSet = new Set(summary.dispatches.map((d) => d.id));
+  const orphanConfirmations = confirmations.filter(
+    (c) => !c.dispatch_id || !dispatchIdSet.has(c.dispatch_id),
+  );
+
+  const onAcknowledge = (c: DeliveryConfirmation) => {
+    const who = ensureOperator();
+    setBusy(c.id);
+    startTransition(async () => {
+      const res = await acknowledgeDeliveryConfirmation(c.id, jobId, who);
+      setBusy(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not acknowledge the confirmation.");
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      setConfirmations((rows) =>
+        rows.map((r) =>
+          r.id === c.id ? { ...r, acknowledged_at: nowIso, acknowledged_by: who ?? null } : r,
+        ),
+      );
+      toast.success("Delivery confirmation acknowledged.");
+    });
+  };
   // The newest dispatch starts expanded so "what just went out" is visible
   // immediately after recording one (the page refreshes into this state).
   const [openId, setOpenId] = useState<string | null>(
@@ -94,6 +211,43 @@ export function DispatchPanel({
   // when only 22 went). Saving posts the stock delta and the balance recomputes.
   const [editLineId, setEditLineId] = useState<string | null>(null);
   const [editQty, setEditQty] = useState<string>("");
+  // Inline driver edit — set/change the driver on a recorded dispatch (details
+  // often arrive after the material left, and drivers get swapped).
+  const [editDriverId, setEditDriverId] = useState<string | null>(null);
+  const [edName, setEdName] = useState("");
+  const [edPhone, setEdPhone] = useState("");
+  const [edVehicle, setEdVehicle] = useState("");
+
+  const startEditDriver = (d: JobDispatchSummary["dispatches"][number]) => {
+    setEditDriverId(d.id);
+    setEdName(d.driver_name ?? "");
+    setEdPhone(d.driver_phone ?? "");
+    setEdVehicle(d.vehicle_number ?? "");
+  };
+
+  const saveDriver = (dispatchId: string) => {
+    if (edPhone && edPhone.length !== 10) {
+      toast.error("Driver phone must be exactly 10 digits (or left blank).");
+      return;
+    }
+    const key = "driver:" + dispatchId;
+    setBusy(key);
+    startTransition(async () => {
+      const res = await updateDispatchDriver(
+        dispatchId,
+        { driver_name: edName, driver_phone: edPhone, vehicle_number: edVehicle },
+        jobId,
+      );
+      setBusy(null);
+      setEditDriverId(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not save the driver details.");
+        return;
+      }
+      toast.success("Driver details saved.");
+      router.refresh();
+    });
+  };
 
   const saveQty = (lineId: string, oldQty: number) => {
     const n = Number(editQty);
@@ -194,6 +348,8 @@ export function DispatchPanel({
           {summary.dispatches.map((d) => {
             const total = d.lines.reduce((a, l) => a + l.qty, 0);
             const isOpen = openId === d.id;
+            const hasDriver = d.driver_name || d.driver_phone || d.vehicle_number;
+            const conf = confirmByDispatch.get(d.id);
             return (
               <div key={d.id} className="border border-[var(--border)] rounded-md">
                 <div className="flex items-center gap-2 px-3 py-2 flex-wrap">
@@ -247,6 +403,96 @@ export function DispatchPanel({
                     )}
                   </button>
                 </div>
+                <div className="px-3 pb-2 flex flex-col gap-1.5">
+                    {editDriverId === d.id ? (
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <input
+                          value={edName}
+                          onChange={(e) => setEdName(e.target.value)}
+                          placeholder="Driver name"
+                          className="h-7 w-36 rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                        />
+                        <input
+                          value={edPhone}
+                          onChange={(e) => setEdPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+                          inputMode="numeric"
+                          maxLength={10}
+                          placeholder="10-digit phone"
+                          className="h-7 w-32 rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                        />
+                        <input
+                          value={edVehicle}
+                          onChange={(e) => setEdVehicle(e.target.value)}
+                          placeholder="Vehicle no."
+                          className="h-7 w-28 rounded border border-[var(--border)] bg-[var(--background)] px-2 text-xs focus:outline-none focus:ring-2 focus:ring-[var(--ring)]"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => saveDriver(d.id)}
+                          disabled={busy === "driver:" + d.id}
+                          title="Save driver details"
+                          className="p-1 rounded text-[var(--success)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          {busy === "driver:" + d.id ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Check className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditDriverId(null)}
+                          title="Cancel"
+                          className="p-1 rounded text-[var(--muted-foreground)] hover:bg-[var(--muted)] cursor-pointer"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ) : hasDriver ? (
+                      <div className="flex items-center gap-3 flex-wrap text-[11px] text-[var(--muted-foreground)]">
+                        {d.driver_name && (
+                          <span className="inline-flex items-center gap-1">
+                            <User className="h-3 w-3" /> {d.driver_name}
+                          </span>
+                        )}
+                        {d.driver_phone && (
+                          <a
+                            href={`tel:${d.driver_phone}`}
+                            className="inline-flex items-center gap-1 hover:text-[var(--primary)]"
+                          >
+                            <Phone className="h-3 w-3" /> {d.driver_phone}
+                          </a>
+                        )}
+                        {d.vehicle_number && (
+                          <span className="inline-flex items-center gap-1">
+                            <Truck className="h-3 w-3" /> {d.vehicle_number}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => startEditDriver(d)}
+                          disabled={editDriverId !== null && editDriverId !== d.id}
+                          title="Edit / change driver details"
+                          className="inline-flex items-center gap-0.5 rounded px-1 py-0.5 hover:text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                        >
+                          <Pencil className="h-3 w-3" /> Edit
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => startEditDriver(d)}
+                        disabled={editDriverId !== null && editDriverId !== d.id}
+                        title="Add the driver's name, phone and vehicle to this dispatch"
+                        className="self-start inline-flex items-center gap-1 rounded border border-dashed border-[var(--border)] px-1.5 py-0.5 text-[11px] font-medium text-[var(--primary)] hover:bg-[var(--muted)] cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+                      >
+                        <Plus className="h-3 w-3" /> Add driver details
+                      </button>
+                    )}
+                    {conf && (
+                      <ConfirmationLine conf={conf} busy={busy} isPending={isPending} onAck={onAcknowledge} />
+                    )}
+                  </div>
                 {isOpen && (
                   <div className="px-3 pb-2 border-t border-[var(--border)] divide-y divide-[var(--border)]">
                     {d.lines.map((l) => (
@@ -332,6 +578,23 @@ export function DispatchPanel({
               </div>
             );
           })}
+        </div>
+      )}
+
+      {orphanConfirmations.length > 0 && (
+        <div className="mt-2 border-t border-[var(--border)] pt-2 space-y-1">
+          <div className="text-[11px] font-medium text-[var(--muted-foreground)]">
+            Delivery confirmations not linked to a dispatch
+          </div>
+          {orphanConfirmations.map((conf) => (
+            <ConfirmationLine
+              key={conf.id}
+              conf={conf}
+              busy={busy}
+              isPending={isPending}
+              onAck={onAcknowledge}
+            />
+          ))}
         </div>
       )}
     </div>

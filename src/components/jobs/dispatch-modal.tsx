@@ -93,6 +93,11 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
   const [scope, setScope] = useState<PhaseScope>("first");
   const [date, setDate] = useState(todayISO());
   const [note, setNote] = useState("");
+  // Driver details for this shipment — fed to the Construction team so they can
+  // call the driver and confirm the site delivery date.
+  const [driverName, setDriverName] = useState("");
+  const [driverPhone, setDriverPhone] = useState("");
+  const [vehicleNumber, setVehicleNumber] = useState("");
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
@@ -279,6 +284,10 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
       setError("Add at least one item to dispatch, or set one to 0 and tick “not required”.");
       return;
     }
+    if (driverPhone && driverPhone.length !== 10) {
+      setError("Driver phone must be exactly 10 digits (or left blank).");
+      return;
+    }
     startTransition(async () => {
       if (!(await confirmAgainstPrint())) return;
       const res = await createDispatch({
@@ -286,6 +295,9 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
         dispatch_date: date,
         phase_scope: scope,
         note,
+        driver_name: driverName,
+        driver_phone: driverPhone,
+        vehicle_number: vehicleNumber,
         lines: sendRows.map((r) => ({
           job_bom_line_id: r.job_bom_line_id,
           item_id: r.item_id,
@@ -326,6 +338,11 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
             dispatchDate: date,
             phaseScope: scope,
             note,
+            driver: {
+              name: driverName.trim() || null,
+              phone: driverPhone.trim() || null,
+              vehicle: vehicleNumber.trim() || null,
+            },
             lines: dispatchRows.map((r) => ({
               code: r.item_code,
               name: r.item_name,
@@ -376,6 +393,41 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
                   ? "2nd phase = finishing material: doors, cabin, COP/LOP and everything else."
                   : `Everything still pending on this job's ${fromR1 ? "packing list" : "BOM"}.`}
             </p>
+          </div>
+        </div>
+
+        {/* Driver details — travel with the shipment and go to the Construction
+            team, who call the driver to confirm the site delivery date. */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-sm font-medium mb-1">Driver name</label>
+            <Input
+              size="sm"
+              value={driverName}
+              onChange={(e) => setDriverName(e.target.value)}
+              placeholder="Driver's name"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Driver phone</label>
+            <Input
+              size="sm"
+              type="tel"
+              inputMode="numeric"
+              maxLength={10}
+              value={driverPhone}
+              onChange={(e) => setDriverPhone(e.target.value.replace(/\D/g, "").slice(0, 10))}
+              placeholder="10-digit mobile"
+            />
+          </div>
+          <div>
+            <label className="block text-sm font-medium mb-1">Vehicle number</label>
+            <Input
+              size="sm"
+              value={vehicleNumber}
+              onChange={(e) => setVehicleNumber(e.target.value)}
+              placeholder="e.g., KA01AB1234"
+            />
           </div>
         </div>
 
