@@ -252,6 +252,10 @@ export interface DispatchHistory {
   dispatch_date: string;
   phase_scope: PhaseScope;
   note: string | null;
+  /** Who is driving this shipment + contact, for the Construction team to call. */
+  driver_name: string | null;
+  driver_phone: string | null;
+  vehicle_number: string | null;
   created_at: string;
   lines: DispatchHistoryLine[];
 }
@@ -259,6 +263,23 @@ export interface DispatchHistory {
 export interface JobDispatchSummary {
   lines: DispatchSummaryLine[];
   dispatches: DispatchHistory[];
+}
+
+/** A delivery confirmation the Construction module (LT AMC) posted back for one
+ *  dispatch — "the driver will deliver on <date>". Alert-until-acknowledged.
+ *  Read UNCACHED (written outside the ERP, so the cached summary never sees it). */
+export interface DeliveryConfirmation {
+  id: string;
+  dispatch_id: string | null;
+  confirmed_date: string | null;
+  confirmed_time: string | null;
+  driver_name: string | null;
+  driver_phone: string | null;
+  note: string | null;
+  confirmed_by: string | null;
+  confirmed_at: string | null;
+  acknowledged_at: string | null;
+  acknowledged_by: string | null;
 }
 
 export async function getJobDispatchSummary(jobId: string): Promise<JobDispatchSummary> {
@@ -327,7 +348,7 @@ async function _getJobDispatchSummaryUncached(
       // Dispatch events + their lines.
       const { data: disp } = await supabase
         .from("job_dispatches")
-        .select("id, dispatch_date, phase_scope, note, created_at")
+        .select("id, dispatch_date, phase_scope, note, driver_name, driver_phone, vehicle_number, created_at")
         .eq("job_id", jobId)
         .order("dispatch_date", { ascending: false })
         .order("created_at", { ascending: false });
@@ -387,6 +408,9 @@ async function _getJobDispatchSummaryUncached(
     dispatch_date: d.dispatch_date as string,
     phase_scope: d.phase_scope as PhaseScope,
     note: (d.note as string | null) ?? null,
+    driver_name: (d.driver_name as string | null) ?? null,
+    driver_phone: (d.driver_phone as string | null) ?? null,
+    vehicle_number: (d.vehicle_number as string | null) ?? null,
     created_at: d.created_at as string,
     lines: linesByDispatch.get(d.id) ?? [],
   }));
@@ -425,11 +449,23 @@ export async function createDispatch(input: {
   dispatch_date: string;
   phase_scope: PhaseScope;
   note?: string | null;
+  /** Driver details for this shipment — captured for the Construction team. */
+  driver_name?: string | null;
+  driver_phone?: string | null;
+  vehicle_number?: string | null;
   lines: DispatchLineInput[];
 }): Promise<DispatchSaveResult> {
   if (!input.job_id) return { ok: false, error: "Missing job." };
   if (!input.dispatch_date)
     return { ok: false, error: "Pick a dispatch date." };
+
+  // Driver phone: NULL or exactly 10 digits (mirrors jobs.mobile_number and the
+  // DB CHECK). Validate here so the user gets a clear message, not a raw 23514.
+  const driverName = input.driver_name?.trim() || null;
+  const vehicleNumber = input.vehicle_number?.trim() || null;
+  const driverPhone = input.driver_phone?.trim() || null;
+  if (driverPhone && !/^[0-9]{10}$/.test(driverPhone))
+    return { ok: false, error: "Driver phone must be exactly 10 digits (or left blank)." };
 
   // Lines actually being dispatched (qty > 0). A qty-0 line ships nothing but may
   // still carry a requirement revision (the "0 — not required at all" case).
@@ -460,6 +496,9 @@ export async function createDispatch(input: {
         dispatch_date: input.dispatch_date,
         phase_scope: input.phase_scope,
         note: input.note?.trim() || null,
+        driver_name: driverName,
+        driver_phone: driverPhone,
+        vehicle_number: vehicleNumber,
       })
       .select("id")
       .single();
@@ -574,6 +613,49 @@ export async function createDispatch(input: {
   revalidatePath("/jobs");
   revalidatePath("/mrp");
   return { ok: true, id: dispatchId ?? "" };
+}
+
+/**
+ * Set or change the driver details on an ALREADY-RECORDED dispatch. Covers two
+ * real cases: the driver info arrived after the material left, and the driver
+ * changed later. No stock/stage effect — just updates the header. Any field left
+ * blank clears that field. cx_erp_snapshot always returns the CURRENT driver, so
+ * the Construction team sees the change on its next sync.
+ */
+export async function updateDispatchDriver(
+  dispatchId: string,
+  input: {
+    driver_name?: string | null;
+    driver_phone?: string | null;
+    vehicle_number?: string | null;
+  },
+  jobId: string,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!dispatchId) return { ok: false, error: "Missing dispatch id." };
+  const driverName = input.driver_name?.trim() || null;
+  const vehicleNumber = input.vehicle_number?.trim() || null;
+  const driverPhone = input.driver_phone?.trim() || null;
+  if (driverPhone && !/^[0-9]{10}$/.test(driverPhone))
+    return { ok: false, error: "Driver phone must be exactly 10 digits (or left blank)." };
+
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("job_dispatches")
+    .update({
+      driver_name: driverName,
+      driver_phone: driverPhone,
+      vehicle_number: vehicleNumber,
+    })
+    .eq("id", dispatchId);
+  if (error) return { ok: false, error: error.message };
+
+  // Driver isn't demand/stock — but the cached dispatch summary carries it, so
+  // bust the same tags the other dispatch mutations do.
+  revalidateTag("bom-lines");
+  revalidateTag("jobs");
+  revalidatePath(`/jobs/${jobId}`);
+  revalidatePath("/jobs");
+  return { ok: true };
 }
 
 export async function deleteDispatch(
@@ -816,4 +898,62 @@ async function _getJobsDispatchStatusUncached(
     out[job] = open ? "partial" : "full";
   }
   return out;
+}
+
+/* ------------------------------------------------------------------ *
+ * Delivery confirmations (Construction module → ERP).
+ *
+ * The Construction team (LT AMC) calls the driver whose details the factory put
+ * on the dispatch, then posts back "the driver will deliver on <date>" via the
+ * cx_record_delivery_confirmation RPC (migration 072). Those land in
+ * cx_delivery_confirmations. Read UNCACHED here: they are written outside the
+ * ERP, so getJobDispatchSummary's jobs/bom-lines cache tags never bust on them.
+ * ------------------------------------------------------------------ */
+
+/** Every delivery confirmation posted for this job's dispatches, newest first. */
+export async function getJobDeliveryConfirmations(
+  jobId: string,
+): Promise<DeliveryConfirmation[]> {
+  if (!jobId) return [];
+  const supabase = createCacheClient();
+  const { data } = await supabase
+    .from("cx_delivery_confirmations")
+    .select(
+      "id, dispatch_id, confirmed_date, confirmed_time, driver_name, driver_phone, note, confirmed_by, confirmed_at, acknowledged_at, acknowledged_by",
+    )
+    .eq("job_id", jobId)
+    .order("created_at", { ascending: false });
+  return (data ?? []).map((r: any) => ({
+    id: r.id as string,
+    dispatch_id: (r.dispatch_id as string | null) ?? null,
+    confirmed_date: (r.confirmed_date as string | null) ?? null,
+    confirmed_time: (r.confirmed_time as string | null) ?? null,
+    driver_name: (r.driver_name as string | null) ?? null,
+    driver_phone: (r.driver_phone as string | null) ?? null,
+    note: (r.note as string | null) ?? null,
+    confirmed_by: (r.confirmed_by as string | null) ?? null,
+    confirmed_at: (r.confirmed_at as string | null) ?? null,
+    acknowledged_at: (r.acknowledged_at as string | null) ?? null,
+    acknowledged_by: (r.acknowledged_by as string | null) ?? null,
+  }));
+}
+
+/** Acknowledge one delivery confirmation (the factory office has seen it). */
+export async function acknowledgeDeliveryConfirmation(
+  id: string,
+  jobId: string,
+  acknowledgedBy?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!id) return { ok: false, error: "Missing confirmation id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cx_delivery_confirmations")
+    .update({
+      acknowledged_at: new Date().toISOString(),
+      acknowledged_by: acknowledgedBy?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: true };
 }
