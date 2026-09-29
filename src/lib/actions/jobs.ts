@@ -6,6 +6,7 @@ import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { alertKind, reasonRequired } from "@/lib/jobs/status-alert";
+import { getJobsDispatchStatus } from "@/lib/actions/dispatch";
 
 export interface BomLineInput {
   category: string;
@@ -33,25 +34,47 @@ export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
 
 /**
  * Jobs whose structure is made in the factory — the only jobs the RALPH 400
- * shaft BOM applies to. Feeds the Job-No dropdown on /ralph400. Lean shape
- * on purpose (number + customer), newest first. ~70 rows today, well under
- * the PostgREST cap.
+ * shaft BOM applies to. Feeds the Job-No dropdown on /ralph400. Only jobs the
+ * Jobs list would show on its ACTIVE tab: fully-dispatched jobs and
+ * "Full Dispatch (Shortfall)" jobs (2nd phase sent, quantity pending) are
+ * excluded, using the same classification the tabs use so the two surfaces
+ * never disagree. Lean shape on purpose (number + customer), newest first.
+ * ~70 rows today, well under the PostgREST cap.
  */
 const _getFactoryStructureJobsUncached = async () => {
   const supabase = createCacheClient();
   const { data, error } = await supabase
     .from("jobs")
-    .select("job_number, customer_name")
+    .select("id, job_number, customer_name, stage")
     .eq("structure_included", "Factory-made")
     .order("created_at", { ascending: false });
   if (error) throw error;
-  return (data ?? []) as { job_number: string; customer_name: string | null }[];
+  const rows = (data ?? []) as {
+    id: string;
+    job_number: string;
+    customer_name: string | null;
+    stage: string | null;
+  }[];
+  if (rows.length === 0) return [];
+
+  // Same tab gate as jobs-client.tsx: full → "Fully Dispatched" tab,
+  // partial + stage full_material → "Full Dispatch (Shortfall)" tab.
+  const status = await getJobsDispatchStatus(rows.map((r) => r.id));
+  return rows
+    .filter((r) => {
+      const st = status[r.id] ?? "none";
+      if (st === "full") return false;
+      if (st === "partial" && (r.stage ?? "new") === "full_material") return false;
+      return true;
+    })
+    .map((r) => ({ job_number: r.job_number, customer_name: r.customer_name }));
 };
 
 export const getFactoryStructureJobs = unstable_cache(
   _getFactoryStructureJobsUncached,
   ["factory-structure-jobs"],
-  { revalidate: 600, tags: ["jobs"] },
+  // bom-lines: dispatch mutations bust this tag, so the Active gate stays live.
+  { revalidate: 600, tags: ["jobs", "bom-lines"] },
 );
 
 /**
