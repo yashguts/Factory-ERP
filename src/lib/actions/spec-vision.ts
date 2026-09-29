@@ -364,6 +364,9 @@ export async function ensureDrawingRead(jobId: string): Promise<{ ok: boolean; c
     .from("job_drawing_extractions")
     .select("id")
     .eq("job_id", jobId)
+    // A RALPH-only read (ralph400_v1) doesn't cover the rich fields the Part
+    // List needs, so it must not count as "already read".
+    .neq("schema_version", "ralph400_v1")
     .limit(1)
     .maybeSingle();
   if (existing) return { ok: true, cached: true };

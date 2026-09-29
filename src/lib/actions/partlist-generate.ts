@@ -98,6 +98,8 @@ export async function getJobDoorType(jobId: string): Promise<string | null> {
       .from("jobs").select("door_type, gad_drawing_url").eq("id", jobId).maybeSingle(),
     supabase
       .from("job_drawing_extractions").select("extracted").eq("job_id", jobId)
+      // ralph400_v1 rows carry the RALPH calculator's shape, not the rich one.
+      .neq("schema_version", "ralph400_v1")
       .order("extracted_at", { ascending: false }).limit(1).maybeSingle(),
   ]);
   let door = mapDoorErp(job?.door_type ?? null);
@@ -143,6 +145,7 @@ export async function generatePartListDraft(jobId: string): Promise<PartListDraf
       .from("job_drawing_extractions")
       .select("extracted")
       .eq("job_id", jobId)
+      .neq("schema_version", "ralph400_v1")
       .order("extracted_at", { ascending: false })
       .limit(1)
       .maybeSingle();
