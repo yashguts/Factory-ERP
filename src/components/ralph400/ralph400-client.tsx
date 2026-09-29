@@ -110,7 +110,15 @@ export function Ralph400Client() {
   useEffect(() => {
     try {
       const raw = window.localStorage.getItem(STORE);
-      if (raw) setInp({ ...DEFAULTS, ...JSON.parse(raw) });
+      if (raw) {
+        const saved: Ralph400Inputs = { ...DEFAULTS, ...JSON.parse(raw) };
+        // A value saved under an older option list (e.g. door opening "700 R"
+        // before R1 prefixed the door type) would leave its <select> blank.
+        (["cwt", "doorType", "doorOpening"] as const).forEach((k) => {
+          if (!(OPTIONS[k] as readonly string[]).includes(saved[k])) saved[k] = DEFAULTS[k];
+        });
+        setInp(saved);
+      }
     } catch {
       /* private mode / blocked storage */
     }
@@ -210,7 +218,7 @@ export function Ralph400Client() {
           columns: [{ header: "Description", field: "Description" }, ...levelHeaders],
         },
         {
-          name: "Sheet covers",
+          name: "Sheet cladding",
           rows: panelRowsFor(m.panels.filter((p) => !p.desc.startsWith("GLASS"))),
           columns: [{ header: "Description", field: "Description" }, ...levelHeaders],
         },
@@ -486,7 +494,7 @@ export function Ralph400Client() {
               different machines, so they get a card each rather than one
               mixed table. Split on the description; the model is untouched. */}
           {panelCard("Glass panels — height × width", glassPanels)}
-          {panelCard("Sheet covers — height × width", coverPanels)}
+          {panelCard("Sheet cladding — height × width", coverPanels)}
 
           {/* channels */}
           <Card>
@@ -610,7 +618,7 @@ export function Ralph400Client() {
                 </>
               ) : (
                 <>
-                  Showing <b className="text-[var(--foreground)]">corrected values</b> — the six
+                  Showing <b className="text-[var(--foreground)]">corrected values</b> — the
                   cells above use their consistent value. This does <em>not</em> modify the .xlsx
                   file.
                 </>

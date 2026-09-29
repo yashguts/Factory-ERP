@@ -15,6 +15,26 @@ this file is quick orientation + what's fresh. Also read the auto-memory index
 
 ---
 
+## 0a — Update 2026-09-29: `/ralph400` follows the owner's workbook revision R1
+
+The owner sent a revised workbook, `RALPH 400 BOM _ R1.xlsx`. It is a Google Sheets export of **their own
+copy of the original**, so it carried none of the workbook fixes; RALPH400_BOM merged it the other way (R1 as
+the base, fixes re-applied) and this commit ports the result. Full record: RALPH400_BOM's README ("Owner
+revision R1") and `docs/HANDOFF-2026-09-29.md` in that repo.
+
+- **What the page gained:** 7 new channel rows (every channel with a sheet cover now has its own
+  `COVER (1.2MM)` row), every cover length = channel length **+40**, two fixing plates (`122` flat 2, `124`
+  = 6F−2), `SHEET COVER` → `SHEET CLADDING`, door opening now carries the door type (`AT 700 R`, `600 CO`, …).
+  The owner fixed the glass drift the audit flagged, and the `+35/+30` cover-offset question is settled.
+- **Two defects new in R1, fixed in the workbook and mirrored here:** `135 BACK` quantity gave `#VALUE!` for
+  CWT=BACK (`-1` written outside an `IF` that returns `"NO"`), and `G30` tested the empty cell `C20`.
+- **Source audit** now asks three new owner questions (`I26/I29/I39`, `I29`, `G37`) in place of the two R1 closed.
+- **Verified:** `model.ts` ≡ `web/model.js` over 13,200 scenarios / 4,072,480 values, 0 diffs; the workbook,
+  evaluated in real Excel over 96 scenarios, matches the model on all 22,212 values.
+- Saved inputs holding the old door opening (`700 R`) fall back to the default instead of blanking the select.
+
+---
+
 ## 0 — This session (2026-09-23): RALPH 400 BOM moved into the ERP
 
 New page **`/ralph400`** — sidebar **Orders → RALPH 400 BOM**, after "BOM (old)". Commits `562f22f` (port),
@@ -51,7 +71,7 @@ this feature.
 - **The owner's own Excel edits were merged in** — two new channel rows, `H29` filled in, `I26` +30, `H37`
   text cleaned. See §4 for the trap that came with them.
 
-**UI shape**: inputs down the left; Corner verticals / Glass panels / Sheet covers / Horizontal channels /
+**UI shape**: inputs down the left; Corner verticals / Glass panels / Sheet cladding / Horizontal channels /
 2450 console module / Doors & fasteners / Source audit as separate cards. Two modes in the toolbar —
 "Match workbook" reproduces the sheet including its drift, "Apply consistent geometry" applies the consistent
 value to the cells in the Source audit table. Export is a multi-sheet `.xlsx` via `exportSheetsToXlsx`.
@@ -125,20 +145,19 @@ similar-jobs** · non-inventory lines allowed.
   into it. An exact three-way diff found **88 corrected cells missing from it** — taking it as the new working
   copy would have silently reverted every fix. The changes were merged the other way instead. **Check
   `ls -a | grep '^~\$'` in that repo to see which file Excel holds a lock on before trusting any formula.**
-  That backup is **still modified and uncommitted** — the owner has not yet said whether to restore it to
-  pristine (its content is redundant now; the merge preserved everything).
-- **Three unexplained offsets on the two new cover-channel rows.** `HZ CHANNEL COVER LEFT` uses `C5-200+35`
-  for BACK but `C5-200+30` for RIGHT; `HZ CHANNEL COVER RIGHT` uses `C5-200+30` for LEFT but plain `C5-200`
-  for BACK. Neighbouring `135` channels are all plain and every glass row is `+35`, so these match nothing
-  else on the sheet. **Reproduced exactly as written, in both modes, pending the owner confirming the 5 mm
-  differences are deliberate** — if any is a slip it is a wrong cut length on a real part. Logged as audit
-  entry `I33 / I35`.
-- **The glass-quantity defect is still open in steel.** Post-merge cell refs: **`H39`**
-  (`HZ TOP CHANNEL FRONT`, row 39) holds a flat `1` with no counterweight test while `I39` reads `NO` for
-  CWT=BACK; **`H38`** (`HZ TOP CHANNEL BACK`, row 38) *is* gated but returns the text `"BRACKET,  1"` where
-  `I38` reads `NO`. Deliberately out of scope — different material, different order sheet. **Ask before
-  widening.** (Separately, `H36` still holds `" 1"` with a leading space — text in a quantity column, audit
-  entry `H36 / H38`.)
+  That backup was restored to pristine on 2026-09-29. **And the owner also keeps their own Google Sheets
+  copy** (R1 came from it) — so every revision they send will lack the fixes until that copy gets them.
+- **Cover-row offsets: resolved 2026-09-29.** R1 made every cover length `+40`, retiring audit entry
+  `I33 / I35`. Three new owner questions replace it in the Source audit table: with CWT=BACK, `I26`, `I29`
+  and `I39` measure left/right channels against the width `C4` (R1 fixed that same pattern in glass);
+  `I29` with CWT=LEFT is the only cover without `+40`; `G37` (`135 RIGHT`) has no BRACKET flag while its
+  LEFT and BACK twins do. **Reproduced exactly as written** in "Match workbook" mode, pending the owner.
+- **The glass-quantity defect is still open in steel.** Cell refs as of R1: **`H42`**
+  (`HZ TOP CHANNEL FRONT`) holds a flat `1` with no counterweight test while `I42` reads `NO` for
+  CWT=BACK; **`H41`** (`HZ TOP CHANNEL BACK`) *is* gated but returns the text `"BRACKET,  1"` where
+  `I41` reads `NO`. Deliberately out of scope — different material, different order sheet. **Ask before
+  widening.** (Separately, `H39` still holds `" 1"` with a leading space — text in a quantity column, audit
+  entry `H39 / H41`.)
 - **`Qty / level` is not in the Excel export.** The Corner verticals sheet has Description + the seven level
   columns only; the `1/EACH` column is screen-only.
 - **The verification sweeps are not committed anywhere.** Both the model-vs-model and app-vs-workbook checks
@@ -194,7 +213,7 @@ similar-jobs** · non-inventory lines allowed.
 - Co-author trailer: **`Claude Opus 5 <noreply@anthropic.com>`**.
 
 ---
-**Next obvious step:** get the owner to confirm the three RALPH 400 cover-row offsets (§4) and decide what
-happens to the edited backup workbook — both are cheap and both are blocking nothing else. Then supplier +
+**Next obvious step:** get the owner to answer the three RALPH 400 audit questions (§4) and to import the
+corrected workbook into their own sheet, so their next revision arrives with the fixes. Then supplier +
 cost onto RM-222, and the two long-carried items: the `saveBomSection` dispatch-relink fix and the Part List
 Ready→rules flywheel.

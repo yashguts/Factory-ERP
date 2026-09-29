@@ -2,7 +2,8 @@
    RALPH 400 — BOM model
 
    TypeScript port of `web/model.js` from the RALPH400_BOM repo, which is
-   itself a faithful port of Sheet2 of "RALPH 400 BOM.xlsx" (post-fix).
+   itself a faithful port of Sheet2 of "RALPH 400 BOM.xlsx" (post-fix). Since
+   2026-09-29 the workbook carries the owner's revision R1.
    The numbers this file produces are the numbers the workbook produces —
    do not "tidy" a formula here without re-checking it against the sheet.
 
@@ -12,6 +13,8 @@
      * L19              C4-135 -> C4-200   (rows 17-20 are now uniform at -200)
      * 89 level cells gated on their own floor-height input, so a floor
        that does not exist yields blank instead of a negative length.
+     * H32/H33  "NO"-1 gave #VALUE! for CWT=BACK; the -1 now sits inside.
+     * G30      tested C20 (an empty cell) instead of C15.
 
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
@@ -61,13 +64,20 @@ export const DEFAULTS: Ralph400Inputs = {
   h5: 0,
   cwt: "BACK",
   doorType: "AT",
-  doorOpening: "700 R",
+  doorOpening: "AT 700 R",
 };
 
+/* doorOpening follows the owner's R1 dropdown on C17. As typed there, stray
+   commas split three entries into fragments ("800 L,  AT", "600L, SW", ...);
+   this is the list those entries read as whole. The value only labels the
+   D-locking door post, so no quantity depends on it. */
 export const OPTIONS = {
   cwt: ["BACK", "RIGHT", "LEFT"],
   doorType: ["AT", "ACO", "SWING", "MCD"],
-  doorOpening: ["600 R", "700 R", "800 R", "600 L", "700 L", "800 L"],
+  doorOpening: [
+    "AT 600 R", "AT 700 R", "AT 800 R", "AT 600 L", "AT 700 L", "AT 800 L",
+    "600 CO", "700 CO", "800 CO", "600L SW", "700L SW", "800L SW",
+  ],
 } as const;
 
 export interface AuditRow {
@@ -81,11 +91,25 @@ export interface AuditRow {
 /** Cells where the workbook still disagrees with its own row/column rule. */
 export const AUDIT: AuditRow[] = [
   {
-    cell: "I58",
-    what: "GLASS LEFT COMMON 1128, CWT=BACK",
-    sheet: "C4-200+35",
-    clean: "C5-200+35",
-    note: "A left-hand panel spans the depth (C5). Row 57, its right-hand twin, uses C5.",
+    cell: "I26 / I29 / I39",
+    what: "Left/right channels, CWT=BACK",
+    sheet: "C4-200 (+40)",
+    clean: "C5-200 (+40)",
+    note: "A left- or right-hand channel spans the depth (C5), and does in every other branch; I25 and I28, the 170 channels these covers sit on, always use C5, and I40, the right-hand twin of I39, uses C5. The owner fixed this exact pattern in the glass row I65 in R1; these three still use the width (C4) when CWT=BACK.",
+  },
+  {
+    cell: "I29",
+    what: "HZ CH COVER RIGHT 170, CWT=LEFT",
+    sheet: "C5-200",
+    clean: "C5-200+40",
+    note: "R1 made every cover length its channel length +40 (I26, I31, I33, I36, I38, I45, I47, I49, and I29's own BACK branch). This branch alone has no +40.",
+  },
+  {
+    cell: "G37",
+    what: "HZ CHANNEL 135 RIGHT bracket flag",
+    sheet: "(none)",
+    clean: "BRACKET when CWT=RIGHT",
+    note: "R1 added G35 so the LEFT 135 channel is flagged BRACKET on the counterweight side, as the BACK one (G32) already was. G37, the RIGHT one, was not given the same flag.",
   },
   {
     cell: "T8:T11",
@@ -96,17 +120,10 @@ export const AUDIT: AuditRow[] = [
   },
   {
     cell: "U17:V20",
-    what: "Overhead segment of the sheet covers",
+    what: "Overhead segment of the sheet cladding",
     sheet: "always computed",
     clean: "follows the CWT rule",
-    note: "U and V carry no CWT condition, so the left-cover row still emits an overhead panel when every other level of that row reads \"NO\".",
-  },
-  {
-    cell: "I33 / I35",
-    what: "HZ CHANNEL COVER LEFT / RIGHT length offsets",
-    sheet: "+35 / +30 / none",
-    clean: "(unconfirmed)",
-    note: "Added 2026-09-23. COVER LEFT uses C5-200+35 for BACK but C5-200+30 for RIGHT; COVER RIGHT uses C5-200+30 for LEFT but plain C5-200 for BACK. The neighbouring 135 channels are all plain C5-200 and the glass rows are all +35, so these three offsets match nothing else on the sheet. Reproduced exactly as written in both views pending confirmation.",
+    note: "U and V carry no CWT condition, so the left-cladding row still emits an overhead panel when every other level of that row reads \"NO\".",
   },
   {
     cell: "T13",
@@ -116,11 +133,11 @@ export const AUDIT: AuditRow[] = [
     note: "S13 computes a 4th-floor height but the matching width cell was never created, so the panel has no width.",
   },
   {
-    cell: "H36 / H38",
+    cell: "H39 / H41",
     what: "Top-channel QTY",
     sheet: '" 1" / "BRACKET,  1"',
     clean: "bracket flag + 1",
-    note: "Text in a quantity column. H37 was cleaned to \"1\" on 2026-09-23; H36 still holds a leading space and H38 still holds prose. Both views split these into a BRACKET tag and a numeric 1 so the column stays summable.",
+    note: "Text in a quantity column. H40 was cleaned to \"1\" on 2026-09-23; H39 still holds a leading space and H41 still holds prose. Both views split these into a BRACKET tag and a numeric 1 so the column stays summable.",
   },
 ];
 
@@ -327,28 +344,28 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { desc: "GLASS 6MM RIGHT EXTN", off: 100, skipWhen: R, w: () => D - 200 + 35 },
     { desc: "GLASS 6MM BACK EXTN", off: 100, skipWhen: B, w: () => W - 200 + 35 },
     {
-      desc: "SHEET COVER 1.2MM LEFT EXTN",
+      desc: "SHEET CLADDING 1.2MM LEFT EXTN",
       off: 135,
       onlyWhen: L,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
-      desc: "SHEET COVER 1.2MM RIGHT EXTN",
+      desc: "SHEET CLADDING 1.2MM RIGHT EXTN",
       off: 135,
       onlyWhen: R,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
-      desc: "SHEET COVER 1.2MM BACK EXTN",
+      desc: "SHEET CLADDING 1.2MM BACK EXTN",
       off: 135,
       onlyWhen: B,
       w: () => W - 200,
       ohW: W - 200,
     },
     {
-      desc: "SHEET COVER 1.2MM FRONT EXTN",
+      desc: "SHEET CLADDING 1.2MM FRONT EXTN",
       off: 135,
       onlyWhen: B,
       w: () => W - 200,
@@ -394,34 +411,47 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     return { desc: d.desc, cells };
   });
 
-  /* ---------------- horizontal channels (rows 25-41) ---------------- */
+  /* ---------------- horizontal channels (rows 25-50) ----------------
+     Laid out as the owner's R1 revision (2026-09-29): every channel that has a
+     sheet cover now has its own COVER (1.2MM) row, and every cover length is
+     the channel length +40. A cover reads "NO" on the counterweight side, where
+     the channel is a bracket instead. Text quantities in the sheet ("1", " 1")
+     are normalised to numbers so the column stays summable. */
   function pick<T>(l: T, b: T, r: T): T | "" {
     return L ? l : B ? b : R ? r : "";
   }
+  // AUDIT I26/I29/I39: with CWT=BACK these left/right parts use the width (C4).
+  const sideB = strict ? W - 200 : D - 200;
   const channels: ChannelRow[] = [
-    { desc: "HZ CHANNEL LEFT 170", br: L, qty: 1, len: D - 200 },
+    { desc: "HZ CHANNEL LEFT 170", br: L, qty: 1, len: D - 200 }, // row 25
     {
-      // I26's RIGHT branch gained +30 on 2026-09-23 (C5-200 -> C5-200+30).
-      desc: "HZ CH LEFT COVER 170",
+      desc: "HZ CH LEFT COVER 170 (1.2MM)",
       qty: pick<Figure>(NA, 1, 1),
-      len: pick<Figure>(NA, W - 200, D - 200 + 30),
+      len: pick<Figure>(NA, sideB + 40, D - 200 + 40),
     },
     { desc: "HZ SILL CHANNEL 142", qty: F, len: W - 200 },
     { desc: "HZ CHANNEL RIGHT 170", br: R, qty: 1, len: D - 200 },
     {
-      // H29 was blank until 2026-09-23; the workbook now carries
-      // =IF(C15="LEFT","1", IF(C15="BACK",1, IF(C15="RIGHT","NO",""))). The
-      // LEFT branch stores "1" as text — normalised to a number here so the
-      // column stays summable, same as the top-channel rows.
+      // AUDIT I29: the LEFT branch alone has no +40.
       desc: "HZ CH COVER RIGHT 170",
       qty: pick<Figure>(1, 1, NA),
-      len: pick<Figure>(D - 200, W - 200, NA),
+      len: pick<Figure>(strict ? D - 200 : D - 200 + 40, sideB + 40, NA),
     },
+    // G30 tested C20 as written in R1; fixed to C15 in the workbook.
+    { desc: "HZ CHANNEL 170 BACK", br: B, qty: 1, len: W - 200 }, // row 30
+    { desc: "HZ CH BACK COVER 170 (1.2MM)", qty: pick<Figure>(1, NA, 1), len: W - 200 + 40 },
     {
+      // R1 changed this quantity from 3F to 3F-1, but wrote the -1 outside the
+      // IF, so CWT=BACK gave "NO"-1 = #VALUE!. Fixed in the workbook (fix 9).
       desc: "HZ CHANNEL 135 BACK (1.5MM)",
       br: B,
-      qty: pick<Figure>(F * 3, NA, F * 3),
+      qty: pick<Figure>(F * 3 - 1, NA, F * 3 - 1),
       len: pick<Figure>(W - 200, NA, W - 200),
+    },
+    {
+      desc: "HZ CHANNEL 135 BACK COVER (1.2MM)",
+      qty: pick<Figure>(F * 3 - 1, NA, F * 3 - 1),
+      len: pick<Figure>(W - 200 + 40, NA, W - 200 + 40),
     },
     {
       desc: "HZ BRACKET CHANNEL 135 (3MM)",
@@ -432,34 +462,32 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     },
     {
       desc: "HZ CHANNEL 135 LEFT (1.5MM)",
+      br: L,
       qty: pick<Figure>(NA, F * 3 - 1, F * 3 - 1),
       len: pick<Figure>(NA, D - 200, D - 200),
     },
     {
-      // Added to the workbook 2026-09-23 (row 33). NB the two offsets differ:
-      // +35 for BACK, +30 for RIGHT. Reproduced exactly as written — see the
-      // AUDIT note; do not "tidy" them to match without asking.
-      desc: "HZ CHANNEL COVER LEFT (1.5MM)",
+      desc: "HZ CHANNEL 135 LEFT COVER (1.2MM)",
       qty: pick<Figure>(NA, F * 3 - 1, F * 3 - 1),
-      len: pick<Figure>(NA, D - 200 + 35, D - 200 + 30),
+      len: pick<Figure>(NA, D - 200 + 40, D - 200 + 40),
     },
     {
+      // AUDIT G37: no BRACKET flag in the sheet, unlike its LEFT and BACK twins.
       desc: "HZ CHANNEL 135 RIGHT (1.5MM)",
+      br: !strict && R,
       qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
       len: pick<Figure>(D - 200, D - 200, NA),
     },
     {
-      // Added to the workbook 2026-09-23 (row 35). Its LEFT branch carries
-      // +30 while BACK carries none — again reproduced as written.
-      desc: "HZ CHANNEL COVER RIGHT (1.5MM)",
+      desc: "HZ CHANNEL 135 RIGHT COVER (1.2MM)",
       qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
-      len: pick<Figure>(D - 200 + 30, D - 200, NA),
+      len: pick<Figure>(D - 200 + 40, D - 200 + 40, NA),
     },
     {
       desc: "HZ TOP CHANNEL LEFT (3MM)",
       br: L,
       qty: 1,
-      len: pick<Figure>(D - 200, W - 200, D - 200),
+      len: pick<Figure>(D - 200, sideB, D - 200),
     },
     { desc: "HZ TOP CHANNEL RIGHT (3MM)", br: R, qty: 1, len: D - 200 },
     {
@@ -469,16 +497,20 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(W - 200, NA, W - 200),
     },
     {
-      desc: "HZ TOP CHANNEL FRONT (3MM)",
+      desc: "HZ TOP CHANNEL FRONT (3MM)", // row 42
       qty: 1,
       len: pick<Figure>(W - 200, NA, W - 200),
     },
-    { desc: "HZ 2ND LAST CHANNEL 135X1.5MM LEFT", br: L, qty: 1, len: D - 200 },
-    { desc: "HZ 2ND LAST CHANNEL 135X3 MM RIGHT", br: R, qty: 1, len: D - 200 },
-    { desc: "HZ 2ND LAST CHANNEL 135X1.5MM FRONT", qty: 1, len: W - 200 },
+    { desc: "HZ 2ND LAST CHANNEL 135 MM LEFT", br: L, qty: 1, len: D - 200 }, // row 44
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM LEFT", qty: pick<Figure>(NA, 1, 1), len: D - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL 135 MM RIGHT", br: R, qty: 1, len: D - 200 },
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM RIGHT", qty: pick<Figure>(1, 1, NA), len: D - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL 135 MM FRONT", qty: 1, len: W - 200 },
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM BACK", qty: pick<Figure>(1, NA, 1), len: W - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL 135 MM BACK", br: B, qty: 1, len: W - 200 }, // row 50
   ];
 
-  /* ---------------- 2450 console module (rows 45-62) ---------------- */
+  /* ---------------- 2450 console module (rows 54-71) ---------------- */
   const console2450: ConsoleRow[] = [
     { dwg: "D100-0001", desc: "FRONT LEFT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D101-0001", desc: "FRONT RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
@@ -489,9 +521,9 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
        workbook gated only the length (column I) and left column H a flat 1 /
        2*C8-1 / 2*C8, so the side with no glass still shipped a quantity — at
        3 floors with CWT=BACK that was 1+5 pieces of back glass and 6 right-hand
-       covers on the cut list. H53:H58, H61 and H62 now hold the gate and these
+       covers on the cut list. H62:H67, H70 and H71 now hold the gate and these
        mirror them, so app and sheet agree in BOTH modes.
-       SHEET COVER LEFT (H60) is deliberately NOT gated: its length reads
+       SHEET CLADDING LEFT (H69) is deliberately NOT gated: its length reads
        "GLASS", meaning those pieces are glass rather than sheet, so its
        quantity is real. */
     {
@@ -510,9 +542,10 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
     },
     {
+      // I65 measured this against C4 when CWT=BACK; the owner fixed it to C5 in R1.
       desc: "GLASS LEFT COMMON 1128 X",
       qty: pick<Figure>(NA, 2 * F - 1, 2 * F - 1),
-      len: pick<Figure>(NA, strict ? W - 200 + 35 : D - 200 + 35, D - 200 + 35), // I56 drift
+      len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
     },
     {
       desc: "GLASS RIGHT COMMON 1128 X",
@@ -525,23 +558,24 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
-      desc: "SHEET COVER LEFT COMMON 1.2MM 1090MM",
+      desc: "SHEET CLADDING LEFT COMMON 1.2MM 1090MM",
       qty: 2 * F,
       len: pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS"),
     },
     {
-      desc: "SHEET COVER RIGHT COMMON 1.2MM 1090MM",
+      // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
+      desc: "SHEET CLADDING RIGHT COMMON 1.2MM 1090MM",
       qty: pick<Figure>(NA, NA, 2 * F),
       len: pick<Figure>(NA, NA, D - 200),
     },
     {
-      desc: "SHEET COVER BACK COMMON 1.2MM 1090MM",
+      desc: "SHEET CLADDING BACK COMMON 1.2MM 1090MM",
       qty: pick<Figure>(NA, 2 * F, NA),
       len: pick<Figure>(NA, W - 200, NA),
     },
   ];
 
-  /* ---------------- doors, brackets, fasteners (rows 65-83) ---------------- */
+  /* ---------------- doors, brackets, fasteners (rows 74-92) ---------------- */
   const hardware: HardwareRow[] = [
     { desc: "DOOR POST  D LOCKING R", tag: inp.doorOpening, qty: F },
     { desc: "DOOR POST CLADING R", qty: F },
@@ -550,6 +584,9 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { desc: "DOOR POST CLADING L", qty: F },
     { desc: "LINTEL PANEL  L", qty: F },
     { desc: "HEADER BRACKET CHANNEL", qty: F },
+    // Added in R1. The 122 plate is a flat 2 whatever the floor count.
+    { desc: "BRACKET FIXING PLATE 122", qty: 2 },
+    { desc: "BRACKET FIXING PLATE 124", qty: F * 3 * 2 - 2 },
     { desc: "JOINT PLATE HEX", qty: F * 8 },
     { desc: "JOINT PLATE HOLE", qty: F * 8 },
     { desc: "RIVNUT 8", qty: 52 * F },
