@@ -32,6 +32,29 @@ export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
 });
 
 /**
+ * Jobs whose structure is made in the factory — the only jobs the RALPH 400
+ * shaft BOM applies to. Feeds the Job-No dropdown on /ralph400. Lean shape
+ * on purpose (number + customer), newest first. ~70 rows today, well under
+ * the PostgREST cap.
+ */
+const _getFactoryStructureJobsUncached = async () => {
+  const supabase = createCacheClient();
+  const { data, error } = await supabase
+    .from("jobs")
+    .select("job_number, customer_name")
+    .eq("structure_included", "Factory-made")
+    .order("created_at", { ascending: false });
+  if (error) throw error;
+  return (data ?? []) as { job_number: string; customer_name: string | null }[];
+};
+
+export const getFactoryStructureJobs = unstable_cache(
+  _getFactoryStructureJobsUncached,
+  ["factory-structure-jobs"],
+  { revalidate: 600, tags: ["jobs"] },
+);
+
+/**
  * Lightweight per-job metadata for the "Import from Existing Job" picker:
  * how many BOM lines the job has, and its door system derived from the
  * Car Header System BOM item (falling back to the Landing Header System).

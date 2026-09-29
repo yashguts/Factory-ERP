@@ -100,7 +100,12 @@ interface FlatRow {
 
 /* ---------------- component ---------------- */
 
-export function Ralph400Client() {
+export interface FactoryJobOption {
+  job_number: string;
+  customer_name: string | null;
+}
+
+export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
   const [inp, setInp] = useState<Ralph400Inputs>(DEFAULTS);
   const [mode, setMode] = useState<Mode>("sheet");
   // Inputs load from localStorage after mount, never during render: the server
@@ -350,11 +355,27 @@ export function Ralph400Client() {
           <SectionHeader title="Input" />
           <div className="p-3 space-y-3">
             <Field label="Job no">
-              <Input
+              {/* Only jobs with Structure = Factory-made — the jobs this shaft
+                  BOM is for. A previously saved value that is no longer in the
+                  list (or the BLR 94 sample default) stays selectable so a
+                  reload never silently swaps the job. */}
+              <Select
                 size="sm"
                 value={inp.jobNo}
                 onChange={(e) => setInp((p) => ({ ...p, jobNo: e.target.value }))}
-              />
+              >
+                <option value="">— Select job —</option>
+                {inp.jobNo !== "" &&
+                  !jobs.some((j) => j.job_number === inp.jobNo) && (
+                    <option value={inp.jobNo}>{inp.jobNo} (not in list)</option>
+                  )}
+                {jobs.map((j) => (
+                  <option key={j.job_number} value={j.job_number}>
+                    {j.job_number}
+                    {j.customer_name ? ` — ${j.customer_name}` : ""}
+                  </option>
+                ))}
+              </Select>
             </Field>
 
             <SubHead>Shaft</SubHead>
