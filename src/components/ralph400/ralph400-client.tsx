@@ -1,7 +1,9 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { Printer, Ruler, RotateCcw, Download } from "lucide-react";
+import { Printer, Ruler, RotateCcw, Download, ScanSearch } from "lucide-react";
+import { getRalph400Autofill } from "@/lib/actions/ralph400-autofill";
+import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/ui/page-header";
 import { Card, SectionHeader } from "@/components/ui/card";
 import { StatStrip, StatTile } from "@/components/ui/stat-strip";
@@ -105,9 +107,27 @@ export interface FactoryJobOption {
   customer_name: string | null;
 }
 
+const FIELD_LABELS: Record<string, string> = {
+  floors: "floors",
+  h1: "bottom→1st",
+  h2: "1st→2nd",
+  h3: "2nd→3rd",
+  h4: "3rd→4th",
+  h5: "4th→5th",
+  pitHeight: "pit",
+  overHead: "overhead",
+  shaftWidth: "width",
+  shaftDepth: "depth",
+  cwt: "counterweight",
+  doorType: "door type",
+  doorOpening: "door opening",
+};
+
 export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
   const [inp, setInp] = useState<Ralph400Inputs>(DEFAULTS);
   const [mode, setMode] = useState<Mode>("sheet");
+  const [reading, setReading] = useState(false);
+  const toast = useToast();
   // Inputs load from localStorage after mount, never during render: the server
   // and the first client paint must agree or React throws a hydration error.
   const [hydrated, setHydrated] = useState(false);
@@ -152,6 +172,30 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
   const setNum = (k: (typeof NUM_KEYS)[number], raw: string) => {
     const n = raw.trim() === "" ? 0 : Number(raw);
     setInp((p) => ({ ...p, [k]: isFinite(n) ? n : 0 }));
+  };
+
+  /* ---- auto-fill from the job record + GA drawing ---- */
+
+  const applyAutofill = async (jobNo: string, allowVision: boolean) => {
+    if (!jobNo || !jobs.some((j) => j.job_number === jobNo)) return;
+    if (allowVision) setReading(true);
+    try {
+      const r = await getRalph400Autofill(jobNo, allowVision);
+      if (!r.ok) {
+        // The silent on-select pass stays silent when there's simply no data.
+        if (allowVision) toast.error(r.error);
+        return;
+      }
+      setInp((p) => ({ ...p, ...r.values }));
+      const filled = Object.keys(r.values).map((k) => FIELD_LABELS[k] ?? k);
+      const src = r.usedVision ? "drawing (AI)" : r.sources[Object.keys(r.sources)[0]] === "job" && filled.length === 1 ? "job record" : "stored drawing scan";
+      toast.success(`Filled ${filled.length} field${filled.length === 1 ? "" : "s"} from ${src}: ${filled.join(", ")} — please verify.`);
+      r.warnings.forEach((w) => toast.info(w));
+    } catch {
+      if (allowVision) toast.error("Auto-fill failed — fill the inputs manually.");
+    } finally {
+      if (allowVision) setReading(false);
+    }
   };
 
   const totalRise = [inp.h1, inp.h2, inp.h3, inp.h4, inp.h5]
@@ -362,7 +406,12 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
               <Select
                 size="sm"
                 value={inp.jobNo}
-                onChange={(e) => setInp((p) => ({ ...p, jobNo: e.target.value }))}
+                onChange={(e) => {
+                  const jobNo = e.target.value;
+                  setInp((p) => ({ ...p, jobNo }));
+                  // Free tier only (job record + stored scans) — instant, no AI.
+                  void applyAutofill(jobNo, false);
+                }}
               >
                 <option value="">— Select job —</option>
                 {inp.jobNo !== "" &&
@@ -377,6 +426,20 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
                 ))}
               </Select>
             </Field>
+            {jobs.some((j) => j.job_number === inp.jobNo) && (
+              <Button
+                type="button"
+                variant="secondary"
+                size="sm"
+                className="w-full"
+                disabled={reading}
+                onClick={() => void applyAutofill(inp.jobNo, true)}
+                title="Read this job's GA drawing with AI and fill the inputs below (you review every value)"
+              >
+                <ScanSearch size={14} className={cn("mr-1.5", reading && "animate-pulse")} />
+                {reading ? "Reading drawing…" : "Auto-fill from drawing (AI)"}
+              </Button>
+            )}
 
             <SubHead>Shaft</SubHead>
             <NumField label="Width external" value={inp.shaftWidth} onChange={(v) => setNum("shaftWidth", v)} />

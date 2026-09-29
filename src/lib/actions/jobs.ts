@@ -6,7 +6,6 @@ import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { alertKind, reasonRequired } from "@/lib/jobs/status-alert";
-import { getJobsDispatchStatus } from "@/lib/actions/dispatch";
 
 export interface BomLineInput {
   category: string;
@@ -59,6 +58,11 @@ const _getFactoryStructureJobsUncached = async () => {
 
   // Same tab gate as jobs-client.tsx: full → "Fully Dispatched" tab,
   // partial + stage full_material → "Full Dispatch (Shortfall)" tab.
+  // Dynamic import: a static cross-"use server" import of this symbol compiles
+  // to a reference that is UNDEFINED when invoked during RSC render (page load)
+  // — it only resolves in the action-invocation path. Importing at call time
+  // gets the real function in both paths.
+  const { getJobsDispatchStatus } = await import("@/lib/actions/dispatch");
   const status = await getJobsDispatchStatus(rows.map((r) => r.id));
   return rows
     .filter((r) => {
