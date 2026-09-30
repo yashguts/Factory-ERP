@@ -19,6 +19,7 @@ import {
   Phone,
   CalendarCheck,
   PackageCheck,
+  HardHat,
 } from "lucide-react";
 import { useToast } from "@/components/ui/toast";
 import { useOperator } from "@/lib/jobs/use-operator";
@@ -29,6 +30,7 @@ import {
   setDispatchDelivered,
   getJobDeliveryConfirmations,
   acknowledgeDeliveryConfirmation,
+  getJobSiteClearances,
   type JobDispatchSummary,
   type PhaseScope,
   type DeliveryConfirmation,
@@ -38,6 +40,11 @@ import {
   toneText,
   type DispatchStat,
 } from "@/lib/dispatch-status";
+import {
+  siteClearanceLine,
+  siteClearanceStatusOf,
+  type SiteClearanceStatus,
+} from "@/lib/site-clearance";
 import { downloadDispatchHistoryPdf, downloadBalancePdf } from "@/lib/export/dispatch-pdf";
 
 const SCOPE_LABEL: Record<PhaseScope, string> = {
@@ -70,6 +77,33 @@ function PhaseStatus({ name, stat }: { name: string; stat: DispatchStat | null }
           />
         </span>
       )}
+    </span>
+  );
+}
+
+/** Construction's site clearance for the job, as one small line beside the
+ *  "Mark dispatched" button. Renders nothing until the read comes back, so a
+ *  cleared job never flashes "pending". */
+function SiteClearanceStatusLine({ status }: { status: SiteClearanceStatus | null }) {
+  if (!status) return null;
+  const tone =
+    status.state === "given"
+      ? "text-[var(--success)]"
+      : status.state === "pending"
+        ? "text-[var(--warning)]"
+        : "text-[var(--muted-foreground)]";
+  const title =
+    status.state === "given"
+      ? status.latest.note
+        ? `Construction's note: ${status.latest.note}`
+        : "Construction has given dispatch clearance for this site."
+      : status.state === "pending"
+        ? "Construction hasn't given dispatch clearance for this job yet. You can still dispatch; you'll be asked to confirm."
+        : "Couldn't read the site clearance from Construction just now. Reload the page to try again.";
+  return (
+    <span className={`text-[11px] inline-flex items-center gap-1 ${tone}`} title={title}>
+      <HardHat className="h-3 w-3 shrink-0" />
+      {siteClearanceLine(status)}
     </span>
   );
 }
@@ -166,6 +200,22 @@ export function DispatchPanel({
         if (alive) setConfirmations(rows);
       })
       .catch(() => {});
+    return () => {
+      alive = false;
+    };
+  }, [jobId]);
+  // Site clearance from Construction — same client-fetch pattern and reason
+  // (written outside the ERP). A failed read shows "couldn't check".
+  const [clearance, setClearance] = useState<SiteClearanceStatus | null>(null);
+  useEffect(() => {
+    let alive = true;
+    getJobSiteClearances(jobId)
+      .then((read) => {
+        if (alive) setClearance(siteClearanceStatusOf(read));
+      })
+      .catch(() => {
+        if (alive) setClearance({ state: "unknown" });
+      });
     return () => {
       alive = false;
     };
@@ -388,7 +438,8 @@ export function DispatchPanel({
             </span>
           )}
         </div>
-        <div className="flex items-center gap-1.5">
+        <div className="flex items-center justify-end gap-1.5 flex-wrap">
+          <SiteClearanceStatusLine status={clearance} />
           <button
             type="button"
             onClick={() => void downloadBalancePdf(pdfInfo, summary.lines)}

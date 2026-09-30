@@ -13,6 +13,9 @@ interface ConfirmDialogProps {
   confirmVariant?: "primary" | "destructive";
   /** Disable buttons + show a spinner on confirm while an action runs. */
   busy?: boolean;
+  /** Button to focus when the dialog opens. Unset = focus stays where it was
+   *  (the original behaviour). "cancel" makes a reflex Enter the safe answer. */
+  initialFocus?: "confirm" | "cancel";
   onConfirm: () => void;
   onCancel: () => void;
 }
@@ -29,6 +32,7 @@ export function ConfirmDialog({
   cancelLabel = "No",
   confirmVariant = "primary",
   busy = false,
+  initialFocus,
   onConfirm,
   onCancel,
 }: ConfirmDialogProps) {
@@ -39,13 +43,19 @@ export function ConfirmDialog({
           {message}
         </div>
         <div className="flex items-center justify-end gap-2">
-          <Button variant="secondary" onClick={onCancel} disabled={busy}>
+          <Button
+            variant="secondary"
+            onClick={onCancel}
+            disabled={busy}
+            autoFocus={initialFocus === "cancel"}
+          >
             {cancelLabel}
           </Button>
           <Button
             variant={confirmVariant}
             onClick={onConfirm}
             disabled={busy}
+            autoFocus={initialFocus === "confirm"}
           >
             {busy && <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />}
             {confirmLabel}

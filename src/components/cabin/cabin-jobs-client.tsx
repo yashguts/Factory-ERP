@@ -28,6 +28,7 @@ import { setCabinJobReady, setCabinJobDispatched } from "@/lib/actions/cabin-job
 import type { CabinJobListRow, CabinFinishGroup, CabinFinishItem } from "@/lib/actions/cabin-jobs";
 import type { CabinWeeklyPlan } from "@/lib/actions/cabin-program-plan";
 import { useToast } from "@/components/ui/toast";
+import { useSiteClearancePrompt } from "@/components/jobs/site-clearance-prompt";
 import { cn } from "@/lib/utils";
 
 // The platform item name leads with its door system (e.g. "ACO 1300X1100",
@@ -126,6 +127,9 @@ export function CabinJobsClient({
   // rule 2026-08-28) and moves the job to the Dispatched section.
   const [dispatchOverride, setDispatchOverride] = useState<Record<string, boolean>>({});
   const isDispatched = (j: CabinJobListRow) => dispatchOverride[j.id] ?? j.dispatched_at != null;
+  // Construction's site clearance for the linked Job Order (matched by job
+  // number) — a soft Yes/No asked last before marking dispatched.
+  const { confirmSiteClearance, clearanceDialog } = useSiteClearancePrompt();
   async function toggleDispatched(j: CabinJobListRow) {
     const next = !isDispatched(j);
     if (
@@ -135,6 +139,7 @@ export function CabinJobsClient({
       )
     )
       return;
+    if (next && !(await confirmSiteClearance({ jobNumber: j.job_number }))) return;
     setDispatchOverride((m) => ({ ...m, [j.id]: next }));
     const res = await setCabinJobDispatched(j.id, next);
     if (!res.ok) {
@@ -650,6 +655,7 @@ export function CabinJobsClient({
           )}
         </>
       )}
+      {clearanceDialog}
     </div>
   );
 }

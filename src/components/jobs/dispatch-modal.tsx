@@ -17,6 +17,7 @@ import {
 import { getR1DispatchView } from "@/lib/actions/r1-bom-sync";
 import { getLatestPackingPrint } from "@/lib/actions/packing-print";
 import { downloadDispatchNotePdf } from "@/lib/export/dispatch-pdf";
+import { useSiteClearancePrompt } from "@/components/jobs/site-clearance-prompt";
 
 interface Props {
   jobId: string;
@@ -83,6 +84,10 @@ const SCOPE_LABEL: Record<PhaseScope, string> = {
   full: "Entire job",
 };
 
+// While the site-clearance pop-up is open, Escape / backdrop must only close
+// the pop-up (= "No"), never this modal — that would lose the user's form.
+const ignoreClose = () => {};
+
 export function DispatchModal({ jobId, jobNumber, customerName, location, onClose, onSaved }: Props) {
   const toast = useToast();
   const [summary, setSummary] = useState<JobDispatchSummary | null>(null);
@@ -101,6 +106,7 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
   const [rows, setRows] = useState<Row[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
+  const { confirmSiteClearance, clearanceDialog, clearancePromptOpen } = useSiteClearancePrompt();
 
   // Every packing-list line is ALWAYS in the list (the modal renders the exact
   // R1 format); the scope only decides which rows are live. Out-of-phase or
@@ -290,6 +296,10 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
     }
     startTransition(async () => {
       if (!(await confirmAgainstPrint())) return;
+      // Construction's site clearance — the LAST question before saving. Soft:
+      // "Yes" saves exactly as before, "No" returns to the form untouched.
+      // Skipped for a revise-only save (nothing physical is going out).
+      if (dispatchRows.length > 0 && !(await confirmSiteClearance({ jobId, jobNumber }))) return;
       const res = await createDispatch({
         job_id: jobId,
         dispatch_date: date,
@@ -360,10 +370,10 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
     });
   };
 
-  return (
+  const modal = (
     <Modal
       title={`Dispatch — Job ${jobNumber}`}
-      onClose={onClose}
+      onClose={clearancePromptOpen ? ignoreClose : onClose}
       className="max-w-4xl"
     >
       <div className="space-y-4">
@@ -621,6 +631,15 @@ export function DispatchModal({ jobId, jobNumber, customerName, location, onClos
         </div>
       </div>
     </Modal>
+  );
+
+  return (
+    <>
+      {modal}
+      {/* A sibling, not a child: the Modal box is transformed, which would
+          trap the pop-up's fixed overlay inside it. */}
+      {clearanceDialog}
+    </>
   );
 }
 

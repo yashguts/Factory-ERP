@@ -7,6 +7,7 @@ import { dispatchPhaseOf, linePhase, type DispatchPhase } from "@/lib/bom/bom-se
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { recordTransaction } from "@/lib/actions/inventory";
 import { postsInventory } from "@/lib/inventory/cutover";
+import type { ClearanceScope, SiteClearance, SiteClearanceRead } from "@/lib/site-clearance";
 
 /* ------------------------------------------------------------------ *
  * Job dispatch.
@@ -995,4 +996,88 @@ export async function acknowledgeDeliveryConfirmation(
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/jobs/${jobId}`);
   return { ok: true };
+}
+
+/* ------------------------------------------------------------------ *
+ * Site clearance (Construction module → ERP).
+ *
+ * A Construction supervisor or manager gives "dispatch clearance" when the
+ * site is ready; cx_record_clearance (migration 069) records it in
+ * cx_dispatch_clearances. At least one row = cleared; none = pending. The
+ * factory gets a soft Yes/No warning when it dispatches an uncleared job
+ * (never a block — see lib/site-clearance.ts). Read UNCACHED, like the
+ * delivery confirmations above: the rows are written outside the ERP, so none
+ * of our cache tags would ever bust on them.
+ * ------------------------------------------------------------------ */
+
+const CLEARANCE_COLUMNS =
+  "id, job_id, recommended_scope, note, cleared_by, cleared_at, created_at, acknowledged_at, acknowledged_by";
+
+function toSiteClearance(r: any): SiteClearance {
+  return {
+    id: r.id as string,
+    job_id: r.job_id as string,
+    recommended_scope: (r.recommended_scope as ClearanceScope | null) ?? null,
+    note: (r.note as string | null) ?? null,
+    cleared_by: (r.cleared_by as string | null) ?? null,
+    cleared_at: (r.cleared_at as string | null) ?? null,
+    created_at: r.created_at as string,
+    acknowledged_at: (r.acknowledged_at as string | null) ?? null,
+    acknowledged_by: (r.acknowledged_by as string | null) ?? null,
+  };
+}
+
+/** Clearance rows for these jobs, newest first. */
+async function readClearances(
+  supabase: ReturnType<typeof createCacheClient>,
+  jobIds: string[],
+): Promise<SiteClearanceRead> {
+  const { data, error } = await supabase
+    .from("cx_dispatch_clearances")
+    .select(CLEARANCE_COLUMNS)
+    .in("job_id", jobIds)
+    .order("cleared_at", { ascending: false, nullsFirst: false })
+    .order("created_at", { ascending: false });
+  if (error) return { ok: false, error: error.message };
+  return { ok: true, clearances: (data ?? []).map(toSiteClearance) };
+}
+
+const clearanceReadFailed = (e: unknown): SiteClearanceRead => ({
+  ok: false,
+  error: e instanceof Error ? e.message : "Could not read site clearance.",
+});
+
+/** Every site clearance Construction has given for this job, newest first.
+ *  `ok: false` only when the read itself failed (callers then warn as if
+ *  pending — a failed check must never block a dispatch). */
+export async function getJobSiteClearances(jobId: string): Promise<SiteClearanceRead> {
+  if (!jobId) return { ok: true, clearances: [] };
+  try {
+    return await readClearances(createCacheClient(), [jobId]);
+  } catch (e) {
+    return clearanceReadFailed(e);
+  }
+}
+
+/** The same read for a job known only by its number — a cabin job links to
+ *  its Job Order by job_number (trimmed, case-insensitive; see cabin-jobs.ts).
+ *  No matching Job Order = nothing cleared = pending. */
+export async function getSiteClearancesByJobNumber(jobNumber: string): Promise<SiteClearanceRead> {
+  const target = (jobNumber ?? "").trim().toLowerCase();
+  if (!target) return { ok: true, clearances: [] };
+  try {
+    const supabase = createCacheClient();
+    const { data: jobs, error } = await supabase
+      .from("jobs")
+      .select("id, job_number")
+      .ilike("job_number", jobNumber.trim());
+    if (error) return { ok: false, error: error.message };
+    const jobIds = (jobs ?? [])
+      .filter((j: any) => ((j.job_number as string) ?? "").trim().toLowerCase() === target)
+      .map((j: any) => j.id as string);
+    if (jobIds.length === 0) return { ok: true, clearances: [] };
+    return await readClearances(supabase, jobIds);
+  } catch (e) {
+    return clearanceReadFailed(e);
+  }
 }
