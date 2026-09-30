@@ -17,6 +17,7 @@ import { shouldRenderSection, driveTypeLabel } from "@/lib/bom/section-gating";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
 import { DispatchPanel } from "@/components/jobs/dispatch-panel";
 import { DispatchModal } from "@/components/jobs/dispatch-modal";
+import { SiteSurveyCard } from "@/components/jobs/site-survey-card";
 import type { JobDispatchSummary, DispatchSummaryLine } from "@/lib/actions/dispatch";
 import { downloadBalancePdf } from "@/lib/export/dispatch-pdf";
 import { dispatchStat, toneChip } from "@/lib/dispatch-status";
@@ -783,6 +784,11 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           onSaved={() => router.refresh()}
         />
       )}
+
+      {/* Site survey from Construction — right under Dispatches: the site's
+          readiness is what the dispatch decision (and the clearance line
+          above) rests on. */}
+      <SiteSurveyCard jobId={job.id} />
 
       {/* BOM Section */}
       <div>
