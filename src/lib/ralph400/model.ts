@@ -119,11 +119,39 @@ export const AUDIT: AuditRow[] = [
     note: "Every other level QTY on these rows is a hardcoded 1.",
   },
   {
-    cell: "U17:V20",
-    what: "Overhead segment of the sheet cladding",
-    sheet: "always computed",
-    clean: "follows the CWT rule",
-    note: "U and V carry no CWT condition, so the left-cladding row still emits an overhead panel when every other level of that row reads \"NO\".",
+    cell: "I41 / I42",
+    what: "Top channel BACK / FRONT, CWT=BACK",
+    sheet: "NO (length)",
+    clean: "C4-200",
+    note: "Both rows keep a quantity when CWT=BACK (H41 even says \"BRACKET, 1\") but their length reads NO, so the top frame is left open at the back and front. The front never changes with the counterweight elsewhere (I48 is always C4-200).",
+  },
+  {
+    cell: "H69 / I69",
+    what: "SHEET CLADDING LEFT COMMON, CWT≠LEFT",
+    sheet: "qty 2F, length \"GLASS\"",
+    clean: "NO",
+    note: "That face is glass, already counted in the glass rows, so 2F left sheets would be extra. The owner changed the matching rows 70/71 from \"GLASS\" to \"NO\"; row 69 was missed.",
+  },
+  {
+    cell: "H62:H67, H70, H71",
+    what: "Console glass/cladding quantities",
+    sheet: "flat 1 / 2F-1 / 2F",
+    clean: "NO where the length is NO",
+    note: "The quantity column ignores the counterweight while the length column follows it, so faces without that panel still list pieces (24 extra on the workbook's own sample job).",
+  },
+  {
+    cell: "N15",
+    what: "1ST glass BACK width, CWT=RIGHT",
+    sheet: "NO",
+    clean: "C4-200+35",
+    note: "The 1ST back glass has a height (M15) but no width when CWT=RIGHT, so the panel drops out; every other level has glass there.",
+  },
+  {
+    cell: "T15",
+    what: "4RT glass BACK width",
+    sheet: "C4-135",
+    clean: "C4-200+35",
+    note: "Every other glass width is face-200+35; this one is 30 mm wider. Present since the original workbook.",
   },
   {
     cell: "T13",
@@ -342,7 +370,13 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       w: (k) => (strict && k === 4 ? null : D - 200 + 35), // T13 never created
     },
     { desc: "GLASS 6MM RIGHT EXTN", off: 100, skipWhen: R, w: () => D - 200 + 35 },
-    { desc: "GLASS 6MM BACK EXTN", off: 100, skipWhen: B, w: () => W - 200 + 35 },
+    {
+      desc: "GLASS 6MM BACK EXTN",
+      off: 100,
+      skipWhen: B,
+      // AUDIT N15 (no width when CWT=RIGHT) and T15 (C4-135) in sheet mode.
+      w: (k) => (strict ? (k === 4 ? W - 135 : k === 1 && R ? -1 : W - 200 + 35) : W - 200 + 35),
+    },
     {
       desc: "SHEET CLADDING 1.2MM LEFT EXTN",
       off: 135,
@@ -397,9 +431,9 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       }
       cells.push({ h: hv, w: wv });
     }
-    // U17:V20 carry no CWT condition in the workbook, so in "sheet" mode the
-    // overhead panel is emitted even when the rest of the row is "NO".
-    const ohActive = "ohW" in d && (strict || active);
+    // U17:V20 carry no CWT condition: the overhead is sheet-clad on all four
+    // faces for every job (the glass rows have no overhead cells), in both modes.
+    const ohActive = "ohW" in d;
     const ohW = ohActive ? nn(d.ohW) : null;
     cells.push(
       !ohActive
@@ -491,15 +525,16 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     },
     { desc: "HZ TOP CHANNEL RIGHT (3MM)", br: R, qty: 1, len: D - 200 },
     {
+      // AUDIT I41/I42: the sheet drops these lengths when CWT=BACK.
       desc: "HZ TOP CHANNEL BACK (3MM)",
       br: B,
       qty: 1,
-      len: pick<Figure>(W - 200, NA, W - 200),
+      len: pick<Figure>(W - 200, strict ? NA : W - 200, W - 200),
     },
     {
       desc: "HZ TOP CHANNEL FRONT (3MM)", // row 42
       qty: 1,
-      len: pick<Figure>(W - 200, NA, W - 200),
+      len: pick<Figure>(W - 200, strict ? NA : W - 200, W - 200),
     },
     { desc: "HZ 2ND LAST CHANNEL 135 MM LEFT", br: L, qty: 1, len: D - 200 }, // row 44
     { desc: "HZ 2ND LAST CHANNEL COVER 135 MM LEFT", qty: pick<Figure>(NA, 1, 1), len: D - 200 + 40 },
@@ -517,60 +552,57 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { dwg: "D102-0001", desc: "BACK LEFT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D103-0001", desc: "BACK RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { desc: "HZ CHANNEL SILL 142", qty: F, len: W - 200 },
-    /* QTY carries the same counterweight gate as LEN. Until 2026-09-23 the
-       workbook gated only the length (column I) and left column H a flat 1 /
-       2*C8-1 / 2*C8, so the side with no glass still shipped a quantity — at
-       3 floors with CWT=BACK that was 1+5 pieces of back glass and 6 right-hand
-       covers on the cut list. H62:H67, H70 and H71 now hold the gate and these
-       mirror them, so app and sheet agree in BOTH modes.
-       SHEET CLADDING LEFT (H69) is deliberately NOT gated: its length reads
-       "GLASS", meaning those pieces are glass rather than sheet, so its
-       quantity is real. */
+    /* AUDIT H62:H71. The owner's workbook gates only the length (column I)
+       and leaves column H a flat 1 / 2*C8-1 / 2*C8, so a face with no glass
+       still ships a quantity. Sheet mode reproduces that; clean mode gates the
+       quantity with the length.
+       SHEET CLADDING LEFT (H69) is gated in clean mode only (AUDIT H69): on a
+       glass face its "GLASS" pieces are already counted in the glass rows. */
     {
       desc: "GLASS BACK COMMON 1098 X (1ST)",
-      qty: pick<Figure>(1, NA, 1),
+      qty: strict ? 1 : pick<Figure>(1, NA, 1),
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
       desc: "GLASS LEFT COMMON 1098 X (1ST)",
-      qty: pick<Figure>(NA, 1, 1),
+      qty: strict ? 1 : pick<Figure>(NA, 1, 1),
       len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
     },
     {
       desc: "GLASS RIGHT COMMON 1098 X (1ST)",
-      qty: pick<Figure>(1, 1, NA),
+      qty: strict ? 1 : pick<Figure>(1, 1, NA),
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
     },
     {
       // I65 measured this against C4 when CWT=BACK; the owner fixed it to C5 in R1.
       desc: "GLASS LEFT COMMON 1128 X",
-      qty: pick<Figure>(NA, 2 * F - 1, 2 * F - 1),
+      qty: strict ? 2 * F - 1 : pick<Figure>(NA, 2 * F - 1, 2 * F - 1),
       len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
     },
     {
       desc: "GLASS RIGHT COMMON 1128 X",
-      qty: pick<Figure>(2 * F - 1, 2 * F - 1, NA),
+      qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, 2 * F - 1, NA),
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
     },
     {
       desc: "GLASS BACK COMMON 1128 X",
-      qty: pick<Figure>(2 * F - 1, NA, 2 * F - 1),
+      qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, NA, 2 * F - 1),
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
       desc: "SHEET CLADDING LEFT COMMON 1.2MM 1090MM",
-      qty: 2 * F,
-      len: pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS"),
+      qty: strict ? 2 * F : pick<Figure>(2 * F, NA, NA),
+      len: strict ? pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS") : pick<Figure>(D - 200, NA, NA),
     },
     {
       // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
       desc: "SHEET CLADDING RIGHT COMMON 1.2MM 1090MM",
-      qty: pick<Figure>(NA, NA, 2 * F),
+      qty: strict ? 2 * F : pick<Figure>(NA, NA, 2 * F),
       len: pick<Figure>(NA, NA, D - 200),
     },
     {
       desc: "SHEET CLADDING BACK COMMON 1.2MM 1090MM",
-      qty: pick<Figure>(NA, 2 * F, NA),
+      qty: strict ? 2 * F : pick<Figure>(NA, 2 * F, NA),
       len: pick<Figure>(NA, W - 200, NA),
     },
   ];
