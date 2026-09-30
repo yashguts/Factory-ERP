@@ -1,7 +1,8 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Printer, Ruler, RotateCcw, Download, ScanSearch } from "lucide-react";
+import { Printer, Ruler, RotateCcw, Download, ScanSearch, ChevronsUpDown, Check, Search } from "lucide-react";
+import { createPortal } from "react-dom";
 import { getRalph400Autofill } from "@/lib/actions/ralph400-autofill";
 import { useToast } from "@/components/ui/toast";
 import { PageHeader } from "@/components/ui/page-header";
@@ -105,6 +106,8 @@ interface FlatRow {
 export interface FactoryJobOption {
   job_number: string;
   customer_name: string | null;
+  drive_type: string | null;
+  floors: number | null;
 }
 
 const FIELD_LABELS: Record<string, string> = {
@@ -398,10 +401,13 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
         <Card className="lg:sticky lg:top-4">
           <SectionHeader title="Input" />
           <div className="p-3 space-y-3">
-            {/* A div, not <Field>'s <label>: a listbox inside a label would
-                forward every option click to the input. */}
-            <div className="grid grid-cols-[9rem_minmax(0,1fr)] items-center gap-2">
-              <span className="text-sm text-[var(--muted-foreground)]">Job no</span>
+            {/* Full card width with the label above: the job number + customer
+                need the room. A div, not <Field>'s <label>, so option clicks
+                aren't forwarded to a control. */}
+            <div className="space-y-1">
+              <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">
+                Job
+              </div>
               <JobPicker
                 jobs={jobs}
                 value={inp.jobNo}
@@ -728,114 +734,204 @@ function JobPicker({
   const [open, setOpen] = useState(false);
   const [q, setQ] = useState("");
   const [hi, setHi] = useState(0);
-  const boxRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{
+    left: number;
+    width: number;
+    top?: number;
+    bottom?: number;
+    maxH: number;
+  } | null>(null);
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
   const matches = useMemo(() => {
     const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
     if (toks.length === 0) return sorted;
     return sorted.filter((j) => {
-      const hay = `${j.job_number} ${j.customer_name ?? ""}`.toLowerCase();
+      const hay = `${j.job_number} ${j.customer_name ?? ""} ${j.drive_type ?? ""}`.toLowerCase();
       return toks.every((t) => hay.includes(t));
     });
   }, [q, sorted]);
 
-  useEffect(() => setHi(0), [q]);
+  // The input card is narrow and clips overflow, so the panel is portalled to
+  // <body> and positioned against the trigger: wider than the card, clamped to
+  // the viewport, opening upward when there isn't room below.
+  const place = () => {
+    const r = triggerRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const width = Math.min(Math.max(r.width, 540), vw - 24);
+    const left = Math.min(Math.max(12, r.left), vw - width - 12);
+    const below = vh - r.bottom - 16;
+    const above = r.top - 16;
+    if (below >= 280 || below >= above) setPos({ left, width, top: r.bottom + 6, maxH: Math.min(440, below) });
+    else setPos({ left, width, bottom: vh - r.top + 6, maxH: Math.min(440, above) });
+  };
+
   useEffect(() => {
     if (!open) return;
+    place();
+    setQ("");
+    const selected = sorted.findIndex((j) => j.job_number === value);
+    setHi(selected >= 0 ? selected : 0);
+    requestAnimationFrame(() => searchRef.current?.focus());
     const onDown = (e: MouseEvent) => {
-      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (!panelRef.current?.contains(t) && !triggerRef.current?.contains(t)) setOpen(false);
     };
+    const onMove = () => place();
     document.addEventListener("mousedown", onDown);
-    return () => document.removeEventListener("mousedown", onDown);
+    window.addEventListener("resize", onMove);
+    window.addEventListener("scroll", onMove, true);
+    return () => {
+      document.removeEventListener("mousedown", onDown);
+      window.removeEventListener("resize", onMove);
+      window.removeEventListener("scroll", onMove, true);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open]);
+
+  useEffect(() => setHi(0), [q]);
   useEffect(() => {
     (listRef.current?.children[hi] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
-  }, [hi, open]);
+  }, [hi, open, pos]);
 
   const current = jobs.find((j) => j.job_number === value);
-  const label = current
-    ? `${current.job_number}${current.customer_name ? ` — ${current.customer_name}` : ""}`
-    : value
-      ? `${value} (not in list)`
-      : "";
-
   const pick = (jobNo: string) => {
     onPick(jobNo);
     setOpen(false);
-    setQ("");
+    triggerRef.current?.focus();
   };
 
+  const meta = (j: FactoryJobOption) =>
+    [j.drive_type, j.floors ? `${j.floors} stops` : null].filter(Boolean).join(" · ");
+
   return (
-    <div ref={boxRef} className="relative">
-      <Input
-        size="sm"
-        role="combobox"
+    <>
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-haspopup="listbox"
         aria-expanded={open}
-        aria-autocomplete="list"
-        placeholder="Search job no or customer…"
-        value={open ? q : label}
-        onFocus={() => {
-          setOpen(true);
-          setQ("");
-        }}
-        onClick={() => setOpen(true)}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setOpen(true);
-        }}
+        onClick={() => setOpen((o) => !o)}
         onKeyDown={(e) => {
-          if (e.key === "ArrowDown") {
+          if (e.key === "ArrowDown" || e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             setOpen(true);
-            setHi((h) => Math.min(h + 1, Math.max(matches.length - 1, 0)));
-          } else if (e.key === "ArrowUp") {
-            e.preventDefault();
-            setHi((h) => Math.max(h - 1, 0));
-          } else if (e.key === "Enter") {
-            e.preventDefault();
-            if (open && matches[hi]) pick(matches[hi].job_number);
-          } else if (e.key === "Escape") {
-            setOpen(false);
-            (e.target as HTMLInputElement).blur();
           }
         }}
-      />
-      {open && (
-        <ul
-          ref={listRef}
-          role="listbox"
-          className="absolute left-0 right-0 z-50 mt-1 max-h-72 overflow-auto rounded-md border border-[var(--border)] bg-[var(--popover)] text-sm text-[var(--popover-foreground)] shadow-lg"
-        >
-          {matches.length === 0 ? (
-            <li className="px-2.5 py-2 text-[var(--muted-foreground)]">No matching job</li>
+        className={cn(
+          "flex w-full cursor-pointer items-center gap-2 rounded-md border bg-[var(--background)] px-2.5 py-1.5 text-left transition-colors",
+          "border-[var(--border)] hover:border-[var(--border-strong)] focus:outline-none focus-visible:ring-2 focus-visible:ring-[var(--primary)]/40",
+          open && "border-[var(--primary)]",
+        )}
+      >
+        <span className="min-w-0 flex-1">
+          {current ? (
+            <>
+              <span className="block font-mono text-sm font-semibold leading-5">{current.job_number}</span>
+              <span className="block truncate text-xs leading-4 text-[var(--muted-foreground)]">
+                {[current.customer_name, meta(current)].filter(Boolean).join(" · ")}
+              </span>
+            </>
+          ) : value ? (
+            <>
+              <span className="block font-mono text-sm font-semibold leading-5">{value}</span>
+              <span className="block text-xs leading-4 text-[var(--muted-foreground)]">
+                Not an active RALPH 400 job — pick another
+              </span>
+            </>
           ) : (
-            matches.map((j, i) => (
-              <li
-                key={j.job_number}
-                role="option"
-                aria-selected={i === hi}
-                onMouseDown={(e) => {
-                  e.preventDefault();
-                  pick(j.job_number);
-                }}
-                onMouseEnter={() => setHi(i)}
-                className={cn(
-                  "cursor-pointer px-2.5 py-1.5",
-                  i === hi && "bg-[var(--muted)]",
-                  j.job_number === value && "font-semibold",
-                )}
-              >
-                <span className="font-mono text-xs">{j.job_number}</span>
-                {j.customer_name && (
-                  <span className="ml-2 text-[var(--muted-foreground)]">{j.customer_name}</span>
-                )}
-              </li>
-            ))
+            <span className="block py-1 text-sm text-[var(--muted-foreground)]">Select a job…</span>
           )}
-        </ul>
-      )}
-    </div>
+        </span>
+        <ChevronsUpDown size={15} className="shrink-0 text-[var(--muted-foreground)]" />
+      </button>
+
+      {open &&
+        pos &&
+        createPortal(
+          <div
+            ref={panelRef}
+            style={{ position: "fixed", left: pos.left, width: pos.width, top: pos.top, bottom: pos.bottom }}
+            className="z-[70] flex flex-col overflow-hidden rounded-lg border border-[var(--border)] bg-[var(--popover)] text-[var(--popover-foreground)] shadow-xl"
+          >
+            <div className="flex items-center gap-2 border-b border-[var(--border)] px-3 py-2">
+              <Search size={15} className="shrink-0 text-[var(--muted-foreground)]" />
+              <input
+                ref={searchRef}
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setHi((h) => Math.min(h + 1, Math.max(matches.length - 1, 0)));
+                  } else if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setHi((h) => Math.max(h - 1, 0));
+                  } else if (e.key === "Enter") {
+                    e.preventDefault();
+                    if (matches[hi]) pick(matches[hi].job_number);
+                  } else if (e.key === "Escape") {
+                    e.preventDefault();
+                    setOpen(false);
+                    triggerRef.current?.focus();
+                  }
+                }}
+                placeholder="Search job number, customer or drive…"
+                className="min-w-0 flex-1 bg-transparent py-1 text-sm outline-none placeholder:text-[var(--muted-foreground)]"
+              />
+              <span className="shrink-0 text-xs tabular-nums text-[var(--muted-foreground)]">
+                {matches.length} of {sorted.length}
+              </span>
+            </div>
+            <ul
+              ref={listRef}
+              role="listbox"
+              style={{ maxHeight: Math.max(160, pos.maxH - 50) }}
+              className="overflow-y-auto py-1"
+            >
+              {matches.length === 0 ? (
+                <li className="px-3 py-6 text-center text-sm text-[var(--muted-foreground)]">
+                  No active RALPH 400 job matches “{q}”
+                </li>
+              ) : (
+                matches.map((j, i) => {
+                  const selected = j.job_number === value;
+                  return (
+                    <li
+                      key={j.job_number}
+                      role="option"
+                      aria-selected={selected}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pick(j.job_number);
+                      }}
+                      onMouseEnter={() => setHi(i)}
+                      className={cn(
+                        "flex cursor-pointer items-center gap-3 px-3 py-2",
+                        i === hi && "bg-[var(--muted)]",
+                      )}
+                    >
+                      <span className="w-28 shrink-0 font-mono text-[13px] font-semibold">{j.job_number}</span>
+                      <span className="min-w-0 flex-1 truncate text-sm">{j.customer_name || "—"}</span>
+                      <span className="shrink-0 text-xs text-[var(--muted-foreground)]">{meta(j)}</span>
+                      <Check
+                        size={15}
+                        className={cn("shrink-0 text-[var(--primary)]", selected ? "opacity-100" : "opacity-0")}
+                      />
+                    </li>
+                  );
+                })
+              )}
+            </ul>
+          </div>,
+          document.body,
+        )}
+    </>
   );
 }
 

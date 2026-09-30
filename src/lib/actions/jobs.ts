@@ -45,7 +45,7 @@ const _getFactoryStructureJobsUncached = async () => {
   const supabase = createCacheClient();
   const { data, error } = await supabase
     .from("jobs")
-    .select("id, job_number, customer_name, stage")
+    .select("id, job_number, customer_name, stage, drive_type, floors")
     .eq("structure_included", "Factory-made")
     // .or keeps jobs with no drive type yet (a bare neq would drop NULLs).
     .or("drive_type.is.null,drive_type.neq.R1000")
@@ -56,6 +56,8 @@ const _getFactoryStructureJobsUncached = async () => {
     job_number: string;
     customer_name: string | null;
     stage: string | null;
+    drive_type: string | null;
+    floors: number | null;
   }[];
   if (rows.length === 0) return [];
 
@@ -74,12 +76,17 @@ const _getFactoryStructureJobsUncached = async () => {
       if (st === "partial" && (r.stage ?? "new") === "full_material") return false;
       return true;
     })
-    .map((r) => ({ job_number: r.job_number, customer_name: r.customer_name }));
+    .map((r) => ({
+      job_number: r.job_number,
+      customer_name: r.customer_name,
+      drive_type: r.drive_type,
+      floors: r.floors,
+    }));
 };
 
 export const getFactoryStructureJobs = unstable_cache(
   _getFactoryStructureJobsUncached,
-  ["factory-structure-jobs"],
+  ["factory-structure-jobs-v2"],
   // bom-lines: dispatch mutations bust this tag, so the Active gate stays live.
   { revalidate: 600, tags: ["jobs", "bom-lines"] },
 );
