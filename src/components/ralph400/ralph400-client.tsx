@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Printer, Ruler, RotateCcw, Download, ScanSearch } from "lucide-react";
 import { getRalph400Autofill } from "@/lib/actions/ralph400-autofill";
 import { useToast } from "@/components/ui/toast";
@@ -398,34 +398,20 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
         <Card className="lg:sticky lg:top-4">
           <SectionHeader title="Input" />
           <div className="p-3 space-y-3">
-            <Field label="Job no">
-              {/* Only jobs with Structure = Factory-made — the jobs this shaft
-                  BOM is for. A previously saved value that is no longer in the
-                  list (or the BLR 94 sample default) stays selectable so a
-                  reload never silently swaps the job. */}
-              <Select
-                size="sm"
+            {/* A div, not <Field>'s <label>: a listbox inside a label would
+                forward every option click to the input. */}
+            <div className="grid grid-cols-[9rem_minmax(0,1fr)] items-center gap-2">
+              <span className="text-sm text-[var(--muted-foreground)]">Job no</span>
+              <JobPicker
+                jobs={jobs}
                 value={inp.jobNo}
-                onChange={(e) => {
-                  const jobNo = e.target.value;
+                onPick={(jobNo) => {
                   setInp((p) => ({ ...p, jobNo }));
                   // Free tier only (job record + stored scans) — instant, no AI.
                   void applyAutofill(jobNo, false);
                 }}
-              >
-                <option value="">— Select job —</option>
-                {inp.jobNo !== "" &&
-                  !jobs.some((j) => j.job_number === inp.jobNo) && (
-                    <option value={inp.jobNo}>{inp.jobNo} (not in list)</option>
-                  )}
-                {jobs.map((j) => (
-                  <option key={j.job_number} value={j.job_number}>
-                    {j.job_number}
-                    {j.customer_name ? ` — ${j.customer_name}` : ""}
-                  </option>
-                ))}
-              </Select>
-            </Field>
+              />
+            </div>
             {jobs.some((j) => j.job_number === inp.jobNo) && (
               <Button
                 type="button"
@@ -716,6 +702,142 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
 }
 
 /* ---------------- small local pieces ---------------- */
+
+/**
+ * Searchable job picker: type any part of the job number or customer name
+ * (multi-word), arrow keys + Enter to pick. Jobs are listed in job-number
+ * order. A saved value that is no longer eligible shows as "(not in list)"
+ * so a reload never silently swaps the job.
+ */
+function JobPicker({
+  jobs,
+  value,
+  onPick,
+}: {
+  jobs: FactoryJobOption[];
+  value: string;
+  onPick: (jobNo: string) => void;
+}) {
+  const sorted = useMemo(
+    () =>
+      [...jobs].sort((a, b) =>
+        a.job_number.localeCompare(b.job_number, undefined, { numeric: true, sensitivity: "base" }),
+      ),
+    [jobs],
+  );
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const [hi, setHi] = useState(0);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  const matches = useMemo(() => {
+    const toks = q.toLowerCase().split(/\s+/).filter(Boolean);
+    if (toks.length === 0) return sorted;
+    return sorted.filter((j) => {
+      const hay = `${j.job_number} ${j.customer_name ?? ""}`.toLowerCase();
+      return toks.every((t) => hay.includes(t));
+    });
+  }, [q, sorted]);
+
+  useEffect(() => setHi(0), [q]);
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (!boxRef.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("mousedown", onDown);
+    return () => document.removeEventListener("mousedown", onDown);
+  }, [open]);
+  useEffect(() => {
+    (listRef.current?.children[hi] as HTMLElement | undefined)?.scrollIntoView({ block: "nearest" });
+  }, [hi, open]);
+
+  const current = jobs.find((j) => j.job_number === value);
+  const label = current
+    ? `${current.job_number}${current.customer_name ? ` — ${current.customer_name}` : ""}`
+    : value
+      ? `${value} (not in list)`
+      : "";
+
+  const pick = (jobNo: string) => {
+    onPick(jobNo);
+    setOpen(false);
+    setQ("");
+  };
+
+  return (
+    <div ref={boxRef} className="relative">
+      <Input
+        size="sm"
+        role="combobox"
+        aria-expanded={open}
+        aria-autocomplete="list"
+        placeholder="Search job no or customer…"
+        value={open ? q : label}
+        onFocus={() => {
+          setOpen(true);
+          setQ("");
+        }}
+        onClick={() => setOpen(true)}
+        onChange={(e) => {
+          setQ(e.target.value);
+          setOpen(true);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "ArrowDown") {
+            e.preventDefault();
+            setOpen(true);
+            setHi((h) => Math.min(h + 1, Math.max(matches.length - 1, 0)));
+          } else if (e.key === "ArrowUp") {
+            e.preventDefault();
+            setHi((h) => Math.max(h - 1, 0));
+          } else if (e.key === "Enter") {
+            e.preventDefault();
+            if (open && matches[hi]) pick(matches[hi].job_number);
+          } else if (e.key === "Escape") {
+            setOpen(false);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
+      />
+      {open && (
+        <ul
+          ref={listRef}
+          role="listbox"
+          className="absolute left-0 right-0 z-50 mt-1 max-h-72 overflow-auto rounded-md border border-[var(--border)] bg-[var(--popover)] text-sm text-[var(--popover-foreground)] shadow-lg"
+        >
+          {matches.length === 0 ? (
+            <li className="px-2.5 py-2 text-[var(--muted-foreground)]">No matching job</li>
+          ) : (
+            matches.map((j, i) => (
+              <li
+                key={j.job_number}
+                role="option"
+                aria-selected={i === hi}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pick(j.job_number);
+                }}
+                onMouseEnter={() => setHi(i)}
+                className={cn(
+                  "cursor-pointer px-2.5 py-1.5",
+                  i === hi && "bg-[var(--muted)]",
+                  j.job_number === value && "font-semibold",
+                )}
+              >
+                <span className="font-mono text-xs">{j.job_number}</span>
+                {j.customer_name && (
+                  <span className="ml-2 text-[var(--muted-foreground)]">{j.customer_name}</span>
+                )}
+              </li>
+            ))
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
 
 function PanelFigure({ cell }: { cell: PanelCell }) {
   if (cell === null) return <Blank />;

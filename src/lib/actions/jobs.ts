@@ -37,8 +37,9 @@ export const getJobs = unstable_cache(_getJobsUncached, ["jobs-list"], {
  * Jobs list would show on its ACTIVE tab: fully-dispatched jobs and
  * "Full Dispatch (Shortfall)" jobs (2nd phase sent, quantity pending) are
  * excluded, using the same classification the tabs use so the two surfaces
- * never disagree. Lean shape on purpose (number + customer), newest first.
- * ~70 rows today, well under the PostgREST cap.
+ * never disagree. R1000 jobs are excluded too: their factory structure is the
+ * R1000's own, not a RALPH 400 shaft. Lean shape (number + customer), sorted
+ * by job number. ~35 rows today, well under the PostgREST cap.
  */
 const _getFactoryStructureJobsUncached = async () => {
   const supabase = createCacheClient();
@@ -46,7 +47,9 @@ const _getFactoryStructureJobsUncached = async () => {
     .from("jobs")
     .select("id, job_number, customer_name, stage")
     .eq("structure_included", "Factory-made")
-    .order("created_at", { ascending: false });
+    // .or keeps jobs with no drive type yet (a bare neq would drop NULLs).
+    .or("drive_type.is.null,drive_type.neq.R1000")
+    .order("job_number", { ascending: true });
   if (error) throw error;
   const rows = (data ?? []) as {
     id: string;
