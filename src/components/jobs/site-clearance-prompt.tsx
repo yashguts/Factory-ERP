@@ -14,15 +14,15 @@ import {
 /**
  * The soft "site clearance pending" question asked right before a dispatch is
  * saved (owner 2026-09-30). `confirmSiteClearance` resolves true straight away
- * when Construction has cleared the job; otherwise it shows a Yes/No pop-up and
- * resolves with the answer. A failed check asks the same question — it never
- * blocks a dispatch. Render `clearanceDialog` OUTSIDE any other Modal's box
- * (as a sibling): the Modal box is transformed, which would trap a nested
- * fixed overlay inside it.
+ * when Construction has a clearance in force for the job; otherwise (pending,
+ * revoked, or the check failed) it shows a Yes/No pop-up and resolves with the
+ * answer. It never blocks a dispatch. Render `clearanceDialog` OUTSIDE any
+ * other Modal's box (as a sibling): the Modal box is transformed, which would
+ * trap a nested fixed overlay inside it.
  */
 export function useSiteClearancePrompt() {
-  // The job number being asked about; null = no pop-up open.
-  const [askJob, setAskJob] = useState<string | null>(null);
+  // The question being asked; null = no pop-up open.
+  const [ask, setAsk] = useState<{ jobNumber: string; status: SiteClearanceStatus } | null>(null);
   const resolverRef = useRef<((go: boolean) => void) | null>(null);
 
   // Unmounting mid-question counts as "No" so nothing is left waiting.
@@ -50,7 +50,7 @@ export function useSiteClearancePrompt() {
       return new Promise<boolean>((resolve) => {
         resolverRef.current?.(false); // a newer question replaces an open one
         resolverRef.current = resolve;
-        setAskJob(target.jobNumber);
+        setAsk({ jobNumber: target.jobNumber, status });
       });
     },
     [],
@@ -59,15 +59,15 @@ export function useSiteClearancePrompt() {
   const answer = useCallback((go: boolean) => {
     const resolve = resolverRef.current;
     resolverRef.current = null;
-    setAskJob(null);
+    setAsk(null);
     resolve?.(go);
   }, []);
 
   const clearanceDialog =
-    askJob !== null ? (
+    ask !== null ? (
       <ConfirmDialog
         title={SITE_CLEARANCE_PROMPT_TITLE}
-        message={siteClearancePromptMessage(askJob)}
+        message={siteClearancePromptMessage(ask.jobNumber, ask.status)}
         confirmLabel="Yes"
         cancelLabel="No"
         initialFocus="cancel"
@@ -76,5 +76,5 @@ export function useSiteClearancePrompt() {
       />
     ) : null;
 
-  return { confirmSiteClearance, clearanceDialog, clearancePromptOpen: askJob !== null };
+  return { confirmSiteClearance, clearanceDialog, clearancePromptOpen: ask !== null };
 }

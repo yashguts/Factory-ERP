@@ -31,6 +31,7 @@ import {
   getJobDeliveryConfirmations,
   acknowledgeDeliveryConfirmation,
   getJobSiteClearances,
+  acknowledgeClearanceRevocation,
   type JobDispatchSummary,
   type PhaseScope,
   type DeliveryConfirmation,
@@ -41,8 +42,10 @@ import {
   type DispatchStat,
 } from "@/lib/dispatch-status";
 import {
+  revocationNeedsAck,
   siteClearanceLine,
   siteClearanceStatusOf,
+  type SiteClearance,
   type SiteClearanceStatus,
 } from "@/lib/site-clearance";
 import { downloadDispatchHistoryPdf, downloadBalancePdf } from "@/lib/export/dispatch-pdf";
@@ -83,27 +86,56 @@ function PhaseStatus({ name, stat }: { name: string; stat: DispatchStat | null }
 
 /** Construction's site clearance for the job, as one small line beside the
  *  "Mark dispatched" button. Renders nothing until the read comes back, so a
- *  cleared job never flashes "pending". */
-function SiteClearanceStatusLine({ status }: { status: SiteClearanceStatus | null }) {
+ *  cleared job never flashes "pending". A revocation is a notice: amber with an
+ *  Acknowledge button until the office has seen it, then a quiet line. */
+function SiteClearanceStatusLine({
+  status,
+  busy,
+  onAcknowledge,
+}: {
+  status: SiteClearanceStatus | null;
+  busy: boolean;
+  onAcknowledge: (c: SiteClearance) => void;
+}) {
   if (!status) return null;
+  const needsAck = revocationNeedsAck(status);
   const tone =
     status.state === "given"
       ? "text-[var(--success)]"
-      : status.state === "pending"
-        ? "text-[var(--warning)]"
-        : "text-[var(--muted-foreground)]";
+      : needsAck
+        ? "font-medium text-[var(--warning)]"
+        : status.state === "pending"
+          ? "text-[var(--warning)]"
+          : "text-[var(--muted-foreground)]"; // couldn't check, or a revocation already acknowledged
+  const code = status.state === "given" || status.state === "revoked" ? status.latest.code : null;
   const title =
     status.state === "given"
-      ? status.latest.note
-        ? `Construction's note: ${status.latest.note}`
-        : "Construction has given dispatch clearance for this site."
-      : status.state === "pending"
-        ? "Construction hasn't given dispatch clearance for this job yet. You can still dispatch; you'll be asked to confirm."
-        : "Couldn't read the site clearance from Construction just now. Reload the page to try again.";
+      ? (code ? `${code}. ` : "") +
+        (status.latest.note
+          ? `Construction's note: ${status.latest.note}`
+          : "Construction has given dispatch clearance for this site.")
+      : status.state === "revoked"
+        ? `Construction revoked the dispatch clearance${code ? ` ${code}` : ""}. You can still dispatch; you'll be asked to confirm.`
+        : status.state === "pending"
+          ? "Construction hasn't given dispatch clearance for this job yet. You can still dispatch; you'll be asked to confirm."
+          : "Couldn't read the site clearance from Construction just now. Reload the page to try again.";
   return (
-    <span className={`text-[11px] inline-flex items-center gap-1 ${tone}`} title={title}>
-      <HardHat className="h-3 w-3 shrink-0" />
-      {siteClearanceLine(status)}
+    <span className={`text-[11px] inline-flex items-start gap-1 ${tone}`} title={title}>
+      <HardHat className="h-3 w-3 shrink-0 mt-0.5" />
+      <span>
+        {siteClearanceLine(status)}
+        {needsAck && status.state === "revoked" && (
+          <button
+            type="button"
+            onClick={() => onAcknowledge(status.latest)}
+            disabled={busy}
+            className="ml-1.5 inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-px align-middle font-medium text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer"
+          >
+            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+            Acknowledge
+          </button>
+        )}
+      </span>
     </span>
   );
 }
@@ -220,6 +252,26 @@ export function DispatchPanel({
       alive = false;
     };
   }, [jobId]);
+  // Acknowledge Construction's clearance-revocation notice (informational only).
+  const onAcknowledgeRevocation = (c: SiteClearance) => {
+    const who = ensureOperator();
+    setBusy("revoke:" + c.id);
+    startTransition(async () => {
+      const res = await acknowledgeClearanceRevocation(c.id, jobId, who);
+      setBusy(null);
+      if (!res.ok) {
+        toast.error(res.error || "Could not acknowledge the revocation.");
+        return;
+      }
+      const nowIso = new Date().toISOString();
+      setClearance((s) =>
+        s && s.state === "revoked" && s.latest.id === c.id
+          ? { ...s, latest: { ...s.latest, revoke_acknowledged_at: nowIso, revoke_acknowledged_by: who ?? null } }
+          : s,
+      );
+      toast.success("Clearance revocation acknowledged.");
+    });
+  };
   // Newest confirmation per dispatch (list is already newest-first from the server).
   const confirmByDispatch = new Map<string, DeliveryConfirmation>();
   for (const c of confirmations) {
@@ -439,7 +491,11 @@ export function DispatchPanel({
           )}
         </div>
         <div className="flex items-center justify-end gap-1.5 flex-wrap">
-          <SiteClearanceStatusLine status={clearance} />
+          <SiteClearanceStatusLine
+            status={clearance}
+            busy={clearance?.state === "revoked" && busy === "revoke:" + clearance.latest.id}
+            onAcknowledge={onAcknowledgeRevocation}
+          />
           <button
             type="button"
             onClick={() => void downloadBalancePdf(pdfInfo, summary.lines)}

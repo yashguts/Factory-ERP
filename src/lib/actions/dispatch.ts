@@ -1003,20 +1003,21 @@ export async function acknowledgeDeliveryConfirmation(
  *
  * A Construction supervisor or manager gives "dispatch clearance" when the
  * site is ready; cx_record_clearance (migration 069) records it in
- * cx_dispatch_clearances. At least one row = cleared; none = pending. The
- * factory gets a soft Yes/No warning when it dispatches an uncleared job
- * (never a block — see lib/site-clearance.ts). Read UNCACHED, like the
- * delivery confirmations above: the rows are written outside the ERP, so none
- * of our cache tags would ever bust on them.
+ * cx_dispatch_clearances. A CX Manager or admin may revoke it later;
+ * cx_record_clearance_revocation (migration 075) stamps revoked_at on the row.
+ * A row not revoked = cleared; no rows = pending; only revoked rows = revoked
+ * (pending again, with a notice the office acknowledges). The factory gets a
+ * soft Yes/No warning when it dispatches an uncleared job (never a block — see
+ * lib/site-clearance.ts). Read UNCACHED, like the delivery confirmations
+ * above: the rows are written outside the ERP, so none of our cache tags would
+ * ever bust on them.
  * ------------------------------------------------------------------ */
-
-const CLEARANCE_COLUMNS =
-  "id, job_id, recommended_scope, note, cleared_by, cleared_at, created_at, acknowledged_at, acknowledged_by";
 
 function toSiteClearance(r: any): SiteClearance {
   return {
     id: r.id as string,
     job_id: r.job_id as string,
+    code: (r.code as string | null) ?? null,
     recommended_scope: (r.recommended_scope as ClearanceScope | null) ?? null,
     note: (r.note as string | null) ?? null,
     cleared_by: (r.cleared_by as string | null) ?? null,
@@ -1024,17 +1025,25 @@ function toSiteClearance(r: any): SiteClearance {
     created_at: r.created_at as string,
     acknowledged_at: (r.acknowledged_at as string | null) ?? null,
     acknowledged_by: (r.acknowledged_by as string | null) ?? null,
+    revoked_at: (r.revoked_at as string | null) ?? null,
+    revoked_by: (r.revoked_by as string | null) ?? null,
+    revoke_reason: (r.revoke_reason as string | null) ?? null,
+    revoke_acknowledged_at: (r.revoke_acknowledged_at as string | null) ?? null,
+    revoke_acknowledged_by: (r.revoke_acknowledged_by as string | null) ?? null,
   };
 }
 
-/** Clearance rows for these jobs, newest first. */
+/** Clearance rows for these jobs, newest first. `*` rather than a column list
+ *  so this read works both before and after migration 075 adds the revocation
+ *  columns (missing ones map to null = not revoked): deploy order can't break
+ *  the pop-up. */
 async function readClearances(
   supabase: ReturnType<typeof createCacheClient>,
   jobIds: string[],
 ): Promise<SiteClearanceRead> {
   const { data, error } = await supabase
     .from("cx_dispatch_clearances")
-    .select(CLEARANCE_COLUMNS)
+    .select("*")
     .in("job_id", jobIds)
     .order("cleared_at", { ascending: false, nullsFirst: false })
     .order("created_at", { ascending: false });
@@ -1080,4 +1089,25 @@ export async function getSiteClearancesByJobNumber(jobNumber: string): Promise<S
   } catch (e) {
     return clearanceReadFailed(e);
   }
+}
+
+/** Acknowledge a clearance-revocation notice (the factory office has seen that
+ *  Construction revoked it). Informational only — nothing is blocked either way. */
+export async function acknowledgeClearanceRevocation(
+  id: string,
+  jobId: string,
+  acknowledgedBy?: string | null,
+): Promise<{ ok: boolean; error?: string }> {
+  if (!id) return { ok: false, error: "Missing clearance id." };
+  const supabase = await createClient();
+  const { error } = await supabase
+    .from("cx_dispatch_clearances")
+    .update({
+      revoke_acknowledged_at: new Date().toISOString(),
+      revoke_acknowledged_by: acknowledgedBy?.trim() || null,
+    })
+    .eq("id", id);
+  if (error) return { ok: false, error: error.message };
+  revalidatePath(`/jobs/${jobId}`);
+  return { ok: true };
 }
