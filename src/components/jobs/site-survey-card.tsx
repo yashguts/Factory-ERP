@@ -8,9 +8,12 @@ import {
   RETROSPECTIVE_TEXT,
   SURVEY_CARD_TITLE,
   SURVEY_READ_FAILED_TEXT,
+  answerTick,
   checkpointTick,
   earlierSurveysLabel,
   expectedReadyText,
+  groupSurveyMedia,
+  nestedSubpoints,
   splitSurveys,
   surveyByLine,
   surveyHeading,
@@ -19,6 +22,8 @@ import {
   videoCaption,
   type SiteSurveyRead,
   type SiteSurveyView,
+  type SurveyCheckpointView,
+  type SurveyMediaView,
   type SurveyTone,
 } from "@/lib/site-survey";
 
@@ -101,6 +106,7 @@ export function SiteSurveyCard({ jobId }: { jobId: string }) {
 function SurveyBlock({ survey }: { survey: SiteSurveyView }) {
   const byLine = surveyByLine(survey);
   const expected = expectedReadyText(survey);
+  const media = groupSurveyMedia(survey);
   return (
     <div className="mt-2">
       <div className={`text-sm font-semibold ${HEADING_TONE[surveyTone(survey.overallResult)]}`}>
@@ -138,6 +144,7 @@ function SurveyBlock({ survey }: { survey: SiteSurveyView }) {
                 <div className="min-w-0">
                   <span className="font-medium">{cp.label}</span>{" "}
                   <span className="text-[var(--muted-foreground)]">· {cp.statusLabel}</span>
+                  <SubpointList cp={cp} />
                   {cp.remark && (
                     <div className="text-[11px] text-[var(--muted-foreground)] break-words">{cp.remark}</div>
                   )}
@@ -154,50 +161,116 @@ function SurveyBlock({ survey }: { survey: SiteSurveyView }) {
         </p>
       )}
 
-      {survey.photos.length > 0 && (
-        <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-2">
-          {survey.photos.map((p, i) => (
-            <a
-              key={`${p.url}-${i}`}
-              href={p.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="block min-w-0"
-              title={p.checkpointLabel ?? "Open the photo"}
-            >
-              {/* A plain <img>, not next/image: the link 307-redirects to a
-                  60-second signed URL, which the image optimizer must not
-                  fetch and cache. */}
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={p.url}
-                loading="lazy"
-                alt={p.checkpointLabel ?? "Site survey photo"}
-                className="aspect-square w-full rounded border border-[var(--border)] bg-[var(--muted)] object-cover"
-              />
-              {p.checkpointLabel && (
-                <span className="mt-0.5 block truncate text-[10px] text-[var(--muted-foreground)]">
-                  {p.checkpointLabel}
-                </span>
-              )}
-            </a>
-          ))}
+      {/* Version 2: photos / videos of a sub-point, grouped under it. */}
+      {media.groups.map((g) => (
+        <div key={g.key} className="mt-2">
+          <div className="text-[11px] font-medium break-words">{g.caption}</div>
+          <PhotoGrid photos={g.photos} groupCaption={g.caption} className="mt-1" />
+          <VideoGrid videos={g.videos} grouped className="mt-1" />
         </div>
-      )}
+      ))}
 
-      {survey.videos.length > 0 && (
-        <div className="mt-2 grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2">
-          {survey.videos.map((v, i) => (
-            <figure key={`${v.url}-${i}`} className="min-w-0">
-              <video controls preload="none" src={v.url} className="aspect-video w-full rounded bg-black" />
-              <figcaption className="mt-0.5 truncate text-[10px] text-[var(--muted-foreground)]">
-                {videoCaption(v)}
-                {v.checkpointLabel ? ` · ${v.checkpointLabel}` : ""}
-              </figcaption>
-            </figure>
-          ))}
-        </div>
-      )}
+      {/* Media without a sub-point (every version-1 photo and video). */}
+      <PhotoGrid photos={media.photos} />
+      <VideoGrid videos={media.videos} />
+    </div>
+  );
+}
+
+/** A point's YES / NO sub-points, indented under it — only when it has 2 or
+ *  more (a single sub-point means the same as the point). */
+function SubpointList({ cp }: { cp: SurveyCheckpointView }) {
+  const subs = nestedSubpoints(cp);
+  if (subs.length === 0) return null;
+  return (
+    <ul className="mt-0.5 space-y-0.5">
+      {subs.map((sp) => {
+        const tick = answerTick(sp.answer);
+        return (
+          <li key={sp.key} className="flex items-start gap-1.5 text-[11px]">
+            <span
+              className={`w-3 shrink-0 text-center font-bold ${TICK_TONE[tick.tone]}`}
+              role="img"
+              aria-label={tick.label}
+              title={tick.label}
+            >
+              {tick.symbol}
+            </span>
+            <span className="min-w-0 break-words">{sp.label}</span>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
+/** Photo thumbnails; each opens its link in a new tab. Without a group
+ *  caption each is captioned with its point, as for version 1. */
+function PhotoGrid({
+  photos,
+  groupCaption,
+  className = "mt-2",
+}: {
+  photos: SurveyMediaView[];
+  groupCaption?: string;
+  className?: string;
+}) {
+  if (photos.length === 0) return null;
+  return (
+    <div className={`${className} grid grid-cols-[repeat(auto-fill,minmax(88px,1fr))] gap-2`}>
+      {photos.map((p, i) => (
+        <a
+          key={`${p.url}-${i}`}
+          href={p.url}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="block min-w-0"
+          title={groupCaption ?? p.checkpointLabel ?? "Open the photo"}
+        >
+          {/* A plain <img>, not next/image: the link 307-redirects to a
+              60-second signed URL, which the image optimizer must not
+              fetch and cache. */}
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img
+            src={p.url}
+            loading="lazy"
+            alt={groupCaption ?? p.checkpointLabel ?? "Site survey photo"}
+            className="aspect-square w-full rounded border border-[var(--border)] bg-[var(--muted)] object-cover"
+          />
+          {groupCaption === undefined && p.checkpointLabel && (
+            <span className="mt-0.5 block truncate text-[10px] text-[var(--muted-foreground)]">
+              {p.checkpointLabel}
+            </span>
+          )}
+        </a>
+      ))}
+    </div>
+  );
+}
+
+/** Videos (loaded only when played). Grouped ones sit under their sub-point
+ *  caption, so they show just "Video · 0:14"; others add their point. */
+function VideoGrid({
+  videos,
+  grouped = false,
+  className = "mt-2",
+}: {
+  videos: SurveyMediaView[];
+  grouped?: boolean;
+  className?: string;
+}) {
+  if (videos.length === 0) return null;
+  return (
+    <div className={`${className} grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-2`}>
+      {videos.map((v, i) => (
+        <figure key={`${v.url}-${i}`} className="min-w-0">
+          <video controls preload="none" src={v.url} className="aspect-video w-full rounded bg-black" />
+          <figcaption className="mt-0.5 truncate text-[10px] text-[var(--muted-foreground)]">
+            {videoCaption(v)}
+            {!grouped && v.checkpointLabel ? ` · ${v.checkpointLabel}` : ""}
+          </figcaption>
+        </figure>
+      ))}
     </div>
   );
 }

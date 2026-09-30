@@ -3,8 +3,13 @@
  *
  * When a site survey is submitted in Construction, cx_record_site_survey
  * (migration 076) stores it in cx_site_surveys: one row per (job, survey_ref),
- * the whole survey in `payload` (version 1). The job page shows the newest
- * survey (by submitted_at) in full and keeps the earlier ones as history.
+ * the whole survey in `payload`. The job page shows the newest survey (by
+ * submitted_at) in full and keeps the earlier ones as history.
+ *
+ * Payload version 2 is a superset of version 1: every point may carry YES / NO
+ * sub-points (checkpoints[i].subpoints) and media may belong to a sub-point
+ * (media[j].subpoint / subpoint_label). A version-1 payload has neither, and
+ * renders exactly as before.
  *
  * The payload comes from another system, so everything here parses it
  * defensively (missing or odd fields fall back instead of breaking the page),
@@ -33,6 +38,13 @@ export type SiteSurveyRead =
 
 export type CheckpointResult = "YES" | "NO" | null;
 
+/** A YES / NO sub-point of a survey point (payload version 2). */
+export interface SurveySubpointView {
+  key: string;
+  label: string;
+  answer: CheckpointResult;
+}
+
 export interface SurveyCheckpointView {
   key: string;
   label: string;
@@ -40,12 +52,18 @@ export interface SurveyCheckpointView {
   statusLabel: string;
   result: CheckpointResult;
   remark: string | null;
+  /** In order; [] for version-1 surveys. */
+  subpoints: SurveySubpointView[];
 }
 
 export interface SurveyMediaView {
   kind: "photo" | "video";
   url: string;
+  checkpointKey: string | null;
   checkpointLabel: string | null;
+  /** The sub-point this photo / video belongs to (version 2), else null. */
+  subpointKey: string | null;
+  subpointLabel: string | null;
   capturedAt: string | null;
   durationMs: number | null;
 }
@@ -144,6 +162,22 @@ export function checkpointTick(result: CheckpointResult | string | null | undefi
   return { symbol: "—", tone: "none", label: "Not checked" };
 }
 
+/** A sub-point's ✓ / ✗ / —: same colours as a point, answer-worded label. */
+export function answerTick(answer: CheckpointResult | string | null | undefined): {
+  symbol: "✓" | "✗" | "—";
+  tone: "yes" | "no" | "none";
+  label: string;
+} {
+  if (answer === "YES") return { symbol: "✓", tone: "yes", label: "Yes" };
+  if (answer === "NO") return { symbol: "✗", tone: "no", label: "No" };
+  return { symbol: "—", tone: "none", label: "Not checked" };
+}
+
+function yesNo(v: unknown): CheckpointResult {
+  const s = str(v);
+  return s === "YES" || s === "NO" ? s : null;
+}
+
 /* ---- normalise --------------------------------------------------------- */
 
 export function toSurveyView(row: SiteSurveyRow): SiteSurveyView {
@@ -153,14 +187,19 @@ export function toSurveyView(row: SiteSurveyRow): SiteSurveyView {
   const checkpoints: SurveyCheckpointView[] = (Array.isArray(p.checkpoints) ? p.checkpoints : [])
     .map(asObj)
     .map((c, i) => {
-      const raw = str(c.result);
-      const cpResult: CheckpointResult = raw === "YES" || raw === "NO" ? raw : null;
+      const cpResult = yesNo(c.result);
+      const key = str(c.key) ?? `cp-${i}`;
       return {
-        key: str(c.key) ?? `cp-${i}`,
+        key,
         label: str(c.label) ?? str(c.key) ?? "Checkpoint",
         statusLabel: str(c.status_label) ?? (cpResult === null ? "Not checked" : cpResult === "YES" ? "OK" : "Not OK"),
         result: cpResult,
         remark: str(c.remark),
+        subpoints: (Array.isArray(c.subpoints) ? c.subpoints : []).map(asObj).map((s, j) => ({
+          key: str(s.key) ?? `${key}-sub-${j}`,
+          label: str(s.label) ?? str(s.key) ?? "Sub-point",
+          answer: yesNo(s.answer) ?? yesNo(s.result),
+        })),
       };
     });
 
@@ -172,7 +211,10 @@ export function toSurveyView(row: SiteSurveyRow): SiteSurveyView {
     media.push({
       kind,
       url,
+      checkpointKey: str(m.checkpoint),
       checkpointLabel: str(m.checkpoint_label),
+      subpointKey: str(m.subpoint),
+      subpointLabel: str(m.subpoint_label),
       capturedAt: str(m.captured_at),
       durationMs: num(m.duration_ms),
     });
@@ -195,6 +237,91 @@ export function toSurveyView(row: SiteSurveyRow): SiteSurveyView {
     checkpoints,
     photos: media.filter((m) => m.kind === "photo"),
     videos: media.filter((m) => m.kind === "video"),
+  };
+}
+
+/** The sub-points listed under a point: only when it has 2 or more. A point
+ *  with a single sub-point (e.g. OTHER_INFRA) means the same as the point, so
+ *  its own ✓ / ✗ is enough. */
+export function nestedSubpoints(cp: Pick<SurveyCheckpointView, "subpoints">): SurveySubpointView[] {
+  return cp.subpoints.length >= 2 ? cp.subpoints : [];
+}
+
+/** Photos and videos of one sub-point, shown together under one caption. */
+export interface SurveyMediaGroup {
+  key: string;
+  caption: string;
+  photos: SurveyMediaView[];
+  videos: SurveyMediaView[];
+}
+
+/** Find the point and sub-point a media item belongs to (by its point key,
+ *  or by the sub-point key alone when the point key is missing). */
+function findSubpoint(
+  checkpoints: readonly SurveyCheckpointView[],
+  m: Pick<SurveyMediaView, "checkpointKey" | "subpointKey">,
+): { cp: SurveyCheckpointView | null; sp: SurveySubpointView | null } {
+  for (const cp of checkpoints) {
+    if (m.checkpointKey && cp.key !== m.checkpointKey) continue;
+    const sp = cp.subpoints.find((s) => s.key === m.subpointKey);
+    if (sp) return { cp, sp };
+  }
+  return { cp: checkpoints.find((c) => c.key === m.checkpointKey) ?? null, sp: null };
+}
+
+/** "<point label> · <sub-point label>". A point with a single sub-point means
+ *  the same as its sub-point, so just the point label then. */
+export function mediaGroupCaption(
+  checkpoints: readonly SurveyCheckpointView[],
+  m: Pick<SurveyMediaView, "checkpointKey" | "checkpointLabel" | "subpointKey" | "subpointLabel">,
+): string {
+  const { cp, sp } = findSubpoint(checkpoints, m);
+  const point = m.checkpointLabel ?? cp?.label ?? null;
+  const sub = m.subpointLabel ?? sp?.label ?? m.subpointKey;
+  if (cp && cp.subpoints.length === 1 && point) return point;
+  return [point, sub].filter(Boolean).join(" · ");
+}
+
+/** Media grouped under their sub-point (in point / sub-point order, unknown
+ *  ones after, in the order sent); media without a sub-point — every
+ *  version-1 photo and video — stay in the plain photo and video grids. */
+export function groupSurveyMedia(s: Pick<SiteSurveyView, "checkpoints" | "photos" | "videos">): {
+  groups: SurveyMediaGroup[];
+  photos: SurveyMediaView[];
+  videos: SurveyMediaView[];
+} {
+  const rank = new Map<string, number>();
+  for (const cp of s.checkpoints)
+    for (const sp of cp.subpoints) if (!rank.has(sp.key)) rank.set(sp.key, rank.size);
+
+  const groups = new Map<string, SurveyMediaGroup & { order: number }>();
+  const photos: SurveyMediaView[] = [];
+  const videos: SurveyMediaView[] = [];
+  for (const m of [...s.photos, ...s.videos]) {
+    if (!m.subpointKey) {
+      (m.kind === "photo" ? photos : videos).push(m);
+      continue;
+    }
+    const key = `${m.checkpointKey ?? findSubpoint(s.checkpoints, m).cp?.key ?? ""}::${m.subpointKey}`;
+    let g = groups.get(key);
+    if (!g) {
+      g = {
+        key,
+        caption: mediaGroupCaption(s.checkpoints, m),
+        photos: [],
+        videos: [],
+        order: rank.get(m.subpointKey) ?? rank.size + groups.size,
+      };
+      groups.set(key, g);
+    }
+    (m.kind === "photo" ? g.photos : g.videos).push(m);
+  }
+  return {
+    groups: [...groups.values()]
+      .sort((a, b) => a.order - b.order)
+      .map((g) => ({ key: g.key, caption: g.caption, photos: g.photos, videos: g.videos })),
+    photos,
+    videos,
   };
 }
 
