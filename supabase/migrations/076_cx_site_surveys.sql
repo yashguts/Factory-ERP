@@ -46,12 +46,18 @@ comment on column public.cx_site_surveys.updated_at     is 'When a newer version
 
 create index if not exists idx_cxss_job on public.cx_site_surveys(job_id, submitted_at desc);
 
--- RLS matches cx_dispatch_clearances (069): permissive anon policy so the ERP
--- web app (pre-auth anon client) can read the surveys.
+-- RLS: the ERP web app (pre-auth anon client) only READS the surveys; nothing
+-- but cx_record_site_survey (security definer, the table owner) writes them.
+-- So anon/authenticated get SELECT only — unlike 069's clearances, which the
+-- office acknowledges in place. A browser holding the public anon key can
+-- read the surveys (as every ERP table), but can't insert, change or delete one.
 alter table public.cx_site_surveys enable row level security;
 drop policy if exists "Allow all for anon" on public.cx_site_surveys;
-create policy "Allow all for anon" on public.cx_site_surveys for all to anon using (true) with check (true);
-grant all on public.cx_site_surveys to anon, authenticated, service_role;
+drop policy if exists "Read for anon" on public.cx_site_surveys;
+create policy "Read for anon" on public.cx_site_surveys for select to anon, authenticated using (true);
+revoke all on public.cx_site_surveys from anon, authenticated;
+grant select on public.cx_site_surveys to anon, authenticated;
+grant all on public.cx_site_surveys to service_role;
 
 create or replace function public.cx_record_site_survey(
   p_secret       text,
