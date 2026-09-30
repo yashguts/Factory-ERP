@@ -1,0 +1,958 @@
+{
+ "deep": {
+  "car": {
+   "cop": "DOT MATRIX TOUCH LOP & COP (BLACK)",
+   "notes": "HANDRAIL ON BACK SIDE (rear wall, split 410+410 in plan); auto light & fan, blower fan, emergency light, overload indicator, floor announcer",
+   "flooring": "VINYL TILES",
+   "false_ceiling": null,
+   "platform_size": "PLATFORM 1270 (depth direction, plan)",
+   "inside_depth_mm": 1100,
+   "inside_width_mm": 820,
+   "inside_height_mm": null,
+   "cabin_material_finish": "GLASS CABIN (glass on rear + side walls, marked GLASS in plan)"
+  },
+  "doors": {
+   "car_door": {
+    "side": "LHS",
+    "type": "Side slide automatic telescopic (AT), 2 panels",
+    "vision": "LV",
+    "panel_split": null,
+    "material_finish": "S.S with long vision glass",
+    "opening_width_mm": 700,
+    "opening_height_mm": 2000
+   },
+   "landing_door": {
+    "side": "LHS",
+    "type": "Side slide automatic telescopic (AT), 2 panels",
+    "vision": "LV",
+    "panel_split": null,
+    "material_finish": "S.S with long vision glass",
+    "opening_width_mm": 700,
+    "opening_height_mm": 2000
+   },
+   "frame_sill_notes": "Opening 700 centred in BET. WALL 900 with 100 returns both sides; S.P 130 (sill projection), R.C 30 (running clearance), 130 landing sill band; car-to-landing door zone gaps 70 and 50 in plan; Sec A-A caption 'SIDE SLIDE AUTO TELESCOPIC DOOR WITH LONG VISION GLASS AT TOP FLOOR' locates the sectioned entrance (controller floor) - spec gives the same door at every landing, no per-floor difference stated",
+   "per_floor_differences": []
+  },
+  "rails": {
+   "dbg_main_mm": 860,
+   "fixing_notes": "Both car rails (D.B.G 860) and cwt rails (D.B.G 820) mounted on the LEFT side wall of the structural shaft (cantilever arrangement). Horizontal offsets from left wall across the rail/machine zone: 115 / 205 / 190 with sub-splits 100 / 105; wall-to-bracket gaps 45 and 65 at both top and bottom of the rail zone (depth direction). BRAC. SP. 1700 on p2 section. Rail-back-to-wall projection not separately dimensioned.",
+   "car_rail_label": "E0",
+   "cwt_rail_label": "E0",
+   "dbg_counter_mm": 820,
+   "bracket_spacing_mm": 1700,
+   "car_rail_to_wall_mm": null,
+   "counter_rail_to_wall_mm": null
+  },
+  "customer": {
+   "owner_name": "Mr. PEEKAY GUPTA",
+   "site_location": "Koshi Aero Club & Resort, Durg Bhilai, Chattisgarh"
+  },
+  "landings": {
+   "notes": "Floor-height table on p2: GND 4050, 1ST 3810, 2ND row blank (top landing). 4050+3810 = 7860 = TRAVEL HEIGHT. All openings on the same (front) wall; HALL BUTTON at each entrance (plan).",
+   "stops": 3,
+   "openings": 3,
+   "designation": "G+2",
+   "floor_heights": [
+    {
+     "mm": 4050,
+     "to": "1ST",
+     "from": "GND"
+    },
+    {
+     "mm": 3810,
+     "to": "2ND",
+     "from": "1ST"
+    }
+   ]
+  },
+  "anomalies": [
+   "Sheet 2's title block also reads 'SHT. 1 OF 2' - the second sheet was not renumbered (content is clearly the vertical section / sheet 2).",
+   "The 340|360 sub-split over OPENING 700 is the A-A section-line position (the A marker sits exactly at the divider; the same centreline splits the rear wall equally 410|410), NOT a door panel split. Strict application of the unequal-split rule would give RHS, but the drawn telescopic panels park to the LEFT of the opening (479 controller side), so door_side is recorded LHS at medium confidence.",
+   "Floor-height table on p2 leaves the 2ND row height cell blank (top landing - expected).",
+   "'UNDERT LINTEL' typo on the Sec A-A left dimension (means UNDER LINTEL 2230).",
+   "'HOISTING CHANEL' typo in p2 note 2 (means channel).",
+   "Blue-ink handwritten approval signature next to APPVD row (both sheets); otherwise fully printed, no handwritten dimensions.",
+   "Scan slightly skewed with faint purple tint; all text legible."
+  ],
+  "pit_items": {
+   "buffer": null,
+   "pit_light": "PIT LIGHT - BY OWNER",
+   "pit_ladder": null,
+   "pit_switch": "PIT SWITCH shown on right side of hoistway plan",
+   "screen_guard": null
+  },
+  "electrical": {
+   "drive": "Belt-drive gearless (BELT 30 X 2)",
+   "earthing": "GI WIRE WITH CABLE EARTHING TO BE SUPPLIED & FIXED BY OWNER",
+   "features": [
+    "ARD SYSTEM",
+    "EMERGENCY LIGHT",
+    "FLOOR ANNOUNCER",
+    "OVER LOAD INDICATOR",
+    "INFRA RED DOOR SCREEN",
+    "DOT MATRIX TOUCH LOP & COP (BLACK)",
+    "BLOWER FAN",
+    "HANDRAIL ON BACK SIDE",
+    "AUTO LIGHT & FAN",
+    "FIREMAN SWITCH & ALARM"
+   ],
+   "controller": "Controller at TOP FLOOR beside the door, size 300x250x1500 (shown in plan and Sec A-A)",
+   "db_details": "DB DETAILS: 16A - PN - 2 NOS.; 7 HOLE EARTH BAR - 1NO. (DB itself marked BY OWNER in Sec A-A)",
+   "power_supply": "SINGLE PHASE"
+  },
+  "lift_shaft": {
+   "notes": "UNDER LINTEL 2230 = 2000 clear door height + 230 header; 200 band above lintel; CLEAR HEIGHT 2000 at GND FLR strip; slab thickness 150 at 1st and 2nd floors; top clearance 50 above drive unit (p2)",
+   "overhead_mm": 3000,
+   "pit_depth_mm": 170,
+   "shaft_depth_mm": 1500,
+   "shaft_width_mm": 1500,
+   "wall_construction": "STRUCTURAL SHAFT (steel structure); finished hoistway depth 1370 (vs 1500 structural); door wall between-wall 900; note: dimensions may vary depending on type of wall finisher (plaster/tiles/marble)",
+   "lintel_or_clear_height_mm": 2230
+  },
+  "spec_table": [
+   {
+    "label": "TRACTION MEDIA",
+    "value": "BELT (30 X 2)"
+   },
+   {
+    "label": "MODEL",
+    "value": "RALPH 400"
+   },
+   {
+    "label": "L. DOOR",
+    "value": "S.S AUTOMATIC TELESCOPIC DOOR WITH LONG VISION GLASS"
+   },
+   {
+    "label": "CAR DOOR",
+    "value": "S.S AUTOMATIC TELESCOPIC DOOR WITH LONG VISION GLASS"
+   },
+   {
+    "label": "CAR FLOORING",
+    "value": "VINYL TILES"
+   },
+   {
+    "label": "CABIN",
+    "value": "GLASS CABIN"
+   },
+   {
+    "label": "OTHER",
+    "value": "1) ARD SYSTEM 2) EMERGENCY LIGHT 3) FLOOR ANNOUNCER. 4) OVER LOAD INDICATOR 5) INFRA RED DOOR SCREEN 6) DOT MATRIX TOUCH LOP & COP (BLACK) 7) BLOWER FAN 8) HANDRAIL ON BACK SIDE 9) AUTO LIGHT & FAN 10) FIREMAN SWITCH & ALARM"
+   },
+   {
+    "label": "(header tag)",
+    "value": "BUNGALOW LIFT."
+   },
+   {
+    "label": "CAPACITY",
+    "value": "UPTO 408 KGS"
+   },
+   {
+    "label": "SPEED",
+    "value": "0.5 m/s"
+   },
+   {
+    "label": "TRAVEL",
+    "value": "G+2"
+   },
+   {
+    "label": "OPERATION",
+    "value": "FULL COLLECTIVE CONTROL"
+   },
+   {
+    "label": "POWER SUPPLY REQUIREMENTS",
+    "value": "SINGLE PHASE"
+   },
+   {
+    "label": "CONTRACT NO.",
+    "value": "REBBSR003"
+   },
+   {
+    "label": "CLIENT",
+    "value": "Mr. PEEKAY GUPTA"
+   },
+   {
+    "label": "LOCATION",
+    "value": "Koshi Aero Club & Resort, Durg Bhilai, Chattisgarh"
+   },
+   {
+    "label": "DATE",
+    "value": "21.01.2026"
+   },
+   {
+    "label": "P.M.T.",
+    "value": ""
+   },
+   {
+    "label": "DRAWN",
+    "value": "A.Mukherjee"
+   },
+   {
+    "label": "CHKD.",
+    "value": "S.M.Karar"
+   },
+   {
+    "label": "APPVD.",
+    "value": "B.Karmakar (blue-ink signature)"
+   },
+   {
+    "label": "REMARKS",
+    "value": ""
+   },
+   {
+    "label": "OTHERS",
+    "value": ""
+   },
+   {
+    "label": "SCALE",
+    "value": "N.T.S. (SHT. 1 OF 2)"
+   },
+   {
+    "label": "DB DETAILS",
+    "value": "16A - PN - 2 NOS. ; 7 HOLE EARTH BAR - 1NO."
+   }
+  ],
+  "text_notes": [
+   "NOTES (p1): *DESIGN / DRAWING MAY CHANGE AS PER SAFETY & TECHNICAL CRITERIA WITHOUT INFORMING THE CLIENT BUT THE REVISED DRAWING WILL BE SHARED.",
+   "NOTES (p1): * ALL DIMENSIONS ARE IN mm.",
+   "p1 (near DB details): * DIMENSIONS MAY VARY DEPENDING ON TYPE OF WALL FINISHER ie:PLASTER / TILES / MARBLE",
+   "p1 plan: GI WIRE WITH CABLE EARTHING TO BE SUPPLIED & FIXED BY OWNER",
+   "p1 plan + Sec A-A: CONTROLLER AT TOP FLOOR SIZE 300x250x1500",
+   "p1 plan: PIT LIGHT BY OWNER; PIT SWITCH; HALL BUTTON; STRUCTURAL SHAFT; HANDRAIL; GLASS",
+   "p1 Sec A-A caption: SIDE SLIDE AUTO TELESCOPIC DOOR WITH LONG VISION GLASS AT TOP FLOOR",
+   "p1 DB DETAILS: 16A - PN - 2 NOS. ; 7 HOLE EARTH BAR - 1NO.",
+   "p2 NOTES 1: ALL DIMENSIONS ARE IN mm.",
+   "p2 NOTES 2: HOISTING CHANEL MUST BE FIXED AT THE CENTRE OF THE CAR PULLING CUT OUT AS PER DRAWING",
+   "p2: Car-guide rail: E0 - Fx = 2458 N, Fy = 805 N, F1 = Fz = 12184 N; (second point) Fx = 2458 N, Fy = 805 N, F2 = Fz = 12184 N",
+   "p2: Cwt.-guide rail: E0 - Fx = 74 N, Fy = 365 N, F4 = Fz = 13009 N",
+   "p2: Forces (N) for E0 : F1: 12184, F2: 12184, F3: 25113.6, F4: 13009, F5: 18835.2",
+   "p1 spec header tag: BUNGALOW LIFT."
+  ],
+  "not_visible": [
+   "Car inside height (cabin height) - only door clear height 2000 / under lintel 2230 shown",
+   "Door panel split (fast/slow panel widths) - not dimensioned",
+   "Car rail back-to-wall / counterweight rail back-to-wall projections - rail zone offsets 115/205/190/45/65 given but no explicit rail-to-wall dim",
+   "Machine motor rating / kW / make",
+   "Roping ratio / pulley arrangement detail",
+   "Overhead hook / hook load (only 'hoisting chanel' note)",
+   "Buffer type and stroke",
+   "Pit ladder",
+   "Counterweight screen guard and block size",
+   "False ceiling type (cabin is glass; ceiling not specified)",
+   "Wall material thickness (structural steel shaft - member sizes not given)",
+   "Persons capacity (kg only: UPTO 408 KGS)",
+   "Voltage details of single-phase supply"
+  ],
+  "title_block": {
+   "pmt": null,
+   "scale": "N.T.S.",
+   "sheets": "SHT. 1 OF 2 (printed on BOTH sheets - sheet 2 not renumbered)",
+   "company": "RICARDO",
+   "remarks": null,
+   "drawn_by": "A.Mukherjee",
+   "checked_by": "S.M.Karar",
+   "approved_by": "B.Karmakar",
+   "contract_no": "REBBSR003",
+   "drawing_date": "21.01.2026"
+  },
+  "counterweight": {
+   "guard": null,
+   "notes": "Counterweight (D.B.G 820) nested inside the car rail zone on the left shaft wall; belt-suspended (30x2 belts); cwt-guide rail E0 with pit force F4 = 13009 N",
+   "position": "side",
+   "block_size": null
+  },
+  "machine_drive": {
+   "notes": "Pit forces for E0 rails (N): F1 12184, F2 12184, F3 25113.6, F4 13009, F5 18835.2; car-guide rail E0 Fx=2458 N Fy=805 N F1=F2=Fz=12184 N; cwt-guide rail E0 Fx=74 N Fy=365 N F4=Fz=13009 N",
+   "roping": "2 x 30 mm flat belts",
+   "hook_load": null,
+   "machine_beam": "HOISTING CHANEL (channel) must be fixed at the centre of the car pulling cut-out as per drawing (p2 note 2)",
+   "machine_label": "Gearless belt drive unit - TRACTION MEDIA BELT (30 X 2), model RALPH 400",
+   "machine_location": "Top of hoistway on the rail side (machine-room-less); 50 clearance above unit to slab",
+   "pulley_arrangement": null
+  },
+  "all_dimensions": [
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Top width segment (rail/machine zone)",
+    "value": "919",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Top width segment (to right wall)",
+    "value": "581",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Left wall to rail zone line 1",
+    "value": "115",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rail zone split 2",
+    "value": "205",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rail zone split 3",
+    "value": "190",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rail zone sub-split",
+    "value": "100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rail zone sub-split",
+    "value": "105",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Wall-to-bracket gap top",
+    "value": "45",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Wall-to-rail gap top",
+    "value": "65",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "D.B.G (car rails)",
+    "value": "860",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "D.B.G (counterweight rails)",
+    "value": "820",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Wall-to-bracket gap bottom",
+    "value": "45",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Wall-to-rail gap bottom",
+    "value": "65",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Car left wall to centreline (vertical dim)",
+    "value": "598",
+    "confidence": "medium"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rear handrail/glass split left",
+    "value": "410",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rear handrail/glass split right",
+    "value": "410",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rear zone end segment",
+    "value": "131",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Rear wall to glass gap (GI wire corner)",
+    "value": "70",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (depth)",
+    "label": "Rear gap stack",
+    "value": "503",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (depth)",
+    "label": "Rear gap stack",
+    "value": "613",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "CAR INSIDE (depth)",
+    "value": "1100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "PLATFORM (depth)",
+    "value": "1270",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "TOTAL FIN. HOISTWAY (depth)",
+    "value": "1370",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "TOTAL HOISTWAY (depth)",
+    "value": "1500",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (depth)",
+    "label": "Centreline to pit-light zone",
+    "value": "727",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (depth)",
+    "label": "Centreline to pit-switch zone",
+    "value": "887",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (door wall)",
+    "label": "Landing sill band",
+    "value": "130",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (door wall)",
+    "label": "R.C (running clearance)",
+    "value": "30",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (door wall)",
+    "label": "S.P (sill projection)",
+    "value": "130",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (door zone)",
+    "label": "Car sill zone gap",
+    "value": "70",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (door zone)",
+    "label": "Car sill zone gap",
+    "value": "50",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1 (left of door zone)",
+    "label": "Door stack zone marker",
+    "value": "40",
+    "confidence": "medium"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Opening sub-segment left of A-A line",
+    "value": "340",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Opening sub-segment right of A-A line",
+    "value": "360",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "OPENING",
+    "value": "700",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "CAR INSIDE (width)",
+    "value": "820",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Opening return left",
+    "value": "100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Opening return right",
+    "value": "100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "BET. WALL",
+    "value": "900",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Left zone width (controller side)",
+    "value": "479",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "Right zone width",
+    "value": "121",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan p1",
+    "label": "TOTAL HOISTWAY (width)",
+    "value": "1500",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "hoistway plan + Sec A-A p1",
+    "label": "Controller size",
+    "value": "300x250x1500",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Wall width",
+    "value": "1500",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Band above lintel",
+    "value": "200",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Lintel/header depth",
+    "value": "230",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Door clear opening height",
+    "value": "2000",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "UNDERT LINTEL (typo for UNDER LINTEL)",
+    "value": "2230",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Controller width",
+    "value": "300",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Controller height",
+    "value": "1500",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Door frame margin left",
+    "value": "100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Door frame margin right",
+    "value": "100",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Controller zone width",
+    "value": "479",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Door opening width",
+    "value": "700",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1",
+    "label": "Right margin",
+    "value": "121",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1 right strip",
+    "label": "UNDER LINTEL (GND FLR strip)",
+    "value": "2230",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "Sec A-A p1 right strip",
+    "label": "CLEAR HEIGHT (GND FLR strip)",
+    "value": "2000",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "SLAB THK. (2nd floor)",
+    "value": "150",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "SLAB THK. (1st floor)",
+    "value": "150",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "OVERHEAD REQUIRED",
+    "value": "3000",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "TRAVEL HEIGHT",
+    "value": "7860",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "BRAC. SP. (bracket spacing)",
+    "value": "1700",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "REQUIRED PIT",
+    "value": "170",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "vertical section p2",
+    "label": "Top clearance above drive unit",
+    "value": "50",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "floor-height table p2",
+    "label": "Floor height GND to 1ST",
+    "value": "4050",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm",
+    "view": "floor-height table p2",
+    "label": "Floor height 1ST to 2ND",
+    "value": "3810",
+    "confidence": "high"
+   },
+   {
+    "unit": "mm x nos",
+    "view": "spec table p1/p2",
+    "label": "Belt size (TRACTION MEDIA)",
+    "value": "30 X 2",
+    "confidence": "high"
+   }
+  ],
+  "by_owner_scope": [
+   "GI wire with cable earthing to be supplied & fixed by owner (hoistway plan p1)",
+   "PIT LIGHT by owner (hoistway plan p1)",
+   "DB (distribution board) by owner (Sec A-A p1)"
+  ],
+  "page_inventory": [
+   {
+    "page": 1,
+    "views": [
+     "hoistway plan",
+     "SEC A-A (top-floor entrance elevation with controller + DB)",
+     "GND FLR elevation strip (under lintel / clear height)",
+     "DB DETAILS box",
+     "NOTES",
+     "OTHER features list",
+     "RICARDO specification table",
+     "title block"
+    ]
+   },
+   {
+    "page": 2,
+    "views": [
+     "vertical hoistway section (G.F./1st/2nd, travel, overhead, pit, bracket spacing)",
+     "PIT FORCES PLAN",
+     "car-guide rail E0 force diagram",
+     "cwt-guide rail E0 force diagram",
+     "Forces (N) for E0 table",
+     "floor-height table",
+     "NOTES",
+     "RICARDO specification table (repeat)",
+     "title block (repeat)"
+    ]
+   }
+  ]
+ },
+ "brand": {
+  "value": "Ricardo",
+  "rationale": "Title block company 'RICARDO' on both sheets; contract no. REBBSR003",
+  "confidence": "high"
+ },
+ "notes": "Clean scanned 2-sheet Ricardo GA for a RALPH 400 belt-drive bungalow (home) lift, G+2, up to 408 kg, 0.5 m/s, single phase, glass cabin, in a 1500x1500 structural steel shaft. Sheet 1 (landscape): hoistway plan, Sec A-A (top-floor entrance elevation with controller + ground-floor strip), DB details, notes, features list, spec table. Sheet 2 (portrait): vertical section (travel 7860, overhead 3000, pit 170, slab 150, bracket space 1700), pit forces plan with E0 rail force diagrams, floor-height table, repeated spec/title block (mislabelled SHT. 1 OF 2). Doors are SS auto telescopic with long vision glass at all landings; plan shows panels parking to the left (LHS) - the 340|360 split over OPENING 700 is the section-line position, not a panel split. Cantilever-style: car rails (DBG 860) and cwt rails (DBG 820) both on the left wall. Scan slightly skewed with blue-ink approval signature; otherwise highly legible.",
+ "floors": {
+  "value": 3,
+  "rationale": "Spec table 'TRAVEL: G+2' (both pages); p2 section shows G.F., 1st., 2nd. landings",
+  "confidence": "high"
+ },
+ "schema": "deep_v1",
+ "capacity": {
+  "value": "408KG",
+  "rationale": "Spec table 'CAPACITY: UPTO 408 KGS' (both pages); persons not stated",
+  "confidence": "high"
+ },
+ "door_side": {
+  "value": "LHS",
+  "rationale": "Hoistway plan: telescopic panels drawn parked/stacking toward the LEFT of the opening (into the 479 controller-side space; only 121 wall on the right). NOTE: the printed 340|360 split of OPENING 700 is the A-A section-line position (marker sits exactly at the divider), not a panel split - the strict split rule would give RHS, so flagged in anomalies",
+  "confidence": "medium"
+ },
+ "door_type": {
+  "value": "Auto Telescopic (AT)",
+  "rationale": "Spec rows CAR DOOR / L. DOOR 'S.S AUTOMATIC TELESCOPIC DOOR WITH LONG VISION GLASS'; Sec A-A caption 'SIDE SLIDE AUTO TELESCOPIC DOOR'",
+  "confidence": "high"
+ },
+ "dimensions": {
+  "speed_mps": {
+   "value": "0.5",
+   "confidence": "high"
+  },
+  "travel_mm": {
+   "value": "7860",
+   "confidence": "high"
+  },
+  "dbg_main_mm": {
+   "value": "860",
+   "confidence": "high"
+  },
+  "overhead_mm": {
+   "value": "3000",
+   "confidence": "high"
+  },
+  "car_depth_mm": {
+   "value": "1100",
+   "confidence": "high"
+  },
+  "car_width_mm": {
+   "value": "820",
+   "confidence": "high"
+  },
+  "pit_depth_mm": {
+   "value": "170",
+   "confidence": "high"
+  },
+  "car_height_mm": {
+   "value": null,
+   "confidence": "low"
+  },
+  "dbg_counter_mm": {
+   "value": "820",
+   "confidence": "high"
+  },
+  "shaft_depth_mm": {
+   "value": "1500",
+   "confidence": "high"
+  },
+  "shaft_width_mm": {
+   "value": "1500",
+   "confidence": "high"
+  },
+  "bracket_spacing_mm": {
+   "value": "1700",
+   "confidence": "high"
+  },
+  "car_rail_to_wall_mm": {
+   "value": null,
+   "confidence": "low"
+  },
+  "door_opening_width_mm": {
+   "value": "700",
+   "confidence": "high"
+  },
+  "door_opening_height_mm": {
+   "value": "2000",
+   "confidence": "high"
+  },
+  "counter_rail_to_wall_mm": {
+   "value": null,
+   "confidence": "low"
+  }
+ },
+ "drive_type": {
+  "value": "BELT",
+  "rationale": "Title block tag 'BUNGALOW LIFT.' + spec row 'TRACTION MEDIA: BELT (30 X 2)', model RALPH 400, no machine room, belt drive unit at top of shaft (p2 section) - a home/bungalow lift driven by belts",
+  "confidence": "high"
+ },
+ "door_finish": {
+  "value": "SS",
+  "rationale": "CAR DOOR spec row: 'S.S AUTOMATIC TELESCOPIC DOOR WITH LONG VISION GLASS' (p1 spec table)",
+  "confidence": "high"
+ },
+ "door_vision": {
+  "value": "LV",
+  "rationale": "'WITH LONG VISION GLASS' in both door spec rows; full-height narrow vision glass drawn in each panel in Sec A-A elevation",
+  "confidence": "high"
+ },
+ "machine_room": {
+  "value": "no",
+  "rationale": "No machine room drawn; belt drive unit sits at top of hoistway inside the structural shaft (p2 section); controller at top floor beside the door (300x250x1500)",
+  "confidence": "high"
+ },
+ "additional_details": [
+  {
+   "label": "Model",
+   "value": "RALPH 400 (BUNGALOW LIFT)",
+   "confidence": "high"
+  },
+  {
+   "label": "Traction media",
+   "value": "BELT (30 X 2)",
+   "confidence": "high"
+  },
+  {
+   "label": "Operation",
+   "value": "FULL COLLECTIVE CONTROL",
+   "confidence": "high"
+  },
+  {
+   "label": "Power supply",
+   "value": "SINGLE PHASE",
+   "confidence": "high"
+  },
+  {
+   "label": "Cabin",
+   "value": "GLASS CABIN",
+   "confidence": "high"
+  },
+  {
+   "label": "Car flooring",
+   "value": "VINYL TILES",
+   "confidence": "high"
+  },
+  {
+   "label": "Controller",
+   "value": "At top floor, size 300x250x1500",
+   "confidence": "high"
+  },
+  {
+   "label": "Guide rails",
+   "value": "Car and Cwt guide rail both 'E0'",
+   "confidence": "high"
+  },
+  {
+   "label": "Floor heights",
+   "value": "GND 4050, 1ST 3810 (2ND blank)",
+   "confidence": "high"
+  },
+  {
+   "label": "Shaft",
+   "value": "STRUCTURAL SHAFT (steel), finished hoistway depth 1370, between-wall 900 on door side",
+   "confidence": "high"
+  },
+  {
+   "label": "Other features",
+   "value": "ARD system, emergency light, floor announcer, overload indicator, infra-red door screen, dot matrix touch LOP & COP (black), blower fan, handrail on back side, auto light & fan, fireman switch & alarm",
+   "confidence": "high"
+  }
+ ],
+ "landing_door_finish": {
+  "value": "SS",
+  "rationale": "L. DOOR spec row: 'S.S AUTOMATIC TELESCOPIC DOOR WITH LONG VISION GLASS' - same as car door",
+  "confidence": "high"
+ },
+ "counterweight_position": {
+  "value": "side",
+  "rationale": "Hoistway plan: cwt (D.B.G 820) nested with the car rails (D.B.G 860) on the LEFT side wall of the shaft - cantilever-style side arrangement",
+  "confidence": "high"
+ }
+}

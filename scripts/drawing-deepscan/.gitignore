@@ -1,0 +1,4 @@
+pdfs/
+jobs/
+*.json
+!exemplar_deep.json
