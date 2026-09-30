@@ -12,7 +12,8 @@
  * Owner rules (2026-09-30): dispatching a job that isn't cleared shows a SOFT
  * Yes/No warning. It never blocks a dispatch, and a failed check asks the same
  * question rather than stopping the save. A revocation reaches the ERP "just
- * as a notification": informational, never a block.
+ * as a notification": informational, never a block, and never hidden — every
+ * revocation the office hasn't acknowledged stays visible, whatever the status.
  *
  * Pure presentation + decision helpers. No imports on purpose, so
  * scripts/verify-site-clearance.ts can run this file directly under Node.
@@ -123,6 +124,24 @@ export function revocationNeedsAck(status: SiteClearanceStatus | null | undefine
   return status?.state === "revoked" && !status.latest.revoke_acknowledged_at;
 }
 
+/** Every revocation the office hasn't acknowledged, except the one the status
+ *  line already shows (the latest, in the "revoked" state), newest first. The
+ *  operator's rule: no revocation may be hidden, whatever the status, e.g. a
+ *  "Complete material" clearance revoked while a "First phase" one stays in
+ *  force. */
+export function revocationNotices(
+  rows: readonly SiteClearance[] | null | undefined,
+  status?: SiteClearanceStatus | null,
+): SiteClearance[] {
+  const onStatusLine = status?.state === "revoked" ? status.latest.id : null;
+  return (rows ?? [])
+    .filter((r) => r.revoked_at && !r.revoke_acknowledged_at && r.id !== onStatusLine)
+    .sort((a, b) => {
+      const d = timeOf(revokedWhen(b)) - timeOf(revokedWhen(a));
+      return Number.isNaN(d) ? 0 : d;
+    });
+}
+
 /** Date for the status line, in the same style as the Dispatches panel's
  *  other dates. Falls back to the raw date part if the value won't parse. */
 export function formatClearanceDate(iso: string): string {
@@ -162,6 +181,23 @@ export function siteClearanceLine(
   const by = latest.cleared_by?.trim();
   if (by) parts.push(`by ${by}`);
   return parts.join(" · ") + (count > 1 ? ` (${count} clearances)` : "");
+}
+
+/** One revocation notice line (shown under the status line until the office
+ *  acknowledges it). The scope label is lower-cased so it reads as part of the
+ *  sentence: "the complete material clearance DCL-16". */
+export function revocationNoticeText(
+  c: SiteClearance,
+  formatDate: (iso: string) => string = formatClearanceDate,
+): string {
+  const scope = clearanceScopeLabel(c.recommended_scope)?.toLowerCase();
+  const code = c.code?.trim();
+  let text = `Construction revoked the ${scope ? `${scope} ` : ""}clearance${code ? ` ${code}` : ""} on ${formatDate(revokedWhen(c))}`;
+  const by = c.revoked_by?.trim();
+  if (by) text += ` by ${by}`;
+  const reason = c.revoke_reason?.trim();
+  if (reason) text += ` — ${reason}`;
+  return text;
 }
 
 /** The pop-up shown before dispatching a job that isn't cleared. */

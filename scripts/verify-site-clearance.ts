@@ -7,9 +7,10 @@
  *
  * Checks: the scope labels, the pending / given / revoked / couldn't-check
  * decision (a failed check must still warn — never block; a revoked clearance
- * no longer counts), which clearance counts as the latest, and the exact texts
- * the factory sees, including the revocation notice before and after it is
- * acknowledged.
+ * no longer counts), which clearance counts as the latest, the exact texts the
+ * factory sees (including the revocation before and after it is
+ * acknowledged), and the extra revocation notices: no unacknowledged
+ * revocation may be hidden, whatever the status.
  */
 import {
   CLEARANCE_SCOPE_LABEL,
@@ -17,6 +18,8 @@ import {
   clearanceScopeLabel,
   formatClearanceDate,
   revocationNeedsAck,
+  revocationNoticeText,
+  revocationNotices,
   siteClearanceLine,
   siteClearancePromptMessage,
   siteClearanceStatus,
@@ -202,7 +205,69 @@ eq(
   "Site clearance is pending at the Construction end for Job RNLBLR-0110 — the last clearance was revoked on 2026-09-30. Do you want to continue?",
 );
 
-console.log("[5] Default date format");
+console.log("[5] Revocation notices (no revocation hidden)");
+{
+  const ids = (rows: SiteClearance[]) => rows.map((r) => r.id).join(",");
+  // The main case: FIRST in force, COMPLETE given then revoked.
+  const firstInForce = row({ recommended_scope: "first", cleared_at: "2026-09-20T09:00:00+00:00" });
+  const completeRevoked = revoked({
+    recommended_scope: "full",
+    code: "DCL-16",
+    revoked_by: "Ashim Daw",
+    revoke_reason: "site flooded",
+  });
+  const mainRows = [firstInForce, completeRevoked];
+  const mainStatus = siteClearanceStatus(mainRows);
+  eq("main case: status stays given (the First phase one)", mainStatus.state === "given" && mainStatus.latest.id, firstInForce.id);
+  eq("main case: the pop-up follows the status (no pop-up)", warnBeforeDispatch(mainStatus), false);
+  eq("given + one unacknowledged revoked → one notice", ids(revocationNotices(mainRows, mainStatus)), completeRevoked.id);
+  eq(
+    "main case notice text",
+    revocationNoticeText(completeRevoked, day),
+    "Construction revoked the complete material clearance DCL-16 on 2026-09-30 by Ashim Daw — site flooded",
+  );
+  // Revoked state: the latest is on the status line, so it's not repeated.
+  const olderRev = revoked({ revoked_at: "2026-09-20T09:00:00+00:00" });
+  const midRev = revoked({ revoked_at: "2026-09-25T09:00:00+00:00" });
+  const latestRev = revoked({ revoked_at: "2026-09-30T09:00:00+00:00" });
+  const revRows = [olderRev, latestRev, midRev];
+  const revStatus = siteClearanceStatus(revRows);
+  eq("revoked state: the status line carries the latest", revStatus.state === "revoked" && revStatus.latest.id, latestRev.id);
+  eq("revoked state: the latest is excluded, the rest newest first", ids(revocationNotices(revRows, revStatus)), `${midRev.id},${olderRev.id}`);
+  // Acknowledged revocations drop out; only the status line keeps "(acknowledged by X)".
+  const ackedRev = revoked({ revoke_acknowledged_at: "2026-09-30T10:00:00+00:00", revoke_acknowledged_by: "Anita" });
+  eq("acknowledged → gone from the notices", revocationNotices([firstInForce, ackedRev], siteClearanceStatus([firstInForce, ackedRev])).length, 0);
+  eq(
+    "revoked state, latest acknowledged, an older one not → only the older is a notice",
+    ids(revocationNotices([ackedRev, olderRev], siteClearanceStatus([ackedRev, olderRev]))),
+    olderRev.id,
+  );
+  const inForceOnly = [row(), row()];
+  eq("rows in force only → no notices", revocationNotices(inForceOnly, siteClearanceStatus(inForceOnly)).length, 0);
+  eq("pending (no rows) → no notices", revocationNotices([], { state: "pending" }).length, 0);
+  eq("couldn't check (no rows) → no notices", revocationNotices(null, { state: "unknown" }).length, 0);
+  // Given with several revocations: all of them, newest first.
+  const g = siteClearanceStatus([firstInForce, olderRev, latestRev]);
+  eq("given + several revoked → all of them, newest first", ids(revocationNotices([firstInForce, olderRev, latestRev], g)), `${latestRev.id},${olderRev.id}`);
+  // Notice texts.
+  eq(
+    "notice without a code",
+    revocationNoticeText(revoked({ code: null, recommended_scope: "first", revoked_by: "Ravi", revoke_reason: "Shaft not ready" }), day),
+    "Construction revoked the first phase clearance on 2026-09-30 by Ravi — Shaft not ready",
+  );
+  eq(
+    "notice without by / reason",
+    revocationNoticeText(revoked({ code: "DCL-14", recommended_scope: "first_and_second", revoked_by: "  ", revoke_reason: null }), day),
+    "Construction revoked the first & second phase clearance DCL-14 on 2026-09-30",
+  );
+  eq(
+    "notice with no scope and no code",
+    revocationNoticeText(revoked({ code: null, recommended_scope: null, revoked_by: null, revoke_reason: null }), day),
+    "Construction revoked the clearance on 2026-09-30",
+  );
+}
+
+console.log("[6] Default date format");
 {
   const shown = formatClearanceDate("2026-09-07T10:28:21.196553+00:00");
   ok("formats a real timestamp (has the year, not 'Invalid Date')", shown.includes("2026") && !/invalid/i.test(shown), shown);

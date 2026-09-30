@@ -43,9 +43,12 @@ import {
 } from "@/lib/dispatch-status";
 import {
   revocationNeedsAck,
+  revocationNoticeText,
+  revocationNotices,
   siteClearanceLine,
   siteClearanceStatusOf,
   type SiteClearance,
+  type SiteClearanceRead,
   type SiteClearanceStatus,
 } from "@/lib/site-clearance";
 import { downloadDispatchHistoryPdf, downloadBalancePdf } from "@/lib/export/dispatch-pdf";
@@ -125,18 +128,50 @@ function SiteClearanceStatusLine({
       <span>
         {siteClearanceLine(status)}
         {needsAck && status.state === "revoked" && (
-          <button
-            type="button"
-            onClick={() => onAcknowledge(status.latest)}
-            disabled={busy}
-            className="ml-1.5 inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-px align-middle font-medium text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer"
-          >
-            {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
-            Acknowledge
-          </button>
+          <RevocationAckButton busy={busy} onClick={() => onAcknowledge(status.latest)} />
         )}
       </span>
     </span>
+  );
+}
+
+/** Any other revocation the office hasn't acknowledged, as its own amber line
+ *  under the status line (no revocation may be hidden). It disappears once
+ *  acknowledged. */
+function RevocationNoticeLine({
+  clearance,
+  busy,
+  onAcknowledge,
+}: {
+  clearance: SiteClearance;
+  busy: boolean;
+  onAcknowledge: (c: SiteClearance) => void;
+}) {
+  return (
+    <span
+      className="text-[11px] inline-flex items-start gap-1 font-medium text-[var(--warning)]"
+      title="Construction revoked this clearance, so it no longer counts as given. Acknowledge to clear this notice."
+    >
+      <HardHat className="h-3 w-3 shrink-0 mt-0.5" />
+      <span>
+        {revocationNoticeText(clearance)}
+        <RevocationAckButton busy={busy} onClick={() => onAcknowledge(clearance)} />
+      </span>
+    </span>
+  );
+}
+
+function RevocationAckButton({ busy, onClick }: { busy: boolean; onClick: () => void }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={busy}
+      className="ml-1.5 inline-flex items-center gap-1 rounded border border-[var(--border)] px-1.5 py-px align-middle font-medium text-[var(--foreground)] hover:bg-[var(--muted)] cursor-pointer"
+    >
+      {busy ? <Loader2 className="h-3 w-3 animate-spin" /> : <Check className="h-3 w-3" />}
+      Acknowledge
+    </button>
   );
 }
 
@@ -237,22 +272,27 @@ export function DispatchPanel({
     };
   }, [jobId]);
   // Site clearance from Construction — same client-fetch pattern and reason
-  // (written outside the ERP). A failed read shows "couldn't check".
-  const [clearance, setClearance] = useState<SiteClearanceStatus | null>(null);
+  // (written outside the ERP). The rows are kept so every unacknowledged
+  // revocation can be listed, not just the status. A failed read shows
+  // "couldn't check".
+  const [clearanceRead, setClearanceRead] = useState<SiteClearanceRead | null>(null);
   useEffect(() => {
     let alive = true;
     getJobSiteClearances(jobId)
       .then((read) => {
-        if (alive) setClearance(siteClearanceStatusOf(read));
+        if (alive) setClearanceRead(read);
       })
       .catch(() => {
-        if (alive) setClearance({ state: "unknown" });
+        if (alive) setClearanceRead({ ok: false, error: "Could not read site clearance." });
       });
     return () => {
       alive = false;
     };
   }, [jobId]);
-  // Acknowledge Construction's clearance-revocation notice (informational only).
+  const clearance: SiteClearanceStatus | null = clearanceRead ? siteClearanceStatusOf(clearanceRead) : null;
+  const revocations = clearanceRead?.ok ? revocationNotices(clearanceRead.clearances, clearance) : [];
+  // Acknowledge a clearance-revocation notice (informational only). Marking the
+  // row locally re-derives both the status line and the notice list.
   const onAcknowledgeRevocation = (c: SiteClearance) => {
     const who = ensureOperator();
     setBusy("revoke:" + c.id);
@@ -264,10 +304,15 @@ export function DispatchPanel({
         return;
       }
       const nowIso = new Date().toISOString();
-      setClearance((s) =>
-        s && s.state === "revoked" && s.latest.id === c.id
-          ? { ...s, latest: { ...s.latest, revoke_acknowledged_at: nowIso, revoke_acknowledged_by: who ?? null } }
-          : s,
+      setClearanceRead((r) =>
+        r && r.ok
+          ? {
+              ...r,
+              clearances: r.clearances.map((x) =>
+                x.id === c.id ? { ...x, revoke_acknowledged_at: nowIso, revoke_acknowledged_by: who ?? null } : x,
+              ),
+            }
+          : r,
       );
       toast.success("Clearance revocation acknowledged.");
     });
@@ -509,6 +554,21 @@ export function DispatchPanel({
           </Button>
         </div>
       </div>
+
+      {/* Every other revocation the office hasn't acknowledged, newest first,
+          whatever the status above says — no revocation may be hidden. */}
+      {revocations.length > 0 && (
+        <div className="-mt-1 mb-2 flex flex-col items-end gap-1">
+          {revocations.map((c) => (
+            <RevocationNoticeLine
+              key={c.id}
+              clearance={c}
+              busy={busy === "revoke:" + c.id}
+              onAcknowledge={onAcknowledgeRevocation}
+            />
+          ))}
+        </div>
+      )}
 
       {summary.dispatches.length === 0 ? (
         <p className="text-xs text-[var(--muted-foreground)]">

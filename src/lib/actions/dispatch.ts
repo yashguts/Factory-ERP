@@ -1092,7 +1092,9 @@ export async function getSiteClearancesByJobNumber(jobNumber: string): Promise<S
 }
 
 /** Acknowledge a clearance-revocation notice (the factory office has seen that
- *  Construction revoked it). Informational only — nothing is blocked either way. */
+ *  Construction revoked it). Informational only — nothing is blocked either way.
+ *  Only a revoked, not-yet-acknowledged row is stamped, so a second click or a
+ *  second device never overwrites the first acknowledger (still ok: nothing to do). */
 export async function acknowledgeClearanceRevocation(
   id: string,
   jobId: string,
@@ -1106,7 +1108,9 @@ export async function acknowledgeClearanceRevocation(
       revoke_acknowledged_at: new Date().toISOString(),
       revoke_acknowledged_by: acknowledgedBy?.trim() || null,
     })
-    .eq("id", id);
+    .eq("id", id)
+    .not("revoked_at", "is", null)
+    .is("revoke_acknowledged_at", null);
   if (error) return { ok: false, error: error.message };
   revalidatePath(`/jobs/${jobId}`);
   return { ok: true };
