@@ -27,7 +27,7 @@ import { useOperator } from "@/lib/jobs/use-operator";
 import { cn } from "@/lib/utils";
 import { getRalph400Autofill } from "@/lib/actions/ralph400-autofill";
 import { getRalph400PartList, saveRalph400PartList } from "@/lib/actions/ralph400";
-import { AUDIT, DEFAULTS, FLOOR_FIELDS, OPTIONS, type Ralph400Inputs } from "@/lib/ralph400/model";
+import { DEFAULTS, FLOOR_FIELDS, OPTIONS, type Ralph400Inputs } from "@/lib/ralph400/model";
 import {
   buildPartList,
   MAX_STOPS,
@@ -301,7 +301,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
   };
 
   const exportXlsx = () => {
-    const cols = ["#", "Section", "Code", "Part", "Drawing", "Level", "Face", "Size (mm)", "Qty", "Notes"];
+    const cols = ["#", "Section", "Code", "Part", "Drawing", "Level", "Face", "Size (mm)", "Qty", "Piece mark", "Notes"];
     exportSheetsToXlsx<Record<string, string | number>>({
       filename: `RALPH400-part-list-${(inp.jobNo || "sample").replace(/[^\w-]+/g, "_")}`,
       sheets: [
@@ -317,10 +317,10 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
             Face: l.face ?? "",
             "Size (mm)": l.size,
             Qty: l.qty,
+            "Piece mark": l.mark ?? "",
             Notes: [
               l.bracket ? "Bracket version" : "",
               l.note ?? "",
-              l.workbook ? `Workbook formula gives ${l.workbook}` : "",
             ]
               .filter(Boolean)
               .join(" · "),
@@ -355,12 +355,12 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
         icon={<Ruler size={18} />}
         title="RALPH 400 Structure Part List"
         subtitle="Pick a job — its external shaft structure part list is built from the shaft size, floors and counterweight side."
-        className="mb-3 print:hidden"
+        className="mb-2 print:hidden"
       />
 
       {/* ---------------- job bar ---------------- */}
-      <Card className="mb-3 print:hidden">
-        <div className="flex flex-wrap items-center gap-3 p-3">
+      <Card className="mb-2 print:hidden">
+        <div className="flex flex-wrap items-center gap-2 px-2 py-1.5">
           <div className="w-full sm:w-[26rem]">
             <JobPicker jobs={jobs} value={inp.jobNo} onPick={pickJob} />
           </div>
@@ -417,11 +417,11 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
           />
         </Card>
       ) : (
-        <div className="grid items-start gap-3 lg:grid-cols-[20rem_minmax(0,1fr)] print:hidden">
+        <div className="grid items-start gap-2 lg:grid-cols-[17rem_minmax(0,1fr)] print:hidden">
           {/* ---------------- inputs ---------------- */}
           <Card className="lg:sticky lg:top-4">
             <SectionHeader title="Inputs" count={status.kind === "loading" ? "loading…" : "tag = where the value came from"} />
-            <div className="space-y-4 p-3">
+            <div className="space-y-2.5 p-2">
               <Group title="Structure outer size">
                 <NumRow label="Width" unit="mm" k="shaftWidth" inp={inp} sources={sources} issue={issueFor("shaftWidth")} onChange={setNum} />
                 <NumRow label="Depth" unit="mm" k="shaftDepth" inp={inp} sources={sources} issue={issueFor("shaftDepth")} onChange={setNum} />
@@ -449,26 +449,26 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
           </Card>
 
           {/* ---------------- output ---------------- */}
-          <div className="min-w-0 space-y-3">
+          <div className="min-w-0 space-y-2">
             {result.issues.length > 0 && <IssuesCard issues={result.issues} />}
 
             <StatStrip>
-              <StatTile
+              <StatTile className="px-3 py-1"
                 label="Part lines"
                 value={result.blocked ? "—" : needed.length}
                 tone={result.blocked ? "danger" : "default"}
                 sub={result.blocked ? "fix the inputs" : `${result.pieces.toLocaleString("en-IN")} pieces`}
               />
-              <StatTile label="Stops" value={stops || "—"} sub={result.travel ? `travel ${result.travel.toLocaleString("en-IN")} mm` : undefined} />
-              <StatTile
+              <StatTile className="px-3 py-1" label="Stops" value={stops || "—"} sub={result.travel ? `travel ${result.travel.toLocaleString("en-IN")} mm` : undefined} />
+              <StatTile className="px-3 py-1"
                 label="Structure"
                 value={inp.shaftWidth && inp.shaftDepth ? `${inp.shaftWidth} × ${inp.shaftDepth}` : "—"}
                 sub="outer width × depth"
               />
-              <StatTile label="Counterweight" value={inp.cwt || "—"} tone={inp.cwt ? "primary" : "danger"} />
+              <StatTile className="px-3 py-1" label="Counterweight" value={inp.cwt || "—"} tone={inp.cwt ? "primary" : "danger"} />
               {/* Faces come from the built list, so they mean nothing until the inputs are valid. */}
-              <StatTile label="Glass faces" value={(!result.blocked && result.glassFaces.join(" · ")) || "—"} />
-              <StatTile
+              <StatTile className="px-3 py-1" label="Glass faces" value={(!result.blocked && result.glassFaces.join(" · ")) || "—"} />
+              <StatTile className="px-3 py-1"
                 label="Cladding faces"
                 value={(!result.blocked && shaftCladding.join(" · ")) || "—"}
                 sub="+ overhead on all 4 faces"
@@ -504,42 +504,6 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
               )}
             </Card>
 
-            <details className="card-surface text-sm">
-              <summary className="cursor-pointer select-none px-3 py-2 font-medium">
-                How this list differs from the RALPH 400 workbook ({AUDIT.length} corrected formulas)
-              </summary>
-              <div className="space-y-2 border-t border-[var(--border)] px-3 py-2 text-xs text-[var(--muted-foreground)]">
-                <p>
-                  The list follows Sheet2 of the RALPH 400 BOM workbook with its formula slips corrected. A line tagged{" "}
-                  <WbChip>≠ workbook</WbChip> shows what the workbook formula would have given instead. The reasoning for each
-                  correction is in the RALPH 400 BOM Rules Book.
-                </p>
-                <div className="overflow-x-auto">
-                  <table className="w-full">
-                    <thead>
-                      <tr className="text-left text-[var(--foreground)]">
-                        <th className="py-1 pr-3 font-medium">Cell</th>
-                        <th className="py-1 pr-3 font-medium">What</th>
-                        <th className="py-1 pr-3 font-medium">Workbook</th>
-                        <th className="py-1 pr-3 font-medium">Used here</th>
-                        <th className="py-1 font-medium">Why</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {AUDIT.map((a) => (
-                        <tr key={a.cell} className="border-t border-[var(--border)] align-top">
-                          <td className="whitespace-nowrap py-1 pr-3 font-mono">{a.cell}</td>
-                          <td className="py-1 pr-3">{a.what}</td>
-                          <td className="py-1 pr-3 font-mono">{a.sheet}</td>
-                          <td className="py-1 pr-3 font-mono">{a.clean}</td>
-                          <td className="py-1">{a.note}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            </details>
           </div>
         </div>
       )}
@@ -575,20 +539,6 @@ function inputRows(inp: Ralph400Inputs, job: FactoryJobOption | null): [string, 
   return rows;
 }
 
-function WbChip({ children, title }: { children: React.ReactNode; title?: string }) {
-  return (
-    <span
-      title={title}
-      className={cn(
-        "rounded bg-amber-50 px-1.5 py-0.5 font-medium text-amber-700",
-        title && "cursor-help",
-      )}
-    >
-      {children}
-    </span>
-  );
-}
-
 function StatusPill({ status, dirty, sample }: { status: Status; dirty: boolean; sample: boolean }) {
   const base = "inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium";
   if (sample)
@@ -622,7 +572,7 @@ function IssuesCard({ issues }: { issues: InputIssue[] }) {
   const warns = issues.filter((i) => i.level === "warn");
   return (
     <Card>
-      <div className="space-y-1.5 p-3 text-sm">
+      <div className="space-y-1 px-2 py-1.5 text-xs">
         {errors.map((i, n) => (
           <div key={`e${n}`} className="flex items-start gap-2 text-[var(--destructive)]">
             <CircleAlert size={15} className="mt-0.5 shrink-0" />
@@ -640,23 +590,26 @@ function IssuesCard({ issues }: { issues: InputIssue[] }) {
   );
 }
 
+const FACE_LETTER: Record<string, string> = { LEFT: "L", RIGHT: "R", BACK: "B", FRONT: "F" };
+const whereOf = (l: PartLine) =>
+  [l.face ? FACE_LETTER[l.face] ?? l.face : "", l.level === "OVERHEAD" ? "OH" : l.level ?? ""].filter(Boolean).join("-");
+
 function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded: boolean }) {
   // Numbering follows the needed lines only, so it matches the Excel and print.
   const ordered = SECTIONS.flatMap((s) => lines.filter((l) => l.section === s.key && !l.notNeeded));
   const numberOf = new Map(ordered.map((l, i) => [l.key, i + 1]));
   return (
     <div className="overflow-x-auto">
-      <table className="w-full text-sm">
+      <table className="w-full text-xs">
         <thead>
           <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted-foreground)]">
-            <th className="w-10 py-2 pl-3 pr-2 font-medium">#</th>
-            <th className="py-2 pr-3 font-medium">Code</th>
-            <th className="py-2 pr-3 font-medium">Part</th>
-            <th className="py-2 pr-3 font-medium">Level</th>
-            <th className="py-2 pr-3 font-medium">Face</th>
-            <th className="py-2 pr-3 text-right font-medium">Size (mm)</th>
-            <th className="py-2 pr-3 text-right font-medium">Qty</th>
-            <th className="py-2 pr-3 font-medium">Notes</th>
+            <th className="w-8 py-1 pl-2 pr-1 font-medium">#</th>
+            <th className="py-1 pr-2 font-medium">Code</th>
+            <th className="py-1 pr-2 font-medium">Part</th>
+            <th className="py-1 pr-2 font-medium" title="Face-level: F front, B back, L left, R right; MOD = 2450 module panel">Where</th>
+            <th className="py-1 pr-2 text-right font-medium">Size (mm)</th>
+            <th className="py-1 pr-2 text-right font-medium">Qty</th>
+            <th className="py-1 pr-2 font-medium">Notes</th>
           </tr>
         </thead>
         {SECTIONS.map((sec) => {
@@ -666,10 +619,10 @@ function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded:
           return (
             <tbody key={sec.key}>
               <tr className={cn("border-l-4 bg-[var(--muted)]/50", SECTION_BAND[sec.key])}>
-                <td colSpan={8} className="px-3 py-1.5">
+                <td colSpan={7} className="px-2 py-0.5" title={sec.blurb}>
                   <span className="font-semibold">{sec.title}</span>
-                  <span className="ml-2 text-xs text-[var(--muted-foreground)]">
-                    {count} {count === 1 ? "line" : "lines"} · {sec.blurb}
+                  <span className="ml-2 text-[11px] text-[var(--muted-foreground)]">
+                    {count} {count === 1 ? "line" : "lines"}
                   </span>
                 </td>
               </tr>
@@ -681,33 +634,29 @@ function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded:
                     l.notNeeded && "text-[var(--muted-foreground)] opacity-60",
                   )}
                 >
-                  <td className="py-1.5 pl-3 pr-2 tabular-nums text-[var(--muted-foreground)]">
+                  <td className="py-0.5 pl-2 pr-1 tabular-nums text-[var(--muted-foreground)]">
                     {l.notNeeded ? "" : numberOf.get(l.key)}
                   </td>
-                  <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-xs">{l.code ?? ""}</td>
-                  <td className="py-1.5 pr-3">
-                    {l.drawing && (
-                      <span className="mr-1.5 font-mono text-[11px] text-[var(--muted-foreground)]">{l.drawing}</span>
-                    )}
+                  <td className="whitespace-nowrap py-0.5 pr-2 font-mono text-[11px]" title={l.mark ? `Piece mark: ${l.mark}` : undefined}>
+                    {l.code ?? ""}
+                  </td>
+                  <td className="py-0.5 pr-2">
                     {l.part}
+                    {l.drawing && (
+                      <span className="ml-1.5 font-mono text-[10px] text-[var(--muted-foreground)]">{l.drawing}</span>
+                    )}
                   </td>
-                  <td className="whitespace-nowrap py-1.5 pr-3">{l.level ?? ""}</td>
-                  <td className="whitespace-nowrap py-1.5 pr-3">{l.face ?? ""}</td>
-                  <td className="whitespace-nowrap py-1.5 pr-3 text-right tabular-nums">{l.notNeeded ? "—" : l.size}</td>
-                  <td className="whitespace-nowrap py-1.5 pr-3 text-right font-semibold tabular-nums">
-                    {l.notNeeded ? <span className="text-xs font-normal">not needed</span> : l.qty.toLocaleString("en-IN")}
+                  <td className="whitespace-nowrap py-0.5 pr-2 font-mono text-[11px]">{whereOf(l)}</td>
+                  <td className="whitespace-nowrap py-0.5 pr-2 text-right tabular-nums">{l.notNeeded ? "—" : l.size}</td>
+                  <td className="whitespace-nowrap py-0.5 pr-2 text-right font-semibold tabular-nums">
+                    {l.notNeeded ? <span className="font-normal">not needed</span> : l.qty.toLocaleString("en-IN")}
                   </td>
-                  <td className="py-1.5 pr-3 text-xs">
-                    <div className="flex flex-wrap items-center gap-1.5">
+                  <td className="py-0.5 pr-2 text-[11px]">
+                    <div className="flex flex-wrap items-center gap-1">
                       {l.bracket && (
-                        <span className="rounded bg-violet-50 px-1.5 py-0.5 font-medium text-violet-700">
+                        <span className="rounded bg-violet-50 px-1 font-medium text-violet-700">
                           Bracket
                         </span>
-                      )}
-                      {l.workbook && (
-                        <WbChip title={`The workbook formula gives ${l.workbook}; this list uses the corrected value.`}>
-                          ≠ workbook: {l.workbook}
-                        </WbChip>
                       )}
                       {l.note && <span className="text-[var(--muted-foreground)]">{l.note}</span>}
                     </div>
@@ -770,7 +719,7 @@ function PrintSheet({
       <table className="w-full border-collapse text-[9pt]">
         <thead>
           <tr>
-            {["#", "Code", "Part", "Level", "Face", "Size (mm)", "Qty", "Notes"].map((h) => (
+            {["#", "Piece mark", "Part", "Size (mm)", "Qty", "Notes"].map((h) => (
               <th key={h} className="border border-black px-1 py-0.5 text-left">
                 {h}
               </th>
@@ -783,20 +732,18 @@ function PrintSheet({
           return (
             <tbody key={sec.key}>
               <tr>
-                <td colSpan={8} className="border border-black bg-gray-100 px-1 py-0.5 font-bold">
+                <td colSpan={6} className="border border-black bg-gray-100 px-1 py-0.5 font-bold">
                   {sec.title}
                 </td>
               </tr>
               {ls.map((l) => (
                 <tr key={l.key}>
                   <td className="border border-black px-1">{numberOf.get(l.key)}</td>
-                  <td className="whitespace-nowrap border border-black px-1 font-mono">{l.code ?? ""}</td>
+                  <td className="whitespace-nowrap border border-black px-1 font-mono">{l.mark ?? l.code ?? ""}</td>
                   <td className="border border-black px-1">
                     {l.drawing ? `${l.drawing} ` : ""}
                     {l.part}
                   </td>
-                  <td className="border border-black px-1">{l.level ?? ""}</td>
-                  <td className="border border-black px-1">{l.face ?? ""}</td>
                   <td className="border border-black px-1 text-right">{l.size}</td>
                   <td className="border border-black px-1 text-right font-bold">{l.qty}</td>
                   <td className="border border-black px-1">{[l.bracket ? "Bracket" : "", l.note ?? ""].filter(Boolean).join(" · ")}</td>
@@ -815,8 +762,8 @@ function PrintSheet({
 
 function Group({ title, children }: { title: string; children: React.ReactNode }) {
   return (
-    <div className="space-y-2">
-      <div className="text-[11px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{title}</div>
+    <div className="space-y-1">
+      <div className="text-[10px] font-semibold uppercase tracking-wide text-[var(--muted-foreground)]">{title}</div>
       {children}
     </div>
   );
@@ -842,7 +789,7 @@ interface RowProps {
 
 function RowLabel({ label, unit, k, sources, issue }: Omit<RowProps, "inp"> & { unit?: string }) {
   return (
-    <span className="flex min-w-0 items-center gap-1.5 text-sm">
+    <span className="flex min-w-0 items-center gap-1 text-xs">
       <span
         className={cn(
           "truncate",
@@ -870,7 +817,7 @@ function NumRow({
 }: RowProps & { unit?: string; onChange: (k: keyof Ralph400Inputs, raw: string) => void }) {
   const v = p.inp[p.k] as number;
   return (
-    <label className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-2" title={p.issue?.msg}>
+    <label className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-1.5" title={p.issue?.msg}>
       <RowLabel label={p.label} unit={unit} k={p.k} sources={p.sources} issue={p.issue} />
       <Input
         size="sm"
@@ -893,7 +840,7 @@ function SelectRow({
 }: RowProps & { options: readonly string[]; onChange: (k: keyof Ralph400Inputs, v: string) => void }) {
   const v = String(p.inp[p.k] ?? "");
   return (
-    <label className="grid grid-cols-[minmax(0,1fr)_7rem] items-center gap-2" title={p.issue?.msg}>
+    <label className="grid grid-cols-[minmax(0,1fr)_6rem] items-center gap-1.5" title={p.issue?.msg}>
       <RowLabel label={p.label} k={p.k} sources={p.sources} issue={p.issue} />
       <Select size="sm" value={v} onChange={(e) => onChange(p.k, e.target.value)} className={fieldTone(p.issue)}>
         <option value="">— pick —</option>

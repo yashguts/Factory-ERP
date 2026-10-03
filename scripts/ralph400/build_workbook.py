@@ -60,6 +60,7 @@ lines = [
     ("1. Fill the yellow cells on 'Inputs'. Nothing else needs typing for a job.", None),
     ("2. Read 'Checks'. Every line must say OK before the list is used.", None),
     ("3. 'Part List' is the BOM. Filter column F (Needed) to YES to see only what this job gets.", None),
+    ("   Column J is the piece mark to write on each part: code · face-level · size (see Catalog).", None),
     ("", None),
     ("To change a rule (e.g. a cover allowance or a panel height) edit the blue cell on 'Rules'.", BOLD),
     ("Every formula refers to rules and inputs by NAME (e.g. Cover_135, In_Width), never by a typed number,", None),
@@ -277,100 +278,111 @@ ws = wb.create_sheet("Part List")
 ws.cell(row=1, column=1, value='="RALPH 400 structure part list - job "&In_JobNo').font = TITLE
 ws.cell(row=2, column=1, value="Filter column F (Needed) to YES for the job's list. Sizes in mm. Do not type in this sheet: change Inputs or Rules.").font = MUTED
 HR = 4
-header(ws, HR, ["Section", "Code", "Part", "Face", "Level", "Needed", "Qty", "Length / height", "Width", "Rule"],
-       [22, 16, 44, 8, 9, 8, 7, 14, 9, 70])
-ws.column_dimensions["J"].width = 70
+header(ws, HR, ["Section", "Code", "Part", "Face", "Level", "Needed", "Qty", "Length / height", "Width", "Piece mark", "Rule"],
+       [20, 13, 36, 8, 7, 8, 7, 13, 9, 30, 70])
+ws.column_dimensions["K"].width = 70
+import json
+cat = json.load(open(sys.argv[2], encoding="utf-8"))
+NAME = {c["code"]: c["name"] for c in cat}
 rows = []  # (section, code_formula, part, face, level, needed_formula, qty_formula, len_formula, width_formula, rule)
 LV = ["GND", "1ST", "2ND", "3RD", "4TH"]
 SIDE = ["LEFT", "RIGHT", "BACK"]
+CORNERS = [("FL", "D100-0001"), ("FR", "D101-0001"), ("BL", "D102-0001"), ("BR", "D103-0001")]
 
 
 def add(*r):
     rows.append(r)
 
 
-S = "Corner posts"
-for lv in ["PIT"] + LV + ["OH"]:
-    add(S, '"R4-PST-EXT"', "Corner post extension, cut to length (3 mm)", "", lv,
-        f"AND(Built_{lv},Ext_{lv}>0)", "4", f"Ext_{lv}", None,
-        "One per corner per level; length from the Levels sheet.")
-for cn, cname, dwg in [("FL", "front-left", "D100-0001"), ("FR", "front-right", "D101-0001"),
-                       ("BL", "back-left", "D102-0001"), ("BR", "back-right", "D103-0001")]:
-    add(S, f'"R4-PST-2450-{cn}"', f"Corner post 2450, {cname} (3 mm) - dwg {dwg}", "", "",
-        "TRUE", "In_Stops", "Module", None, "One per landing.")
+def fixed(code):
+    """Code + catalog name for a part whose code never changes."""
+    return f'"{code}"', NAME[code]
 
-S = "Module panels"
+
+def cwt_pick(face, bracket, plain):
+    """Bracket version on the counterweight face, plain version elsewhere."""
+    return (f'IF(IsCWT_{face},"{bracket}","{plain}")',
+            f'=IF(IsCWT_{face},"{NAME[bracket]}","{NAME[plain]}")')
+
+
+S = "Corner posts"
+for cn, dwg in CORNERS:
+    add(S, *fixed(f"R4-PST-{cn}"), "", "", "TRUE", "In_Stops", "Module", None, f"One per landing. Drawing {dwg}.")
+for cn, _ in CORNERS:
+    for lv in ["PIT"] + LV + ["OH"]:
+        add(S, *fixed(f"R4-PSX-{cn}"), "", lv, f"AND(Built_{lv},Ext_{lv}>0)", "1", f"Ext_{lv}", None,
+            "One per corner per level (corners are mirrored); length from the Levels sheet.")
+
+S = "Module panels (MOD)"
 for f in SIDE:
-    add(S, '"R4-GLS-1098"', "Glass, lowest module panel 1098 (6 mm)", f, "", f"Glass_{f}", "1",
-        "Glass_Lowest", f"Span_{f}+Glass_Allow", "Lowest module glass, one per glass face.")
+    add(S, *fixed("R4-GL-6"), f, "MOD", f"Glass_{f}", "1", "Glass_Lowest", f"Span_{f}+Glass_Allow",
+        "Lowest module glass (1098), one per glass face.")
 for f in SIDE:
-    add(S, '"R4-GLS-1128"', "Glass, module panel 1128 (6 mm)", f, "", f"Glass_{f}", "2*In_Stops-1",
-        "Glass_Panel", f"Span_{f}+Glass_Allow", "Two per landing per glass face, less the lowest.")
+    add(S, *fixed("R4-GL-6"), f, "MOD", f"Glass_{f}", "2*In_Stops-1", "Glass_Panel", f"Span_{f}+Glass_Allow",
+        "Module glass (1128): two per landing per glass face, less the lowest.")
 for f in SIDE:
-    add(S, '"R4-CLD-1062"', "Cladding sheet, lowest module panel 1062 (1.2 mm)", f, "", f"Clad_{f}", "1",
-        "Clad_Lowest", f"Span_{f}", "Lowest module sheet on the counterweight face.")
+    add(S, *fixed("R4-SH-12"), f, "MOD", f"Clad_{f}", "1", "Clad_Lowest", f"Span_{f}",
+        "Lowest module sheet (1062) on the counterweight face.")
 for f in SIDE:
-    add(S, '"R4-CLD-1090"', "Cladding sheet, module panel 1090 (1.2 mm)", f, "", f"Clad_{f}", "2*In_Stops-1",
-        "Clad_Panel", f"Span_{f}", "Two per landing on the counterweight face, less the lowest.")
+    add(S, *fixed("R4-SH-12"), f, "MOD", f"Clad_{f}", "2*In_Stops-1", "Clad_Panel", f"Span_{f}",
+        "Module sheet (1090): two per landing on the counterweight face, less the lowest.")
 
 S = "Extension glass"
 for f in SIDE:
     for lv in LV:
-        add(S, '"R4-GLS-EXT"', "Glass, extension panel (6 mm)", f, lv, f"AND(Glass_{f},Built_{lv},GlassH_{lv}>0)", "1",
+        add(S, *fixed("R4-GL-6"), f, lv, f"AND(Glass_{f},Built_{lv},GlassH_{lv}>0)", "1",
             f"GlassH_{lv}", f"Span_{f}+Glass_Allow", "Extension - 97 tall; face span + 35 wide.")
 
 S = "Extension cladding"
 for f in SIDE + ["FRONT"]:
     for lv in LV:
-        add(S, '"R4-CLD-EXT"', "Cladding sheet, extension panel (1.2 mm)", f, lv, f"AND(Clad_{f},Built_{lv},CladH_{lv}>0)", "1",
+        add(S, *fixed("R4-SH-12"), f, lv, f"AND(Clad_{f},Built_{lv},CladH_{lv}>0)", "1",
             f"CladH_{lv}", f"Span_{f}", "Extension - 142 tall; face span wide.")
 for f in SIDE + ["FRONT"]:
-    add(S, '"R4-CLD-OH"', "Cladding sheet, overhead panel (1.2 mm)", f, "OH", "CladH_OH>0", "1",
-        "CladH_OH", f"Span_{f}", "Overhead is clad on all four faces: overhead extension - 202.5 tall.")
+    add(S, *fixed("R4-SH-12"), f, "OH", "CladH_OH>0", "1", "CladH_OH", f"Span_{f}",
+        "Overhead is clad on all four faces: overhead extension - 202.5 tall.")
 
 S = "Channels and covers"
 for f in SIDE:
-    add(S, f'IF(IsCWT_{f},"R4-CHN-170B","R4-CHN-170")', "=IF(IsCWT_%s,\"Base channel 170, bracket version (3 mm)\",\"Base channel 170 (1.5 mm)\")" % f,
-        f, "", "TRUE", "1", f"Span_{f}", None, "Bottom ring; bracket version on the counterweight face.")
+    add(S, *cwt_pick(f, "R4-C170-30B", "R4-C170-15"), f, "", "TRUE", "1", f"Span_{f}", None,
+        "Bottom ring; bracket version on the counterweight face.")
 for f in SIDE:
-    add(S, '"R4-CVR-170"', "Cover for base channel 170 (1.2 mm)", f, "", f"NOT(IsCWT_{f})", "1",
-        f"Span_{f}+Cover_170", None, "Channel + 9. None on the counterweight face.")
-add(S, '"R4-CHN-142"', "Sill channel 142", "FRONT", "", "TRUE", "In_Stops", "Span_FRONT", None, "One per landing.")
+    add(S, *fixed("R4-V170-12"), f, "", f"NOT(IsCWT_{f})", "1", f"Span_{f}+Cover_170", None,
+        "Channel + 9. None on the counterweight face.")
+add(S, *fixed("R4-C142"), "", "", "TRUE", "In_Stops", "Span_FRONT", None, "One per landing, across the door face.")
 for f in SIDE:
-    add(S, '"R4-CHN-135"', "Channel 135 (1.5 mm)", f, "", f"NOT(IsCWT_{f})", "Ch135_Per_Stop*In_Stops-1",
-        f"Span_{f}", None, "3 x stops - 1 per glass face. Replaced by the bracket channel on the counterweight face.")
+    add(S, *fixed("R4-C135-15"), f, "", f"NOT(IsCWT_{f})", "Ch135_Per_Stop*In_Stops-1", f"Span_{f}", None,
+        "3 x stops - 1 per glass face. Replaced by the bracket channel on the counterweight face.")
 for f in SIDE:
-    add(S, '"R4-CVR-135"', "Cover for channel 135 (1.2 mm)", f, "", f"NOT(IsCWT_{f})", "Ch135_Per_Stop*In_Stops-1",
-        f"Span_{f}+Cover_135", None, "Channel + 38, one per 135 channel.")
-rows.append((S, '"R4-CHN-135B"', "Bracket channel 135 (3 mm)", "=In_CWT", "", 'OR(In_CWT="LEFT",In_CWT="RIGHT",In_CWT="BACK")',
-             "Ch135_Per_Stop*In_Stops-1", "Span_CWT", None, "On the counterweight face, where the counterweight rail brackets fix."))
+    add(S, *fixed("R4-V135-12"), f, "", f"NOT(IsCWT_{f})", "Ch135_Per_Stop*In_Stops-1", f"Span_{f}+Cover_135", None,
+        "Channel + 38, one per 135 channel.")
+add(S, *fixed("R4-C135-30B"), "=In_CWT", "", 'OR(In_CWT="LEFT",In_CWT="RIGHT",In_CWT="BACK")',
+    "Ch135_Per_Stop*In_Stops-1", "Span_CWT", None, "On the counterweight face, where the counterweight rail brackets fix.")
 for f in SIDE + ["FRONT"]:
-    add(S, f'IF(IsCWT_{f},"R4-CHN-TOPB","R4-CHN-TOP")', "=IF(IsCWT_%s,\"Top channel, bracket version (3 mm)\",\"Top channel (3 mm)\")" % f,
-        f, "", "TRUE", "1", f"Span_{f}", None, "Top frame, one per face.")
+    add(S, *cwt_pick(f, "R4-CTP-30B", "R4-CTP-30"), f, "", "TRUE", "1", f"Span_{f}", None,
+        "Top frame, one per face (own profile).")
 
 S = "Overhead ring"
 for f in SIDE + ["FRONT"]:
-    add(S, f'IF(IsCWT_{f},"R4-CHN-RNGB","R4-CHN-RNG")', "=IF(IsCWT_%s,\"Overhead ring channel 135, bracket version\",\"Overhead ring channel 135\")" % f,
-        f, "", "TRUE", "1", f"Span_{f}", None, "One 135 channel per face closing the overhead.")
+    add(S, *cwt_pick(f, "R4-CRG-30B", "R4-CRG-15"), f, "", "TRUE", "1", f"Span_{f}", None,
+        "One ring channel per face closing the overhead (own profile).")
 for f in SIDE:
-    add(S, '"R4-CVR-RNG"', "Cover for overhead ring channel 135 (1.2 mm)", f, "", f"NOT(IsCWT_{f})", "1",
-        f"Span_{f}+Cover_135", None, "Channel + 38. None on the counterweight face or the front.")
+    add(S, *fixed("R4-VRG-12"), f, "", f"NOT(IsCWT_{f})", "1", f"Span_{f}+Cover_135", None,
+        "Channel + 38. None on the counterweight face or the front.")
 
 S = "Doors and plates"
-for code, part in [("R4-DOR-DLP-R", "Door post, D-locking, RH"), ("R4-DOR-CLD-R", "Door post cladding, RH"),
-                   ("R4-DOR-LNT-R", "Lintel panel, RH"), ("R4-DOR-DLP-L", "Door post, D-locking, LH"),
-                   ("R4-DOR-CLD-L", "Door post cladding, LH"), ("R4-DOR-LNT-L", "Lintel panel, LH"),
-                   ("R4-CHN-HDR", "Header bracket channel"), ("R4-CHN-DWT", "Dead weight channel")]:
-    rule = "One per landing. Both hands: the door has a jamb on each side."
-    if code == "R4-DOR-DLP-R":
-        part = '="Door post, D-locking, RH - opening "&In_DoorOpening'
-    add(S, f'"{code}"', part, "", "", "TRUE", "In_Stops", None, None,
-        rule if "DOR" in code else "One per landing.")
-add(S, '"R4-PLT-122"', "Bracket fixing plate 122", "", "", "TRUE", "Plate122_Per_Job", None, None, "Fixed per job.")
-add(S, '"R4-PLT-124"', "Bracket fixing plate 124", "", "", "TRUE", "Plate124_Per_Bracket*(Ch135_Per_Stop*In_Stops-1)", None, None,
+for code in ["R4-DLP-R", "R4-DPC-R", "R4-LNT-R", "R4-DLP-L", "R4-DPC-L", "R4-LNT-L"]:
+    c, part = fixed(code)
+    if code == "R4-DLP-R":
+        part = f'="{NAME[code]} · opening "&In_DoorOpening'
+    add(S, c, part, "", "", "TRUE", "In_Stops", None, None, "One per landing. Both hands: the door has a jamb on each side.")
+add(S, *fixed("R4-CHD"), "", "", "TRUE", "In_Stops", None, None, "One per landing.")
+add(S, *fixed("R4-CDW"), "", "", "TRUE", "In_Stops", None, None, "One per landing.")
+add(S, *fixed("R4-P122"), "", "", "TRUE", "Plate122_Per_Job", None, None, "Fixed per job.")
+add(S, *fixed("R4-P124"), "", "", "TRUE", "Plate124_Per_Bracket*(Ch135_Per_Stop*In_Stops-1)", None, None,
     "2 per 135 bracket channel.")
-add(S, '"R4-PLT-JHX"', "Joint plate, hex", "", "", "TRUE", "JointHex_Per_Stop*In_Stops", None, None, "Per landing.")
-add(S, '"R4-PLT-JHL"', "Joint plate, hole", "", "", "TRUE", "JointHole_Per_Stop*In_Stops", None, None, "Per landing.")
+add(S, *fixed("R4-PJX"), "", "", "TRUE", "JointHex_Per_Stop*In_Stops", None, None, "Per landing.")
+add(S, *fixed("R4-PJH"), "", "", "TRUE", "JointHole_Per_Stop*In_Stops", None, None, "Per landing.")
 
 first = HR + 1
 last_parts = HR + len(rows)
@@ -383,46 +395,47 @@ def cnt(pattern):
     return f'SUMIFS({QTY},{CODE},"{pattern}")'
 
 
-m8 = (f"M8_Ch170*{cnt('R4-CHN-170*')}"
-      f"+M8_Ch135*({cnt('R4-CHN-135*')}+{cnt('R4-CHN-TOP*')}+{cnt('R4-CHN-RNG*')})"
-      f"+M8_Lintel*{cnt('R4-DOR-LNT*')}+M8_Post_Per_Stop*In_Stops+M8_Post_Top")
-m5 = (f"M5_Sill_Ground+M5_Sill*(In_Stops-1)+M5_Cover*{cnt('R4-CVR-*')}"
-      f"+M5_Ch170*{cnt('R4-CHN-170*')}"
-      f"+M5_Ch135*({cnt('R4-CHN-135*')}+{cnt('R4-CHN-TOP*')}+{cnt('R4-CHN-RNG*')})"
-      f"+M5_DeadWeight*{cnt('R4-CHN-DWT')}+M5_DoorPost_DLock*{cnt('R4-DOR-DLP*')}"
-      f"+M5_DoorPost_Clad*{cnt('R4-DOR-CLD*')}+M5_Lintel*{cnt('R4-DOR-LNT*')}")
+CH135_FAMILY = f"({cnt('R4-C135*')}+{cnt('R4-CTP*')}+{cnt('R4-CRG*')})"
+m8 = (f"M8_Ch170*{cnt('R4-C170*')}+M8_Ch135*{CH135_FAMILY}"
+      f"+M8_Lintel*{cnt('R4-LNT*')}+M8_Post_Per_Stop*In_Stops+M8_Post_Top")
+m5 = (f"M5_Sill_Ground+M5_Sill*(In_Stops-1)+M5_Cover*{cnt('R4-V*')}"
+      f"+M5_Ch170*{cnt('R4-C170*')}+M5_Ch135*{CH135_FAMILY}"
+      f"+M5_DeadWeight*{cnt('R4-CDW')}+M5_DoorPost_DLock*{cnt('R4-DLP*')}"
+      f"+M5_DoorPost_Clad*{cnt('R4-DPC*')}+M5_Lintel*{cnt('R4-LNT*')}")
 S = "Fasteners"
-add(S, '"R4-FST-B830"', "Bolt M8 x 30", "", "", "TRUE", m8, None, None,
-    "Counted from the parts above using the M8 per-part figures on Rules.")
-add(S, '"R4-FST-RN8"', "Rivnut M8", "", "", "TRUE", "Total_M8", None, None, "One per M8 bolt.")
-add(S, '"R4-FST-S520"', "Screw M5 x 20", "", "", "TRUE", m5, None, None,
-    "Counted from the parts above using the M5 per-part figures on Rules.")
-add(S, '"R4-FST-RN5"', "Rivnut M5", "", "", "TRUE", "Total_M5", None, None, "One per M5 screw.")
+add(S, *fixed("R4-B830"), "", "", "TRUE", m8, None, None, "Counted from the parts above using the M8 per-part figures on Rules.")
+add(S, *fixed("R4-RN8"), "", "", "TRUE", "Total_M8", None, None, "One per M8 bolt.")
+add(S, *fixed("R4-S520"), "", "", "TRUE", m5, None, None, "Counted from the parts above using the M5 per-part figures on Rules.")
+add(S, *fixed("R4-RN5"), "", "", "TRUE", "Total_M5", None, None, "One per M5 screw.")
 
-prev = None
 for i, (sec, code, part, face, lv, need, qty, ln, wd, rule) in enumerate(rows, first):
+    # Piece mark = code · face-level · size, e.g. "R4-C135-15 · B · 1400".
+    # &"" keeps an empty cell as text (a bare reference to it reads as 0).
+    pos = f'IF(D{i}&""="",E{i}&"",IF(E{i}&""="",LEFT(D{i},1),LEFT(D{i},1)&"-"&E{i}))'
+    size = f'IF(H{i}="","",IF(I{i}="",H{i}&"",H{i}&" × "&I{i}))'
+    mark = f'=IF(F{i}="YES",B{i}&IF({pos}="",""," · "&{pos})&IF({size}="",""," · "&{size}),"")'
     vals = [sec, f"={code}", part, face, lv,
             f'=IF({need},"YES","no")',
             f'=IF(F{i}="YES",{qty},0)',
             f'=IF(F{i}="YES",{ln},"")' if ln else "",
             f'=IF(F{i}="YES",{wd},"")' if wd else "",
+            mark,
             rule]
     for col, v in enumerate(vals, 1):
         c = ws.cell(row=i, column=col, value=v)
         c.border = BOX
-        if col in (2, 6, 7, 8, 9):
+        if col in (2, 6, 7, 8, 9, 10):
             c.fill = GREY
-    ws.cell(row=i, column=10).alignment = Alignment(wrap_text=False)
-    if code == '"R4-FST-B830"':
+    if code == '"R4-B830"':
         name("Total_M8", f"'Part List'!$G${i}")
-    if code == '"R4-FST-S520"':
+    if code == '"R4-S520"':
         name("Total_M5", f"'Part List'!$G${i}")
 name(QTY, f"'Part List'!$G${first}:$G${last_parts}")
 name(CODE, f"'Part List'!$B${first}:$B${last_parts}")
 end = HR + len(rows)
-ws.auto_filter.ref = f"A{HR}:J{end}"
+ws.auto_filter.ref = f"A{HR}:K{end}"
 ws.freeze_panes = ws.cell(row=HR + 1, column=4)
-ws.conditional_formatting.add(f"A{first}:J{end}", FormulaRule(formula=[f'$F{first}="no"'], font=Font(color="A6A6A6")))
+ws.conditional_formatting.add(f"A{first}:K{end}", FormulaRule(formula=[f'$F{first}="no"'], font=Font(color="A6A6A6")))
 t = end + 2
 ws.cell(row=t, column=3, value="Total pieces (needed lines)").font = BOLD
 ws.cell(row=t, column=7, value=f"=SUM(G{first}:G{end})").font = BOLD
@@ -461,17 +474,17 @@ ws.cell(row=n + 2, column=2, value=f'=IF(COUNTIF(B2:B{n},"CHECK")=0,"OK","CHECK"
 # ---------------------------------------------------------------- Catalog
 ws = wb.create_sheet("Catalog")
 header(ws, 1, ["Code", "Name", "Family"], [18, 52, 10])
-import json
-cat = json.load(open(sys.argv[2], encoding="utf-8"))
 for i, c in enumerate(cat, 2):
     for col, v in enumerate([c["code"], c["name"], c["family"]], 1):
         ws.cell(row=i, column=col, value=v).border = BOX
 r = len(cat) + 3
 for t in [
-    "Code pattern: R4-<FAMILY>-<VARIANT>[-<HAND>]",
-    "PST corner posts (3 mm) | GLS glass 6 mm | CLD sheet cladding 1.2 mm | CHN channels | CVR channel covers 1.2 mm",
-    "DOR door frame | PLT plates | FST fasteners.   B at the end = 3 mm bracket version (counterweight face).",
-    "One code per part TYPE: the cut size, face and level are separate columns, never part of the code.",
+    "CODE says what the part IS: profile, thickness, hand. Two pieces share a code only if they can be swapped.",
+    "  R4-<PART>[-<thickness>][B]   thickness: 15 = 1.5 mm, 30 = 3 mm, 12 = 1.2 mm, 6 = 6 mm.  B = bracket version (counterweight face).",
+    "  Corner parts end in the corner (FL, FR, BL, BR); door parts in the hand (R, L).",
+    "PIECE MARK says where it goes and its size: code · face-level · size, e.g. R4-C135-15 · B · 1400 or R4-SH-12 · L-GND · 986 × 1350.",
+    "  Faces: F front (door), B back, L left, R right.  Levels: PIT, GND, 1ST-4TH, OH (overhead), MOD (2450 module panel).",
+    "NAME: <noun> <size> · <variant> · <thickness>, noun first so an A-Z sort keeps channels, covers, posts and plates together.",
 ]:
     ws.cell(row=r, column=1, value=t)
     r += 1
@@ -497,6 +510,8 @@ changes = [
     ("4TH back glass / 1ST back glass (CWT RIGHT) / 4TH left glass", "C4-135 / NO / missing cell", "span + 35", "Slips 6-8"),
     ("Left / right covers, top channels", "used W, no +allowance, blank when CWT BACK", "face span + allowance; always a length", "Slips 9-13"),
     ("Bracket tags, text quantities, #VALUE!", "tested wrong cell / text / errors", "code ends in B; numeric quantities", "Slips 1, 14"),
+    ("Part names and codes", "workbook row text (e.g. HZ CH LEFT COVER 170 (1.2MM))", "item codes + tidy names + piece marks (Catalog sheet)", "Owner, 3 Oct 2026"),
+    ("Corner post extensions", "one line x 4 per level", "one line per corner per level (mirrored parts)", "Owner, 3 Oct 2026"),
 ]
 for i, row in enumerate(changes, 2):
     for col, v in enumerate(row, 1):

@@ -4,8 +4,8 @@
    Turns the Sheet2 model (model.ts) into what the factory actually needs: a
    list of parts for ONE job, one line per part per level/face, only the parts
    the job uses, with a size and a quantity. The arithmetic stays in model.ts
-   (clean mode = the corrected workbook); this file only reshapes it, checks
-   the inputs, and notes where the owner's workbook formula would differ.
+   (clean mode = the owner's current rules); this file only reshapes it, checks
+   the inputs, and adds item codes + piece marks (catalog.ts).
    ------------------------------------------------------------------ */
 
 import {
@@ -22,7 +22,7 @@ import {
   type Ralph400Inputs,
   type Ralph400Result,
 } from "./model";
-import { catalogItem, codeFor } from "./catalog";
+import { catalogItem, codeFor, pieceMark } from "./catalog";
 
 export const MAX_STOPS = 6; // H1..H5 = five rises
 export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD"] as const;
@@ -43,8 +43,10 @@ export interface PartLine {
   key: string;
   section: SectionKey;
   part: string;
-  /** Structure item code (lib/ralph400/catalog.ts), e.g. R4-CHN-135. */
+  /** Structure item code (lib/ralph400/catalog.ts), e.g. R4-C135-15. */
   code?: string;
+  /** Piece mark: code · face-level · size, e.g. "R4-C135-15 · B · 1400". */
+  mark?: string;
   drawing?: string;
   level?: string;
   face?: string;
@@ -56,8 +58,6 @@ export interface PartLine {
   bracket?: boolean;
   /** Present in the sheet but not supplied for this job (qty/length "NO"). */
   notNeeded?: boolean;
-  /** What the owner's workbook formula gives when it differs from this line. */
-  workbook?: string;
 }
 
 export interface InputIssue {
@@ -163,21 +163,23 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
   const out: PartLine[] = [];
   const F = inp.floors;
 
-  // Corner verticals: the four corner rows are identical per level -> one line, qty 4.
-  const v0 = m.verticals[0];
-  v0.cells.forEach((c, i) => {
-    const size = figSize(c);
-    const level = LEVEL_LABELS[i];
-    if (i >= 1 && i <= 5 && !m.activeLevels[i]) return; // level not in this job
-    out.push({
-      key: `verticals|${level}`,
-      section: "verticals",
-      part: "Corner vertical extension",
-      level,
-      size: size ?? "",
-      qty: 4,
-      note: "1 per corner: front-left, front-right, back-left, back-right",
-      notNeeded: !size,
+  // Corner verticals: one line per corner per level. The four corners are
+  // mirrored parts (own codes), though they share a length at each level.
+  m.verticals.forEach((row) => {
+    const corner = clean(row.desc).replace(/ VERTICAL EXTN$/, "");
+    row.cells.forEach((c, i) => {
+      const size = figSize(c);
+      const level = LEVEL_LABELS[i];
+      if (i >= 1 && i <= 5 && !m.activeLevels[i]) return; // level not in this job
+      out.push({
+        key: `verticals|${corner}|${level}`,
+        section: "verticals",
+        part: clean(row.desc),
+        level,
+        size: size ?? "",
+        qty: 1,
+        notNeeded: !size,
+      });
     });
   });
 
@@ -195,6 +197,8 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
       part: clean(r.desc),
       drawing: r.dwg,
       face: isPanel ? faceOf(r.desc) : undefined,
+      // Module panels carry level MOD so their piece mark reads e.g. "L-MOD".
+      level: isPanel ? "MOD" : undefined,
       size,
       qty: qty ?? 0,
       notNeeded: !(qty && size),
@@ -281,30 +285,13 @@ export function buildPartList(raw: Ralph400Inputs, opts: { driveType?: string | 
   const model = compute(inp, "clean");
   const lines = linesFrom(model, inp);
 
-  // Mark where the owner's workbook formula (sheet mode) gives something else.
-  const sheet = new Map(linesFrom(compute(inp, "sheet"), inp).map((l) => [l.key, l]));
-  for (const l of lines) {
-    const s = sheet.get(l.key);
-    // Fasteners are counted from the other parts, so a workbook slip on a
-    // channel would show twice; the slip is already flagged on that channel.
-    if (!s || l.section === "hardware" && /RIV|BOLT|SCREW/.test(l.part)) continue;
-    // Compare what would actually be listed. A workbook row with a quantity but
-    // no size still puts pieces on the owner's list, so it counts as different.
-    const mine = l.notNeeded ? null : `${l.qty} × ${l.size || "—"}`;
-    const theirs = s.notNeeded ? (s.qty ? `${s.qty} listed, no size` : null) : `${s.qty} × ${s.size || "—"}`;
-    if (mine !== theirs) l.workbook = theirs ?? "not supplied";
-  }
-
   // Item code + catalog name. The workbook-style description stays in `key`.
   for (const l of lines) {
-    const code =
-      l.section === "cladding" && l.level === "OVERHEAD"
-        ? "R4-CLD-OH"
-        : codeFor(l.part, { section: l.section, bracket: l.bracket });
-    const item = catalogItem(code);
+    const item = catalogItem(codeFor(l.part, { section: l.section, bracket: l.bracket }));
     if (item) {
       l.code = item.code;
       l.part = item.name;
+      l.mark = pieceMark(item.code, l.face, l.level, l.size);
     }
   }
 
