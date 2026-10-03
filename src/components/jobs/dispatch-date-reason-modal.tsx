@@ -24,60 +24,90 @@ function fmtDate(d: string | null): string {
 }
 
 /**
- * One dialog for the whole Req. Dispatch Date change: pick the new date AND the
- * reason together, then Save. Keeping it in a single modal (instead of editing
- * the date inline and prompting for a reason afterwards) avoids the awkward
- * "change the date, click away, then a prompt appears" two-step — and the row
- * never moves until the change is confirmed.
+ * The Req. Dispatch Date change dialog. Management requires a reason for every
+ * change, picked from a fixed list (so the reasons stay consistent and
+ * reportable) with an "Other" escape hatch that takes a free-text remark.
  *
- * Management requires a reason for every change, picked from a fixed list (so
- * the reasons stay consistent and reportable) with an "Other" escape hatch that
- * takes a free-text remark. Save stays disabled until the date actually differs
- * from the saved one and a valid reason is given.
+ * Two modes, one component:
+ *  - Pick-date mode (the jobs list): no `proposedDate` is passed, so the dialog
+ *    shows a date picker AND the reason together — the whole change in one Save,
+ *    with no edit-then-click-away two-step.
+ *  - Reason-only mode (the edit form): a `proposedDate` is passed because the
+ *    new date was already typed into the form; the dialog only confirms the
+ *    move and captures the reason.
+ *
+ * `onConfirm` always receives (newDate, reason); in reason-only mode newDate is
+ * the proposedDate passed straight back.
  */
 export function DispatchDateReasonModal({
   jobNumber,
   savedDate,
+  proposedDate,
   onConfirm,
   onCancel,
 }: {
   jobNumber: string;
+  /** The currently-persisted date ("from"). */
   savedDate: string | null;
+  /** When provided (incl. null), the dialog is reason-only and this is the "to". */
+  proposedDate?: string | null;
   onConfirm: (newDate: string | null, reason: string) => void;
   onCancel: () => void;
 }) {
-  const [date, setDate] = useState(savedDate ?? "");
+  const reasonOnly = proposedDate !== undefined;
+  const [date, setDate] = useState(reasonOnly ? (proposedDate ?? "") : (savedDate ?? ""));
   const [category, setCategory] = useState("");
   const [remark, setRemark] = useState("");
 
-  const newDate = date || null;
+  const newDate = reasonOnly ? (proposedDate ?? null) : (date || null);
   const dateChanged = newDate !== (savedDate ?? null);
   const reason = composeDispatchDateReason(category, remark);
   const isOther = category === DISPATCH_DATE_REASON_OTHER;
-  const canSave = dateChanged && !!reason;
+  const canSave = (reasonOnly || dateChanged) && !!reason;
 
   return (
-    <Modal title="Change Req. Dispatch Date" size="sm" onClose={onCancel}>
+    <Modal
+      title={reasonOnly ? "Reason for changing Req. Dispatch Date" : "Change Req. Dispatch Date"}
+      size="sm"
+      onClose={onCancel}
+    >
       <div className="space-y-4">
         <p className="text-sm text-[var(--muted-foreground)]">
           Job <span className="font-mono font-medium text-[var(--foreground)]">{jobNumber}</span>
-          {" — currently "}
-          <span className="font-medium text-[var(--foreground)]">{fmtDate(savedDate)}</span>.
+          {reasonOnly ? (
+            <>
+              {" — moving "}
+              <span className="font-medium text-[var(--foreground)]">{fmtDate(savedDate)}</span>
+              {" → "}
+              <span className="font-medium text-[var(--foreground)]">{fmtDate(newDate)}</span>.
+            </>
+          ) : (
+            <>
+              {" — currently "}
+              <span className="font-medium text-[var(--foreground)]">{fmtDate(savedDate)}</span>.
+            </>
+          )}
         </p>
 
-        <div>
-          <label className="mb-1 block text-sm font-medium">New date</label>
-          <Input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            autoFocus
-          />
-        </div>
+        {!reasonOnly && (
+          <div>
+            <label className="mb-1 block text-sm font-medium">New date</label>
+            <Input
+              type="date"
+              value={date}
+              onChange={(e) => setDate(e.target.value)}
+              autoFocus
+            />
+          </div>
+        )}
 
         <div>
           <label className="mb-1 block text-sm font-medium">Reason</label>
-          <Select value={category} onChange={(e) => setCategory(e.target.value)}>
+          <Select
+            value={category}
+            onChange={(e) => setCategory(e.target.value)}
+            autoFocus={reasonOnly}
+          >
             <option value="" disabled>
               Select a reason…
             </option>
@@ -104,7 +134,7 @@ export function DispatchDateReasonModal({
         )}
 
         <div className="flex items-center justify-end gap-2 pt-1">
-          {!dateChanged && (
+          {!reasonOnly && !dateChanged && (
             <span className="mr-auto text-xs text-[var(--muted-foreground)]">
               Pick a different date to continue.
             </span>

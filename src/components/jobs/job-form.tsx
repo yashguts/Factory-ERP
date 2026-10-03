@@ -17,6 +17,7 @@ import type { AppliedSuggestion, AutofillResult } from "@/components/jobs/autofi
 import { autofillFromDrawing, captureSuggestionOutcome } from "@/lib/actions/job-autofill";
 import { useToast } from "@/components/ui/toast";
 import { GadDrawingPanel } from "@/components/jobs/gad-drawing-panel";
+import { DispatchDateReasonModal } from "@/components/jobs/dispatch-date-reason-modal";
 import {
   JobDetailsPanel,
   ElevatorSpecPanel,
@@ -153,6 +154,11 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   // (per management). Updated after every successful save so repeated saves
   // don't re-prompt.
   const savedDispatchDate = useRef<string | null>(job?.requirement_dispatch_date ?? null);
+  // Open reason dialog for a dispatch-date change: holds the from/to dates and a
+  // resolver the dialog calls back with the chosen reason (null = cancelled).
+  const [dateReasonReq, setDateReasonReq] = useState<
+    { from: string | null; to: string | null; resolve: (reason: string | null) => void } | null
+  >(null);
 
   // ── Elevator spec (controls which BOM sections are visible) ──────
   const [floors, setFloors] = useState<number | "">(job?.floors ?? "");
@@ -644,29 +650,33 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
    * along with the BOM — the three save buttons share one source of truth.
    */
   /**
-   * Mandatory reason when this save would MOVE the Req. Dispatch Date off its
-   * last-persisted value. Returns null when the date is unchanged (or the job
-   * is new — the initial date isn't a "change"). Throws to abort the save
-   * when the operator refuses to give a reason.
+   * A save would MOVE the Req. Dispatch Date off its last-persisted value, so a
+   * reason is mandatory (per management). Opens the reason dialog — the same one
+   * the jobs list uses, in reason-only mode since the new date is already in the
+   * form — and resolves with the chosen reason. Returns null when there's
+   * nothing to ask (date unchanged, or a brand-new job whose initial date isn't
+   * a "change"), or `false` when the operator cancels so the caller can bail.
+   *
+   * This is deliberately called BEFORE startTransition so the dialog opens via a
+   * plain state update (the same path the jobs list uses), not from inside a
+   * transition where the render could be deferred until the save resolves.
    */
-  function dispatchDateChangeReason(): string | null {
+  async function collectDispatchReason(): Promise<string | null | false> {
     if (!savedJobId) return null;
     const next = requirementDispatchDate || null;
     if ((savedDispatchDate.current ?? null) === next) return null;
-    const r = window.prompt(
-      `Reason for changing Req. Dispatch Date${jobNumber ? ` on job ${jobNumber}` : ""} (required):`,
-      "",
-    );
-    if (r === null || !r.trim())
-      throw new Error("Save cancelled — changing the Req. Dispatch Date requires a reason.");
-    return r.trim();
+    const reason = await new Promise<string | null>((resolve) => {
+      setDateReasonReq({ from: savedDispatchDate.current ?? null, to: next, resolve });
+    });
+    return reason ? reason : false; // false = cancelled (no reason given)
   }
 
-  async function ensureJob(): Promise<string> {
+  /** Create or update the job with its current metadata, stamping the given
+   *  dispatch-date change reason (already gathered via collectDispatchReason). */
+  async function ensureJob(dispatchReason: string | null): Promise<string> {
     if (!jobNumber.trim()) throw new Error("Job Number is required");
     if (savedJobId) {
-      const reason = dispatchDateChangeReason();
-      await updateJob(savedJobId, buildJobData(), readOperator(), reason);
+      await updateJob(savedJobId, buildJobData(), readOperator(), dispatchReason);
       savedDispatchDate.current = requirementDispatchDate || null;
       setJobSaved(true);
       return savedJobId;
@@ -676,6 +686,11 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     savedDispatchDate.current = requirementDispatchDate || null;
     setJobSaved(true);
     return created.id;
+  }
+
+  /** Shared "cancelled because no reason given" feedback. */
+  function notifyDispatchReasonCancelled() {
+    toast.error("Save cancelled — changing the Req. Dispatch Date requires a reason.");
   }
 
   // ── Save handlers ─────────────────────────────────────────────────
@@ -692,30 +707,28 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
 
   function handleSaveJobDetails() {
     if (!guardRequired()) return;
-    startTransition(async () => {
-      try {
-        if (savedJobId) {
-          const reason = dispatchDateChangeReason();
-          await updateJob(savedJobId, buildJobData(), readOperator(), reason);
-          savedDispatchDate.current = requirementDispatchDate || null;
-        } else {
-          const created = await createJob({ ...buildJobData(), created_by: readOperator() });
-          setSavedJobId(created.id);
-          savedDispatchDate.current = requirementDispatchDate || null;
+    void (async () => {
+      const reason = await collectDispatchReason();
+      if (reason === false) return notifyDispatchReasonCancelled();
+      startTransition(async () => {
+        try {
+          await ensureJob(reason);
+        } catch (err: any) {
+          alert(`Error: ${err.message ?? err}`);
         }
-        setJobSaved(true);
-      } catch (err: any) {
-        alert(`Error: ${err.message ?? err}`);
-      }
-    });
+      });
+    })();
   }
 
   function handleSavePhase(phase: string) {
     if (!guardRequired()) return;
-    startTransition(async () => {
+    void (async () => {
+      const reason = await collectDispatchReason();
+      if (reason === false) return notifyDispatchReasonCancelled();
+      startTransition(async () => {
       setSavingPhase(phase); // spinner stays on the button the user clicked
       try {
-        const jobId = await ensureJob();
+        const jobId = await ensureJob(reason);
         // Persist the WHOLE job's BOM (every visible phase), not just this
         // one — otherwise edits in other phases stay client-side only and
         // are silently lost on navigation.
@@ -734,14 +747,18 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       } finally {
         setSavingPhase(null);
       }
-    });
+      });
+    })();
   }
 
   function handleSaveAll() {
     if (!guardRequired()) return;
-    startTransition(async () => {
+    void (async () => {
+      const reason = await collectDispatchReason();
+      if (reason === false) return notifyDispatchReasonCancelled();
+      startTransition(async () => {
       try {
-        const jobId = await ensureJob();
+        const jobId = await ensureJob(reason);
         if (mode === "create") {
           // New jobs: details + spec only — items are defined on the Packing
           // List R1 (it seeds itself from the shared template on first open).
@@ -761,7 +778,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       } catch (err: any) {
         alert(`Error: ${err.message ?? err}`);
       }
-    });
+      });
+    })();
   }
 
   // ── Render ────────────────────────────────────────────────────────
@@ -1049,7 +1067,12 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
                   return null;
                 }
                 try {
-                  return await ensureJob();
+                  const reason = await collectDispatchReason();
+                  if (reason === false) {
+                    notifyDispatchReasonCancelled();
+                    return null;
+                  }
+                  return await ensureJob(reason);
                 } catch (err: unknown) {
                   alert(
                     `Could not save the job before upload: ${
@@ -1064,6 +1087,22 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
           </div>
         )}
       </div>
+
+      {dateReasonReq && (
+        <DispatchDateReasonModal
+          jobNumber={jobNumber}
+          savedDate={dateReasonReq.from}
+          proposedDate={dateReasonReq.to}
+          onConfirm={(_newDate, reason) => {
+            dateReasonReq.resolve(reason);
+            setDateReasonReq(null);
+          }}
+          onCancel={() => {
+            dateReasonReq.resolve(null);
+            setDateReasonReq(null);
+          }}
+        />
+      )}
     </div>
   );
 }
