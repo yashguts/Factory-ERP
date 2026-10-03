@@ -308,8 +308,8 @@ def cwt_pick(face, bracket, plain):
 S = "Corner posts"
 for cn, dwg in CORNERS:
     add(S, *fixed(f"R4-PST-{cn}"), "", "", "TRUE", "In_Stops", "Module", None, f"One per landing. Drawing {dwg}.")
-for cn, _ in CORNERS:
-    for lv in ["PIT"] + LV + ["OH"]:
+for lv in ["PIT"] + LV + ["OH"]:
+    for cn, _ in CORNERS:
         add(S, *fixed(f"R4-PSX-{cn}"), "", lv, f"AND(Built_{lv},Ext_{lv}>0)", "1", f"Ext_{lv}", None,
             "One per corner per level (corners are mirrored); length from the Levels sheet.")
 
@@ -328,14 +328,14 @@ for f in SIDE:
         "Module sheet (1090): two per landing on the counterweight face, less the lowest.")
 
 S = "Extension glass"
-for f in SIDE:
-    for lv in LV:
+for lv in LV:
+    for f in SIDE:
         add(S, *fixed("R4-GL-6"), f, lv, f"AND(Glass_{f},Built_{lv},GlassH_{lv}>0)", "1",
             f"GlassH_{lv}", f"Span_{f}+Glass_Allow", "Extension - 97 tall; face span + 35 wide.")
 
 S = "Extension cladding"
-for f in SIDE + ["FRONT"]:
-    for lv in LV:
+for lv in LV:
+    for f in SIDE + ["FRONT"]:
         add(S, *fixed("R4-SH-12"), f, lv, f"AND(Clad_{f},Built_{lv},CladH_{lv}>0)", "1",
             f"CladH_{lv}", f"Span_{f}", "Extension - 142 tall; face span wide.")
 for f in SIDE + ["FRONT"]:

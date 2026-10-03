@@ -580,11 +580,6 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
        SHEET CLADDING LEFT (H76) is gated in clean mode only (AUDIT H76): on a
        glass face its "GLASS" pieces are already counted in the glass rows. */
     {
-      desc: "GLASS BACK COMMON 1098 X (1ST)",
-      qty: strict ? 1 : pick<Figure>(1, NA, 1),
-      len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
-    },
-    {
       desc: "GLASS LEFT COMMON 1098 X (1ST)",
       qty: strict ? 1 : pick<Figure>(NA, 1, 1),
       len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
@@ -593,6 +588,11 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       desc: "GLASS RIGHT COMMON 1098 X (1ST)",
       qty: strict ? 1 : pick<Figure>(1, 1, NA),
       len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
+    },
+    {
+      desc: "GLASS BACK COMMON 1098 X (1ST)",
+      qty: strict ? 1 : pick<Figure>(1, NA, 1),
+      len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
     {
       // I65 measured this against C4 when CWT=BACK; the owner fixed it to C5 in R1.

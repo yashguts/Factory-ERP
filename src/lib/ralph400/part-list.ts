@@ -283,7 +283,14 @@ export function buildPartList(raw: Ralph400Inputs, opts: { driveType?: string | 
   const issues = checkInputs(raw, opts);
   const inp = sanitize(raw);
   const model = compute(inp, "clean");
-  const lines = linesFrom(model, inp);
+  // Floor-wise within the sections that run per level (owner, 2026-10-03):
+  // PIT, GND ... 4TH, OVERHEAD; inside a floor the corner/face order stays.
+  // Array.sort is stable, so sections without levels keep their order.
+  const FLOOR_SECTIONS: SectionKey[] = ["verticals", "glass", "cladding"];
+  const floorIdx = (l: PartLine) =>
+    FLOOR_SECTIONS.includes(l.section) ? LEVEL_LABELS.indexOf(l.level as (typeof LEVEL_LABELS)[number]) : 0;
+  const secIdx = (l: PartLine) => SECTIONS.findIndex((s) => s.key === l.section);
+  const lines = linesFrom(model, inp).sort((a, b) => secIdx(a) - secIdx(b) || floorIdx(a) - floorIdx(b));
 
   // Item code + catalog name. The workbook-style description stays in `key`.
   for (const l of lines) {
