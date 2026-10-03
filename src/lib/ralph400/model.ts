@@ -22,6 +22,7 @@
        corner posts now run from the pit floor to 30 below the shaft top.
      * 4TH extension = H5 - 2450; the old -35 is gone (workbook S8).
      * Extension glass height = extension - 97 (45.5 + 45.5 rebates + 6).
+     * Glass width = face span + 38 everywhere (was +35; owner confirmed +38).
      * Extension cladding height = extension - 142 (67.5 + 74.5).
      * Overhead cladding height = overhead extension - (67.5 + 135).
      * Console cladding: the lowest sheet per face is 1062 (1225 - 163),
@@ -168,13 +169,6 @@ export const AUDIT: AuditRow[] = [
     note: "S20 computes a 4th-floor height but the matching width cell was never created, so the panel has no width.",
   },
   {
-    cell: "L21:P22",
-    what: "GND-2ND glass RIGHT/BACK width",
-    sheet: "face-200+38",
-    clean: "face-200+35",
-    note: "Six glass width cells were changed to +38 in the 2026-10-03 workbook, while the rest of the glass stays +35 and the marked-up Rules Book confirms +35 (20.5 + 20.5 rebate - 6). +38 is the 135 cover allowance (19 + 19). The app uses +35; not reproduced in the workbook comparison.",
-  },
-  {
     cell: "H46 / H48",
     what: "Top-channel QTY",
     sheet: '" 1" / "BRACKET,  1"',
@@ -187,6 +181,7 @@ export const AUDIT: AuditRow[] = [
 export const MODULE_H = 2450; // the fixed console module
 export const BASE_DROP = 67.5; // the module base sits half a channel below each landing
 export const GLASS_OFF = 97; // extension glass = extension - (45.5 + 45.5 + 6)
+export const GLASS_ALLOW = 38; // glass width = face span + 38 (owner, 2026-10-03; was +35)
 export const CLAD_OFF = 142; // extension cladding = extension - (67.5 + 74.5)
 export const OH_CLAD_OFF = 67.5 + 135; // overhead cladding = overhead extension - 202.5
 export const COVER_170 = 9; // 170 cover = channel + 4.5 + 4.5
@@ -388,15 +383,15 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       desc: "GLASS 6MM LEFT EXTN",
       off: GLASS_OFF,
       skipWhen: L,
-      w: (k) => (strict && k === 4 ? null : D - 200 + 35), // T20 never created
+      w: (k) => (strict && k === 4 ? null : D - 200 + GLASS_ALLOW), // T20 never created
     },
-    { desc: "GLASS 6MM RIGHT EXTN", off: GLASS_OFF, skipWhen: R, w: () => D - 200 + 35 },
+    { desc: "GLASS 6MM RIGHT EXTN", off: GLASS_OFF, skipWhen: R, w: () => D - 200 + GLASS_ALLOW },
     {
       desc: "GLASS 6MM BACK EXTN",
       off: GLASS_OFF,
       skipWhen: B,
       // AUDIT N22 (no width when CWT=RIGHT) and T22 (C4-135) in sheet mode.
-      w: (k) => (strict ? (k === 4 ? W - 135 : k === 1 && R ? -1 : W - 200 + 35) : W - 200 + 35),
+      w: (k) => (strict ? (k === 4 ? W - 135 : k === 1 && R ? -1 : W - 200 + GLASS_ALLOW) : W - 200 + GLASS_ALLOW),
     },
     {
       desc: "SHEET CLADDING 1.2MM LEFT EXTN",
@@ -582,33 +577,33 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     {
       desc: "GLASS LEFT COMMON 1098 X (1ST)",
       qty: strict ? 1 : pick<Figure>(NA, 1, 1),
-      len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
+      len: pick<Figure>(NA, D - 200 + GLASS_ALLOW, D - 200 + GLASS_ALLOW),
     },
     {
       desc: "GLASS RIGHT COMMON 1098 X (1ST)",
       qty: strict ? 1 : pick<Figure>(1, 1, NA),
-      len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
+      len: pick<Figure>(D - 200 + GLASS_ALLOW, D - 200 + GLASS_ALLOW, NA),
     },
     {
       desc: "GLASS BACK COMMON 1098 X (1ST)",
       qty: strict ? 1 : pick<Figure>(1, NA, 1),
-      len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
+      len: pick<Figure>(W - 200 + GLASS_ALLOW, NA, W - 200 + GLASS_ALLOW),
     },
     {
       // I65 measured this against C4 when CWT=BACK; the owner fixed it to C5 in R1.
       desc: "GLASS LEFT COMMON 1128 X",
       qty: strict ? 2 * F - 1 : pick<Figure>(NA, 2 * F - 1, 2 * F - 1),
-      len: pick<Figure>(NA, D - 200 + 35, D - 200 + 35),
+      len: pick<Figure>(NA, D - 200 + GLASS_ALLOW, D - 200 + GLASS_ALLOW),
     },
     {
       desc: "GLASS RIGHT COMMON 1128 X",
       qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, 2 * F - 1, NA),
-      len: pick<Figure>(D - 200 + 35, D - 200 + 35, NA),
+      len: pick<Figure>(D - 200 + GLASS_ALLOW, D - 200 + GLASS_ALLOW, NA),
     },
     {
       desc: "GLASS BACK COMMON 1128 X",
       qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, NA, 2 * F - 1),
-      len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
+      len: pick<Figure>(W - 200 + GLASS_ALLOW, NA, W - 200 + GLASS_ALLOW),
     },
     /* Cladding: the lowest sheet on a face is 1062 (2450/2 - 163, sitting on
        the 95.5 + 67.5 base), the other 2F - 1 are 1090 (2450/2 - 135). Until
