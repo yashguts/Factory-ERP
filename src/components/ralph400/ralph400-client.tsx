@@ -301,7 +301,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
   };
 
   const exportXlsx = () => {
-    const cols = ["#", "Section", "Part", "Drawing", "Level", "Face", "Size (mm)", "Qty", "Notes"];
+    const cols = ["#", "Section", "Code", "Part", "Drawing", "Level", "Face", "Size (mm)", "Qty", "Notes"];
     exportSheetsToXlsx<Record<string, string | number>>({
       filename: `RALPH400-part-list-${(inp.jobNo || "sample").replace(/[^\w-]+/g, "_")}`,
       sheets: [
@@ -310,6 +310,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
           rows: needed.map((l, i) => ({
             "#": i + 1,
             Section: SECTIONS.find((s) => s.key === l.section)?.title ?? l.section,
+            Code: l.code ?? "",
             Part: l.part,
             Drawing: l.drawing ?? "",
             Level: l.level ?? "",
@@ -649,6 +650,7 @@ function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded:
         <thead>
           <tr className="border-b border-[var(--border)] text-left text-xs text-[var(--muted-foreground)]">
             <th className="w-10 py-2 pl-3 pr-2 font-medium">#</th>
+            <th className="py-2 pr-3 font-medium">Code</th>
             <th className="py-2 pr-3 font-medium">Part</th>
             <th className="py-2 pr-3 font-medium">Level</th>
             <th className="py-2 pr-3 font-medium">Face</th>
@@ -664,7 +666,7 @@ function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded:
           return (
             <tbody key={sec.key}>
               <tr className={cn("border-l-4 bg-[var(--muted)]/50", SECTION_BAND[sec.key])}>
-                <td colSpan={7} className="px-3 py-1.5">
+                <td colSpan={8} className="px-3 py-1.5">
                   <span className="font-semibold">{sec.title}</span>
                   <span className="ml-2 text-xs text-[var(--muted-foreground)]">
                     {count} {count === 1 ? "line" : "lines"} · {sec.blurb}
@@ -682,6 +684,7 @@ function PartTable({ lines, showNotNeeded }: { lines: PartLine[]; showNotNeeded:
                   <td className="py-1.5 pl-3 pr-2 tabular-nums text-[var(--muted-foreground)]">
                     {l.notNeeded ? "" : numberOf.get(l.key)}
                   </td>
+                  <td className="whitespace-nowrap py-1.5 pr-3 font-mono text-xs">{l.code ?? ""}</td>
                   <td className="py-1.5 pr-3">
                     {l.drawing && (
                       <span className="mr-1.5 font-mono text-[11px] text-[var(--muted-foreground)]">{l.drawing}</span>
@@ -767,7 +770,7 @@ function PrintSheet({
       <table className="w-full border-collapse text-[9pt]">
         <thead>
           <tr>
-            {["#", "Part", "Level", "Face", "Size (mm)", "Qty", "Notes"].map((h) => (
+            {["#", "Code", "Part", "Level", "Face", "Size (mm)", "Qty", "Notes"].map((h) => (
               <th key={h} className="border border-black px-1 py-0.5 text-left">
                 {h}
               </th>
@@ -780,13 +783,14 @@ function PrintSheet({
           return (
             <tbody key={sec.key}>
               <tr>
-                <td colSpan={7} className="border border-black bg-gray-100 px-1 py-0.5 font-bold">
+                <td colSpan={8} className="border border-black bg-gray-100 px-1 py-0.5 font-bold">
                   {sec.title}
                 </td>
               </tr>
               {ls.map((l) => (
                 <tr key={l.key}>
                   <td className="border border-black px-1">{numberOf.get(l.key)}</td>
+                  <td className="whitespace-nowrap border border-black px-1 font-mono">{l.code ?? ""}</td>
                   <td className="border border-black px-1">
                     {l.drawing ? `${l.drawing} ` : ""}
                     {l.part}

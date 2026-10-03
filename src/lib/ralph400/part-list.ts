@@ -22,6 +22,7 @@ import {
   type Ralph400Inputs,
   type Ralph400Result,
 } from "./model";
+import { catalogItem, codeFor } from "./catalog";
 
 export const MAX_STOPS = 6; // H1..H5 = five rises
 export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD"] as const;
@@ -42,6 +43,8 @@ export interface PartLine {
   key: string;
   section: SectionKey;
   part: string;
+  /** Structure item code (lib/ralph400/catalog.ts), e.g. R4-CHN-135. */
+  code?: string;
   drawing?: string;
   level?: string;
   face?: string;
@@ -195,7 +198,6 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
       size,
       qty: qty ?? 0,
       notNeeded: !(qty && size),
-      note: /SILL/.test(r.desc) ? "Also listed under channels (Rules Book Q3: same part?)" : undefined,
     });
   });
 
@@ -244,7 +246,7 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
             ? `Bracket channel on the ${r.tag} (counterweight) face`
             : "Cut as the bracket version (counterweight face)"
           : /SILL/.test(r.desc)
-            ? "Also listed under the 2450 console (Rules Book Q3: same part?)"
+            ? "One per landing (part of the 2450 module)"
             : undefined,
     });
   });
@@ -259,7 +261,13 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
       size: "",
       qty: qty ?? 0,
       notNeeded: !qty,
-      note: r.tag ? `Door opening ${r.tag}` : /PLATE 122/.test(r.desc) ? "Fixed 2 per job" : undefined,
+      note: r.tag
+        ? `Door opening ${r.tag}`
+        : /PLATE 122/.test(r.desc)
+          ? "Fixed 2 per job"
+          : /RIV|BOLT|SCREW/.test(r.desc)
+            ? "Counted from the parts on this list"
+            : undefined,
     });
   });
 
@@ -277,12 +285,27 @@ export function buildPartList(raw: Ralph400Inputs, opts: { driveType?: string | 
   const sheet = new Map(linesFrom(compute(inp, "sheet"), inp).map((l) => [l.key, l]));
   for (const l of lines) {
     const s = sheet.get(l.key);
-    if (!s) continue;
+    // Fasteners are counted from the other parts, so a workbook slip on a
+    // channel would show twice; the slip is already flagged on that channel.
+    if (!s || l.section === "hardware" && /RIV|BOLT|SCREW/.test(l.part)) continue;
     // Compare what would actually be listed. A workbook row with a quantity but
     // no size still puts pieces on the owner's list, so it counts as different.
     const mine = l.notNeeded ? null : `${l.qty} × ${l.size || "—"}`;
     const theirs = s.notNeeded ? (s.qty ? `${s.qty} listed, no size` : null) : `${s.qty} × ${s.size || "—"}`;
     if (mine !== theirs) l.workbook = theirs ?? "not supplied";
+  }
+
+  // Item code + catalog name. The workbook-style description stays in `key`.
+  for (const l of lines) {
+    const code =
+      l.section === "cladding" && l.level === "OVERHEAD"
+        ? "R4-CLD-OH"
+        : codeFor(l.part, { section: l.section, bracket: l.bracket });
+    const item = catalogItem(code);
+    if (item) {
+      l.code = item.code;
+      l.part = item.name;
+    }
   }
 
   const needed = lines.filter((l) => !l.notNeeded);

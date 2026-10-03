@@ -29,6 +29,10 @@
      * Cover allowance: 170 covers = channel + 9 (4.5 + 4.5), 135 covers
        (incl. the 2nd-last ring) = channel + 38 (19 + 19). Was +40 for all.
      * Joint plate HEX = 12F (was 8F).
+     * M8/M5 bolts, screws and rivnuts counted from per-part figures (was a
+       flat 52F / 203F).
+     * The 2450 module no longer repeats the sill channel; it is listed once,
+       under the horizontal channels (F pieces, W - 200).
 
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
@@ -569,7 +573,6 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { dwg: "D101-0001", desc: "FRONT RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D102-0001", desc: "BACK LEFT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D103-0001", desc: "BACK RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
-    { desc: "HZ CHANNEL SILL 142", qty: F, len: W - 200 },
     /* AUDIT H69:H78. The owner's workbook gates only the length (column I)
        and leaves column H a flat 1 / 2*C8-1 / 2*C8, so a face with no glass
        still ships a quantity. Sheet mode reproduces that; clean mode gates the
@@ -633,7 +636,37 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     ]),
   ];
 
-  /* ---------------- doors, brackets, fasteners (rows 74-92) ---------------- */
+  /* ---------------- doors, brackets, fasteners (rows 81-99) ----------------
+     Fasteners follow the owner's per-part counts (handwritten Rules Book,
+     2026-10-03), summed over the parts this job actually gets; they replaced
+     the flat 52F / 203F. "150 ch" in the note is read as the 135 channel
+     family (1.5 mm, 3 mm bracket, top and 2nd-last channels); "6 + 6" on a
+     channel as 6 screws per side. Each rivnut pairs with one bolt/screw.
+       M8 / piece: 170 channel 6, 135 channel 4, lintel 4; corner posts 4 per
+                   corner per landing (16) + 2 per corner at the top (8).
+       M5 / piece: sill 5 at ground, 7 above; cover 8; 170 channel 12;
+                   135 channel 12; dead weight 4; D-locking post 8; door post
+                   cladding 8; lintel 13.
+     Both door-post sets (R and L) stay: a door opening has a jamb on each
+     side; the opening ("AT 700 R") only labels the D-locking post. */
+  const count = (test: (d: string) => boolean) =>
+    channels.reduce((n, c) => {
+      const q = nn(c.qty);
+      return test(c.desc) && isNum(q) && q > 0 && isNum(nn(c.len)) ? n + q : n;
+    }, 0);
+  const n170 = count((d) => /170/.test(d) && !/COVER/.test(d));
+  const n135 = count((d) => (/135/.test(d) || /TOP CHANNEL/.test(d)) && !/COVER/.test(d));
+  const nCover = count((d) => /COVER/.test(d));
+  const doorSets = 2; // R + L per landing
+  const m8 = 6 * n170 + 4 * n135 + 4 * doorSets * F + 16 * F + 8;
+  const m5 =
+    5 + 7 * (F - 1) + // sill
+    8 * nCover +
+    12 * n170 +
+    12 * n135 +
+    4 * F + // dead weight channel
+    (8 + 8 + 13) * doorSets * F; // D-locking post, door post cladding, lintel
+
   const hardware: HardwareRow[] = [
     { desc: "DOOR POST  D LOCKING R", tag: inp.doorOpening, qty: F },
     { desc: "DOOR POST CLADING R", qty: F },
@@ -644,13 +677,14 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { desc: "HEADER BRACKET CHANNEL", qty: F },
     // Added in R1. The 122 plate is a flat 2 whatever the floor count.
     { desc: "BRACKET FIXING PLATE 122", qty: 2 },
+    // Two per 135 bracket channel (3F - 1 of them) = 6F - 2.
     { desc: "BRACKET FIXING PLATE 124", qty: F * 3 * 2 - 2 },
     { desc: "JOINT PLATE HEX", qty: F * 12 }, // 8F until the 2026-10-03 update
     { desc: "JOINT PLATE HOLE", qty: F * 8 },
-    { desc: "RIVNUT 8", qty: 52 * F },
-    { desc: "RIV NUT 5", qty: F * 203 },
-    { desc: "M8 X 30 BOLT", qty: 52 * F },
-    { desc: "M5 X 20 SCREW", qty: F * 203 },
+    { desc: "RIVNUT 8", qty: m8 },
+    { desc: "RIV NUT 5", qty: m5 },
+    { desc: "M8 X 30 BOLT", qty: m8 },
+    { desc: "M5 X 20 SCREW", qty: m5 },
     { desc: "DEAD WEIGHT CHANNEL", qty: F * 1 },
   ];
 
