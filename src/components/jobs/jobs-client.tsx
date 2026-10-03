@@ -30,6 +30,7 @@ import { reasonRequired, alertKind, ALERT_META } from "@/lib/jobs/status-alert";
 import type { DispatchStatus } from "@/lib/actions/dispatch";
 import type { Job, JobStatus, JobStage } from "@/lib/supabase/types";
 import { DispatchPlanBoard } from "@/components/jobs/dispatch-plan-board";
+import { DispatchDateReasonModal } from "@/components/jobs/dispatch-date-reason-modal";
 import { gadAlert } from "@/lib/jobs/gad-alert";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
@@ -168,6 +169,12 @@ export function JobsClient({
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
+  // A Req. Dispatch Date edit awaiting its mandatory reason (drives the reason
+  // modal). Null = no modal open. `newDate` is the committed draft from the cell.
+  const [pendingDate, setPendingDate] = useState<{ jobId: string; newDate: string | null } | null>(null);
+  // Bumped when a date change is cancelled, to snap the (uncommitted) date cells
+  // back to their saved value — the cell watches this signal.
+  const [dateRevert, setDateRevert] = useState(0);
   // List state lives in the URL too, so Back from a job restores the view.
   const sp = useSearchParams();
   // Tab: active jobs vs. fully-dispatched ones (a job leaves "Active" once every
@@ -459,23 +466,32 @@ export function JobsClient({
   };
 
   // Req. Dispatch Date is production-critical: per management it may not move
-  // without a written reason. Asked at COMMIT time (the cell's blur/Enter, see
-  // DispatchDateCell) — never while the user is still navigating the picker.
-  // Returns false when cancelled so the cell snaps back to the saved date.
-  const handleDispatchDateChange = (jobId: string, newDate: string | null): boolean => {
+  // without a written reason, picked from a fixed list (not free text). Asked at
+  // COMMIT time (the cell's blur/Enter, see DispatchDateCell) — never while the
+  // user is still navigating the picker — by opening the reason modal with the
+  // committed draft. The cell keeps showing the new (amber/uncommitted) date
+  // until the modal resolves: confirm saves it, cancel snaps it back.
+  const handleDispatchDateChange = (jobId: string, newDate: string | null): void => {
     const job = jobs.find((j) => j.id === jobId);
-    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return true;
+    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return;
+    setPendingDate({ jobId, newDate });
+  };
+
+  const confirmDispatchDateChange = (reason: string) => {
+    if (!pendingDate) return;
     const operator = ensureOperator();
-    const r = window.prompt(
-      `Reason for changing Req. Dispatch Date on job ${job?.job_number ?? ""} (required):`,
-      "",
+    handleInlineUpdate(
+      pendingDate.jobId,
+      { requirement_dispatch_date: pendingDate.newDate },
+      { operator, reason },
     );
-    if (r === null || !r.trim()) {
-      toast.error("Date change cancelled — a reason is required.");
-      return false;
-    }
-    handleInlineUpdate(jobId, { requirement_dispatch_date: newDate }, { operator, reason: r.trim() });
-    return true;
+    setPendingDate(null);
+  };
+
+  const cancelDispatchDateChange = () => {
+    setPendingDate(null);
+    setDateRevert((n) => n + 1); // snap the date cells back to their saved value
+    toast.error("Date change cancelled — a reason is required.");
   };
 
   const SortHeader = ({ label, sortField, hint }: { label: string; sortField: SortKey; hint?: string }) => (
@@ -962,6 +978,7 @@ export function JobsClient({
                       saved={job.requirement_dispatch_date ?? null}
                       disabled={savingJobId === job.id || (dispatchStatus[job.id] ?? "none") === "full"}
                       lockedTitle={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Req. Dispatch Date is locked" : undefined}
+                      revertSignal={dateRevert}
                       onCommit={(next) => handleDispatchDateChange(job.id, next)}
                     />
                   </TableCell>
@@ -1019,6 +1036,16 @@ export function JobsClient({
           </div>
         </div>
       )}
+
+      {pendingDate && (
+        <DispatchDateReasonModal
+          jobNumber={jobs.find((j) => j.id === pendingDate.jobId)?.job_number ?? ""}
+          fromDate={jobs.find((j) => j.id === pendingDate.jobId)?.requirement_dispatch_date ?? null}
+          toDate={pendingDate.newDate}
+          onConfirm={confirmDispatchDateChange}
+          onCancel={cancelDispatchDateChange}
+        />
+      )}
     </div>
   );
 }
@@ -1027,24 +1054,32 @@ export function JobsClient({
  * Req. Dispatch Date cell. Native date inputs fire onChange on EVERY
  * month/segment change while the user is still picking, which used to pop the
  * mandatory-reason prompt before a date was even chosen. Edits therefore stay
- * LOCAL (amber = not saved yet) and only commit — reason prompt included —
+ * LOCAL (amber = not saved yet) and only commit — opening the reason modal —
  * when the user leaves the field or presses Enter. Escape reverts.
+ *
+ * Commit hands the draft to the parent, which opens the reason modal; the cell
+ * keeps showing the (amber) draft meanwhile. On confirm, the saved value
+ * updates and the amber clears via the `saved` effect; on cancel, the parent
+ * bumps `revertSignal` to snap the draft back to the saved date.
  */
 function DispatchDateCell({
   saved,
   disabled,
   lockedTitle,
+  revertSignal,
   onCommit,
 }: {
   saved: string | null;
   disabled: boolean;
   lockedTitle?: string;
-  /** Returns false when the change was cancelled — the cell snaps back. */
-  onCommit: (next: string | null) => boolean;
+  /** Incremented by the parent to discard an uncommitted draft (reason cancelled). */
+  revertSignal?: number;
+  onCommit: (next: string | null) => void;
 }) {
   const [draft, setDraft] = useState(saved ?? "");
-  // Follow the saved value after an optimistic update / external refresh.
-  useEffect(() => setDraft(saved ?? ""), [saved]);
+  // Follow the saved value after an optimistic update / external refresh, and
+  // snap back whenever the parent cancels a pending change (revertSignal bump).
+  useEffect(() => setDraft(saved ?? ""), [saved, revertSignal]);
   const dirty = (draft || null) !== (saved ?? null);
 
   return (
@@ -1056,7 +1091,7 @@ function DispatchDateCell({
       value={draft}
       onChange={(e) => setDraft(e.target.value)}
       onBlur={() => {
-        if (dirty && !onCommit(draft || null)) setDraft(saved ?? "");
+        if (dirty) onCommit(draft || null);
       }}
       onKeyDown={(e) => {
         if (e.key === "Enter") e.currentTarget.blur();
