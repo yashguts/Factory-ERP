@@ -16,6 +16,20 @@
      * H32/H33  "NO"-1 gave #VALUE! for CWT=BACK; the -1 now sits inside.
      * G30      tested C20 (an empty cell) instead of C15.
 
+   Owner's rules-book update (marked-up Rules Book + workbook, 2026-10-03).
+   These are the owner's decided rules and apply in BOTH modes:
+     * GND extension = H1 + P - 67.5 - pit piece - 2450 (workbook K8): the
+       corner posts now run from the pit floor to 30 below the shaft top.
+     * 4TH extension = H5 - 2450; the old -35 is gone (workbook S8).
+     * Extension glass height = extension - 97 (45.5 + 45.5 rebates + 6).
+     * Extension cladding height = extension - 142 (67.5 + 74.5).
+     * Overhead cladding height = overhead extension - (67.5 + 135).
+     * Console cladding: the lowest sheet per face is 1062 (1225 - 163),
+       the other 2F - 1 are 1090.
+     * Cover allowance: 170 covers = channel + 9 (4.5 + 4.5), 135 covers
+       (incl. the 2nd-last ring) = channel + 38 (19 + 19). Was +40 for all.
+     * Joint plate HEX = 12F (was 8F).
+
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
    See nn() below; this is the one place the app deliberately differs.
@@ -90,92 +104,97 @@ export interface AuditRow {
 
 /** Cells where the workbook still disagrees with its own row/column rule. */
 export const AUDIT: AuditRow[] = [
+  /* Cell references follow the owner's workbook of 2026-10-03 (Sheet2 rows
+     moved down 7 against R1). Fixed by the owner since R1 and dropped from
+     this list: T8:T11 (4TH qty now 1), I33 and I46 (now use C5 when CWT=BACK). */
   {
-    cell: "I26 / I29 / I39",
-    what: "Left/right channels, CWT=BACK",
-    sheet: "C4-200 (+40)",
-    clean: "C5-200 (+40)",
-    note: "A left- or right-hand channel spans the depth (C5), and does in every other branch; I25 and I28, the 170 channels these covers sit on, always use C5, and I40, the right-hand twin of I39, uses C5. The owner fixed this exact pattern in the glass row I65 in R1; these three still use the width (C4) when CWT=BACK.",
+    cell: "I36",
+    what: "HZ CH COVER RIGHT 170",
+    sheet: "C5-200 (CWT=LEFT) / C4-200+40 (CWT=BACK)",
+    clean: "C5-200+9",
+    note: "A right-hand cover spans the depth (C5) and carries the cover allowance (+9 on the 170 covers since the 2026-10-03 rules update). The LEFT branch has no allowance and the BACK branch still measures the width (C4); the owner already fixed the same slip on the left cover (I33).",
   },
   {
-    cell: "I29",
-    what: "HZ CH COVER RIGHT 170, CWT=LEFT",
-    sheet: "C5-200",
-    clean: "C5-200+40",
-    note: "R1 made every cover length its channel length +40 (I26, I31, I33, I36, I38, I45, I47, I49, and I29's own BACK branch). This branch alone has no +40.",
-  },
-  {
-    cell: "G37",
+    cell: "G44",
     what: "HZ CHANNEL 135 RIGHT bracket flag",
     sheet: "(none)",
     clean: "BRACKET when CWT=RIGHT",
-    note: "R1 added G35 so the LEFT 135 channel is flagged BRACKET on the counterweight side, as the BACK one (G32) already was. G37, the RIGHT one, was not given the same flag.",
+    note: "The LEFT and BACK 135 channels are flagged BRACKET on the counterweight side (G42, G39). G44, the RIGHT one, was not given the same flag.",
   },
   {
-    cell: "T8:T11",
-    what: "4RT QTY on the corner verticals",
-    sheet: "=C8",
-    clean: "1",
-    note: "Every other level QTY on these rows is a hardcoded 1.",
-  },
-  {
-    cell: "I41 / I42",
+    cell: "I48 / I49",
     what: "Top channel BACK / FRONT, CWT=BACK",
     sheet: "NO (length)",
     clean: "C4-200",
-    note: "Both rows keep a quantity when CWT=BACK (H41 even says \"BRACKET, 1\") but their length reads NO, so the top frame is left open at the back and front. The front never changes with the counterweight elsewhere (I48 is always C4-200).",
+    note: "Both rows keep a quantity when CWT=BACK (H48 even says \"BRACKET, 1\") but their length reads NO, so the top frame is left open at the back and front. The front never changes with the counterweight elsewhere (I55 is always C4-200).",
   },
   {
-    cell: "H69 / I69",
+    cell: "H76 / I76",
     what: "SHEET CLADDING LEFT COMMON, CWT≠LEFT",
     sheet: "qty 2F, length \"GLASS\"",
     clean: "NO",
-    note: "That face is glass, already counted in the glass rows, so 2F left sheets would be extra. The owner changed the matching rows 70/71 from \"GLASS\" to \"NO\"; row 69 was missed.",
+    note: "That face is glass, already counted in the glass rows, so the left sheets would be extra. The matching rows 77/78 read \"NO\"; row 76 still says \"GLASS\".",
   },
   {
-    cell: "H62:H67, H70, H71",
+    cell: "H69:H74, H77, H78",
     what: "Console glass/cladding quantities",
     sheet: "flat 1 / 2F-1 / 2F",
     clean: "NO where the length is NO",
-    note: "The quantity column ignores the counterweight while the length column follows it, so faces without that panel still list pieces (24 extra on the workbook's own sample job).",
+    note: "The quantity column ignores the counterweight while the length column follows it, so faces without that panel still list pieces.",
   },
   {
-    cell: "N15",
+    cell: "N22",
     what: "1ST glass BACK width, CWT=RIGHT",
     sheet: "NO",
     clean: "C4-200+35",
-    note: "The 1ST back glass has a height (M15) but no width when CWT=RIGHT, so the panel drops out; every other level has glass there.",
+    note: "The 1ST back glass has a height (M22) but no width when CWT=RIGHT, so the panel drops out; every other level has glass there.",
   },
   {
-    cell: "T15",
-    what: "4RT glass BACK width",
+    cell: "T22",
+    what: "4TH glass BACK width",
     sheet: "C4-135",
     clean: "C4-200+35",
     note: "Every other glass width is face-200+35; this one is 30 mm wider. Present since the original workbook.",
   },
   {
-    cell: "T13",
-    what: "4RT glass-left WIDTH",
+    cell: "T20",
+    what: "4TH glass-left WIDTH",
     sheet: "(cell missing)",
     clean: "C5-200+35",
-    note: "S13 computes a 4th-floor height but the matching width cell was never created, so the panel has no width.",
+    note: "S20 computes a 4th-floor height but the matching width cell was never created, so the panel has no width.",
   },
   {
-    cell: "H39 / H41",
+    cell: "L21:P22",
+    what: "GND-2ND glass RIGHT/BACK width",
+    sheet: "face-200+38",
+    clean: "face-200+35",
+    note: "Six glass width cells were changed to +38 in the 2026-10-03 workbook, while the rest of the glass stays +35 and the marked-up Rules Book confirms +35 (20.5 + 20.5 rebate - 6). +38 is the 135 cover allowance (19 + 19). The app uses +35; not reproduced in the workbook comparison.",
+  },
+  {
+    cell: "H46 / H48",
     what: "Top-channel QTY",
     sheet: '" 1" / "BRACKET,  1"',
     clean: "bracket flag + 1",
-    note: "Text in a quantity column. H40 was cleaned to \"1\" on 2026-09-23; H39 still holds a leading space and H41 still holds prose. Both views split these into a BRACKET tag and a numeric 1 so the column stays summable.",
+    note: "Text in a quantity column. H47 says \"BRACKET 3MM,   1\", H46 holds a leading space and H48 holds prose. Both views split these into a BRACKET tag and a numeric 1 so the column stays summable.",
   },
 ];
 
-/* Geometry constants that set the minimum usable floor-to-floor height. */
+/* Geometry constants (owner's rules-book update, 2026-10-03). */
 export const MODULE_H = 2450; // the fixed console module
-export const COVER_OFF = 135; // sheet-cover offset taken off the extension
-export const TOP_EXTRA = 35; // extra drop carried only by the 4RT row (S8)
+export const BASE_DROP = 67.5; // the module base sits half a channel below each landing
+export const GLASS_OFF = 97; // extension glass = extension - (45.5 + 45.5 + 6)
+export const CLAD_OFF = 142; // extension cladding = extension - (67.5 + 74.5)
+export const OH_CLAD_OFF = 67.5 + 135; // overhead cladding = overhead extension - 202.5
+export const COVER_170 = 9; // 170 cover = channel + 4.5 + 4.5
+export const COVER_135 = 38; // 135 cover = channel + 19 + 19
 
 const isNum = (v: unknown): v is number =>
   typeof v === "number" && isFinite(v);
+
+/** Pit stub: P - 95.5, or a fixed 74.5 when the pit is under 170. */
+export function pitPiece(pit: number): number {
+  return pit >= 170 ? pit - 95.5 : 74.5;
+}
 
 /* A length or a quantity that comes out negative is not a part anyone can make.
    Report it as "NO" — the token the sheet already uses for a part that does not
@@ -194,21 +213,25 @@ export const FLOOR_FIELDS: [FloorKey, string][] = [
   ["h5", "4th → 5th"],
 ];
 
-/** Extra height this level loses before the extension starts. */
+/** Extra height this level loses before the extension starts (GND only). */
 function levelPad(key: FloorKey, inp: Ralph400Inputs): number {
-  if (key === "h1") return inp.pitHeight >= 170 ? 0 : 170 - inp.pitHeight;
-  if (key === "h5") return TOP_EXTRA;
-  return 0;
+  if (key !== "h1") return 0;
+  // GND extension = H1 + P - 67.5 - pit piece - 2450 (workbook K8).
+  return BASE_DROP + pitPiece(inp.pitHeight) - inp.pitHeight;
 }
 
 /**
- * Minimum usable floor-to-floor height for a level. Below this the panel rows
- * would cut past zero, so the workbook blanks the whole level. Mirrors the
- * sheet gates: 2585, 2620 for 4RT, 2585+(170-pit) for GND.
+ * Minimum usable floor-to-floor height for a level: the extension must at
+ * least hold the cladding deduction, or the panel rows cut past zero and the
+ * level is blanked. 2592 for 1ST-4TH; GND 2564 with a pit of 170+, else
+ * 2734 - P.
  */
 export function minHeight(key: FloorKey, inp: Ralph400Inputs): number {
-  return MODULE_H + COVER_OFF + levelPad(key, inp);
+  return MODULE_H + CLAD_OFF + levelPad(key, inp);
 }
+
+/** Overhead must exceed this or the overhead cladding has no height. */
+export const MIN_OVERHEAD = MODULE_H + 30 - BASE_DROP + OH_CLAD_OFF; // 2615
 
 export interface Issue {
   key: FloorKey;
@@ -232,7 +255,7 @@ export function validate(inp: Ralph400Inputs): Issue[] {
     const msg =
       v < MODULE_H
         ? `${v} mm is below the ${MODULE_H} mm console module.`
-        : `leaves only ${ext} mm of extension; the panel rows need ${COVER_OFF} mm, so ${lim} mm is the minimum.`;
+        : `leaves only ${ext} mm of extension; the panel rows need ${CLAD_OFF} mm, so ${lim} mm is the minimum.`;
     out.push({
       key,
       level: "error",
@@ -255,12 +278,7 @@ export type PanelCell =
 export interface VerticalRow {
   desc: string;
   cells: Figure[];
-  /**
-   * Per-level quantity. NB: carried from the source model but NOT rendered —
-   * the original app hardcodes "1" in the Qty/level column, so the T8:T11
-   * drift in AUDIT is computed here and never shown. Preserved rather than
-   * fixed, so this port changes no figure the owner sees today.
-   */
+  /** Per-level quantity (one piece per corner per level). Not rendered. */
   qty: Figure[];
 }
 
@@ -333,20 +351,19 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
   );
 
   /* ---- corner vertical extension per level (Sheet2 rows 8-11) ---- */
-  const pitExt = nn(pit >= 170 ? pit - 95.5 : 74.5);
+  const pitExt = nn(pitPiece(pit));
   // A level that is not built, or whose extension would be negative, reads "NO".
   const vert: Figure[] = [
-    on[0]
-      ? nn(pit >= 170 ? hts[0] - 2450 : hts[0] - 2450 - (170 - pit))
-      : NA,
-    on[1] ? nn(hts[1] - 2450) : NA,
-    on[2] ? nn(hts[2] - 2450) : NA,
-    on[3] ? nn(hts[3] - 2450) : NA,
-    on[4] ? nn(hts[4] - 2450 - 35) : NA,
+    on[0] ? nn(hts[0] + pit - BASE_DROP - pitPiece(pit) - MODULE_H) : NA, // K8
+    on[1] ? nn(hts[1] - MODULE_H) : NA,
+    on[2] ? nn(hts[2] - MODULE_H) : NA,
+    on[3] ? nn(hts[3] - MODULE_H) : NA,
+    on[4] ? nn(hts[4] - MODULE_H) : NA, // S8: the old -35 is gone
   ];
   // Neither of these sits under a level gate, so they carry their own check.
-  const ohExt = nn(oh + 67.5 - 2450 - 30); // U8..U11
-  const ohPanelH = nn(oh - 2422 - 170); // U17..U20
+  const ohExtRaw = oh + BASE_DROP - MODULE_H - 30; // U8..U11
+  const ohExt = nn(ohExtRaw);
+  const ohPanelH = nn(ohExtRaw - OH_CLAD_OFF); // U24..U27
 
   /* ---------------- corner verticals ---------------- */
   const vertNames = [
@@ -358,49 +375,49 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
   const verticals: VerticalRow[] = vertNames.map((desc) => ({
     desc,
     cells: ([pitExt] as Figure[]).concat(vert).concat([ohExt]),
-    qty: [1, 1, 1, 1, 1, strict ? F : 1, 1],
+    qty: [1, 1, 1, 1, 1, 1, 1], // T8:T11 now 1 in the workbook
   }));
 
   /* ---------------- glass & sheet panels (rows 13-20) ---------------- */
   const panelDefs: PanelDef[] = [
     {
       desc: "GLASS 6MM LEFT EXTN",
-      off: 100,
+      off: GLASS_OFF,
       skipWhen: L,
-      w: (k) => (strict && k === 4 ? null : D - 200 + 35), // T13 never created
+      w: (k) => (strict && k === 4 ? null : D - 200 + 35), // T20 never created
     },
-    { desc: "GLASS 6MM RIGHT EXTN", off: 100, skipWhen: R, w: () => D - 200 + 35 },
+    { desc: "GLASS 6MM RIGHT EXTN", off: GLASS_OFF, skipWhen: R, w: () => D - 200 + 35 },
     {
       desc: "GLASS 6MM BACK EXTN",
-      off: 100,
+      off: GLASS_OFF,
       skipWhen: B,
-      // AUDIT N15 (no width when CWT=RIGHT) and T15 (C4-135) in sheet mode.
+      // AUDIT N22 (no width when CWT=RIGHT) and T22 (C4-135) in sheet mode.
       w: (k) => (strict ? (k === 4 ? W - 135 : k === 1 && R ? -1 : W - 200 + 35) : W - 200 + 35),
     },
     {
       desc: "SHEET CLADDING 1.2MM LEFT EXTN",
-      off: 135,
+      off: CLAD_OFF,
       onlyWhen: L,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
       desc: "SHEET CLADDING 1.2MM RIGHT EXTN",
-      off: 135,
+      off: CLAD_OFF,
       onlyWhen: R,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
       desc: "SHEET CLADDING 1.2MM BACK EXTN",
-      off: 135,
+      off: CLAD_OFF,
       onlyWhen: B,
       w: () => W - 200,
       ohW: W - 200,
     },
     {
       desc: "SHEET CLADDING 1.2MM FRONT EXTN",
-      off: 135,
+      off: CLAD_OFF,
       onlyWhen: B,
       w: () => W - 200,
       ohW: W - 200,
@@ -447,33 +464,34 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
 
   /* ---------------- horizontal channels (rows 25-50) ----------------
      Laid out as the owner's R1 revision (2026-09-29): every channel that has a
-     sheet cover now has its own COVER (1.2MM) row, and every cover length is
-     the channel length +40. A cover reads "NO" on the counterweight side, where
+     sheet cover now has its own COVER (1.2MM) row. Since the 2026-10-03 rules
+     update a cover is its channel +9 on the 170 rows and +38 on the 135 rows
+     (the workbook still says +40 everywhere). A cover reads "NO" on the counterweight side, where
      the channel is a bracket instead. Text quantities in the sheet ("1", " 1")
      are normalised to numbers so the column stays summable. */
   function pick<T>(l: T, b: T, r: T): T | "" {
     return L ? l : B ? b : R ? r : "";
   }
-  // AUDIT I26/I29/I39: with CWT=BACK these left/right parts use the width (C4).
+  // AUDIT I36: with CWT=BACK the right 170 cover still uses the width (C4).
   const sideB = strict ? W - 200 : D - 200;
   const channels: ChannelRow[] = [
     { desc: "HZ CHANNEL LEFT 170", br: L, qty: 1, len: D - 200 }, // row 25
     {
       desc: "HZ CH LEFT COVER 170 (1.2MM)",
       qty: pick<Figure>(NA, 1, 1),
-      len: pick<Figure>(NA, sideB + 40, D - 200 + 40),
+      len: pick<Figure>(NA, D - 200 + COVER_170, D - 200 + COVER_170),
     },
     { desc: "HZ SILL CHANNEL 142", qty: F, len: W - 200 },
     { desc: "HZ CHANNEL RIGHT 170", br: R, qty: 1, len: D - 200 },
     {
-      // AUDIT I29: the LEFT branch alone has no +40.
+      // AUDIT I36: the LEFT branch alone has no cover allowance.
       desc: "HZ CH COVER RIGHT 170",
       qty: pick<Figure>(1, 1, NA),
-      len: pick<Figure>(strict ? D - 200 : D - 200 + 40, sideB + 40, NA),
+      len: pick<Figure>(strict ? D - 200 : D - 200 + COVER_170, sideB + COVER_170, NA),
     },
     // G30 tested C20 as written in R1; fixed to C15 in the workbook.
     { desc: "HZ CHANNEL 170 BACK", br: B, qty: 1, len: W - 200 }, // row 30
-    { desc: "HZ CH BACK COVER 170 (1.2MM)", qty: pick<Figure>(1, NA, 1), len: W - 200 + 40 },
+    { desc: "HZ CH BACK COVER 170 (1.2MM)", qty: pick<Figure>(1, NA, 1), len: W - 200 + COVER_170 },
     {
       // R1 changed this quantity from 3F to 3F-1, but wrote the -1 outside the
       // IF, so CWT=BACK gave "NO"-1 = #VALUE!. Fixed in the workbook (fix 9).
@@ -485,7 +503,7 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     {
       desc: "HZ CHANNEL 135 BACK COVER (1.2MM)",
       qty: pick<Figure>(F * 3 - 1, NA, F * 3 - 1),
-      len: pick<Figure>(W - 200 + 40, NA, W - 200 + 40),
+      len: pick<Figure>(W - 200 + COVER_135, NA, W - 200 + COVER_135),
     },
     {
       desc: "HZ BRACKET CHANNEL 135 (3MM)",
@@ -503,10 +521,10 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     {
       desc: "HZ CHANNEL 135 LEFT COVER (1.2MM)",
       qty: pick<Figure>(NA, F * 3 - 1, F * 3 - 1),
-      len: pick<Figure>(NA, D - 200 + 40, D - 200 + 40),
+      len: pick<Figure>(NA, D - 200 + COVER_135, D - 200 + COVER_135),
     },
     {
-      // AUDIT G37: no BRACKET flag in the sheet, unlike its LEFT and BACK twins.
+      // AUDIT G44: no BRACKET flag in the sheet, unlike its LEFT and BACK twins.
       desc: "HZ CHANNEL 135 RIGHT (1.5MM)",
       br: !strict && R,
       qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
@@ -515,17 +533,17 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     {
       desc: "HZ CHANNEL 135 RIGHT COVER (1.2MM)",
       qty: pick<Figure>(F * 3 - 1, F * 3 - 1, NA),
-      len: pick<Figure>(D - 200 + 40, D - 200 + 40, NA),
+      len: pick<Figure>(D - 200 + COVER_135, D - 200 + COVER_135, NA),
     },
     {
       desc: "HZ TOP CHANNEL LEFT (3MM)",
       br: L,
       qty: 1,
-      len: pick<Figure>(D - 200, sideB, D - 200),
+      len: D - 200,
     },
     { desc: "HZ TOP CHANNEL RIGHT (3MM)", br: R, qty: 1, len: D - 200 },
     {
-      // AUDIT I41/I42: the sheet drops these lengths when CWT=BACK.
+      // AUDIT I48/I49: the sheet drops these lengths when CWT=BACK.
       desc: "HZ TOP CHANNEL BACK (3MM)",
       br: B,
       qty: 1,
@@ -537,11 +555,11 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       len: pick<Figure>(W - 200, strict ? NA : W - 200, W - 200),
     },
     { desc: "HZ 2ND LAST CHANNEL 135 MM LEFT", br: L, qty: 1, len: D - 200 }, // row 44
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM LEFT", qty: pick<Figure>(NA, 1, 1), len: D - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM LEFT", qty: pick<Figure>(NA, 1, 1), len: D - 200 + COVER_135 },
     { desc: "HZ 2ND LAST CHANNEL 135 MM RIGHT", br: R, qty: 1, len: D - 200 },
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM RIGHT", qty: pick<Figure>(1, 1, NA), len: D - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM RIGHT", qty: pick<Figure>(1, 1, NA), len: D - 200 + COVER_135 },
     { desc: "HZ 2ND LAST CHANNEL 135 MM FRONT", qty: 1, len: W - 200 },
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM BACK", qty: pick<Figure>(1, NA, 1), len: W - 200 + 40 },
+    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM BACK", qty: pick<Figure>(1, NA, 1), len: W - 200 + COVER_135 },
     { desc: "HZ 2ND LAST CHANNEL 135 MM BACK", br: B, qty: 1, len: W - 200 }, // row 50
   ];
 
@@ -552,11 +570,11 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { dwg: "D102-0001", desc: "BACK LEFT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { dwg: "D103-0001", desc: "BACK RIGHT VERTICAL (2450MM, 3MM THICK)", qty: F, len: 2450 },
     { desc: "HZ CHANNEL SILL 142", qty: F, len: W - 200 },
-    /* AUDIT H62:H71. The owner's workbook gates only the length (column I)
+    /* AUDIT H69:H78. The owner's workbook gates only the length (column I)
        and leaves column H a flat 1 / 2*C8-1 / 2*C8, so a face with no glass
        still ships a quantity. Sheet mode reproduces that; clean mode gates the
        quantity with the length.
-       SHEET CLADDING LEFT (H69) is gated in clean mode only (AUDIT H69): on a
+       SHEET CLADDING LEFT (H76) is gated in clean mode only (AUDIT H76): on a
        glass face its "GLASS" pieces are already counted in the glass rows. */
     {
       desc: "GLASS BACK COMMON 1098 X (1ST)",
@@ -589,22 +607,30 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, NA, 2 * F - 1),
       len: pick<Figure>(W - 200 + 35, NA, W - 200 + 35),
     },
-    {
-      desc: "SHEET CLADDING LEFT COMMON 1.2MM 1090MM",
-      qty: strict ? 2 * F : pick<Figure>(2 * F, NA, NA),
-      len: strict ? pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS") : pick<Figure>(D - 200, NA, NA),
-    },
-    {
-      // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
-      desc: "SHEET CLADDING RIGHT COMMON 1.2MM 1090MM",
-      qty: strict ? 2 * F : pick<Figure>(NA, NA, 2 * F),
-      len: pick<Figure>(NA, NA, D - 200),
-    },
-    {
-      desc: "SHEET CLADDING BACK COMMON 1.2MM 1090MM",
-      qty: strict ? 2 * F : pick<Figure>(NA, 2 * F, NA),
-      len: pick<Figure>(NA, W - 200, NA),
-    },
+    /* Cladding: the lowest sheet on a face is 1062 (2450/2 - 163, sitting on
+       the 95.5 + 67.5 base), the other 2F - 1 are 1090 (2450/2 - 135). Until
+       the 2026-10-03 rules update the workbook listed 2F at 1090. */
+    ...([
+      [1062, 1, "(1ST)"],
+      [1090, 2 * F - 1, ""],
+    ] as const).flatMap(([pane, n, tag]) => [
+      {
+        desc: `SHEET CLADDING LEFT COMMON 1.2MM ${pane}MM ${tag}`,
+        qty: strict ? n : pick<Figure>(n, NA, NA),
+        len: strict ? pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS") : pick<Figure>(D - 200, NA, NA),
+      },
+      {
+        // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
+        desc: `SHEET CLADDING RIGHT COMMON 1.2MM ${pane}MM ${tag}`,
+        qty: strict ? n : pick<Figure>(NA, NA, n),
+        len: pick<Figure>(NA, NA, D - 200),
+      },
+      {
+        desc: `SHEET CLADDING BACK COMMON 1.2MM ${pane}MM ${tag}`,
+        qty: strict ? n : pick<Figure>(NA, n, NA),
+        len: pick<Figure>(NA, W - 200, NA),
+      },
+    ]),
   ];
 
   /* ---------------- doors, brackets, fasteners (rows 74-92) ---------------- */
@@ -619,7 +645,7 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     // Added in R1. The 122 plate is a flat 2 whatever the floor count.
     { desc: "BRACKET FIXING PLATE 122", qty: 2 },
     { desc: "BRACKET FIXING PLATE 124", qty: F * 3 * 2 - 2 },
-    { desc: "JOINT PLATE HEX", qty: F * 8 },
+    { desc: "JOINT PLATE HEX", qty: F * 12 }, // 8F until the 2026-10-03 update
     { desc: "JOINT PLATE HOLE", qty: F * 8 },
     { desc: "RIVNUT 8", qty: 52 * F },
     { desc: "RIV NUT 5", qty: F * 203 },

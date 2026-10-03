@@ -11,6 +11,7 @@
 import {
   compute,
   FLOOR_FIELDS,
+  MIN_OVERHEAD,
   MODULE_H,
   NA,
   OPTIONS,
@@ -32,7 +33,7 @@ export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
   { key: "console", title: "2450 console modules", blurb: "One fixed module per landing: corner verticals, sill, standard panes" },
   { key: "glass", title: "Glass panels 6 mm", blurb: "Extension glass on every side face except the counterweight face" },
   { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face (and front when CWT is BACK); overhead on all four faces" },
-  { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 40" },
+  { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 9 (170) or + 38 (135)" },
   { key: "overhead", title: "Overhead ring", blurb: "2nd-last channels closing the overhead" },
   { key: "hardware", title: "Doors, plates & fasteners", blurb: "Counted per floor" },
 ];
@@ -100,8 +101,8 @@ export function checkInputs(inp: Ralph400Inputs, opts: { driveType?: string | nu
   if (!(inp.shaftWidth > 200)) out.push({ level: "error", field: "shaftWidth", msg: "Width external is missing." });
   if (!(inp.shaftDepth > 200)) out.push({ level: "error", field: "shaftDepth", msg: "Depth external is missing." });
   if (!(inp.overHead > 0)) out.push({ level: "error", field: "overHead", msg: "Over head is missing." });
-  else if (inp.overHead <= 2592)
-    out.push({ level: "error", field: "overHead", msg: `Over head ${inp.overHead} mm leaves no room for the overhead cladding (needs more than 2592 mm).` });
+  else if (inp.overHead <= MIN_OVERHEAD)
+    out.push({ level: "error", field: "overHead", msg: `Over head ${inp.overHead} mm leaves no room for the overhead cladding (needs more than ${MIN_OVERHEAD} mm).` });
   if (!(inp.pitHeight >= 0)) out.push({ level: "error", field: "pitHeight", msg: "Pit height is missing." });
   // A blank pit reads as 0, which quietly adds 170 mm to the bottom floor's minimum.
   else if (inp.pitHeight === 0)
@@ -130,7 +131,7 @@ export function checkInputs(inp: Ralph400Inputs, opts: { driveType?: string | nu
         out.push({
           level: "error",
           field: key,
-          msg: `${label} ${v} mm is below the ${lim} mm minimum (2450 module + 135 channel${key === "h1" && inp.pitHeight < 170 ? ` + ${170 - inp.pitHeight} for the shallow pit` : key === "h5" ? " + 35" : ""}); its panels would be negative.`,
+          msg: `${label} ${v} mm is below the ${lim} mm minimum (2450 module + 142 cladding deduction${key === "h1" ? ", adjusted for the pit" : ""}); its panels would be negative.`,
         });
     } else if (isNum(v) && v > 0) {
       out.push({ level: "warn", field: key, msg: `${label} is filled (${v} mm) but the job has only ${F} stops — ignored.` });
