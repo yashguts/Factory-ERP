@@ -19,7 +19,7 @@ import { Toolbar } from "@/components/ui/toolbar";
 import { Tabs } from "@/components/ui/tabs";
 import { ExportButton } from "@/components/ui/export-button";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle } from "lucide-react";
+import { Search, Upload, ClipboardList, ChevronLeft, ChevronRight, ArrowUpDown, Plus, AlertTriangle, CalendarDays } from "lucide-react";
 import Link from "next/link";
 import { Badge } from "@/components/ui/badge";
 import type { BadgeVariant } from "@/components/ui/badge";
@@ -169,12 +169,9 @@ export function JobsClient({
   const [jobs, setJobs] = useState(initialJobs);
   // Track which individual row is saving (doesn't block other rows)
   const [savingJobId, setSavingJobId] = useState<string | null>(null);
-  // A Req. Dispatch Date edit awaiting its mandatory reason (drives the reason
-  // modal). Null = no modal open. `newDate` is the committed draft from the cell.
-  const [pendingDate, setPendingDate] = useState<{ jobId: string; newDate: string | null } | null>(null);
-  // Bumped when a date change is cancelled, to snap the (uncommitted) date cells
-  // back to their saved value — the cell watches this signal.
-  const [dateRevert, setDateRevert] = useState(0);
+  // The job whose Req. Dispatch Date is being changed (drives the change modal).
+  // Null = no modal open. The modal picks the new date AND the reason together.
+  const [pendingDateJobId, setPendingDateJobId] = useState<string | null>(null);
   // List state lives in the URL too, so Back from a job restores the view.
   const sp = useSearchParams();
   // Tab: active jobs vs. fully-dispatched ones (a job leaves "Active" once every
@@ -466,32 +463,18 @@ export function JobsClient({
   };
 
   // Req. Dispatch Date is production-critical: per management it may not move
-  // without a written reason, picked from a fixed list (not free text). Asked at
-  // COMMIT time (the cell's blur/Enter, see DispatchDateCell) — never while the
-  // user is still navigating the picker — by opening the reason modal with the
-  // committed draft. The cell keeps showing the new (amber/uncommitted) date
-  // until the modal resolves: confirm saves it, cancel snaps it back.
-  const handleDispatchDateChange = (jobId: string, newDate: string | null): void => {
-    const job = jobs.find((j) => j.id === jobId);
-    if ((job?.requirement_dispatch_date ?? null) === (newDate ?? null)) return;
-    setPendingDate({ jobId, newDate });
-  };
-
-  const confirmDispatchDateChange = (reason: string) => {
-    if (!pendingDate) return;
+  // without a written reason, picked from a fixed list (not free text). The
+  // whole change happens in one modal — new date + reason together — so the row
+  // never moves until Save and there's no awkward edit-then-click-away step.
+  const confirmDispatchDateChange = (newDate: string | null, reason: string) => {
+    if (!pendingDateJobId) return;
     const operator = ensureOperator();
     handleInlineUpdate(
-      pendingDate.jobId,
-      { requirement_dispatch_date: pendingDate.newDate },
+      pendingDateJobId,
+      { requirement_dispatch_date: newDate },
       { operator, reason },
     );
-    setPendingDate(null);
-  };
-
-  const cancelDispatchDateChange = () => {
-    setPendingDate(null);
-    setDateRevert((n) => n + 1); // snap the date cells back to their saved value
-    toast.error("Date change cancelled — a reason is required.");
+    setPendingDateJobId(null);
   };
 
   const SortHeader = ({ label, sortField, hint }: { label: string; sortField: SortKey; hint?: string }) => (
@@ -976,10 +959,9 @@ export function JobsClient({
                         history. Req. Dispatch and Status are frozen read-only. */}
                     <DispatchDateCell
                       saved={job.requirement_dispatch_date ?? null}
-                      disabled={savingJobId === job.id || (dispatchStatus[job.id] ?? "none") === "full"}
-                      lockedTitle={(dispatchStatus[job.id] ?? "none") === "full" ? "Fully dispatched — Req. Dispatch Date is locked" : undefined}
-                      revertSignal={dateRevert}
-                      onCommit={(next) => handleDispatchDateChange(job.id, next)}
+                      locked={(dispatchStatus[job.id] ?? "none") === "full"}
+                      lockedTitle="Fully dispatched — Req. Dispatch Date is locked"
+                      onEdit={() => setPendingDateJobId(job.id)}
                     />
                   </TableCell>
                   <TableCell onClick={(e) => e.stopPropagation()}>
@@ -1037,73 +1019,67 @@ export function JobsClient({
         </div>
       )}
 
-      {pendingDate && (
+      {pendingDateJobId && (
         <DispatchDateReasonModal
-          jobNumber={jobs.find((j) => j.id === pendingDate.jobId)?.job_number ?? ""}
-          fromDate={jobs.find((j) => j.id === pendingDate.jobId)?.requirement_dispatch_date ?? null}
-          toDate={pendingDate.newDate}
+          jobNumber={jobs.find((j) => j.id === pendingDateJobId)?.job_number ?? ""}
+          savedDate={jobs.find((j) => j.id === pendingDateJobId)?.requirement_dispatch_date ?? null}
           onConfirm={confirmDispatchDateChange}
-          onCancel={cancelDispatchDateChange}
+          onCancel={() => setPendingDateJobId(null)}
         />
       )}
     </div>
   );
 }
 
+// Show the saved date as dd-mm-yyyy (matching what the office is used to), or a
+// dash when unset. Parsed as local so the day never shifts across timezones.
+function fmtDispatchDate(d: string | null): string {
+  if (!d) return "—";
+  const [y, m, day] = d.split("-").map(Number);
+  if (!y || !m || !day) return d;
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${p(day)}-${p(m)}-${y}`;
+}
+
 /**
- * Req. Dispatch Date cell. Native date inputs fire onChange on EVERY
- * month/segment change while the user is still picking, which used to pop the
- * mandatory-reason prompt before a date was even chosen. Edits therefore stay
- * LOCAL (amber = not saved yet) and only commit — opening the reason modal —
- * when the user leaves the field or presses Enter. Escape reverts.
- *
- * Commit hands the draft to the parent, which opens the reason modal; the cell
- * keeps showing the (amber) draft meanwhile. On confirm, the saved value
- * updates and the amber clears via the `saved` effect; on cancel, the parent
- * bumps `revertSignal` to snap the draft back to the saved date.
+ * Req. Dispatch Date cell — a single click opens the change dialog (new date +
+ * mandatory reason together). It is NOT an inline date input: editing the date
+ * inline and then prompting for the reason afterwards felt clunky (change the
+ * date, click away, then a modal appears) and risked clicking onto the row and
+ * navigating off. A read-only trigger keeps the whole change in one dialog and
+ * the row stable until Save. Fully-dispatched jobs show the date locked.
  */
 function DispatchDateCell({
   saved,
-  disabled,
+  locked,
   lockedTitle,
-  revertSignal,
-  onCommit,
+  onEdit,
 }: {
   saved: string | null;
-  disabled: boolean;
+  locked: boolean;
   lockedTitle?: string;
-  /** Incremented by the parent to discard an uncommitted draft (reason cancelled). */
-  revertSignal?: number;
-  onCommit: (next: string | null) => void;
+  onEdit: () => void;
 }) {
-  const [draft, setDraft] = useState(saved ?? "");
-  // Follow the saved value after an optimistic update / external refresh, and
-  // snap back whenever the parent cancels a pending change (revertSignal bump).
-  useEffect(() => setDraft(saved ?? ""), [saved, revertSignal]);
-  const dirty = (draft || null) !== (saved ?? null);
-
+  if (locked) {
+    return (
+      <span
+        className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] px-2 py-1 text-xs text-[var(--muted-foreground)] cursor-not-allowed opacity-70 w-[130px]"
+        title={lockedTitle}
+      >
+        <CalendarDays size={12} className="shrink-0" />
+        {fmtDispatchDate(saved)}
+      </span>
+    );
+  }
   return (
-    <input
-      type="date"
-      className={`text-xs bg-transparent border rounded px-2 py-1 w-[130px] cursor-pointer hover:border-[var(--border-strong)] focus:ring-2 focus:ring-[var(--ring)] focus:border-[var(--primary)] focus:outline-none transition-colors disabled:cursor-not-allowed disabled:opacity-70 ${
-        dirty ? "border-amber-400 bg-amber-50" : "border-[var(--border)]"
-      }`}
-      value={draft}
-      onChange={(e) => setDraft(e.target.value)}
-      onBlur={() => {
-        if (dirty) onCommit(draft || null);
-      }}
-      onKeyDown={(e) => {
-        if (e.key === "Enter") e.currentTarget.blur();
-        else if (e.key === "Escape") setDraft(saved ?? "");
-      }}
-      disabled={disabled}
-      title={
-        lockedTitle ??
-        (dirty
-          ? "New date not saved yet — click away or press Enter to save (you'll be asked for the reason)"
-          : undefined)
-      }
-    />
+    <button
+      type="button"
+      onClick={onEdit}
+      title="Click to change the Req. Dispatch Date (a reason is required)"
+      className="inline-flex items-center gap-1.5 rounded border border-[var(--border)] bg-transparent px-2 py-1 text-xs cursor-pointer hover:border-[var(--border-strong)] hover:bg-[var(--muted)] focus:outline-none focus:ring-2 focus:ring-[var(--ring)] transition-colors w-[130px]"
+    >
+      <CalendarDays size={12} className="shrink-0 text-[var(--muted-foreground)]" />
+      {saved ? fmtDispatchDate(saved) : <span className="text-[var(--muted-foreground)]">Set date</span>}
+    </button>
   );
 }
