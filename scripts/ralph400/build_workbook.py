@@ -103,7 +103,7 @@ LABEL = {
     "N_Ch170": "no. of 170 ch", "N_Ch135": "no. of 135/top/ring ch", "N_Cover": "no. of covers",
     "N_Lintel": "no. of lintels", "N_DLock": "no. of D-lock posts", "N_PostClad": "no. of post claddings",
     "N_DeadWeight": "no. of dead wt ch", "Count_M8": "M8 count", "Count_M5": "M5 count",
-    "PL_Qty": "Qty", "PL_Code": "Code", "Door_Hand": "Door hand",
+    "PL_Qty": "Qty", "PL_Code": "Code", "Door_Hand": "Door hand", "Span_FRONT_Ext": "Front ext width",
 }
 SAY = []  # (row, col, expression) -> the formula in words, written at the end
 
@@ -231,7 +231,8 @@ for lv in LV:
 section("Sheet cladding 1.2 mm (extensions + overhead)")
 for lv in LV:
     for f in SIDE + ["FRONT"]:
-        add(*fixed("R4-SH-12"), f, lv, f"AND(Clad_{f},Built_{lv})", "1", f"Ext_{lv}-Clad_Deduct", f"Span_{f}")
+        wd = "Span_FRONT_Ext" if f == "FRONT" else f"Span_{f}"
+        add(*fixed("R4-SH-12"), f, lv, f"AND(Clad_{f},Built_{lv})", "1", f"Ext_{lv}-Clad_Deduct", wd)
 for f in SIDE + ["FRONT"]:
     add(*fixed("R4-SH-12"), f, "OH", "Ext_OH>OH_Clad_Deduct", "1", "Ext_OH-OH_Clad_Deduct", f"Span_{f}")
 section("Horizontal channels & covers")
@@ -414,6 +415,7 @@ calcs += [
 ]
 for f, span in [("LEFT", "In_Depth"), ("RIGHT", "In_Depth"), ("BACK", "In_Width"), ("FRONT", "In_Width")]:
     calcs.append((f"Span_{f}", f"={span}-Face_Deduct", f"{f.title()} face span (channel / panel width)."))
+calcs.append(("Span_FRONT_Ext", "=In_Depth-Face_Deduct", "Front extension cladding width: depth - 200 (owner v2 row 20, 9 Oct 2026)."))
 for f in ["LEFT", "RIGHT", "BACK"]:
     calcs.append((f"IsCWT_{f}", f'=In_CWT="{f}"', f"Is the counterweight on the {f.lower()}?"))
 calcs.append(("IsCWT_FRONT", "=FALSE", "The front is the door."))

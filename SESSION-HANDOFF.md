@@ -25,8 +25,12 @@ Those stay; only the owner's R1 → v1 edits were applied, here and in `scripts/
   reproduces both exactly (GND extension 28 shorter, overhead extension 28 longer, posts still pit floor →
   30 below the top). The overhead cladding keeps its height (v1 left `U17` alone): its deduction is now
   95.5 + 135 = 230.5, and `MIN_OVERHEAD` stays 2615. GND floor minimum is now 2592 (deep pit) / 2762 − P.
-- **Row 20: the front is sheet-clad on every job** (was CWT=BACK only), width W − 200. v1 ungated the
-  heights but left the widths (`L20:T20`) gated — taken as an oversight.
+- **Row 20: the front is sheet-clad on every job** (was CWT=BACK only). Same day the owner sent **v2**, whose
+  only real change is row 20: `K20 = IF(C8>=2, K8-142)`, `L20 = IF(C8>=2, C5-200)`, … `P20 = IF(C8>=3, C5-200)`.
+  So the front extension width is now **C5 − 200 (depth)**, not W − 200 (overhead front stays C4 − 200, `V20`);
+  the − 142 height was already the rule. The `C8>=n` gates are looser than the page's own floor gate (1ST
+  needs 3 stops here, the sheet says 2), so they change nothing. `T20` reads `IF(G8>=3, G5-200)` — a
+  copy-paste slip (empty cells); the 4TH front uses C5 − 200 like `R20`.
 - **One door set per landing**, hand from the opening: R, L, or C (`… CO`); new codes `R4-DLP-C`,
   `R4-DPC-C`, `R4-LNT-C`. Fastener counts drop by one door set.
 - **New lines:** `R4-BDW` dead weight channel holding bracket (F, CO openings only, v1 `H23`); `R4-CPT` pit

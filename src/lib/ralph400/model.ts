@@ -42,7 +42,8 @@
        the pit floor to 30 below the shaft top. The overhead cladding keeps
        its height (U17 untouched), so its deduction is now 95.5 + 135.
      * Row 20: the front extension is sheet-clad on every job, not only when
-       CWT=BACK (front width = W - 200).
+       CWT=BACK. Owner v2 (K20:P20, same day): its width is C5 - 200, the
+       shaft depth; height = extension - 142 as for all cladding.
      * Rows 75-77: one door set per landing (D-locking post, post cladding,
        lintel); the hand comes from the door opening (R, L, or C for CO).
      * Row 23: dead weight channel holding bracket, F per job, CO doors only.
@@ -447,10 +448,13 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     },
     {
       // Owner v1 row 20: the front is clad on every job, whatever the CWT side.
+      // Owner v2 K20:P20 (2026-10-09): height = extension - 142 (CLAD_OFF),
+      // width = C5 - 200, the shaft DEPTH. The overhead front panel (V20)
+      // stays C4 - 200 in the owner's sheet.
       desc: "SHEET CLADDING 1.2MM FRONT EXTN",
       off: CLAD_OFF,
       onlyWhen: true,
-      w: () => W - 200,
+      w: () => D - 200,
       ohW: W - 200,
     },
   ];
