@@ -15,6 +15,32 @@ this file is quick orientation + what's fresh. Also read the auto-memory index
 
 ---
 
+## 0b — Update 2026-10-09: `/ralph400` follows the owner's workbook v1
+
+The owner sent `RALPH 400 BOM_v1.xlsx` — again a Google Sheets export of **their own copy** (R1 + their
+edits), so it does not carry the 2026-10-03 Rules Book rules (glass +38, ext − 97 / − 142, covers +9 / +38…).
+Those stay; only the owner's R1 → v1 edits were applied, here and in `scripts/ralph400/build_workbook.py`:
+
+- **Base drop 67.5 → 95.5.** v1 changed `U8` to `C7+95.5-2450-30` and kept `K8 = C9-2450`; `BASE_DROP = 95.5`
+  reproduces both exactly (GND extension 28 shorter, overhead extension 28 longer, posts still pit floor →
+  30 below the top). The overhead cladding keeps its height (v1 left `U17` alone): its deduction is now
+  95.5 + 135 = 230.5, and `MIN_OVERHEAD` stays 2615. GND floor minimum is now 2592 (deep pit) / 2762 − P.
+- **Row 20: the front is sheet-clad on every job** (was CWT=BACK only), width W − 200. v1 ungated the
+  heights but left the widths (`L20:T20`) gated — taken as an oversight.
+- **One door set per landing**, hand from the opening: R, L, or C (`… CO`); new codes `R4-DLP-C`,
+  `R4-DPC-C`, `R4-LNT-C`. Fastener counts drop by one door set.
+- **New lines:** `R4-BDW` dead weight channel holding bracket (F, CO openings only, v1 `H23`); `R4-CPT` pit
+  channels F&B ×2 + L&R ×2 when the pit piece is over 250 (pit > 345.5), right after the PIT posts, **no
+  length** (v1 gives none).
+- v1 has a dead weight channel in both row 22 and row 93; listed **once** (F) — **ask the owner**.
+- From the owner's WhatsApp list but **not** in v1, so not done: rope roller bracket, removing the overhead
+  ring, 170 channels at 3 mm.
+- **Verified:** 2,160-job before/after sweep, every difference in an intended category; the rebuilt clean
+  workbook, evaluated in real Excel over 62 jobs, matches `buildPartList()` on all 5,170 lines (and the old
+  workbook matches the old code, 0 diffs, so the check is live). `next build` passes locally on `D:` (NTFS).
+
+---
+
 ## 0a — Update 2026-09-29: `/ralph400` follows the owner's workbook revision R1
 
 The owner sent a revised workbook, `RALPH 400 BOM _ R1.xlsx`. It is a Google Sheets export of **their own

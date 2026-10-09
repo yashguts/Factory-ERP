@@ -30,10 +30,10 @@ export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD
 export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "channels" | "overhead" | "hardware";
 
 export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
-  { key: "verticals", title: "Corner verticals", blurb: "Extension pieces between the 2450 modules, one per corner per level" },
+  { key: "verticals", title: "Corner verticals", blurb: "Extension pieces between the 2450 modules, one per corner per level; pit channels on a deep pit" },
   { key: "console", title: "2450 console modules", blurb: "One fixed module per landing: corner verticals, sill, standard panes" },
   { key: "glass", title: "Glass panels 6 mm", blurb: "Extension glass on every side face except the counterweight face" },
-  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face (and front when CWT is BACK); overhead on all four faces" },
+  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces" },
   { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 9 (170) or + 38 (135)" },
   { key: "overhead", title: "Overhead ring", blurb: "2nd-last channels closing the overhead" },
   { key: "hardware", title: "Doors, plates & fasteners", blurb: "Counted per floor" },
@@ -183,6 +183,22 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
     });
   });
 
+  // Pit channels (owner v1 rows 24-25), listed right after the PIT corner pieces.
+  m.pitChannels.forEach((r) => {
+    const qty = figQty(r.qty);
+    out.push({
+      key: `verticals|${clean(r.desc)}`,
+      section: "verticals",
+      part: clean(r.desc),
+      level: "PIT",
+      face: r.face,
+      size: "",
+      qty: qty ?? 0,
+      notNeeded: !qty,
+      note: "Pit piece over 250 mm. Length not given in the owner's workbook yet",
+    });
+  });
+
   // 2450 console module rows.
   m.console2450.forEach((r) => {
     const qty = figQty(r.qty);
@@ -267,7 +283,9 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
       notNeeded: !qty,
       note: r.tag
         ? `Door opening ${r.tag}`
-        : /PLATE 122/.test(r.desc)
+        : /HOLDING BRACKET/.test(r.desc)
+          ? "Centre-opening (CO) doors only"
+          : /PLATE 122/.test(r.desc)
           ? "Fixed 2 per job"
           : /RIV|BOLT|SCREW/.test(r.desc)
             ? "Counted from the parts on this list"

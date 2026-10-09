@@ -103,7 +103,7 @@ LABEL = {
     "N_Ch170": "no. of 170 ch", "N_Ch135": "no. of 135/top/ring ch", "N_Cover": "no. of covers",
     "N_Lintel": "no. of lintels", "N_DLock": "no. of D-lock posts", "N_PostClad": "no. of post claddings",
     "N_DeadWeight": "no. of dead wt ch", "Count_M8": "M8 count", "Count_M5": "M5 count",
-    "PL_Qty": "Qty", "PL_Code": "Code",
+    "PL_Qty": "Qty", "PL_Code": "Code", "Door_Hand": "Door hand",
 }
 SAY = []  # (row, col, expression) -> the formula in words, written at the end
 
@@ -209,6 +209,9 @@ section("Corner verticals (one per corner per floor)")
 for lv in ["PIT"] + LV + ["OH"]:
     for cn, _ in CORNERS:
         add(*fixed(f"R4-PSX-{cn}"), "", lv, f"AND(Built_{lv},Ext_{lv}>0)", "1", f"Ext_{lv}", None)
+    if lv == "PIT":  # owner v1 rows 24-25: no length given yet
+        for pair in ["F&B", "L&R"]:
+            add(*fixed("R4-CPT"), pair, "PIT", "Ext_PIT>Pit_Channel_Min", "Pit_Channel_Per_Pair", None, None)
 section("2450 console modules")
 for cn, dwg in CORNERS:
     c, p = fixed(f"R4-PST-{cn}")
@@ -250,17 +253,17 @@ for f in SIDE + ["FRONT"]:
 for f in SIDE:
     add(*fixed("R4-VRG-12"), f, "", f"NOT(IsCWT_{f})", "1", f"Span_{f}+Cover_135", None)
 section("Doors, plates & fasteners")
-for code in ["R4-DLP-R", "R4-DPC-R", "R4-LNT-R", "R4-DLP-L", "R4-DPC-L", "R4-LNT-L"]:
-    c, p = fixed(code)
-    if code == "R4-DLP-R":
-        p = f'="{NAME[code]} - opening "&In_DoorOpening'
-    add(c, p, "", "", "TRUE", "In_Stops", None, None)
+for hand in ["R", "L", "C"]:
+    for part in ["DLP", "DPC", "LNT"]:
+        code = f"R4-{part}-{hand}"
+        add(f'"{code}"', f'="{NAME[code]} - opening "&In_DoorOpening', "", "", f'Door_Hand="{hand}"', "In_Stops", None, None)
 add(*fixed("R4-CHD"), "", "", "TRUE", "In_Stops", None, None)
 add(*fixed("R4-P122"), "", "", "TRUE", "Plate122_Per_Job", None, None)
 add(*fixed("R4-P124"), "", "", "TRUE", "Plate124_Per_Bracket*(Ch135_Per_Stop*In_Stops-1)", None, None)
 add(*fixed("R4-PJX"), "", "", "TRUE", "JointHex_Per_Stop*In_Stops", None, None)
 add(*fixed("R4-PJH"), "", "", "TRUE", "JointHole_Per_Stop*In_Stops", None, None)
 add(*fixed("R4-CDW"), "", "", "TRUE", "In_Stops", None, None)
+add(*fixed("R4-BDW"), "", "", 'Door_Hand="C"', "In_Stops", None, None)
 FAST_AT = len(sections[-1][1])
 add(*fixed("R4-B830"), "", "", "TRUE", "Count_M8", None, None)
 add(*fixed("R4-RN8"), "", "", "TRUE", "Count_M8", None, None)
@@ -324,8 +327,8 @@ heads(r + 1, ["Name", "Value", None, None, None, None, None, None, "What it mean
 rules = [
     ("Geometry", None, None),
     ("Module", 2450, "Fixed console module height at every landing (posts D100-D103)."),
-    ("Base_Drop", 67.5, "Module base sits 67.5 below each landing (half a 135 channel)."),
-    ("Pit_Stub_Deduct", 95.5, "Pit piece = pit - 95.5 (67.5 + 28) on a deep pit."),
+    ("Base_Drop", 95.5, "Module base sits 95.5 below each landing (owner v1, 9 Oct 2026; was 67.5)."),
+    ("Pit_Stub_Deduct", 95.5, "Pit piece = pit - 95.5 on a deep pit."),
     ("Pit_Stub_Min", 74.5, "Pit piece length when the pit is shallower than Shallow_Pit."),
     ("Shallow_Pit", 170, "Pit depth below which the pit piece is fixed."),
     ("Top_Gap", 30, "Corner posts stop 30 below the shaft top."),
@@ -336,8 +339,8 @@ rules = [
     ("Glass_Panel", 1128, "Module glass height (1090 + 22 + 22 - 6)."),
     ("Glass_Lowest", 1098, "Lowest module glass, 1 per glass face per job."),
     ("Cladding", None, None),
-    ("Clad_Deduct", 142, "Extension cladding height = extension - 142 (67.5 + 74.5)."),
-    ("OH_Clad_Deduct", 202.5, "Overhead cladding height = overhead extension - (67.5 + 135)."),
+    ("Clad_Deduct", 142, "Extension cladding height = extension - 142."),
+    ("OH_Clad_Deduct", 230.5, "Overhead cladding height = overhead extension - (95.5 + 135)."),
     ("Clad_Panel", 1090, "Module sheet height (2450/2 - 135)."),
     ("Clad_Lowest", 1062, "Lowest module sheet (2450/2 - 163), 1 per clad face per job."),
     ("Channels, covers, plates", None, None),
@@ -345,6 +348,8 @@ rules = [
     ("Cover_135", 38, "135 cover (incl. overhead ring) = channel + 38 (19 + 19)."),
     ("Ch135_Per_Stop", 3, "135 channels per face = 3 x stops - 1."),
     ("Plate122_Per_Job", 2, "Plate 122 per job."),
+    ("Pit_Channel_Min", 250, "Pit channels when the pit piece is over this (owner v1, 9 Oct 2026)."),
+    ("Pit_Channel_Per_Pair", 2, "Pit channels front & back, and left & right."),
     ("Plate124_Per_Bracket", 2, "Plate 124 per 135 bracket channel."),
     ("JointHex_Per_Stop", 12, "Joint plate hex per landing."),
     ("JointHole_Per_Stop", 8, "Joint plate hole per landing."),
@@ -417,8 +422,10 @@ for f in ["LEFT", "RIGHT", "BACK"]:
 calcs.append(("Glass_FRONT", "=FALSE", "The front never gets glass."))
 for f in ["LEFT", "RIGHT", "BACK"]:
     calcs.append((f"Clad_{f}", f"=IsCWT_{f}", f"Is the {f.lower()} face sheet-clad?"))
-calcs.append(("Clad_FRONT", "=IsCWT_BACK", "Front clad in the extensions only when the counterweight is at the back."))
+calcs.append(("Clad_FRONT", "=TRUE", "The front is clad on every job (owner v1, 9 Oct 2026)."))
 calcs.append(("Span_CWT", "=IF(IsCWT_BACK,Span_BACK,Span_LEFT)", "Span of the counterweight face."))
+calcs.append(("Door_Hand", '=IF(ISNUMBER(SEARCH("CO",In_DoorOpening)),"C",IF(ISNUMBER(SEARCH("L",In_DoorOpening)),"L","R"))',
+              "Door set hand from the opening: R, L, or C (centre opening)."))
 calcs.append(("Fasteners", None, None))
 QTY, CODE = "PL_Qty", "PL_Code"
 cnt = lambda p: f'SUMIFS({QTY},{CODE},"{p}")'
@@ -463,7 +470,7 @@ dv.add(f"B{IN_ROW['In_DoorOpening']}")
 for k, t in enumerate([
     "CODE = what the part IS (profile, thickness, hand). Same code only if two pieces can be swapped.",
     "R4-<PART>[-<thickness>][B]: 15 = 1.5 mm, 30 = 3 mm, 12 = 1.2 mm, 6 = 6 mm; B = bracket version (counterweight face).",
-    "Corner parts end FL / FR / BL / BR; door parts R / L.",
+    "Corner parts end FL / FR / BL / BR; door parts R / L / C (centre opening).",
     "PIECE MARK = code · face-level · size, e.g. R4-C135-15 · B · 1400. Levels: PIT, GND-4TH, OH, MOD (2450 module).",
 ], r + 1):
     ws.cell(row=k, column=3, value=t).font = MUTED

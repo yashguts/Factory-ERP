@@ -35,6 +35,21 @@
      * The 2450 module no longer repeats the sill channel; it is listed once,
        under the horizontal channels (F pieces, W - 200).
 
+   Owner's workbook v1 ("RALPH 400 BOM_v1.xlsx", 2026-10-09), applied on top:
+     * U8 overhead extension uses +95.5 (was +67.5) while K8 stays C9-2450:
+       the module base sits 95.5 below each landing, so BASE_DROP = 95.5.
+       This gives the owner's K8 and U8 exactly, and the posts still run from
+       the pit floor to 30 below the shaft top. The overhead cladding keeps
+       its height (U17 untouched), so its deduction is now 95.5 + 135.
+     * Row 20: the front extension is sheet-clad on every job, not only when
+       CWT=BACK (front width = W - 200).
+     * Rows 75-77: one door set per landing (D-locking post, post cladding,
+       lintel); the hand comes from the door opening (R, L, or C for CO).
+     * Row 23: dead weight channel holding bracket, F per job, CO doors only.
+     * Rows 24-25: pit channels, 2 front & back + 2 left & right, when the pit
+       piece (I8) is over 250. The workbook gives them no length.
+     * Row 22 adds a dead weight channel while row 93 keeps one; listed once.
+
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
    See nn() below; this is the one place the app deliberately differs.
@@ -179,11 +194,12 @@ export const AUDIT: AuditRow[] = [
 
 /* Geometry constants (owner's rules-book update, 2026-10-03). */
 export const MODULE_H = 2450; // the fixed console module
-export const BASE_DROP = 67.5; // the module base sits half a channel below each landing
+export const BASE_DROP = 95.5; // module base below each landing (owner v1 U8, 2026-10-09; was 67.5)
 export const GLASS_OFF = 97; // extension glass = extension - (45.5 + 45.5 + 6)
 export const GLASS_ALLOW = 38; // glass width = face span + 38 (owner, 2026-10-03; was +35)
-export const CLAD_OFF = 142; // extension cladding = extension - (67.5 + 74.5)
-export const OH_CLAD_OFF = 67.5 + 135; // overhead cladding = overhead extension - 202.5
+export const CLAD_OFF = 142; // extension cladding = extension - 142
+export const OH_CLAD_OFF = BASE_DROP + 135; // overhead cladding = overhead extension - 230.5 (height unchanged by v1)
+export const PIT_CHANNEL_MIN = 250; // pit channels when the pit piece is over this (v1 H24/H25)
 export const COVER_170 = 9; // 170 cover = channel + 4.5 + 4.5
 export const COVER_135 = 38; // 135 cover = channel + 19 + 19
 
@@ -215,15 +231,16 @@ export const FLOOR_FIELDS: [FloorKey, string][] = [
 /** Extra height this level loses before the extension starts (GND only). */
 function levelPad(key: FloorKey, inp: Ralph400Inputs): number {
   if (key !== "h1") return 0;
-  // GND extension = H1 + P - 67.5 - pit piece - 2450 (workbook K8).
+  // GND extension = H1 + P - 95.5 - pit piece - 2450 = workbook K8:
+  // H1 - 2450 with a pit of 170+, else H1 - 2450 - (170 - P).
   return BASE_DROP + pitPiece(inp.pitHeight) - inp.pitHeight;
 }
 
 /**
  * Minimum usable floor-to-floor height for a level: the extension must at
  * least hold the cladding deduction, or the panel rows cut past zero and the
- * level is blanked. 2592 for 1ST-4TH; GND 2564 with a pit of 170+, else
- * 2734 - P.
+ * level is blanked. 2592 for 1ST-4TH; GND 2592 with a pit of 170+, else
+ * 2762 - P.
  */
 export function minHeight(key: FloorKey, inp: Ralph400Inputs): number {
   return MODULE_H + CLAD_OFF + levelPad(key, inp);
@@ -231,6 +248,12 @@ export function minHeight(key: FloorKey, inp: Ralph400Inputs): number {
 
 /** Overhead must exceed this or the overhead cladding has no height. */
 export const MIN_OVERHEAD = MODULE_H + 30 - BASE_DROP + OH_CLAD_OFF; // 2615
+
+/** Hand of a door opening: "C" for centre opening (CO), "L" for a left hand, else "R". */
+export function doorHand(opening: string): "R" | "L" | "C" {
+  const op = (opening ?? "").toUpperCase();
+  return op.includes("CO") ? "C" : op.includes("L") ? "L" : "R";
+}
 
 export interface Issue {
   key: FloorKey;
@@ -307,8 +330,16 @@ export interface HardwareRow {
   qty: Figure;
 }
 
+/** A pit channel pair (v1 rows 24-25): no length in the workbook. */
+export interface PitChannelRow {
+  desc: string;
+  face: string; // "F&B" or "L&R"
+  qty: Figure;
+}
+
 export interface Ralph400Result {
   verticals: VerticalRow[];
+  pitChannels: PitChannelRow[];
   panels: PanelRow[];
   channels: ChannelRow[];
   console2450: ConsoleRow[];
@@ -415,12 +446,21 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       ohW: W - 200,
     },
     {
+      // Owner v1 row 20: the front is clad on every job, whatever the CWT side.
       desc: "SHEET CLADDING 1.2MM FRONT EXTN",
       off: CLAD_OFF,
-      onlyWhen: B,
+      onlyWhen: true,
       w: () => W - 200,
       ohW: W - 200,
     },
+  ];
+
+  /* Pit channels (owner v1 rows 24-25): two front & back, two left & right,
+     when the pit piece is over 250 (a pit deeper than 345.5). No length yet. */
+  const pitQty: Figure = isNum(pitExt) && pitExt > PIT_CHANNEL_MIN ? 2 : NA;
+  const pitChannels: PitChannelRow[] = [
+    { desc: "HZ PIT CHANNEL F&B", face: "F&B", qty: pitQty },
+    { desc: "HZ PIT CHANNEL L&R", face: "L&R", qty: pitQty },
   ];
 
   const panels: PanelRow[] = panelDefs.map((d) => {
@@ -642,8 +682,9 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
        M5 / piece: sill 5 at ground, 7 above; cover 8; 170 channel 12;
                    135 channel 12; dead weight 4; D-locking post 8; door post
                    cladding 8; lintel 13.
-     Both door-post sets (R and L) stay: a door opening has a jamb on each
-     side; the opening ("AT 700 R") only labels the D-locking post. */
+     One door set per landing (owner v1, 2026-10-09; both R and L were listed
+     before): its hand comes from the opening, "AT 700 R" -> R, "600L SW" -> L,
+     "700 CO" -> C (centre opening). */
   const count = (test: (d: string) => boolean) =>
     channels.reduce((n, c) => {
       const q = nn(c.qty);
@@ -652,7 +693,7 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
   const n170 = count((d) => /170/.test(d) && !/COVER/.test(d));
   const n135 = count((d) => (/135/.test(d) || /TOP CHANNEL/.test(d)) && !/COVER/.test(d));
   const nCover = count((d) => /COVER/.test(d));
-  const doorSets = 2; // R + L per landing
+  const doorSets = 1; // one hand per landing (v1)
   const m8 = 6 * n170 + 4 * n135 + 4 * doorSets * F + 16 * F + 8;
   const m5 =
     5 + 7 * (F - 1) + // sill
@@ -662,13 +703,11 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     4 * F + // dead weight channel
     (8 + 8 + 13) * doorSets * F; // D-locking post, door post cladding, lintel
 
+  const hand = doorHand(inp.doorOpening);
   const hardware: HardwareRow[] = [
-    { desc: "DOOR POST  D LOCKING R", tag: inp.doorOpening, qty: F },
-    { desc: "DOOR POST CLADING R", qty: F },
-    { desc: "LINTEL PANEL  R", qty: F },
-    { desc: "DOOR POST  D LOCKING L", qty: F },
-    { desc: "DOOR POST CLADING L", qty: F },
-    { desc: "LINTEL PANEL  L", qty: F },
+    { desc: `DOOR POST  D LOCKING ${hand}`, tag: inp.doorOpening, qty: F },
+    { desc: `DOOR POST CLADING ${hand}`, tag: inp.doorOpening, qty: F },
+    { desc: `LINTEL PANEL  ${hand}`, tag: inp.doorOpening, qty: F },
     { desc: "HEADER BRACKET CHANNEL", qty: F },
     // Added in R1. The 122 plate is a flat 2 whatever the floor count.
     { desc: "BRACKET FIXING PLATE 122", qty: 2 },
@@ -681,6 +720,8 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     { desc: "M8 X 30 BOLT", qty: m8 },
     { desc: "M5 X 20 SCREW", qty: m5 },
     { desc: "DEAD WEIGHT CHANNEL", qty: F * 1 },
+    // v1 H23: =IF(... ISNUMBER(SEARCH("CO", C17)) ..., C8, "NO")
+    { desc: "DEAD WEIGHT CHANNEL HOLDING BRACKET", qty: hand === "C" ? F : NA },
   ];
 
   /* Same rule for the flat tables: no negative length or quantity ships. */
@@ -695,6 +736,7 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
 
   return {
     verticals,
+    pitChannels,
     panels,
     channels: channels.map(clamp),
     console2450: console2450.map(clamp),
