@@ -37,8 +37,13 @@ Those stay; only the owner's R1 → v1 edits were applied, here and in `scripts/
   channels F&B ×2 + L&R ×2 when the pit piece is over 250 (pit > 345.5), right after the PIT posts, **no
   length** (v1 gives none).
 - v1 has a dead weight channel in both row 22 and row 93; listed **once** (F) — **ask the owner**.
-- From the owner's WhatsApp list but **not** in v1, so not done: rope roller bracket, removing the overhead
-  ring, 170 channels at 3 mm.
+- **The overhead ring section is removed** (later the same day, on the owner's instruction — item 3 of their
+  WhatsApp list): the seven 2nd-last channel/cover rows are gone from the model, the "Overhead ring" section
+  from the page, codes `R4-CRG-15`, `R4-CRG-30B`, `R4-VRG-12` from the catalog and the workbook builder. Per
+  job that is 6 fewer lines, 16 fewer M8 bolts/rivnuts and 64 fewer M5 screws/rivnuts; nothing else moved
+  (720-job sweep; workbook vs page in Excel, 62 jobs / 4,798 lines, 0 diffs).
+- From the owner's WhatsApp list but **not** done: rope roller bracket and 170 channels at 3 mm (not in
+  v1/v2, never confirmed).
 - **Verified:** 2,160-job before/after sweep, every difference in an intended category; the rebuilt clean
   workbook, evaluated in real Excel over 62 jobs, matches `buildPartList()` on all 5,170 lines (and the old
   workbook matches the old code, 0 diffs, so the check is live). `next build` passes locally on `D:` (NTFS).

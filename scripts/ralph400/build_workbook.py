@@ -100,7 +100,7 @@ LABEL = {
     "IsCWT_LEFT": "CWT on L", "IsCWT_RIGHT": "CWT on R", "IsCWT_BACK": "CWT on B", "IsCWT_FRONT": "CWT on F",
     "Glass_LEFT": "L is glass", "Glass_RIGHT": "R is glass", "Glass_BACK": "B is glass", "Glass_FRONT": "F is glass",
     "Clad_LEFT": "L is clad", "Clad_RIGHT": "R is clad", "Clad_BACK": "B is clad", "Clad_FRONT": "F is clad",
-    "N_Ch170": "no. of 170 ch", "N_Ch135": "no. of 135/top/ring ch", "N_Cover": "no. of covers",
+    "N_Ch170": "no. of 170 ch", "N_Ch135": "no. of 135/top ch", "N_Cover": "no. of covers",
     "N_Lintel": "no. of lintels", "N_DLock": "no. of D-lock posts", "N_PostClad": "no. of post claddings",
     "N_DeadWeight": "no. of dead wt ch", "Count_M8": "M8 count", "Count_M5": "M5 count",
     "PL_Qty": "Qty", "PL_Code": "Code", "Door_Hand": "Door hand", "Span_FRONT_Ext": "Front ext width",
@@ -248,11 +248,7 @@ for f in SIDE:
 add(*fixed("R4-C135-30B"), "=In_CWT", "", "OR(IsCWT_LEFT,IsCWT_RIGHT,IsCWT_BACK)", "Ch135_Per_Stop*In_Stops-1", "Span_CWT", None)
 for f in SIDE + ["FRONT"]:
     add(*cwt_pick(f, "R4-CTP-30B", "R4-CTP-30"), f, "", "TRUE", "1", f"Span_{f}", None)
-section("Overhead ring")
-for f in SIDE + ["FRONT"]:
-    add(*cwt_pick(f, "R4-CRG-30B", "R4-CRG-15"), f, "", "TRUE", "1", f"Span_{f}", None)
-for f in SIDE:
-    add(*fixed("R4-VRG-12"), f, "", f"NOT(IsCWT_{f})", "1", f"Span_{f}+Cover_135", None)
+# The overhead ring (2nd-last channels + covers) was removed on 2026-10-09.
 section("Doors, plates & fasteners")
 for hand in ["R", "L", "C"]:
     for part in ["DLP", "DPC", "LNT"]:
@@ -346,7 +342,7 @@ rules = [
     ("Clad_Lowest", 1062, "Lowest module sheet (2450/2 - 163), 1 per clad face per job."),
     ("Channels, covers, plates", None, None),
     ("Cover_170", 9, "170 cover = channel + 9 (4.5 + 4.5)."),
-    ("Cover_135", 38, "135 cover (incl. overhead ring) = channel + 38 (19 + 19)."),
+    ("Cover_135", 38, "135 cover = channel + 38 (19 + 19)."),
     ("Ch135_Per_Stop", 3, "135 channels per face = 3 x stops - 1."),
     ("Plate122_Per_Job", 2, "Plate 122 per job."),
     ("Pit_Channel_Min", 250, "Pit channels when the pit piece is over this (owner v1, 9 Oct 2026)."),
@@ -356,7 +352,7 @@ rules = [
     ("JointHole_Per_Stop", 8, "Joint plate hole per landing."),
     ("M8 bolts per part (1 rivnut each)", None, None),
     ("M8_Ch170", 6, "Per 170 channel."),
-    ("M8_Ch135", 4, "Per 135 / top / overhead-ring channel."),
+    ("M8_Ch135", 4, "Per 135 / top channel."),
     ("M8_Lintel", 4, "Per lintel panel."),
     ("M8_Post_Per_Stop", 16, "Corner-post joints: 4 per corner per landing."),
     ("M8_Post_Top", 8, "Corner-post top: 2 per corner, once per job."),
@@ -365,7 +361,7 @@ rules = [
     ("M5_Sill", 7, "Sill at every other landing."),
     ("M5_Cover", 8, "Per channel cover."),
     ("M5_Ch170", 12, "Per 170 channel (6 + 6)."),
-    ("M5_Ch135", 12, "Per 135 / top / overhead-ring channel (6 + 6)."),
+    ("M5_Ch135", 12, "Per 135 / top channel (6 + 6)."),
     ("M5_DeadWeight", 4, "Per dead weight channel."),
     ("M5_DoorPost_DLock", 8, "Per D-locking door post."),
     ("M5_DoorPost_Clad", 8, "Per door post cladding."),
@@ -433,7 +429,7 @@ QTY, CODE = "PL_Qty", "PL_Code"
 cnt = lambda p: f'SUMIFS({QTY},{CODE},"{p}")'
 calcs += [
     ("N_Ch170", f"={cnt('R4-C170*')}", "170 channels on the list."),
-    ("N_Ch135", f"={cnt('R4-C135*')}+{cnt('R4-CTP*')}+{cnt('R4-CRG*')}", "135, top and overhead-ring channels."),
+    ("N_Ch135", f"={cnt('R4-C135*')}+{cnt('R4-CTP*')}", "135 and top channels."),
     ("N_Cover", f"={cnt('R4-V*')}", "Channel covers."),
     ("N_Lintel", f"={cnt('R4-LNT*')}", "Lintel panels."),
     ("N_DLock", f"={cnt('R4-DLP*')}", "D-locking door posts."),

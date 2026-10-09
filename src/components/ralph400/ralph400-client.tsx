@@ -116,7 +116,6 @@ const SECTION_BAND: Record<SectionKey, string> = {
   glass: "border-l-sky-400",
   cladding: "border-l-orange-400",
   channels: "border-l-slate-400",
-  overhead: "border-l-slate-400",
   hardware: "border-l-emerald-400",
 };
 

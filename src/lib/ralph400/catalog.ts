@@ -8,9 +8,10 @@
        R4-C135-15 · B-1ST · 1400        code · face-level · size
 
    Two pieces share a code only if they can be swapped on the shop floor.
-   Confirmed by the owner 2026-10-03: top channel and overhead ring channel
-   are their own profiles; corner extensions are mirrored per corner (like
-   the 2450 posts); the 3 mm bracket version is its own part.
+   Confirmed by the owner 2026-10-03: the top channel is its own profile (the
+   overhead ring channel was too, until the ring left the list on 2026-10-09);
+   corner extensions are mirrored per corner (like the 2450 posts); the 3 mm
+   bracket version is its own part.
 
    Code    R4-<PART>[-<thickness: 15 = 1.5 mm, 30 = 3 mm, 12 = 1.2 mm, 6 = 6 mm>][B]
            B = bracket version (counterweight face). Corner parts end in the
@@ -46,15 +47,12 @@ export const CATALOG: CatalogItem[] = [
   { code: "R4-C142", name: "Channel 142 · sill", family: "Channels" },
   { code: "R4-CTP-30", name: "Channel top · 3 mm", family: "Channels" },
   { code: "R4-CTP-30B", name: "Channel top · bracket · 3 mm", family: "Channels" },
-  { code: "R4-CRG-15", name: "Channel overhead ring · 1.5 mm", family: "Channels" },
-  { code: "R4-CRG-30B", name: "Channel overhead ring · bracket · 3 mm", family: "Channels" },
   { code: "R4-CHD", name: "Channel header bracket", family: "Channels" },
   { code: "R4-CDW", name: "Channel dead weight", family: "Channels" },
   { code: "R4-CPT", name: "Channel pit", family: "Channels" },
   { code: "R4-BDW", name: "Bracket · dead weight channel holding", family: "Plates" },
   { code: "R4-V170-12", name: "Cover 170 · 1.2 mm", family: "Covers" },
   { code: "R4-V135-12", name: "Cover 135 · 1.2 mm", family: "Covers" },
-  { code: "R4-VRG-12", name: "Cover overhead ring · 1.2 mm", family: "Covers" },
   { code: "R4-GL-6", name: "Glass · 6 mm", family: "Panels" },
   { code: "R4-SH-12", name: "Sheet cladding · 1.2 mm", family: "Panels" },
   { code: "R4-DLP-R", name: "Door post D-locking · RH", family: "Door" },
@@ -97,7 +95,6 @@ export function codeFor(desc: string, opts: { section: string; bracket?: boolean
   if (opts.section === "cladding" || /^SHEET CLADDING/.test(d)) return "R4-SH-12";
   if (/VERTICAL \(2450/.test(d)) return `R4-PST-${cornerOf(d)}`;
   if (/SILL/.test(d)) return "R4-C142";
-  if (/2ND LAST/.test(d)) return /COVER/.test(d) ? "R4-VRG-12" : br ? "R4-CRG-30B" : "R4-CRG-15";
   if (/COVER/.test(d)) return /170/.test(d) ? "R4-V170-12" : "R4-V135-12";
   if (/TOP CHANNEL/.test(d)) return br ? "R4-CTP-30B" : "R4-CTP-30";
   if (/BRACKET CHANNEL 135/.test(d)) return "R4-C135-30B";

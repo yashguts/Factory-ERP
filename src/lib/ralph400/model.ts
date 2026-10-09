@@ -28,7 +28,7 @@
      * Console cladding: the lowest sheet per face is 1062 (1225 - 163),
        the other 2F - 1 are 1090.
      * Cover allowance: 170 covers = channel + 9 (4.5 + 4.5), 135 covers
-       (incl. the 2nd-last ring) = channel + 38 (19 + 19). Was +40 for all.
+       = channel + 38 (19 + 19). Was +40 for all.
      * Joint plate HEX = 12F (was 8F).
      * M8/M5 bolts, screws and rivnuts counted from per-part figures (was a
        flat 52F / 203F).
@@ -50,6 +50,8 @@
      * Rows 24-25: pit channels, 2 front & back + 2 left & right, when the pit
        piece (I8) is over 250. The workbook gives them no length.
      * Row 22 adds a dead weight channel while row 93 keeps one; listed once.
+     * The overhead ring (rows 45-51 in v1: 2nd-last channels and covers) is
+       removed from the part list, on the owner's instruction the same day.
 
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
@@ -597,13 +599,9 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       qty: 1,
       len: pick<Figure>(W - 200, strict ? NA : W - 200, W - 200),
     },
-    { desc: "HZ 2ND LAST CHANNEL 135 MM LEFT", br: L, qty: 1, len: D - 200 }, // row 44
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM LEFT", qty: pick<Figure>(NA, 1, 1), len: D - 200 + COVER_135 },
-    { desc: "HZ 2ND LAST CHANNEL 135 MM RIGHT", br: R, qty: 1, len: D - 200 },
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM RIGHT", qty: pick<Figure>(1, 1, NA), len: D - 200 + COVER_135 },
-    { desc: "HZ 2ND LAST CHANNEL 135 MM FRONT", qty: 1, len: W - 200 },
-    { desc: "HZ 2ND LAST CHANNEL COVER 135 MM BACK", qty: pick<Figure>(1, NA, 1), len: W - 200 + COVER_135 },
-    { desc: "HZ 2ND LAST CHANNEL 135 MM BACK", br: B, qty: 1, len: W - 200 }, // row 50
+    // Rows 44-50, the overhead ring (2nd-last channels and their covers), were
+    // removed from the part list at the owner's request on 2026-10-09; their
+    // M8/M5 fasteners go with them.
   ];
 
   /* ---------------- 2450 console module (rows 54-71) ---------------- */

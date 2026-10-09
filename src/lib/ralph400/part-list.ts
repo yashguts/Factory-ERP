@@ -27,7 +27,7 @@ import { catalogItem, codeFor, pieceMark } from "./catalog";
 export const MAX_STOPS = 6; // H1..H5 = five rises
 export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD"] as const;
 
-export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "channels" | "overhead" | "hardware";
+export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "channels" | "hardware";
 
 export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
   { key: "verticals", title: "Corner verticals", blurb: "Extension pieces between the 2450 modules, one per corner per level; pit channels on a deep pit" },
@@ -35,7 +35,6 @@ export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
   { key: "glass", title: "Glass panels 6 mm", blurb: "Extension glass on every side face except the counterweight face" },
   { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces" },
   { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 9 (170) or + 38 (135)" },
-  { key: "overhead", title: "Overhead ring", blurb: "2nd-last channels closing the overhead" },
   { key: "hardware", title: "Doors, plates & fasteners", blurb: "Counted per floor" },
 ];
 
@@ -243,16 +242,15 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
     });
   });
 
-  // Horizontal channels (rows 25-42) and the overhead ring (rows 44-50).
+  // Horizontal channels (rows 25-42). The overhead ring was removed 2026-10-09.
   m.channels.forEach((r) => {
     const qty = figQty(r.qty);
     const len = figSize(r.len);
     const needed = !!(qty && len);
-    const overhead = /2ND LAST/.test(r.desc);
     const replaced = !needed && r.br && /135 (LEFT|RIGHT|BACK) \(1\.5MM\)/.test(r.desc);
     out.push({
       key: `channels|${clean(r.desc)}`,
-      section: overhead ? "overhead" : "channels",
+      section: "channels",
       part: clean(r.desc),
       face: r.tag ? r.tag : faceOf(r.desc),
       size: len ?? "",
