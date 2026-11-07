@@ -31,6 +31,7 @@ import {
   UserRound,
   Bell,
   IndianRupee,
+  Wrench,
   LucideIcon,
 } from "lucide-react";
 
@@ -79,6 +80,15 @@ const navGroups: { label: string; items: NavItem[] }[] = [
       // sub-program. Self-contained arithmetic: it reads and writes nothing,
       // so it carries no badge and never touches job data.
       { href: "/ralph400", label: "RALPH 400 BOM", icon: Ruler },
+    ],
+  },
+  {
+    // Repair & modernization of existing elevators — its own business line,
+    // sitting between new-build Orders and Planning. Points at a placeholder
+    // page for now; the surface fills in as the owner specs it out.
+    label: "Repair & Modernization",
+    items: [
+      { href: "/repair-modernization", label: "Repair and Modernization", icon: Wrench },
     ],
   },
   {
