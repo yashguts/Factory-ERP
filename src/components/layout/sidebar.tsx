@@ -31,7 +31,6 @@ import {
   UserRound,
   Bell,
   IndianRupee,
-  Wrench,
   LucideIcon,
 } from "lucide-react";
 
@@ -84,12 +83,10 @@ const navGroups: { label: string; items: NavItem[] }[] = [
   },
   {
     // Repair & modernization of existing elevators — its own business line,
-    // sitting between new-build Orders and Planning. Points at a placeholder
-    // page for now; the surface fills in as the owner specs it out.
+    // sitting between new-build Orders and Planning. Intentionally empty for
+    // now; the owner will add the items inside this section later.
     label: "Repair & Modernization",
-    items: [
-      { href: "/repair-modernization", label: "Repair and Modernization", icon: Wrench },
-    ],
+    items: [],
   },
   {
     label: "Planning",
