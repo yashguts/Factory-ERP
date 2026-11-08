@@ -63,14 +63,25 @@ changes were ported.
 - **Autofill was NOT extended.** `ralph400-autofill.ts` has no field for this; it is a sales option, not
   something a GA drawing states. It stays a manual pick.
 
-> **NOT VERIFIED — and why.** This session ran on the USB copy at `D:\USB DRIVE\Anthropic Access\ERPFACTORY`
-> on a machine with **no Node.js installed at all** (no `node`/`npx` anywhere; no registry key). So
-> **`npx tsc --noEmit` never ran**, nor did eslint, nor the workbook rebuild (`openpyxl` is also missing and
-> `export-catalog.ts` needs node). What *was* done: brackets balanced in all three TS files,
-> `py_compile` clean on `build_workbook.py`, and the whole glazed-job arithmetic re-derived in a throwaway
-> Python script and matched against the R1000 sheet's own computed cells — every value agrees, with only the
-> documented deltas (+3 allowance, −23 overhead, +35 on the 4th-floor extension). **First job on a machine
-> with node: run `npx tsc --noEmit`, then rebuild and re-verify the clean workbook.**
+> **How this was verified, and the one gap left.** This session ran on the USB copy at
+> `D:\USB DRIVE\Anthropic Access\ERPFACTORY` on a machine with **no Node.js installed at all** (no
+> `node`/`npx` anywhere; no registry key), so `npx tsc --noEmit` could not be run locally.
+>
+> **Types and lint are nonetheless verified: Netlify built the commit clean.** Deploy
+> `6af053563d869c2ebbc38781`, `commit_ref` `10e994c`, state `ready`, published 2026-11-08 10:49 UTC. Its
+> `npm run build` runs `next build`, and `next.config.ts` sets neither `typescript.ignoreBuildErrors` nor
+> `eslint.ignoreDuringBuilds`, so full type-checking and eslint both passed. **On this machine, pushing is
+> the only way to run the gate — and a type error simply fails the build and leaves the previous deploy
+> published, so the live site is not at risk.**
+>
+> Arithmetic was checked separately: the whole glazed-job calculation was re-derived in a throwaway Python
+> script and matched against the R1000 sheet's own computed cells. Every value agrees, with only the
+> documented deltas (+3 allowance, −23 overhead, +35 on the 4th-floor extension). The front-glass rows match
+> **exactly**, which is what confirms the −140 reading. `build_workbook.py` is `py_compile` clean.
+>
+> **STILL OPEN: the clean workbook was not rebuilt** (`openpyxl` missing, and `export-catalog.ts` needs
+> node), so `build_workbook.py` carries the new rule but no generated workbook has been checked against
+> `buildPartList()`. **First job on a machine with node: rebuild it and re-run that comparison.**
 
 ---
 
