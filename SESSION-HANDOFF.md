@@ -10,8 +10,67 @@ this file is quick orientation + what's fresh. Also read the auto-memory index
 > Treat §0 and §4 as the checked parts. The previous §0 (SS Grade 316 sheets, `4be3dc6`, 2026-09-05) shipped
 > and is done apart from the RM-222 supplier/cost gap still listed in §4.
 >
-> **The project moved from `H:` to `E:`.** Paths in older docs that say `H:\Anthropic Access\ERPFACTORY`
-> mean `E:\…` now; the memory folder likewise moved to `E--Anthropic-Access-ERPFACTORY`.
+> **The project moved from `H:` to `E:` to `D:\USB DRIVE\Anthropic Access\ERPFACTORY`** (a USB copy, as of
+> 2026-11-08). Paths in older docs saying `H:\…` or `E:\…` mean that. The memory folder follows the path, so
+> it is now `D--USB-DRIVE-Anthropic-Access-ERPFACTORY` and **starts empty** — the `E:` memory index is gone.
+> The companion repo moved too: `D:\USB DRIVE\Anthropic Access\RAPLH400 BOM`.
+>
+> **Node.js is not installed on the machine holding this USB copy** (checked 2026-11-08: no `node`/`npx` on
+> PATH, none under Program Files / LOCALAPPDATA / APPDATA / ProgramData, no `HKLM:\SOFTWARE\Node.js`). So
+> `npm run dev`, `npx tsc --noEmit` and the workbook rebuild cannot run there at all. Python 3 **is**
+> available (no `openpyxl`). Plan verification accordingly, or work from a machine with node.
+
+---
+
+## 0c — Update 2026-11-08: `/ralph400` gains the owner's "CWT & FRONT GLASS" option
+
+The owner sent `RALPH 400 R1000 BOM.xlsx`, sheet **"RALPH BOM"** (a 5-stop job, BLR 51). Again their own
+copy, so it still lacks the 2026-10-03 Rules Book numbers (glass −97/+38, cladding −142, covers +9/+38,
+no −35 on S8, 12F hex, per-part fasteners) and still has the three defects §4 lists. Only the structural
+changes were ported.
+
+- **NEW INPUT `C16` "CWT & FRONT GLASS" (YES/NO)** — the sheet labels the block
+  "CWT & FRONT GLASS DIMENSION IF ASKED FOR", so it is a customer option, **default NO**. On YES the shaft
+  is fully glazed: the four extension cladding rows (17-20) and the three console cladding rows (70-72)
+  drop out, and the new block (rows 95-107) adds
+  - **CWT face, module level:** one pane `2450/2 − 76 − 95.5` and **F** panes `(2450 − 304)/2` — both
+    constants, qty 1 and C8 (not the 2F−1 a glazed face uses). The glazed faces keep their 1098/1128 panes.
+  - **CWT face, per level:** `extension − 152`. That face carries the 3 mm bracket channel, so its opening
+    is 52 mm shorter than an ordinary glazed face.
+  - **FRONT, per level:** `extension − 140` (72.5 + 67.5). **No front module pane** — the door is at that
+    level. This is the one new figure the owner already wrote with the +38 allowance, and it matches the
+    app exactly.
+  - `U17:V20` carry **no** C16 condition, so the **overhead stays sheet-clad on all four faces** even on a
+    glazed job (the new block has no overhead row). Kept; flagged below.
+- **Front extension cladding is `C4 − 200` again** (width), undoing v2's `C5 − 200` from 2026-10-09
+  (`7eca14a`). The front spans the width and the front *overhead* panel always read `C4 − 200`, so level
+  and overhead now agree. This realigns with the one saved list (RNLHYD-0147, front 1430).
+- **The owner adopted three of this app's fixes** in their own copy: `P19/R19/T19` → `C4 − 200` (R19/T19
+  had the blank cell `E5`), `M19` → `M8` (was `M10`), and `T20` is a real formula (was `G8`/`G5`). The
+  console cladding rows are now gated to the counterweight face (`F70:F72`, `H70:H72`, `I70` cleared) —
+  **AUDIT H76/I76 is settled**, clean mode was right.
+- **Deliberate 3 mm difference:** the new CWT rows use `+35`, the new FRONT rows `+38`. The owner confirmed
+  +38 on 2026-10-03 and this app applies it throughout, so the CWT panes come out 3 mm larger here than in
+  their copy. Not split into two allowances. **Ask the owner.**
+- **Drift normalised, not copied:** the new block gives *every* row the **counterweight** face's span
+  (`G95`…), so on a LEFT/RIGHT counterweight the FRONT glass would be cut to the depth. Each face keeps its
+  own span here. **Ask the owner.** (Invisible on this job: CWT=BACK, so both read `C4 − 200`.)
+- Sheet **"TRIAL"** in that workbook is a separate experiment (985 × 985 shaft, "COLUMN EXTN", a 60 mm pit
+  rule). **Not modelled** — the owner asked only about "RALPH BOM".
+- Touched: `model.ts` (input, 4 constants, `fullGlass`, panel + console rows), `part-list.ts` (decimal pane
+  sizes, the new check, blurbs), `ralph400-client.tsx` (the dropdown, export row), `build_workbook.py`.
+  Catalog unchanged — every new row is `R4-GL-6`. Old saved lists and old `localStorage` read as NO.
+- **Autofill was NOT extended.** `ralph400-autofill.ts` has no field for this; it is a sales option, not
+  something a GA drawing states. It stays a manual pick.
+
+> **NOT VERIFIED — and why.** This session ran on the USB copy at `D:\USB DRIVE\Anthropic Access\ERPFACTORY`
+> on a machine with **no Node.js installed at all** (no `node`/`npx` anywhere; no registry key). So
+> **`npx tsc --noEmit` never ran**, nor did eslint, nor the workbook rebuild (`openpyxl` is also missing and
+> `export-catalog.ts` needs node). What *was* done: brackets balanced in all three TS files,
+> `py_compile` clean on `build_workbook.py`, and the whole glazed-job arithmetic re-derived in a throwaway
+> Python script and matched against the R1000 sheet's own computed cells — every value agrees, with only the
+> documented deltas (+3 allowance, −23 overhead, +35 on the 4th-floor extension). **First job on a machine
+> with node: run `npx tsc --noEmit`, then rebuild and re-verify the clean workbook.**
 
 ---
 

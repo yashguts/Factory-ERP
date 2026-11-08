@@ -70,6 +70,7 @@ const BLANK: Ralph400Inputs = {
   h4: 0,
   h5: 0,
   cwt: "",
+  cwtFrontGlass: "NO",
   doorType: "",
   doorOpening: "",
 };
@@ -441,6 +442,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
               </Group>
               <Group title="Configuration">
                 <SelectRow label="Counterweight" k="cwt" options={OPTIONS.cwt} inp={inp} sources={sources} issue={issueFor("cwt")} onChange={setField} />
+                <SelectRow label="CWT & front glass" k="cwtFrontGlass" options={OPTIONS.cwtFrontGlass} inp={inp} sources={sources} issue={issueFor("cwtFrontGlass")} onChange={setField} />
                 <SelectRow label="Door type" k="doorType" options={OPTIONS.doorType} inp={inp} sources={sources} issue={issueFor("doorType")} onChange={setField} />
                 <SelectRow label="Door opening" k="doorOpening" options={OPTIONS.doorOpening} inp={inp} sources={sources} issue={issueFor("doorOpening")} onChange={setField} />
               </Group>
@@ -534,7 +536,12 @@ function inputRows(inp: Ralph400Inputs, job: FactoryJobOption | null): [string, 
     ["Stops", inp.floors],
   ];
   FLOOR_FIELDS.slice(0, Math.max(0, inp.floors - 1)).forEach(([k, label]) => rows.push([`${label} (mm)`, inp[k]]));
-  rows.push(["Counterweight", inp.cwt], ["Door type", inp.doorType], ["Door opening", inp.doorOpening]);
+  rows.push(
+    ["Counterweight", inp.cwt],
+    ["CWT & front glass", inp.cwtFrontGlass],
+    ["Door type", inp.doorType],
+    ["Door opening", inp.doorOpening],
+  );
   return rows;
 }
 

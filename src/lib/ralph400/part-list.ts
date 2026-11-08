@@ -32,8 +32,8 @@ export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "chann
 export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
   { key: "verticals", title: "Corner verticals", blurb: "Extension pieces between the 2450 modules, one per corner per level; pit channels on a deep pit" },
   { key: "console", title: "2450 console modules", blurb: "One fixed module per landing: corner verticals, sill, standard panes" },
-  { key: "glass", title: "Glass panels 6 mm", blurb: "Extension glass on every side face except the counterweight face" },
-  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces" },
+  { key: "glass", title: "Glass panels 6 mm", blurb: "Side faces; on a glazed job (CWT & front glass = YES) the counterweight face and the front too" },
+  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces, glazed job or not" },
   { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 9 (170) or + 38 (135)" },
   { key: "hardware", title: "Doors, plates & fasteners", blurb: "Counted per floor" },
 ];
@@ -121,6 +121,10 @@ export function checkInputs(inp: Ralph400Inputs, opts: { driveType?: string | nu
         : "Counterweight side is not set.",
     });
   }
+  // C16. Blank reads as NO (cladding), which is the ordinary job.
+  const fg = (inp.cwtFrontGlass ?? "").trim().toUpperCase();
+  if (fg && !OPTIONS.cwtFrontGlass.includes(fg as (typeof OPTIONS.cwtFrontGlass)[number]))
+    out.push({ level: "warn", field: "cwtFrontGlass", msg: `CWT & front glass "${inp.cwtFrontGlass}" is not YES or NO — read as NO.` });
   FLOOR_FIELDS.forEach(([key, label], i) => {
     const v = inp[key];
     if (i < F - 1) {
@@ -203,7 +207,8 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
     const qty = figQty(r.qty);
     // Sheet mode: the workbook's left-sheet row reads "GLASS" on glass faces.
     const w = r.len === "GLASS" ? "GLASS" : figSize(r.len);
-    const pane = r.desc.match(/(\d{4})\s*(MM|X)/);
+    // The CWT module panes are not whole numbers (1091.5), so allow a decimal.
+    const pane = r.desc.match(/(\d{4}(?:\.\d+)?)\s*(MM|X)/);
     const isPanel = /GLASS|CLADDING/.test(r.desc);
     const size = isPanel ? (w === "GLASS" ? "GLASS" : w && pane ? `${pane[1]} × ${w}` : "") : w ?? "";
     out.push({
