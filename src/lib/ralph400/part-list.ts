@@ -27,13 +27,16 @@ import { catalogItem, codeFor, pieceMark } from "./catalog";
 export const MAX_STOPS = 6; // H1..H5 = five rises
 
 /**
- * Drive types that carry no counterweight at all: the R1000 machine is
- * self-contained and a hydraulic lift rides on a jack. These are 52 of the 83
- * factory-structure jobs, so there is nothing on their drawings for the
- * counterweight input to read — and the floor read that as the drawing read
- * failing (2026-11-09). What C15 actually decides is which face carries the
- * 3 mm brackets and gets sheet instead of glass, and on these lifts that is
- * the car-rail face, which IS on every drawing.
+ * Drive types that carry no counterweight at all: a hydraulic lift rides on a
+ * jack, and the R1000 machine is self-contained. Their drawings therefore show
+ * no counterweight for C15 to read, and the floor read that as the drawing
+ * read failing (2026-11-09). What C15 actually decides is which face carries
+ * the 3 mm brackets and gets sheet instead of glass, and on these lifts that
+ * is the car-rail face, which IS on every drawing.
+ *
+ * In practice only HYD reaches here: getFactoryStructureJobs drops R1000 from
+ * the picker (8c9f958 — an R1000's structure is its own, not a RALPH shaft).
+ * R1000 stays listed so the message is right if that filter ever changes.
  */
 export const hasNoCounterweight = (driveType?: string | null) => {
   const d = (driveType ?? "").trim().toUpperCase();

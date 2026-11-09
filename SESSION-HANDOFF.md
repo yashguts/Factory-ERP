@@ -30,11 +30,13 @@ the drawing read correctly returns nothing — its own rationales say "Hydraulic
 drawn" at high confidence. Focused reads, by drive: BELT 15/15 found, HOME 11/11, HYD 1/6, R1000 0/33.
 Whenever a counterweight exists the read gets it; it is empty only when there isn't one.
 
-**The real problem.** C15 blocks the whole part list, and 52 of the 83 factory-structure jobs (R1000 47,
-HYD 5) could never produce one. Worse, it failed silently: `applyRalph` pushed no warning for a null
-`cwt`, so the toast said "Refilled N inputs", the dropdown sat on "— pick —", the table was replaced by
-an empty state and Save/Export/Print greyed out. The one helpful hint was gated on `driveType === "HYD"`,
-so all 47 R1000 jobs — the largest group — got the bare "Counterweight side is not set."
+**The real problem.** C15 blocks the whole part list, so those jobs could never produce one. On this page
+that means the **hydraulic** jobs — exactly what the floor said — because `getFactoryStructureJobs` drops
+R1000 from the picker on purpose (8c9f958: an R1000's structure is its own, not a RALPH shaft). The 33
+null R1000 reads come from the batch deep-scan, which covers every Factory-made job, not from this page.
+Worse, it failed silently: `applyRalph` pushed no warning for a null `cwt`, so the toast said "Refilled N
+inputs", the dropdown sat on "— pick —", the table was replaced by an empty state and Save/Export/Print
+greyed out.
 
 **What C15 actually decides** is which face carries the 3 mm bracket channel and gets sheet instead of
 glass. On a counterweight-free lift that is the **car-rail face**, on the same wall, needing the same
@@ -61,9 +63,19 @@ brackets — and it IS on every drawing. The model was already reading it, into 
   scans stop reproducing the gap. `post.js` still writes `ralph400_v1` on purpose: bumping it would make
   `check.js` mark all 83 jobs incomplete and force a full rescan.
 
-**Not done / to watch.** The 33 R1000 and 5 HYD jobs already scanned still have no `rail_side` stored —
-each needs one click of **Read drawing (AI)** to pick it up (that now re-reads instead of short-circuiting).
-No `npx tsc --noEmit` was possible here (no node, see the banner above); the Netlify build is the gate.
+**Verified live** (2026-11-09, deploys of `b7b2c25` + `e032b38`). On **RNLHYD-0127** (ARTLAB, HYD, 4
+stops) the page opened blocked with the new message, "Read drawing (AI)" re-read the GA and filled
+**CWT / rail side = BACK**, and the part list built — **74 lines, 2,436 pieces**, cladding BACK · FRONT,
+glass LEFT · RIGHT. Nothing was saved. The stored row proves the mechanism: `cwt_side` null ("no
+counterweight shown", high) and `rail_side` "BACK" ("jack/rail assembly and DBG 700 at the rear wall",
+medium). Its 2026-09-29 row had already written "car rails and jack on the rear wall" into the *cwt
+rationale* — the answer was on the drawing all along, just not in a field.
+
+**Not done / to watch.** Jobs scanned before today have no `rail_side` stored — each needs one click of
+**Read drawing (AI)** (which now re-reads instead of short-circuiting). `rail_side` confidence is
+"medium" where the counterweight read was "high", so the value is worth a glance before saving.
+No `npx tsc --noEmit` was possible here (no node, see the banner above) — the Netlify build was the gate
+and both deploys went green.
 
 ---
 

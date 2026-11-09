@@ -23,9 +23,9 @@ import type { Ralph400Inputs } from "@/lib/ralph400/model";
 
 const MODEL = "claude-opus-4-8";
 /**
- * Still v1 on purpose. The shape gained rail_side on 2026-11-09 (R1000 and
- * hydraulic lifts have no counterweight, so cwt_side was null on 52 of the 83
- * factory-structure jobs and the part list could never build). Every reader
+ * Still v1 on purpose. The shape gained rail_side on 2026-11-09 (hydraulic and
+ * R1000 lifts have no counterweight, so cwt_side comes back null — 38 of the
+ * 83 scanned jobs — and the part list could never build). Every reader
  * treats the ralph fields as optional, and three other modules identify rich
  * reads as "not ralph400_v1" (partlist-generate, spec-vision) — a new version
  * string would quietly leak RALPH rows into those. Rows written before that
