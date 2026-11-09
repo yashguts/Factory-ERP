@@ -71,9 +71,18 @@ counterweight shown", high) and `rail_side` "BACK" ("jack/rail assembly and DBG 
 medium). Its 2026-09-29 row had already written "car rails and jack on the rear wall" into the *cwt
 rationale* — the answer was on the drawing all along, just not in a field.
 
-**Not done / to watch.** Jobs scanned before today have no `rail_side` stored — each needs one click of
-**Read drawing (AI)** (which now re-reads instead of short-circuiting). `rail_side` confidence is
-"medium" where the counterweight read was "high", so the value is worth a glance before saving.
+**Backfilled the same day.** Ten picker-eligible jobs had no face. Three were re-read through the app
+and now build: **RNLHYD-0127** (HYD, rail BACK, 74 lines), **RNLHYD-0143** (HYD, rail BACK, 68 lines),
+**RNLCHA-0027** (BELT, 66 lines). RNLCHA-0027 is the useful control — it has a counterweight, and
+`cwt_side` and `rail_side` both came back BACK, which is the agreement the fallback assumes. Five of the
+rest (RNLAP-0065, RNLHYD-0125, RNLHYD-0144, RNLJAI-0010, RNLKOL-0026) are **fully dispatched**, so the
+picker hides them and they need no part list. The last two, **RNLAHM-0037** and **RNLMALS-009** (both
+stage `new`, in the picker), have **no GA drawing uploaded** — nothing to read, so they still block.
+That is now the only reason a live job blocks on the face.
+
+**Not done / to watch.** Other jobs scanned before today have no `rail_side` stored — each needs one
+click of **Read drawing (AI)** (which now re-reads instead of short-circuiting). `rail_side` confidence
+is "medium" where the counterweight read was "high", so the value is worth a glance before saving.
 No `npx tsc --noEmit` was possible here (no node, see the banner above) — the Netlify build was the gate
 and both deploys went green.
 
