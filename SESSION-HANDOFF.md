@@ -22,6 +22,51 @@ this file is quick orientation + what's fresh. Also read the auto-memory index
 
 ---
 
+## 0d — Update 2026-11-09: counterweight-free lifts can build a part list
+
+**The report.** The floor said "ralph bom could not read the cwt position frequently, especially in
+hydraulic". It was not a reading failure. **R1000 and hydraulic lifts have no counterweight at all**, so
+the drawing read correctly returns nothing — its own rationales say "Hydraulic lift - no counterweight
+drawn" at high confidence. Focused reads, by drive: BELT 15/15 found, HOME 11/11, HYD 1/6, R1000 0/33.
+Whenever a counterweight exists the read gets it; it is empty only when there isn't one.
+
+**The real problem.** C15 blocks the whole part list, and 52 of the 83 factory-structure jobs (R1000 47,
+HYD 5) could never produce one. Worse, it failed silently: `applyRalph` pushed no warning for a null
+`cwt`, so the toast said "Refilled N inputs", the dropdown sat on "— pick —", the table was replaced by
+an empty state and Save/Export/Print greyed out. The one helpful hint was gated on `driveType === "HYD"`,
+so all 47 R1000 jobs — the largest group — got the bare "Counterweight side is not set."
+
+**What C15 actually decides** is which face carries the 3 mm bracket channel and gets sheet instead of
+glass. On a counterweight-free lift that is the **car-rail face**, on the same wall, needing the same
+brackets — and it IS on every drawing. The model was already reading it, into free-text `notes`
+("car rails at the rear DBG 600 with jack between (no counterweight)", RNLHYD-0125).
+
+**Changes** (all on `main`, commit below):
+- `ralph400-autofill.ts` — new **`rail_side`** field in the vision schema + prompt (report it on every
+  drawing, counterweight or not); `cwt` now falls back `cwt_side ?? rail_side`, with a warning naming
+  where it came from. A single authoritative warning fires whenever the face ends up unset. The free
+  tier now also maps `left/lhs/right/rhs` (it only handled "rear"); a bare "side" is still ambiguous and
+  left blank on purpose.
+- **SCHEMA_VERSION stays `ralph400_v1`** deliberately — `partlist-generate.ts` (×2) and `spec-vision.ts`
+  identify rich reads as `.neq("schema_version", "ralph400_v1")`, so a v2 would leak RALPH rows into the
+  Part List's reads. The shape just gained an optional field. Rows stored before today have no
+  `rail_side`, so the AI re-read is now allowed when a stored read left the face blank
+  (`if ((!haveRalphRead || !("cwt" in values)) && allowVision)`) instead of returning the same dead end.
+- `part-list.ts` — `hasNoCounterweight(driveType)` (HYD | R1000, exported); the blocking message now
+  tells every counterweight-free drive what to pick and where to find it.
+- UI relabelled **"CWT / rail side"** (input row + stat tile; "Counterweight / rail side" on the export,
+  which has no width limit). Only the label and copy changed — `OPTIONS.cwt` is still BACK/RIGHT/LEFT
+  and no arithmetic moved, so the owner's sheet is unaffected.
+- `scripts/drawing-deepscan/INSTRUCTIONS.md` — the batch pipeline now captures `rail_side` too, so new
+  scans stop reproducing the gap. `post.js` still writes `ralph400_v1` on purpose: bumping it would make
+  `check.js` mark all 83 jobs incomplete and force a full rescan.
+
+**Not done / to watch.** The 33 R1000 and 5 HYD jobs already scanned still have no `rail_side` stored —
+each needs one click of **Read drawing (AI)** to pick it up (that now re-reads instead of short-circuiting).
+No `npx tsc --noEmit` was possible here (no node, see the banner above); the Netlify build is the gate.
+
+---
+
 ## 0c — Update 2026-11-08: `/ralph400` gains the owner's "CWT & FRONT GLASS" option
 
 The owner sent `RALPH 400 R1000 BOM.xlsx`, sheet **"RALPH BOM"** (a 5-stop job, BLR 51). Again their own

@@ -119,7 +119,15 @@ export interface Ralph400Inputs {
   h3: number; // C11  2nd -> 3rd
   h4: number; // C12  3rd -> 4th
   h5: number; // C13  4th -> 5th
-  cwt: string; // C15
+  /**
+   * C15. The face that carries the 3 mm bracket channel and gets sheet
+   * cladding instead of glass — the counterweight face when there is one. An
+   * R1000 or hydraulic lift has no counterweight, so there this is the
+   * car-rail face, which sits on the same wall and needs the same brackets.
+   * The sheet has no NONE option and the geometry needs a face, so the input
+   * stays required; the UI calls it "CWT / rail side".
+   */
+  cwt: string;
   /** C16 "CWT & FRONT GLASS": "YES" glazes the counterweight face + front. */
   cwtFrontGlass: string;
   doorType: string; // carried for the job record; no sheet cell depends on it

@@ -22,6 +22,15 @@ import { createClient } from "@/lib/supabase/server";
 import type { Ralph400Inputs } from "@/lib/ralph400/model";
 
 const MODEL = "claude-opus-4-8";
+/**
+ * Still v1 on purpose. The shape gained rail_side on 2026-11-09 (R1000 and
+ * hydraulic lifts have no counterweight, so cwt_side was null on 52 of the 83
+ * factory-structure jobs and the part list could never build). Every reader
+ * treats the ralph fields as optional, and three other modules identify rich
+ * reads as "not ralph400_v1" (partlist-generate, spec-vision) — a new version
+ * string would quietly leak RALPH rows into those. Rows written before that
+ * date simply have no rail_side; the re-read below covers them.
+ */
 const SCHEMA_VERSION = "ralph400_v1";
 // Same bound + rationale as spec-vision.ts: stay under the serverless cap.
 const VISION_TIMEOUT_MS = 22_000;
@@ -43,6 +52,12 @@ interface RalphDrawing {
   structure_width_mm: F<number>;
   structure_depth_mm: F<number>;
   cwt_side: F<"BACK" | "LEFT" | "RIGHT">;
+  /**
+   * Which face the car rails and their brackets sit on. The cut list's real
+   * question (that face gets the 3 mm brackets and sheet instead of glass),
+   * and the only answer a counterweight-free lift can give.
+   */
+  rail_side: F<"BACK" | "LEFT" | "RIGHT">;
   door_type: F<"AT" | "ACO" | "SWING" | "MCD">;
   door_opening_width_mm: F<number>;
   door_hand: F<"L" | "R">;
@@ -95,6 +110,7 @@ const TOOL_SCHEMA = {
     structure_width_mm: CONF("integer"),
     structure_depth_mm: CONF("integer"),
     cwt_side: CONF("string", ["BACK", "LEFT", "RIGHT"]),
+    rail_side: CONF("string", ["BACK", "LEFT", "RIGHT"]),
     door_type: CONF("string", ["AT", "ACO", "SWING", "MCD"]),
     door_opening_width_mm: CONF("integer"),
     door_hand: CONF("string", ["L", "R"]),
@@ -102,8 +118,8 @@ const TOOL_SCHEMA = {
   },
   required: [
     "stops", "floor_to_floor_mm", "pit_mm", "overhead_mm", "structure_width_mm",
-    "structure_depth_mm", "cwt_side", "door_type", "door_opening_width_mm",
-    "door_hand", "notes",
+    "structure_depth_mm", "cwt_side", "rail_side", "door_type",
+    "door_opening_width_mm", "door_hand", "notes",
   ],
 };
 
@@ -115,7 +131,8 @@ Fields:
 - pit_mm -> pit depth below the lowest served floor level, mm (for these structures typically 150-600, sometimes up to 1600).
 - overhead_mm -> the overhead/headroom above the top served floor level, mm (typically 2600-4800).
 - structure_width_mm / structure_depth_mm -> the OUTER footprint of the shaft structure: external width (across the entrance face) x external depth (front-to-back), in mm. This is the shaft/structure size, NOT the car inside size and NOT the door opening. If the drawing labels the shaft dimension as "inside"/"clear", still report the labelled number but say so in the rationale and use confidence "medium".
-- cwt_side -> where the counterweight sits relative to the car ON THE HOISTWAY PLAN, viewed with the entrance/door at the FRONT: behind the car -> BACK; on the car's left -> LEFT; on the car's right -> RIGHT. Null if no counterweight is shown (e.g. hydraulic).
+- cwt_side -> where the counterweight sits relative to the car ON THE HOISTWAY PLAN, viewed with the entrance/door at the FRONT: behind the car -> BACK; on the car's left -> LEFT; on the car's right -> RIGHT. Null if no counterweight is shown (e.g. hydraulic, or an R1000 self-contained drive).
+- rail_side -> where the CAR GUIDE RAILS and their brackets sit, read the same way (entrance at the FRONT): rails on the back wall -> BACK, on the car's left -> LEFT, on the car's right -> RIGHT. Report this on EVERY drawing, counterweight or not; it is usually the clearest thing in the hoistway plan (the rail profiles against a wall, a "DBG" dimension across them, or a note naming the wall). A hydraulic lift's jack normally sits between the rails on the same wall. Null only if the rails genuinely cannot be located.
 - door_type -> the LANDING door operator, one of: AT (automatic telescopic / side opening), ACO (automatic centre opening), SWING (hinged swing door), MCD (manual collapsible / gate). Anything else -> null.
 - door_opening_width_mm -> the clear door opening width in mm.
 - door_hand -> for a telescopic (side-opening) door, which side the panels stack, from the hoistway plan door split: the opening is dimensioned as two UNEQUAL sub-segments; the larger sub-segment's side IS the hand — larger on the LEFT -> "L", larger on the RIGHT -> "R" (read directly in plan orientation, do not flip). Equal split or non-telescopic door -> null.
@@ -218,7 +235,15 @@ function applyRalph(
   put("overHead", num(d.overhead_mm?.value));
   put("shaftWidth", num(d.structure_width_mm?.value));
   put("shaftDepth", num(d.structure_depth_mm?.value));
-  put("cwt", d.cwt_side?.value ?? null);
+  // C15 is really "which face carries the 3 mm brackets and gets sheet": the
+  // counterweight face when there is one, the car-rail face otherwise. Without
+  // the fallback every R1000 and hydraulic job blocked with a blank dropdown.
+  const facePreset = "cwt" in values;
+  put("cwt", d.cwt_side?.value ?? d.rail_side?.value ?? null);
+  if (!facePreset && sources.cwt === src && !d.cwt_side?.value)
+    warnings.push(
+      `No counterweight on this drawing (${d.cwt_side?.rationale || "none shown"}) — counterweight / rail side filled from the car rails: ${d.rail_side?.value}. Check it.`,
+    );
   put("doorType", d.door_type?.value ?? null);
 
   const rises = (d.floor_to_floor_mm ?? []).map((r) => num(r.mm)).filter((n): n is number => n !== null);
@@ -282,7 +307,10 @@ function applyRich(
 
   const cwt = (fieldVal("counterweight_position") ?? "").toLowerCase();
   if (cwt.includes("rear") || cwt.includes("back")) put("cwt", "BACK");
-  // "side" alone is ambiguous (left vs right) — the vision tier resolves it.
+  else if (cwt.includes("left") || cwt.includes("lhs")) put("cwt", "LEFT");
+  else if (cwt.includes("right") || cwt.includes("rhs")) put("cwt", "RIGHT");
+  // A bare "side" doesn't say WHICH side — the AI read resolves it, as does a
+  // counterweight-free lift (nothing to record), so neither fills the face.
 
   if (!("h1" in values)) warnings.push("Floor-to-floor heights aren't in the stored scan — use Read drawing (AI) or fill them manually.");
 }
@@ -329,8 +357,11 @@ export async function getRalph400Autofill(
   }
 
   // ---- fresh vision read (only when asked, needed, and possible) ----
+  // A read stored before rail_side existed leaves the face blank on a
+  // counterweight-free lift, and the part list can never build. Re-read those
+  // when the user asks for AI rather than handing back the same dead end.
   let usedVision = false;
-  if (!haveRalphRead && allowVision) {
+  if ((!haveRalphRead || !("cwt" in values)) && allowVision) {
     const apiKey = process.env.ANTHROPIC_API_KEY;
     if (!url) warnings.push("This job has no GA drawing uploaded — filled from the job record only.");
     else if (!apiKey) warnings.push("AI drawing-reading is not configured — filled from stored data only.");
@@ -383,6 +414,14 @@ export async function getRalph400Autofill(
     values.floors = job.floors;
     sources.floors = "job";
   }
+
+  // The face blocks the whole part list, and until now it failed silently: the
+  // toast said "Refilled N inputs", the dropdown stayed on "— pick —" and the
+  // list was empty with no explanation (floor report, 2026-11-09).
+  if (!("cwt" in values))
+    warnings.push(
+      "Counterweight / rail side could not be read — pick the face the rails and 3 mm brackets sit on. The part list can't build without it.",
+    );
 
   if (Object.keys(values).length === 0)
     return {

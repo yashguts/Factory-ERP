@@ -77,7 +77,7 @@ Top-level (all required):
 ```
 { "stops": F, "floor_to_floor_mm": [ {"mm": <int>, "confidence": "...", "label": "G->1"}, ... bottom-up, stops-1 entries ],
   "pit_mm": F, "overhead_mm": F, "structure_width_mm": F, "structure_depth_mm": F,
-  "cwt_side": F, "door_type": F, "door_opening_width_mm": F, "door_hand": F, "notes": "..." }
+  "cwt_side": F, "rail_side": F, "door_type": F, "door_opening_width_mm": F, "door_hand": F, "notes": "..." }
 ```
 F = `{"value": ..., "confidence": ..., "rationale": "..."}`; mm values are integers.
 - structure_width/depth = OUTER footprint of the shaft structure (width across the
@@ -85,7 +85,15 @@ F = `{"value": ..., "confidence": ..., "rationale": "..."}`; mm values are integ
   drawing labels the shaft size as inside/clear, still report it, say so in the
   rationale, confidence "medium".
 - cwt_side: on the hoistway plan with the entrance at the FRONT — behind the car =
-  "BACK", car's left = "LEFT", car's right = "RIGHT"; null if none drawn.
+  "BACK", car's left = "LEFT", car's right = "RIGHT"; null if none drawn (an R1000
+  or a hydraulic has no counterweight at all).
+- rail_side (added 2026-11-09): where the CAR GUIDE RAILS and their brackets sit,
+  read the same way. Report it on EVERY drawing, counterweight or not — the
+  calculator falls back to it when cwt_side is null, which is most R1000 and
+  hydraulic jobs. Usually the clearest thing in the plan: the rail profiles against
+  a wall, a "DBG" dimension across them, or a note naming the wall. A hydraulic
+  jack normally sits between the rails on the same wall. Null only if the rails
+  genuinely cannot be located.
 - door_type: automatic telescopic/side-opening "AT"; automatic centre opening
   "ACO"; hinged swing "SWING"; manual collapsible/gate "MCD"; else null.
 - door_hand: telescopic only — larger sub-segment of the opening on the LEFT = "L",

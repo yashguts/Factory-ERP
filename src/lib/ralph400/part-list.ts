@@ -25,6 +25,20 @@ import {
 import { catalogItem, codeFor, pieceMark } from "./catalog";
 
 export const MAX_STOPS = 6; // H1..H5 = five rises
+
+/**
+ * Drive types that carry no counterweight at all: the R1000 machine is
+ * self-contained and a hydraulic lift rides on a jack. These are 52 of the 83
+ * factory-structure jobs, so there is nothing on their drawings for the
+ * counterweight input to read — and the floor read that as the drawing read
+ * failing (2026-11-09). What C15 actually decides is which face carries the
+ * 3 mm brackets and gets sheet instead of glass, and on these lifts that is
+ * the car-rail face, which IS on every drawing.
+ */
+export const hasNoCounterweight = (driveType?: string | null) => {
+  const d = (driveType ?? "").trim().toUpperCase();
+  return d === "HYD" || d === "R1000";
+};
 export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD"] as const;
 
 export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "channels" | "hardware";
@@ -112,13 +126,13 @@ export function checkInputs(inp: Ralph400Inputs, opts: { driveType?: string | nu
   if (F < 2 || F > MAX_STOPS)
     out.push({ level: "error", field: "floors", msg: `Number of stops must be 2 to ${MAX_STOPS} (the sheet has five floor heights).` });
   if (!OPTIONS.cwt.includes(inp.cwt as (typeof OPTIONS.cwt)[number])) {
-    const hyd = (opts.driveType ?? "").toUpperCase() === "HYD";
+    const drive = (opts.driveType ?? "").trim().toUpperCase();
     out.push({
       level: "error",
       field: "cwt",
-      msg: hyd
-        ? "Counterweight side is not set. This is a hydraulic lift with no counterweight, but the sheet has no NONE option — pick the rail side (see Rules Book, live-job gap 2)."
-        : "Counterweight side is not set.",
+      msg: hasNoCounterweight(drive)
+        ? `Counterweight / rail side is not set. ${drive === "HYD" ? "A hydraulic lift" : "An R1000"} has no counterweight, so the drawing shows none and the sheet has no NONE option — pick the face the car rails and 3 mm brackets sit on. The drawing shows the rails, usually in the hoistway plan or its notes.`
+        : "Counterweight / rail side is not set — pick the face the counterweight and the 3 mm brackets sit on.",
     });
   }
   // C16. Blank reads as NO (cladding), which is the ordinary job.
