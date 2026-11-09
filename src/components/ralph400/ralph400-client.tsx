@@ -354,7 +354,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
       <PageHeader
         icon={<Ruler size={18} />}
         title="RALPH 400 Structure Part List"
-        subtitle="Pick a job — its external shaft structure part list is built from the shaft size, floors and counterweight side."
+        subtitle="Pick a job — its external shaft structure part list is built from the shaft size, floors and the CWT / rail side."
         className="mb-2 print:hidden"
       />
 
