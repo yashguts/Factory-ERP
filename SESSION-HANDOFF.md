@@ -10,8 +10,144 @@ this file is quick orientation + what's fresh. Also read the auto-memory index
 > Treat §0 and §4 as the checked parts. The previous §0 (SS Grade 316 sheets, `4be3dc6`, 2026-09-05) shipped
 > and is done apart from the RM-222 supplier/cost gap still listed in §4.
 >
-> **The project moved from `H:` to `E:`.** Paths in older docs that say `H:\Anthropic Access\ERPFACTORY`
-> mean `E:\…` now; the memory folder likewise moved to `E--Anthropic-Access-ERPFACTORY`.
+> **The project moved from `H:` to `E:` to `D:\USB DRIVE\Anthropic Access\ERPFACTORY`** (a USB copy, as of
+> 2026-11-08). Paths in older docs saying `H:\…` or `E:\…` mean that. The memory folder follows the path, so
+> it is now `D--USB-DRIVE-Anthropic-Access-ERPFACTORY` and **starts empty** — the `E:` memory index is gone.
+> The companion repo moved too: `D:\USB DRIVE\Anthropic Access\RAPLH400 BOM`.
+>
+> **Node.js is not installed on the machine holding this USB copy** (checked 2026-11-08: no `node`/`npx` on
+> PATH, none under Program Files / LOCALAPPDATA / APPDATA / ProgramData, no `HKLM:\SOFTWARE\Node.js`). So
+> `npm run dev`, `npx tsc --noEmit` and the workbook rebuild cannot run there at all. Python 3 **is**
+> available (no `openpyxl`). Plan verification accordingly, or work from a machine with node.
+
+---
+
+## 0d — Update 2026-11-09: counterweight-free lifts can build a part list
+
+**The report.** The floor said "ralph bom could not read the cwt position frequently, especially in
+hydraulic". It was not a reading failure. **R1000 and hydraulic lifts have no counterweight at all**, so
+the drawing read correctly returns nothing — its own rationales say "Hydraulic lift - no counterweight
+drawn" at high confidence. Focused reads, by drive: BELT 15/15 found, HOME 11/11, HYD 1/6, R1000 0/33.
+Whenever a counterweight exists the read gets it; it is empty only when there isn't one.
+
+**The real problem.** C15 blocks the whole part list, so those jobs could never produce one. On this page
+that means the **hydraulic** jobs — exactly what the floor said — because `getFactoryStructureJobs` drops
+R1000 from the picker on purpose (8c9f958: an R1000's structure is its own, not a RALPH shaft). The 33
+null R1000 reads come from the batch deep-scan, which covers every Factory-made job, not from this page.
+Worse, it failed silently: `applyRalph` pushed no warning for a null `cwt`, so the toast said "Refilled N
+inputs", the dropdown sat on "— pick —", the table was replaced by an empty state and Save/Export/Print
+greyed out.
+
+**What C15 actually decides** is which face carries the 3 mm bracket channel and gets sheet instead of
+glass. On a counterweight-free lift that is the **car-rail face**, on the same wall, needing the same
+brackets — and it IS on every drawing. The model was already reading it, into free-text `notes`
+("car rails at the rear DBG 600 with jack between (no counterweight)", RNLHYD-0125).
+
+**Changes** (all on `main`, commit below):
+- `ralph400-autofill.ts` — new **`rail_side`** field in the vision schema + prompt (report it on every
+  drawing, counterweight or not); `cwt` now falls back `cwt_side ?? rail_side`, with a warning naming
+  where it came from. A single authoritative warning fires whenever the face ends up unset. The free
+  tier now also maps `left/lhs/right/rhs` (it only handled "rear"); a bare "side" is still ambiguous and
+  left blank on purpose.
+- **SCHEMA_VERSION stays `ralph400_v1`** deliberately — `partlist-generate.ts` (×2) and `spec-vision.ts`
+  identify rich reads as `.neq("schema_version", "ralph400_v1")`, so a v2 would leak RALPH rows into the
+  Part List's reads. The shape just gained an optional field. Rows stored before today have no
+  `rail_side`, so the AI re-read is now allowed when a stored read left the face blank
+  (`if ((!haveRalphRead || !("cwt" in values)) && allowVision)`) instead of returning the same dead end.
+- `part-list.ts` — `hasNoCounterweight(driveType)` (HYD | R1000, exported); the blocking message now
+  tells every counterweight-free drive what to pick and where to find it.
+- UI relabelled **"CWT / rail side"** (input row + stat tile; "Counterweight / rail side" on the export,
+  which has no width limit). Only the label and copy changed — `OPTIONS.cwt` is still BACK/RIGHT/LEFT
+  and no arithmetic moved, so the owner's sheet is unaffected.
+- `scripts/drawing-deepscan/INSTRUCTIONS.md` — the batch pipeline now captures `rail_side` too, so new
+  scans stop reproducing the gap. `post.js` still writes `ralph400_v1` on purpose: bumping it would make
+  `check.js` mark all 83 jobs incomplete and force a full rescan.
+
+**Verified live** (2026-11-09, deploys of `b7b2c25` + `e032b38`). On **RNLHYD-0127** (ARTLAB, HYD, 4
+stops) the page opened blocked with the new message, "Read drawing (AI)" re-read the GA and filled
+**CWT / rail side = BACK**, and the part list built — **74 lines, 2,436 pieces**, cladding BACK · FRONT,
+glass LEFT · RIGHT. Nothing was saved. The stored row proves the mechanism: `cwt_side` null ("no
+counterweight shown", high) and `rail_side` "BACK" ("jack/rail assembly and DBG 700 at the rear wall",
+medium). Its 2026-09-29 row had already written "car rails and jack on the rear wall" into the *cwt
+rationale* — the answer was on the drawing all along, just not in a field.
+
+**Backfilled the same day.** Ten picker-eligible jobs had no face. Three were re-read through the app
+and now build: **RNLHYD-0127** (HYD, rail BACK, 74 lines), **RNLHYD-0143** (HYD, rail BACK, 68 lines),
+**RNLCHA-0027** (BELT, 66 lines). RNLCHA-0027 is the useful control — it has a counterweight, and
+`cwt_side` and `rail_side` both came back BACK, which is the agreement the fallback assumes. Five of the
+rest (RNLAP-0065, RNLHYD-0125, RNLHYD-0144, RNLJAI-0010, RNLKOL-0026) are **fully dispatched**, so the
+picker hides them and they need no part list. The last two, **RNLAHM-0037** and **RNLMALS-009** (both
+stage `new`, in the picker), have **no GA drawing uploaded** — nothing to read, so they still block.
+That is now the only reason a live job blocks on the face.
+
+**Not done / to watch.** Other jobs scanned before today have no `rail_side` stored — each needs one
+click of **Read drawing (AI)** (which now re-reads instead of short-circuiting). `rail_side` confidence
+is "medium" where the counterweight read was "high", so the value is worth a glance before saving.
+No `npx tsc --noEmit` was possible here (no node, see the banner above) — the Netlify build was the gate
+and both deploys went green.
+
+---
+
+## 0c — Update 2026-11-08: `/ralph400` gains the owner's "CWT & FRONT GLASS" option
+
+The owner sent `RALPH 400 R1000 BOM.xlsx`, sheet **"RALPH BOM"** (a 5-stop job, BLR 51). Again their own
+copy, so it still lacks the 2026-10-03 Rules Book numbers (glass −97/+38, cladding −142, covers +9/+38,
+no −35 on S8, 12F hex, per-part fasteners) and still has the three defects §4 lists. Only the structural
+changes were ported.
+
+- **NEW INPUT `C16` "CWT & FRONT GLASS" (YES/NO)** — the sheet labels the block
+  "CWT & FRONT GLASS DIMENSION IF ASKED FOR", so it is a customer option, **default NO**. On YES the shaft
+  is fully glazed: the four extension cladding rows (17-20) and the three console cladding rows (70-72)
+  drop out, and the new block (rows 95-107) adds
+  - **CWT face, module level:** one pane `2450/2 − 76 − 95.5` and **F** panes `(2450 − 304)/2` — both
+    constants, qty 1 and C8 (not the 2F−1 a glazed face uses). The glazed faces keep their 1098/1128 panes.
+  - **CWT face, per level:** `extension − 152`. That face carries the 3 mm bracket channel, so its opening
+    is 52 mm shorter than an ordinary glazed face.
+  - **FRONT, per level:** `extension − 140` (72.5 + 67.5). **No front module pane** — the door is at that
+    level. This is the one new figure the owner already wrote with the +38 allowance, and it matches the
+    app exactly.
+  - `U17:V20` carry **no** C16 condition, so the **overhead stays sheet-clad on all four faces** even on a
+    glazed job (the new block has no overhead row). Kept; flagged below.
+- **Front extension cladding is `C4 − 200` again** (width), undoing v2's `C5 − 200` from 2026-10-09
+  (`7eca14a`). The front spans the width and the front *overhead* panel always read `C4 − 200`, so level
+  and overhead now agree. This realigns with the one saved list (RNLHYD-0147, front 1430).
+- **The owner adopted three of this app's fixes** in their own copy: `P19/R19/T19` → `C4 − 200` (R19/T19
+  had the blank cell `E5`), `M19` → `M8` (was `M10`), and `T20` is a real formula (was `G8`/`G5`). The
+  console cladding rows are now gated to the counterweight face (`F70:F72`, `H70:H72`, `I70` cleared) —
+  **AUDIT H76/I76 is settled**, clean mode was right.
+- **Deliberate 3 mm difference:** the new CWT rows use `+35`, the new FRONT rows `+38`. The owner confirmed
+  +38 on 2026-10-03 and this app applies it throughout, so the CWT panes come out 3 mm larger here than in
+  their copy. Not split into two allowances. **Ask the owner.**
+- **Drift normalised, not copied:** the new block gives *every* row the **counterweight** face's span
+  (`G95`…), so on a LEFT/RIGHT counterweight the FRONT glass would be cut to the depth. Each face keeps its
+  own span here. **Ask the owner.** (Invisible on this job: CWT=BACK, so both read `C4 − 200`.)
+- Sheet **"TRIAL"** in that workbook is a separate experiment (985 × 985 shaft, "COLUMN EXTN", a 60 mm pit
+  rule). **Not modelled** — the owner asked only about "RALPH BOM".
+- Touched: `model.ts` (input, 4 constants, `fullGlass`, panel + console rows), `part-list.ts` (decimal pane
+  sizes, the new check, blurbs), `ralph400-client.tsx` (the dropdown, export row), `build_workbook.py`.
+  Catalog unchanged — every new row is `R4-GL-6`. Old saved lists and old `localStorage` read as NO.
+- **Autofill was NOT extended.** `ralph400-autofill.ts` has no field for this; it is a sales option, not
+  something a GA drawing states. It stays a manual pick.
+
+> **How this was verified, and the one gap left.** This session ran on the USB copy at
+> `D:\USB DRIVE\Anthropic Access\ERPFACTORY` on a machine with **no Node.js installed at all** (no
+> `node`/`npx` anywhere; no registry key), so `npx tsc --noEmit` could not be run locally.
+>
+> **Types and lint are nonetheless verified: Netlify built the commit clean.** Deploy
+> `6af053563d869c2ebbc38781`, `commit_ref` `10e994c`, state `ready`, published 2026-11-08 10:49 UTC. Its
+> `npm run build` runs `next build`, and `next.config.ts` sets neither `typescript.ignoreBuildErrors` nor
+> `eslint.ignoreDuringBuilds`, so full type-checking and eslint both passed. **On this machine, pushing is
+> the only way to run the gate — and a type error simply fails the build and leaves the previous deploy
+> published, so the live site is not at risk.**
+>
+> Arithmetic was checked separately: the whole glazed-job calculation was re-derived in a throwaway Python
+> script and matched against the R1000 sheet's own computed cells. Every value agrees, with only the
+> documented deltas (+3 allowance, −23 overhead, +35 on the 4th-floor extension). The front-glass rows match
+> **exactly**, which is what confirms the −140 reading. `build_workbook.py` is `py_compile` clean.
+>
+> **STILL OPEN: the clean workbook was not rebuilt** (`openpyxl` missing, and `export-catalog.ts` needs
+> node), so `build_workbook.py` carries the new rule but no generated workbook has been checked against
+> `buildPartList()`. **First job on a machine with node: rebuild it and re-run that comparison.**
 
 ---
 

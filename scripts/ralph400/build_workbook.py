@@ -104,6 +104,7 @@ LABEL = {
     "N_Lintel": "no. of lintels", "N_DLock": "no. of D-lock posts", "N_PostClad": "no. of post claddings",
     "N_DeadWeight": "no. of dead wt ch", "Count_M8": "M8 count", "Count_M5": "M5 count",
     "PL_Qty": "Qty", "PL_Code": "Code", "Door_Hand": "Door hand", "Span_FRONT_Ext": "Front ext width",
+    "In_FullGlass": "CWT & front glass", "FullGlass": "glazed job",
 }
 SAY = []  # (row, col, expression) -> the formula in words, written at the end
 
@@ -133,6 +134,7 @@ inputs = [
     ("In_Rise4", "Floor height 3rd to 4th, mm", 0, ""),
     ("In_Rise5", "Floor height 4th to 5th, mm", 0, ""),
     ("In_CWT", "Counterweight side (seen from the landing)", "LEFT", "BACK, LEFT or RIGHT"),
+    ("In_FullGlass", "CWT & front glass (fully glazed shaft)", "NO", "YES glazes the CWT face and the front"),
     ("In_DoorType", "Door type", "AT", "label only"),
     ("In_DoorOpening", "Door opening", "AT 700 R", "printed on the D-locking post"),
 ]
@@ -144,7 +146,7 @@ for i, (n, label, val, note) in enumerate(inputs, r + 2):
     ws.cell(row=i, column=9, value=note).font = MUTED
     name(n, i)
     IN_ROW[n] = i
-for n, lst in [("In_CWT", '"BACK,LEFT,RIGHT"'), ("In_DoorType", '"AT,ACO,SWING,MCD"'), ("In_Stops", '"2,3,4,5,6"')]:
+for n, lst in [("In_CWT", '"BACK,LEFT,RIGHT"'), ("In_FullGlass", '"NO,YES"'), ("In_DoorType", '"AT,ACO,SWING,MCD"'), ("In_Stops", '"2,3,4,5,6"')]:
     dv = DataValidation(type="list", formula1=lst, allow_blank=False)
     ws.add_data_validation(dv)
     dv.add(f"B{IN_ROW[n]}")
@@ -158,6 +160,7 @@ checks = [
     ("Width and depth filled", "AND(In_Width>Face_Deduct,In_Depth>Face_Deduct)", "Enter the external width and depth."),
     ("Stops 2 to 6", "AND(In_Stops>=2,In_Stops<=6)", "Five floor heights, so at most 6 stops."),
     ("Counterweight BACK, LEFT or RIGHT", 'OR(In_CWT="BACK",In_CWT="LEFT",In_CWT="RIGHT")', "Hydraulic (no counterweight): pick the rail side."),
+    ("CWT & front glass YES or NO", 'OR(In_FullGlass="YES",In_FullGlass="NO")', "Pick from the dropdown."),
     ("Pit depth 0 or more", "In_Pit>=0", ""),
     ("Overhead above Min_Overhead", "In_Overhead>Min_Overhead", "Below it the overhead cladding has no height."),
 ]
@@ -216,18 +219,26 @@ section("2450 console modules")
 for cn, dwg in CORNERS:
     c, p = fixed(f"R4-PST-{cn}")
     add(c, f"{p} (dwg {dwg})", "", "", "TRUE", "In_Stops", "Module", None)
+# Module panes keep their own gate: the glazed faces take the 1098 / 1128
+# panes, and on a glazed job the CWT face takes its own pair (owner R1000
+# F95/F96) instead. The front has no module pane - the door is at that level.
 for f in SIDE:
-    add(*fixed("R4-GL-6"), f, "MOD", f"Glass_{f}", "1", "Glass_Lowest", f"Span_{f}+Glass_Allow")
+    add(*fixed("R4-GL-6"), f, "MOD", f"NOT(IsCWT_{f})", "1", "Glass_Lowest", f"Span_{f}+Glass_Allow")
 for f in SIDE:
-    add(*fixed("R4-GL-6"), f, "MOD", f"Glass_{f}", "2*In_Stops-1", "Glass_Panel", f"Span_{f}+Glass_Allow")
+    add(*fixed("R4-GL-6"), f, "MOD", f"NOT(IsCWT_{f})", "2*In_Stops-1", "Glass_Panel", f"Span_{f}+Glass_Allow")
+add(*fixed("R4-GL-6"), "=In_CWT", "MOD", "FullGlass", "1", "Glass_CWT_Lowest", "Span_CWT+Glass_Allow")
+add(*fixed("R4-GL-6"), "=In_CWT", "MOD", "FullGlass", "In_Stops", "Glass_CWT_Panel", "Span_CWT+Glass_Allow")
 for f in SIDE:
     add(*fixed("R4-SH-12"), f, "MOD", f"Clad_{f}", "1", "Clad_Lowest", f"Span_{f}")
 for f in SIDE:
     add(*fixed("R4-SH-12"), f, "MOD", f"Clad_{f}", "2*In_Stops-1", "Clad_Panel", f"Span_{f}")
 section("Glass panels 6 mm (extensions)")
+# The counterweight face deducts 152 - 38 and the front 140 - 38; every other
+# glazed face 97. Only a glazed job puts glass on the CWT face or the front.
 for lv in LV:
-    for f in SIDE:
-        add(*fixed("R4-GL-6"), f, lv, f"AND(Glass_{f},Built_{lv})", "1", f"Ext_{lv}-Glass_Deduct", f"Span_{f}+Glass_Allow")
+    for f in SIDE + ["FRONT"]:
+        ded = "Glass_Deduct_Front" if f == "FRONT" else f"IF(IsCWT_{f},Glass_Deduct_CWT,Glass_Deduct)"
+        add(*fixed("R4-GL-6"), f, lv, f"AND(Glass_{f},Built_{lv})", "1", f"Ext_{lv}-{ded}", f"Span_{f}+Glass_Allow")
 section("Sheet cladding 1.2 mm (extensions + overhead)")
 for lv in LV:
     for f in SIDE + ["FRONT"]:
@@ -333,6 +344,10 @@ rules = [
     ("Glass", None, None),
     ("Glass_Allow", 38, "Glass width = span + 38 (owner, 3 Oct 2026; was 35)."),
     ("Glass_Deduct", 97, "Extension glass height = extension - 97 (45.5 + 45.5 + 6)."),
+    ("Glass_Deduct_CWT", 114, "Glazed job: CWT-face extension glass = extension - (152 - 38); that face carries the 3 mm bracket channel."),
+    ("Glass_Deduct_Front", 102, "Glazed job: front extension glass = extension - (140 - 38); 140 = 72.5 + 67.5 at the door frame."),
+    ("Glass_CWT_Panel", 1111, "Glazed job: CWT module glass height ((2450 - 304)/2 + 38)."),
+    ("Glass_CWT_Lowest", 1091.5, "Glazed job: lowest CWT module glass (2450/2 - 76 - 95.5 + 38), 1 per job."),
     ("Glass_Panel", 1128, "Module glass height (1090 + 22 + 22 - 6)."),
     ("Glass_Lowest", 1098, "Lowest module glass, 1 per glass face per job."),
     ("Cladding", None, None),
@@ -411,16 +426,19 @@ calcs += [
 ]
 for f, span in [("LEFT", "In_Depth"), ("RIGHT", "In_Depth"), ("BACK", "In_Width"), ("FRONT", "In_Width")]:
     calcs.append((f"Span_{f}", f"={span}-Face_Deduct", f"{f.title()} face span (channel / panel width)."))
-calcs.append(("Span_FRONT_Ext", "=In_Depth-Face_Deduct", "Front extension cladding width: depth - 200 (owner v2 row 20, 9 Oct 2026)."))
+calcs.append(("Span_FRONT_Ext", "=In_Width-Face_Deduct",
+              "Front extension cladding width: width - 200 (owner R1000 row 20, 8 Nov 2026; v2's depth is withdrawn)."))
 for f in ["LEFT", "RIGHT", "BACK"]:
     calcs.append((f"IsCWT_{f}", f'=In_CWT="{f}"', f"Is the counterweight on the {f.lower()}?"))
 calcs.append(("IsCWT_FRONT", "=FALSE", "The front is the door."))
+calcs.append(("FullGlass", '=In_FullGlass="YES"',
+              "Glazed job (owner R1000 C16): the CWT face and the front take glass, not sheet."))
 for f in ["LEFT", "RIGHT", "BACK"]:
-    calcs.append((f"Glass_{f}", f"=NOT(IsCWT_{f})", f"Does the {f.lower()} face get glass?"))
-calcs.append(("Glass_FRONT", "=FALSE", "The front never gets glass."))
+    calcs.append((f"Glass_{f}", f"=OR(NOT(IsCWT_{f}),FullGlass)", f"Does the {f.lower()} face get glass?"))
+calcs.append(("Glass_FRONT", "=FullGlass", "The front is glazed only on a glazed job."))
 for f in ["LEFT", "RIGHT", "BACK"]:
-    calcs.append((f"Clad_{f}", f"=IsCWT_{f}", f"Is the {f.lower()} face sheet-clad?"))
-calcs.append(("Clad_FRONT", "=TRUE", "The front is clad on every job (owner v1, 9 Oct 2026)."))
+    calcs.append((f"Clad_{f}", f"=AND(IsCWT_{f},NOT(FullGlass))", f"Is the {f.lower()} face sheet-clad?"))
+calcs.append(("Clad_FRONT", "=NOT(FullGlass)", "The front is clad on every job except a glazed one (owner v1, 9 Oct 2026)."))
 calcs.append(("Span_CWT", "=IF(IsCWT_BACK,Span_BACK,Span_LEFT)", "Span of the counterweight face."))
 calcs.append(("Door_Hand", '=IF(ISNUMBER(SEARCH("CO",In_DoorOpening)),"C",IF(ISNUMBER(SEARCH("L",In_DoorOpening)),"L","R"))',
               "Door set hand from the opening: R, L, or C (centre opening)."))

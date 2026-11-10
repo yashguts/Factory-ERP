@@ -70,6 +70,7 @@ const BLANK: Ralph400Inputs = {
   h4: 0,
   h5: 0,
   cwt: "",
+  cwtFrontGlass: "NO",
   doorType: "",
   doorOpening: "",
 };
@@ -353,7 +354,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
       <PageHeader
         icon={<Ruler size={18} />}
         title="RALPH 400 Structure Part List"
-        subtitle="Pick a job — its external shaft structure part list is built from the shaft size, floors and counterweight side."
+        subtitle="Pick a job — its external shaft structure part list is built from the shaft size, floors and the CWT / rail side."
         className="mb-2 print:hidden"
       />
 
@@ -440,7 +441,11 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
                 )}
               </Group>
               <Group title="Configuration">
-                <SelectRow label="Counterweight" k="cwt" options={OPTIONS.cwt} inp={inp} sources={sources} issue={issueFor("cwt")} onChange={setField} />
+                {/* R1000 + hydraulic jobs have no counterweight; what this
+                    face really decides is where the 3 mm brackets and the
+                    sheet go, which is the rail side. */}
+                <SelectRow label="CWT / rail side" k="cwt" options={OPTIONS.cwt} inp={inp} sources={sources} issue={issueFor("cwt")} onChange={setField} />
+                <SelectRow label="CWT & front glass" k="cwtFrontGlass" options={OPTIONS.cwtFrontGlass} inp={inp} sources={sources} issue={issueFor("cwtFrontGlass")} onChange={setField} />
                 <SelectRow label="Door type" k="doorType" options={OPTIONS.doorType} inp={inp} sources={sources} issue={issueFor("doorType")} onChange={setField} />
                 <SelectRow label="Door opening" k="doorOpening" options={OPTIONS.doorOpening} inp={inp} sources={sources} issue={issueFor("doorOpening")} onChange={setField} />
               </Group>
@@ -464,7 +469,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
                 value={inp.shaftWidth && inp.shaftDepth ? `${inp.shaftWidth} × ${inp.shaftDepth}` : "—"}
                 sub="outer width × depth"
               />
-              <StatTile className="px-3 py-1" label="Counterweight" value={inp.cwt || "—"} tone={inp.cwt ? "primary" : "danger"} />
+              <StatTile className="px-3 py-1" label="CWT / rail side" value={inp.cwt || "—"} tone={inp.cwt ? "primary" : "danger"} />
               {/* Faces come from the built list, so they mean nothing until the inputs are valid. */}
               <StatTile className="px-3 py-1" label="Glass faces" value={(!result.blocked && result.glassFaces.join(" · ")) || "—"} />
               <StatTile className="px-3 py-1"
@@ -534,7 +539,12 @@ function inputRows(inp: Ralph400Inputs, job: FactoryJobOption | null): [string, 
     ["Stops", inp.floors],
   ];
   FLOOR_FIELDS.slice(0, Math.max(0, inp.floors - 1)).forEach(([k, label]) => rows.push([`${label} (mm)`, inp[k]]));
-  rows.push(["Counterweight", inp.cwt], ["Door type", inp.doorType], ["Door opening", inp.doorOpening]);
+  rows.push(
+    ["Counterweight / rail side", inp.cwt],
+    ["CWT & front glass", inp.cwtFrontGlass],
+    ["Door type", inp.doorType],
+    ["Door opening", inp.doorOpening],
+  );
   return rows;
 }
 

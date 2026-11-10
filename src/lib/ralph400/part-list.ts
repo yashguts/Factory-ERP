@@ -25,6 +25,23 @@ import {
 import { catalogItem, codeFor, pieceMark } from "./catalog";
 
 export const MAX_STOPS = 6; // H1..H5 = five rises
+
+/**
+ * Drive types that carry no counterweight at all: a hydraulic lift rides on a
+ * jack, and the R1000 machine is self-contained. Their drawings therefore show
+ * no counterweight for C15 to read, and the floor read that as the drawing
+ * read failing (2026-11-09). What C15 actually decides is which face carries
+ * the 3 mm brackets and gets sheet instead of glass, and on these lifts that
+ * is the car-rail face, which IS on every drawing.
+ *
+ * In practice only HYD reaches here: getFactoryStructureJobs drops R1000 from
+ * the picker (8c9f958 — an R1000's structure is its own, not a RALPH shaft).
+ * R1000 stays listed so the message is right if that filter ever changes.
+ */
+export const hasNoCounterweight = (driveType?: string | null) => {
+  const d = (driveType ?? "").trim().toUpperCase();
+  return d === "HYD" || d === "R1000";
+};
 export const LEVEL_LABELS = ["PIT", "GND", "1ST", "2ND", "3RD", "4TH", "OVERHEAD"] as const;
 
 export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "channels" | "hardware";
@@ -32,8 +49,8 @@ export type SectionKey = "verticals" | "console" | "glass" | "cladding" | "chann
 export const SECTIONS: { key: SectionKey; title: string; blurb: string }[] = [
   { key: "verticals", title: "Corner verticals", blurb: "Extension pieces between the 2450 modules, one per corner per level; pit channels on a deep pit" },
   { key: "console", title: "2450 console modules", blurb: "One fixed module per landing: corner verticals, sill, standard panes" },
-  { key: "glass", title: "Glass panels 6 mm", blurb: "Extension glass on every side face except the counterweight face" },
-  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces" },
+  { key: "glass", title: "Glass panels 6 mm", blurb: "Side faces; on a glazed job (CWT & front glass = YES) the counterweight face and the front too" },
+  { key: "cladding", title: "Sheet cladding 1.2 mm", blurb: "Counterweight face and the front; overhead on all four faces, glazed job or not" },
   { key: "channels", title: "Horizontal channels & covers", blurb: "Channels span a face; covers are channel length + 9 (170) or + 38 (135)" },
   { key: "hardware", title: "Doors, plates & fasteners", blurb: "Counted per floor" },
 ];
@@ -112,15 +129,19 @@ export function checkInputs(inp: Ralph400Inputs, opts: { driveType?: string | nu
   if (F < 2 || F > MAX_STOPS)
     out.push({ level: "error", field: "floors", msg: `Number of stops must be 2 to ${MAX_STOPS} (the sheet has five floor heights).` });
   if (!OPTIONS.cwt.includes(inp.cwt as (typeof OPTIONS.cwt)[number])) {
-    const hyd = (opts.driveType ?? "").toUpperCase() === "HYD";
+    const drive = (opts.driveType ?? "").trim().toUpperCase();
     out.push({
       level: "error",
       field: "cwt",
-      msg: hyd
-        ? "Counterweight side is not set. This is a hydraulic lift with no counterweight, but the sheet has no NONE option — pick the rail side (see Rules Book, live-job gap 2)."
-        : "Counterweight side is not set.",
+      msg: hasNoCounterweight(drive)
+        ? `Counterweight / rail side is not set. ${drive === "HYD" ? "A hydraulic lift" : "An R1000"} has no counterweight, so the drawing shows none and the sheet has no NONE option — pick the face the car rails and 3 mm brackets sit on. The drawing shows the rails, usually in the hoistway plan or its notes.`
+        : "Counterweight / rail side is not set — pick the face the counterweight and the 3 mm brackets sit on.",
     });
   }
+  // C16. Blank reads as NO (cladding), which is the ordinary job.
+  const fg = (inp.cwtFrontGlass ?? "").trim().toUpperCase();
+  if (fg && !OPTIONS.cwtFrontGlass.includes(fg as (typeof OPTIONS.cwtFrontGlass)[number]))
+    out.push({ level: "warn", field: "cwtFrontGlass", msg: `CWT & front glass "${inp.cwtFrontGlass}" is not YES or NO — read as NO.` });
   FLOOR_FIELDS.forEach(([key, label], i) => {
     const v = inp[key];
     if (i < F - 1) {
@@ -203,7 +224,8 @@ function linesFrom(m: Ralph400Result, inp: Ralph400Inputs): PartLine[] {
     const qty = figQty(r.qty);
     // Sheet mode: the workbook's left-sheet row reads "GLASS" on glass faces.
     const w = r.len === "GLASS" ? "GLASS" : figSize(r.len);
-    const pane = r.desc.match(/(\d{4})\s*(MM|X)/);
+    // The CWT module panes are not whole numbers (1091.5), so allow a decimal.
+    const pane = r.desc.match(/(\d{4}(?:\.\d+)?)\s*(MM|X)/);
     const isPanel = /GLASS|CLADDING/.test(r.desc);
     const size = isPanel ? (w === "GLASS" ? "GLASS" : w && pane ? `${pane[1]} × ${w}` : "") : w ?? "";
     out.push({

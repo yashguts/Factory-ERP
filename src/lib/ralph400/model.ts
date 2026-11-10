@@ -53,6 +53,43 @@
      * The overhead ring (rows 45-51 in v1: 2nd-last channels and covers) is
        removed from the part list, on the owner's instruction the same day.
 
+   Owner's workbook "RALPH 400 R1000 BOM.xlsx", sheet "RALPH BOM" (2026-11-08),
+   applied on top. One new input and one reverted width:
+     * NEW INPUT C16 "CWT & FRONT GLASS" (YES/NO), labelled in the sheet
+       "CWT & FRONT GLASS DIMENSION IF ASKED FOR" — a fully glazed shaft. On
+       YES the counterweight face and the front are glass instead of sheet:
+       the four extension cladding rows (17-20) and the three console cladding
+       rows (70-72) drop out, and the sheet's new block (rows 95-107) adds
+       - CWT face, module level: one GF pane 2450/2 - 76 - 95.5, and F common
+         panes (2450 - 304)/2  (F95/F96, both constant);
+       - CWT face, per level: extension - 152  (F97:F101). The counterweight
+         face carries the 3 mm bracket channel, so its opening is 52 mm
+         shorter than an ordinary glazed face (which deducts 100 in the sheet,
+         97 here);
+       - FRONT, per level: extension - 140 (= 72.5 + 67.5, F103:F107). The
+         front has no module pane — the door occupies that level.
+       U17:V20 are NOT gated on C16, so the OVERHEAD stays sheet-clad on all
+       four faces even on a glazed job; the new block has no overhead row.
+     * Front extension cladding is C4 - 200 again (K20:T20), undoing v2's
+       C5 - 200. The front spans the WIDTH, and the front overhead panel (V20)
+       always did read C4 - 200, so this also settles that disagreement.
+     * The owner fixed, in their own copy, three slips this file already had
+       corrected: P19/R19/T19 now read C4 - 200 (R19/T19 had the blank cell
+       E5), M19 reads M8 (was M10), and T20 is a real formula (was G8/G5).
+     * The console cladding rows now appear only on the counterweight face
+       (F70:F72 + H70:H72 gated, I70 cleared) — the owner adopting what clean
+       mode already did, so AUDIT H76/I76 is settled.
+     * Glass allowance: the new FRONT rows use +38, the new CWT rows +35. The
+       owner confirmed +38 on 2026-10-03 and this file applies it throughout,
+       so the CWT panes come out 3 mm taller/wider here than in their copy.
+       Flagged for the owner, not silently split into two allowances.
+     * Drift reproduced as the row rule, not as written: the new block gives
+       every row the COUNTERWEIGHT face's span (G95 etc.), so on a LEFT/RIGHT
+       counterweight the FRONT glass would be cut to the depth. Each face here
+       keeps its own span. Ask the owner.
+     * Sheet "TRIAL" in that workbook is a separate experiment (a 985 x 985
+       shaft, "COLUMN EXTN", a 60 mm pit rule) and is NOT modelled.
+
    App-only rule, NOT in the workbook: any cell that would carry a negative
    length or quantity reads "NO" instead. The sheet leaves those cells blank.
    See nn() below; this is the one place the app deliberately differs.
@@ -82,8 +119,18 @@ export interface Ralph400Inputs {
   h3: number; // C11  2nd -> 3rd
   h4: number; // C12  3rd -> 4th
   h5: number; // C13  4th -> 5th
-  cwt: string; // C15
-  doorType: string; // C16 (unused by the sheet, carried for the job record)
+  /**
+   * C15. The face that carries the 3 mm bracket channel and gets sheet
+   * cladding instead of glass — the counterweight face when there is one. An
+   * R1000 or hydraulic lift has no counterweight, so there this is the
+   * car-rail face, which sits on the same wall and needs the same brackets.
+   * The sheet has no NONE option and the geometry needs a face, so the input
+   * stays required; the UI calls it "CWT / rail side".
+   */
+  cwt: string;
+  /** C16 "CWT & FRONT GLASS": "YES" glazes the counterweight face + front. */
+  cwtFrontGlass: string;
+  doorType: string; // carried for the job record; no sheet cell depends on it
   doorOpening: string; // C17
 }
 
@@ -100,6 +147,7 @@ export const DEFAULTS: Ralph400Inputs = {
   h4: 0,
   h5: 0,
   cwt: "BACK",
+  cwtFrontGlass: "NO",
   doorType: "AT",
   doorOpening: "AT 700 R",
 };
@@ -110,6 +158,7 @@ export const DEFAULTS: Ralph400Inputs = {
    D-locking door post, so no quantity depends on it. */
 export const OPTIONS = {
   cwt: ["BACK", "RIGHT", "LEFT"],
+  cwtFrontGlass: ["NO", "YES"],
   doorType: ["AT", "ACO", "SWING", "MCD"],
   doorOpening: [
     "AT 600 R", "AT 700 R", "AT 800 R", "AT 600 L", "AT 700 L", "AT 800 L",
@@ -206,8 +255,22 @@ export const PIT_CHANNEL_MIN = 250; // pit channels when the pit piece is over t
 export const COVER_170 = 9; // 170 cover = channel + 4.5 + 4.5
 export const COVER_135 = 38; // 135 cover = channel + 19 + 19
 
+/* Fully glazed shaft (C16 = YES), owner's R1000 workbook rows 95-107.
+   The counterweight face loses 152 instead of 97: it carries the 3 mm bracket
+   channel, whose flange eats a further 55 mm of opening. The front loses 140
+   (72.5 + 67.5) because the door frame sits on that face. */
+export const CWT_GLASS_OFF = 152; // F97:F101 — CWT-face extension glass
+export const FRONT_GLASS_OFF = 140; // F103:F107 — front extension glass
+/** CWT module pane at the lowest landing (F95). Constant — no input in it. */
+export const CWT_MOD_GF_PANE = MODULE_H / 2 - 76 - BASE_DROP; // 1053.5
+/** The other F CWT module panes (F96). Also constant. */
+export const CWT_MOD_PANE = (MODULE_H - 304) / 2; // 1073
+
 const isNum = (v: unknown): v is number =>
   typeof v === "number" && isFinite(v);
+
+/** A pane size for a row description: "1111", or "1091.5" when it is not whole. */
+const fmtPane = (v: number) => (Number.isInteger(v) ? String(v) : String(Math.round(v * 10) / 10));
 
 /** Pit stub: P - 95.5, or a fixed 74.5 when the pit is under 170. */
 export function pitPiece(pit: number): number {
@@ -375,6 +438,12 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
   const L = cwt === "LEFT",
     B = cwt === "BACK",
     R = cwt === "RIGHT";
+  /* C16: glaze the counterweight face and the front instead of cladding them.
+     Only meaningful once the counterweight side is known — every new row is
+     measured off that face. */
+  const fullGlass = (inp.cwtFrontGlass ?? "").trim().toUpperCase() === "YES" && (L || B || R);
+  /** The counterweight face's own span: left/right run the depth, back the width. */
+  const cwtSpan = L || R ? D - 200 : W - 200;
 
   const hts = [inp.h1, inp.h2, inp.h3, inp.h4, inp.h5]; // GND 1ST 2ND 3RD 4RT
   // A level is live only when its height clears that level's own minimum.
@@ -411,52 +480,75 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
     qty: [1, 1, 1, 1, 1, 1, 1], // T8:T11 now 1 in the workbook
   }));
 
-  /* ---------------- glass & sheet panels (rows 13-20) ---------------- */
+  /* ---------------- glass & sheet panels (rows 13-20) ----------------
+     On a fully glazed job (C16 = YES) the counterweight face swaps sides: its
+     glass row turns ON with the bracket-channel deduction, and its cladding
+     row turns OFF. The front does the same, via the extra glass row below.
+     The cladding rows keep their OVERHEAD cell either way — U17:V20 carry no
+     C16 condition and the new block has no overhead row, so the headroom box
+     is sheet-clad on every job. */
+  const glassOff = (isCwtFace: boolean) =>
+    fullGlass && isCwtFace ? CWT_GLASS_OFF - GLASS_ALLOW : GLASS_OFF;
   const panelDefs: PanelDef[] = [
     {
       desc: "GLASS 6MM LEFT EXTN",
-      off: GLASS_OFF,
-      skipWhen: L,
+      off: glassOff(L),
+      skipWhen: L && !fullGlass,
       w: (k) => (strict && k === 4 ? null : D - 200 + GLASS_ALLOW), // T20 never created
     },
-    { desc: "GLASS 6MM RIGHT EXTN", off: GLASS_OFF, skipWhen: R, w: () => D - 200 + GLASS_ALLOW },
+    {
+      desc: "GLASS 6MM RIGHT EXTN",
+      off: glassOff(R),
+      skipWhen: R && !fullGlass,
+      w: () => D - 200 + GLASS_ALLOW,
+    },
     {
       desc: "GLASS 6MM BACK EXTN",
-      off: GLASS_OFF,
-      skipWhen: B,
+      off: glassOff(B),
+      skipWhen: B && !fullGlass,
       // AUDIT N22 (no width when CWT=RIGHT) and T22 (C4-135) in sheet mode.
       w: (k) => (strict ? (k === 4 ? W - 135 : k === 1 && R ? -1 : W - 200 + GLASS_ALLOW) : W - 200 + GLASS_ALLOW),
     },
     {
+      // R1000 F103:F107. Front glass only on a glazed job, and only above the
+      // module — the door takes the module level, so there is no front pane
+      // there. The front spans the WIDTH (the owner's block measures every row
+      // against the counterweight face; see the header note).
+      desc: "GLASS 6MM FRONT EXTN",
+      off: FRONT_GLASS_OFF - GLASS_ALLOW,
+      onlyWhen: fullGlass,
+      w: () => W - 200 + GLASS_ALLOW,
+    },
+    {
       desc: "SHEET CLADDING 1.2MM LEFT EXTN",
       off: CLAD_OFF,
-      onlyWhen: L,
+      onlyWhen: L && !fullGlass,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
       desc: "SHEET CLADDING 1.2MM RIGHT EXTN",
       off: CLAD_OFF,
-      onlyWhen: R,
+      onlyWhen: R && !fullGlass,
       w: () => D - 200,
       ohW: D - 200,
     },
     {
       desc: "SHEET CLADDING 1.2MM BACK EXTN",
       off: CLAD_OFF,
-      onlyWhen: B,
+      onlyWhen: B && !fullGlass,
       w: () => W - 200,
       ohW: W - 200,
     },
     {
       // Owner v1 row 20: the front is clad on every job, whatever the CWT side.
-      // Owner v2 K20:P20 (2026-10-09): height = extension - 142 (CLAD_OFF),
-      // width = C5 - 200, the shaft DEPTH. The overhead front panel (V20)
-      // stays C4 - 200 in the owner's sheet.
+      // Owner R1000 K20:T20 (2026-11-08): width is C4 - 200 again, the shaft
+      // WIDTH — v2's C5 - 200 is withdrawn. The overhead front panel (V20) has
+      // always read C4 - 200, so level and overhead now agree.
       desc: "SHEET CLADDING 1.2MM FRONT EXTN",
       off: CLAD_OFF,
-      onlyWhen: true,
-      w: () => D - 200,
+      onlyWhen: !fullGlass,
+      w: () => W - 200,
       ohW: W - 200,
     },
   ];
@@ -647,30 +739,53 @@ export function compute(inp: Ralph400Inputs, mode: Mode): Ralph400Result {
       qty: strict ? 2 * F - 1 : pick<Figure>(2 * F - 1, NA, 2 * F - 1),
       len: pick<Figure>(W - 200 + GLASS_ALLOW, NA, W - 200 + GLASS_ALLOW),
     },
+    /* Fully glazed job (C16 = YES): the counterweight face, which the rows
+       above exclude and the cladding rows below would have covered, gets its
+       own module panes instead (R1000 F95/F96). Both heights are constants —
+       only the width follows the shaft. The front has no module pane; the
+       door sits at that level. */
+    ...(fullGlass
+      ? ([
+          {
+            desc: `GLASS ${cwt} CWT MODULE ${fmtPane(CWT_MOD_GF_PANE + GLASS_ALLOW)} X (1ST)`,
+            qty: 1,
+            len: cwtSpan + GLASS_ALLOW,
+          },
+          {
+            desc: `GLASS ${cwt} CWT MODULE ${fmtPane(CWT_MOD_PANE + GLASS_ALLOW)} X`,
+            qty: F, // H96 = C8 * 1, not the 2F - 1 the glazed faces use
+            len: cwtSpan + GLASS_ALLOW,
+          },
+        ] as ConsoleRow[])
+      : ([] as ConsoleRow[])),
     /* Cladding: the lowest sheet on a face is 1062 (2450/2 - 163, sitting on
        the 95.5 + 67.5 base), the other 2F - 1 are 1090 (2450/2 - 135). Until
-       the 2026-10-03 rules update the workbook listed 2F at 1090. */
-    ...([
-      [1062, 1, "(1ST)"],
-      [1090, 2 * F - 1, ""],
-    ] as const).flatMap(([pane, n, tag]) => [
-      {
-        desc: `SHEET CLADDING LEFT COMMON 1.2MM ${pane}MM ${tag}`,
-        qty: strict ? n : pick<Figure>(n, NA, NA),
-        len: strict ? pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS") : pick<Figure>(D - 200, NA, NA),
-      },
-      {
-        // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
-        desc: `SHEET CLADDING RIGHT COMMON 1.2MM ${pane}MM ${tag}`,
-        qty: strict ? n : pick<Figure>(NA, NA, n),
-        len: pick<Figure>(NA, NA, D - 200),
-      },
-      {
-        desc: `SHEET CLADDING BACK COMMON 1.2MM ${pane}MM ${tag}`,
-        qty: strict ? n : pick<Figure>(NA, n, NA),
-        len: pick<Figure>(NA, W - 200, NA),
-      },
-    ]),
+       the 2026-10-03 rules update the workbook listed 2F at 1090.
+       R1000 F70:F72 + H70:H72 gate these to the counterweight face, which is
+       what clean mode already did; on a glazed job they all drop out. */
+    ...(fullGlass
+      ? ([] as ConsoleRow[])
+      : ([
+          [1062, 1, "(1ST)"],
+          [1090, 2 * F - 1, ""],
+        ] as const).flatMap<ConsoleRow>(([pane, n, tag]) => [
+          {
+            desc: `SHEET CLADDING LEFT COMMON 1.2MM ${pane}MM ${tag}`,
+            qty: strict ? n : pick<Figure>(n, NA, NA),
+            len: strict ? pick<Figure | "GLASS">(D - 200, "GLASS", "GLASS") : pick<Figure>(D - 200, NA, NA),
+          },
+          {
+            // R1's F70 reads "SHEET CLADDING COMMON" — the rename dropped RIGHT.
+            desc: `SHEET CLADDING RIGHT COMMON 1.2MM ${pane}MM ${tag}`,
+            qty: strict ? n : pick<Figure>(NA, NA, n),
+            len: pick<Figure>(NA, NA, D - 200),
+          },
+          {
+            desc: `SHEET CLADDING BACK COMMON 1.2MM ${pane}MM ${tag}`,
+            qty: strict ? n : pick<Figure>(NA, n, NA),
+            len: pick<Figure>(NA, W - 200, NA),
+          },
+        ])),
   ];
 
   /* ---------------- doors, brackets, fasteners (rows 81-99) ----------------
