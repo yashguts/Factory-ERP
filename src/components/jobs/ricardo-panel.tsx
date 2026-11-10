@@ -10,6 +10,7 @@ import {
 import { getCrmPaymentEventJobs } from "@/lib/actions/crm-payment-event-count";
 import { ricardoKeyOf } from "@/lib/ricardo/job-number";
 import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
+import { crmTotalValue } from "@/lib/crm/total-value";
 
 /**
  * Live money panel for CRM-linked jobs — contract value, transport scope and
@@ -98,6 +99,16 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
   // figures anywhere, including the history rows.
   const payments = (data.payments ?? []).filter((p) => p.status === "approved");
 
+  // Total order value including GST. For "Exclusive" jobs this adds GST on top
+  // of the contract value; for "Inclusive" jobs it equals the contract value.
+  const totalValue = crmTotalValue(data);
+  const isExclusive = (data.gstTreatment ?? "").trim().toLowerCase() === "exclusive";
+  const totalSub = isExclusive
+    ? `base + ${data.gstRate ?? 18}% GST`
+    : data.gstTreatment
+      ? `GST ${data.gstTreatment.toLowerCase()}`
+      : undefined;
+
   return (
     <div className="mb-3 card-surface p-3">
       <div className="mb-2 flex flex-wrap items-center gap-2">
@@ -145,8 +156,17 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
         </span>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
-        <Stat label="Contract Value" value={fmt(data.contractValue)} />
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
+        <Stat
+          label="Contract Value"
+          value={fmt(data.contractValue)}
+          sub={isExclusive ? "exclusive of GST" : data.gstTreatment ? "incl. GST" : undefined}
+        />
+        <Stat
+          label="Total Value (incl. GST)"
+          value={<span className="text-indigo-700">{fmt(totalValue)}</span>}
+          sub={totalSub}
+        />
         <Stat label="Transport" value={transport} />
         <Stat
           label="Received (approved)"

@@ -29,6 +29,10 @@ export interface RicardoFinancials {
   customerName?: string | null;
   contractValue?: number | null;
   contractType?: string | null;
+  /** CRM GST treatment of the contract value: "Exclusive" | "Inclusive" | null. */
+  gstTreatment?: string | null;
+  /** GST rate % used by the CRM for this job (18 for lifts; 0 for exports). */
+  gstRate?: number | null;
   cashAmount?: number | null;
   transportMode?: string | null;
   transportAmount?: number | null;
@@ -64,10 +68,46 @@ interface FeedRow {
   }[];
 }
 
+interface GstRow {
+  key: string;
+  gst_treatment: string | null;
+  gst_rate: number | string | null;
+}
+
 function num(v: number | string | null | undefined): number | null {
   if (v === null || v === undefined) return null;
   const n = Number(v);
   return Number.isFinite(n) ? n : null;
+}
+
+/**
+ * Per-job GST treatment + rate, keyed by the normalised job key. Read from the
+ * CRM's additive `erp_job_gst` RPC (separate from erp_job_financials so the
+ * core money feed is never touched). Tolerant: a missing function or any error
+ * yields an empty map, and the total-value helper then falls back to the
+ * contract value unchanged.
+ */
+export async function fetchGstByKey(
+  url: string,
+  anonKey: string,
+  secret: string,
+  keys: string[],
+): Promise<Record<string, { treatment: string | null; rate: number | null }>> {
+  const out: Record<string, { treatment: string | null; rate: number | null }> = {};
+  try {
+    const supabase = createClient(url, anonKey);
+    const { data, error } = await supabase.rpc("erp_job_gst", {
+      p_secret: secret,
+      p_keys: keys,
+    });
+    if (error) return out;
+    for (const row of (data ?? []) as GstRow[]) {
+      out[row.key] = { treatment: row.gst_treatment, rate: num(row.gst_rate) };
+    }
+  } catch {
+    // additive feed unavailable — leave empty, callers fall back gracefully
+  }
+  return out;
 }
 
 async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
@@ -90,12 +130,16 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
   const row = ((data ?? []) as FeedRow[])[0];
   if (!row) return { found: false };
 
+  const gst = (await fetchGstByKey(url, anonKey, secret, [key]))[key];
+
   return {
     found: true,
     fullJobNumber: row.full_job_number,
     customerName: row.customer_name,
     contractValue: num(row.contract_value),
     contractType: row.contract_type,
+    gstTreatment: gst?.treatment ?? null,
+    gstRate: gst?.rate ?? null,
     cashAmount: num(row.cash_amount),
     transportMode: row.transport_mode,
     transportAmount: num(row.transport_amount),
@@ -123,6 +167,8 @@ const getCachedFinancials = unstable_cache(fetchFinancials, ["ricardo-financials
 export interface RicardoListSummary {
   found: boolean;
   contractValue: number | null;
+  gstTreatment: string | null;
+  gstRate: number | null;
   receivedApproved: number;
   receivedPending: number;
   transportMode: string | null;
@@ -150,11 +196,15 @@ async function fetchFinancialsBatch(
     return null;
   }
 
+  const gstByKey = await fetchGstByKey(url, anonKey, secret, keys);
+
   const byKey: Record<string, RicardoListSummary> = {};
   for (const row of (data ?? []) as FeedRow[]) {
     byKey[row.key] = {
       found: true,
       contractValue: num(row.contract_value),
+      gstTreatment: gstByKey[row.key]?.treatment ?? null,
+      gstRate: gstByKey[row.key]?.rate ?? null,
       receivedApproved: num(row.received_approved) ?? 0,
       receivedPending: num(row.received_pending) ?? 0,
       transportMode: row.transport_mode,
@@ -208,6 +258,8 @@ export async function getRicardoFinancialsForJobs(
     out[jn] = byKey[k] ?? {
       found: false,
       contractValue: null,
+      gstTreatment: null,
+      gstRate: null,
       receivedApproved: 0,
       receivedPending: 0,
       transportMode: null,
