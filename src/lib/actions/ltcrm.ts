@@ -3,7 +3,11 @@
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
-import type { RicardoFinancials, RicardoListSummary } from "./ricardo";
+import {
+  fetchGstByKey,
+  type RicardoFinancials,
+  type RicardoListSummary,
+} from "./ricardo";
 
 /**
  * Live financials from the LT Elevator CRM (a separate Supabase project).
@@ -64,12 +68,16 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
   const row = ((data ?? []) as FeedRow[])[0];
   if (!row) return { found: false };
 
+  const gst = (await fetchGstByKey(url, anonKey, secret, [key]))[key];
+
   return {
     found: true,
     fullJobNumber: row.full_job_number,
     customerName: row.customer_name,
     contractValue: num(row.contract_value),
     contractType: row.contract_type,
+    gstTreatment: gst?.treatment ?? null,
+    gstRate: gst?.rate ?? null,
     cashAmount: num(row.cash_amount),
     transportMode: row.transport_mode,
     transportAmount: num(row.transport_amount),
@@ -112,11 +120,15 @@ async function fetchFinancialsBatch(
     return null;
   }
 
+  const gstByKey = await fetchGstByKey(url, anonKey, secret, keys);
+
   const byKey: Record<string, RicardoListSummary> = {};
   for (const row of (data ?? []) as FeedRow[]) {
     byKey[row.key] = {
       found: true,
       contractValue: num(row.contract_value),
+      gstTreatment: gstByKey[row.key]?.treatment ?? null,
+      gstRate: gstByKey[row.key]?.rate ?? null,
       receivedApproved: num(row.received_approved) ?? 0,
       receivedPending: num(row.received_pending) ?? 0,
       transportMode: row.transport_mode,
@@ -170,6 +182,8 @@ export async function getLtCrmFinancialsForJobs(
     out[jn] = byKey[k] ?? {
       found: false,
       contractValue: null,
+      gstTreatment: null,
+      gstRate: null,
       receivedApproved: 0,
       receivedPending: 0,
       transportMode: null,

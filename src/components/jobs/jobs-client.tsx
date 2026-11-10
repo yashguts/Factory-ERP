@@ -35,6 +35,7 @@ import { gadAlert } from "@/lib/jobs/gad-alert";
 import { DRIVE_TYPES, driveTypeLabel } from "@/lib/bom/section-gating";
 import { getR1StatusMap, type R1JobStatus } from "@/lib/actions/r1-bom-sync";
 import { type RicardoListSummary } from "@/lib/actions/ricardo";
+import { crmTotalValue } from "@/lib/crm/total-value";
 import { getCrmFinancialsForJobs } from "@/lib/actions/crm-financials";
 import { getCrmPaymentEventJobs } from "@/lib/actions/crm-payment-event-count";
 
@@ -544,6 +545,7 @@ export function JobsClient({
                 { header: "Job Set", field: (j) => (setMembership[j.id] ?? []).join(", ") },
                 { header: "Cabin Ready", field: (j) => (isCabinReady(j) ? "Yes" : "") },
                 { header: "CRM Contract Value", field: (j) => crm[j.job_number]?.contractValue ?? "" },
+                { header: "CRM Total (incl. GST)", field: (j) => { const s = crm[j.job_number]; return s?.found ? (crmTotalValue(s) ?? "") : ""; } },
                 { header: "CRM Received (approved)", field: (j) => (crm[j.job_number]?.found ? crm[j.job_number].receivedApproved : "") },
                 {
                   header: "CRM Transport",
@@ -768,7 +770,7 @@ export function JobsClient({
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
-                <TableHead title="Live from the CRM (Ricardo / LT Elevator) — money received (approved) / contract value, plus transport scope. CRM-linked jobs only.">CRM ₹</TableHead>
+                <TableHead title="Live from the CRM (Ricardo / LT Elevator) — money received (approved) / contract value, total incl. GST for GST-exclusive jobs, plus transport scope. CRM-linked jobs only.">CRM ₹</TableHead>
                 <TableHead title="Structure supply: Factory-made / Site-fabricated / none">Structure</TableHead>
                 <SortHeader
                   label="Sent"
@@ -892,10 +894,17 @@ export function JobsClient({
                           : s.transportMode
                             ? `Transport: ${s.transportAmount != null ? fmtL(s.transportAmount) : s.transportTbd ? "TBD" : "company"}`
                             : null;
+                      // Total order value incl. GST. Only surfaced when it
+                      // differs from the contract value (i.e. GST-exclusive jobs).
+                      const total = crmTotalValue(s);
+                      const showTotal =
+                        total != null &&
+                        s.contractValue != null &&
+                        Math.round(total) !== Math.round(s.contractValue);
                       return (
                         <div
                           className="whitespace-nowrap leading-tight"
-                          title={`Ricardo CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
+                          title={`CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${showTotal ? ` · total incl. GST ₹${new Intl.NumberFormat("en-IN").format(Math.round(total))}` : ""}${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
                         >
                           {payAlertJobs.has(job.job_number) && (
                             <span
@@ -912,6 +921,14 @@ export function JobsClient({
                           <span className="text-xs text-[var(--muted-foreground)]">
                             {" "}/ {fmtL(s.contractValue)}
                           </span>
+                          {showTotal && (
+                            <div
+                              className="text-[10px] text-indigo-600"
+                              title="Total order value including GST (base + GST)"
+                            >
+                              incl. GST {fmtL(total)}
+                            </div>
+                          )}
                           {transport && (
                             <div className="text-[10px] text-[var(--muted-foreground)]">
                               {transport}
