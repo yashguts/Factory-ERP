@@ -770,7 +770,7 @@ export function JobsClient({
                 <SortHeader label="Job #" sortField="job_number" />
                 <SortHeader label="Customer" sortField="customer" />
                 <TableHead>Spec</TableHead>
-                <TableHead title="Live from the CRM (Ricardo / LT Elevator) — money received (approved) / contract value, total incl. GST for GST-exclusive jobs, plus transport scope. CRM-linked jobs only.">CRM ₹</TableHead>
+                <TableHead title="Live from the CRM (Ricardo / LT Elevator) — money received (approved) / total value incl. GST, plus transport scope. CRM-linked jobs only.">CRM ₹</TableHead>
                 <TableHead title="Structure supply: Factory-made / Site-fabricated / none">Structure</TableHead>
                 <SortHeader
                   label="Sent"
@@ -894,17 +894,13 @@ export function JobsClient({
                           : s.transportMode
                             ? `Transport: ${s.transportAmount != null ? fmtL(s.transportAmount) : s.transportTbd ? "TBD" : "company"}`
                             : null;
-                      // Total order value incl. GST. Only surfaced when it
-                      // differs from the contract value (i.e. GST-exclusive jobs).
-                      const total = crmTotalValue(s);
-                      const showTotal =
-                        total != null &&
-                        s.contractValue != null &&
-                        Math.round(total) !== Math.round(s.contractValue);
+                      // Price shown is the GST-inclusive total (base + GST),
+                      // falling back to the contract value if GST is unknown.
+                      const price = crmTotalValue(s) ?? s.contractValue;
                       return (
                         <div
                           className="whitespace-nowrap leading-tight"
-                          title={`CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(s.contractValue ?? 0)} contract${showTotal ? ` · total incl. GST ₹${new Intl.NumberFormat("en-IN").format(Math.round(total))}` : ""}${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
+                          title={`CRM (live): received ₹${new Intl.NumberFormat("en-IN").format(s.receivedApproved)} approved of ₹${new Intl.NumberFormat("en-IN").format(price ?? 0)} incl. GST${s.transportMode ? ` · transport: ${s.transportMode}` : ""}${s.isAudited ? " · job audited" : ""}`}
                         >
                           {payAlertJobs.has(job.job_number) && (
                             <span
@@ -918,17 +914,12 @@ export function JobsClient({
                           <span className="text-xs font-medium text-emerald-700">
                             {fmtL(s.receivedApproved)}
                           </span>
-                          <span className="text-xs text-[var(--muted-foreground)]">
-                            {" "}/ {fmtL(s.contractValue)}
+                          <span
+                            className="text-xs text-[var(--muted-foreground)]"
+                            title="Total incl. GST"
+                          >
+                            {" "}/ {fmtL(price)}
                           </span>
-                          {showTotal && (
-                            <div
-                              className="text-[10px] text-indigo-600"
-                              title="Total order value including GST (base + GST)"
-                            >
-                              incl. GST {fmtL(total)}
-                            </div>
-                          )}
                           {transport && (
                             <div className="text-[10px] text-[var(--muted-foreground)]">
                               {transport}
