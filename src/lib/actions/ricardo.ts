@@ -3,6 +3,7 @@
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { ricardoKeyOf } from "@/lib/ricardo/job-number";
+import { factoryDistanceKm, siteGeotagOf, type SiteGeotag } from "@/lib/geo/distance";
 
 /**
  * Live financials from the Ricardo CRM (a separate Supabase project).
@@ -43,6 +44,14 @@ export interface RicardoFinancials {
   receivedApproved?: number;
   receivedPending?: number;
   payments?: RicardoPayment[];
+  /**
+   * The site's geotag as LT Construction fixed it (15 Nov 2026) — the most accurate GPS fix across the
+   * site measurement, the readiness survey and the final-audit photos — carried by the CRM. Null while
+   * the site has none yet.
+   */
+  siteGeotag?: SiteGeotag | null;
+  /** Straight-line km from the factory (FACTORY_LAT / FACTORY_LNG) to that geotag; null when either is missing. */
+  factoryDistanceKm?: number | null;
 }
 
 interface FeedRow {
@@ -66,6 +75,11 @@ interface FeedRow {
     bank: string | null;
     status: "approved" | "pending";
   }[];
+  /** Site geotag columns (15 Nov 2026); absent on an older feed. */
+  site_geotag_lat?: number | string | null;
+  site_geotag_lng?: number | string | null;
+  site_geotag_accuracy_m?: number | string | null;
+  site_geotag_at?: string | null;
 }
 
 interface GstRow {
@@ -131,6 +145,7 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
   if (!row) return { found: false };
 
   const gst = (await fetchGstByKey(url, anonKey, secret, [key]))[key];
+  const siteGeotag = siteGeotagOf(row);
 
   return {
     found: true,
@@ -145,6 +160,8 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
     transportAmount: num(row.transport_amount),
     transportTbd: row.transport_tbd,
     isAudited: row.is_audited,
+    siteGeotag,
+    factoryDistanceKm: factoryDistanceKm(siteGeotag),
     receivedApproved: num(row.received_approved) ?? 0,
     receivedPending: num(row.received_pending) ?? 0,
     payments: (row.payments ?? []).map((p) => ({
