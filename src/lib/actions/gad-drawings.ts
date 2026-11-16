@@ -2,6 +2,8 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
+import type { createJob } from "@/lib/actions/jobs";
+import { changeJobStatus } from "@/lib/actions/job-status";
 
 const BUCKET = "gad-drawings";
 
@@ -78,14 +80,101 @@ export async function recordGadDrawing(input: {
   };
 }
 
+export type CreateJobWithDrawingResult =
+  | { ok: true; id: string }
+  | { ok: false; error: string };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/**
+ * Create a NEW job together with its GAD drawing — the only way the New Job
+ * form creates a job (owner rule, 2026-11-16: a job is not added to the ERP
+ * until its drawing is uploaded).
+ *
+ * The browser pre-generates the job id and uploads the file to
+ * `{id}/{timestamp}-{name}` FIRST, then calls this. We confirm the file really
+ * is in storage, insert the job, and attach the drawing as revision 1. If the
+ * attach fails the job row is removed again, so a job can never be left behind
+ * without a drawing. Returns a result (not a throw) because Next strips thrown
+ * messages in production.
+ *
+ * Deliberately separate from createJob (jobs.ts, locked) — the Excel import
+ * keeps its own path and is exempt from the drawing rule.
+ */
+export async function createJobWithDrawing(
+  job: Parameters<typeof createJob>[0] & { id: string },
+  drawing: { path: string; filename: string; operator?: string | null },
+): Promise<CreateJobWithDrawingResult> {
+  if (!UUID_RE.test(job.id ?? "")) return { ok: false, error: "Invalid job id." };
+  if (!job.job_number?.trim()) return { ok: false, error: "Job Number is required." };
+  if (!drawing?.path || !drawing.path.startsWith(`${job.id}/`)) {
+    return { ok: false, error: "A GAD drawing is required to create a job." };
+  }
+
+  const supabase = await createClient();
+  const {
+    data: { publicUrl },
+  } = supabase.storage.from(BUCKET).getPublicUrl(drawing.path);
+
+  // The rule is enforced here, not just in the form: the drawing must actually
+  // be in storage (the bucket is public, so a HEAD on its URL is the check).
+  try {
+    const head = await fetch(publicUrl, { method: "HEAD", cache: "no-store" });
+    if (!head.ok) {
+      return { ok: false, error: "The GAD drawing did not upload. Please choose the file again." };
+    }
+  } catch {
+    return { ok: false, error: "Could not verify the GAD drawing upload. Please try again." };
+  }
+
+  const { error: insErr } = await supabase.from("jobs").insert(job);
+  if (insErr) {
+    if (insErr.code === "23505") {
+      return { ok: false, error: `Job number "${job.job_number}" already exists.` };
+    }
+    return { ok: false, error: insErr.message };
+  }
+
+  const { error: gadErr } = await supabase.rpc("add_job_gad_version", {
+    p_job_id: job.id,
+    p_path: drawing.path,
+    p_url: publicUrl,
+    p_filename: drawing.filename,
+    p_uploaded_by: drawing.operator ?? "unknown",
+  });
+  if (gadErr) {
+    // Roll back the brand-new job (it has no children yet) — never leave a job
+    // without its drawing.
+    await supabase.from("jobs").delete().eq("id", job.id);
+    return { ok: false, error: `Could not attach the GAD drawing: ${gadErr.message}` };
+  }
+
+  revalidateTag("jobs");
+  revalidateTag("gad-alerts");
+  revalidatePath("/jobs");
+  return { ok: true, id: job.id };
+}
+
 /**
  * Remove the CURRENT GAD drawing pointer for a job: the version history (and the
  * stored files) is KEPT — only the live pointer is cleared. The drift alert
  * short-circuits while no current drawing is set; re-uploading bumps the
  * revision and re-raises it.
+ *
+ * Owner rule (2026-11-16): a job without a drawing must not stay in production,
+ * so removing the drawing moves the job to HOLD, logged with the operator's
+ * remark through the normal status-change path (history + Hold alert). The
+ * remark is mandatory. Re-uploading a drawing does NOT auto-resume the job —
+ * someone takes it off Hold deliberately.
  */
-export async function deleteGadDrawing(jobId: string): Promise<void> {
+export async function deleteGadDrawing(
+  jobId: string,
+  remark: string,
+  operator?: string | null,
+): Promise<void> {
   if (!jobId) throw new Error("Missing jobId");
+  const cleanRemark = remark?.trim();
+  if (!cleanRemark) throw new Error("A remark is required to remove the drawing.");
 
   const supabase = await createClient();
 
@@ -107,6 +196,15 @@ export async function deleteGadDrawing(jobId: string): Promise<void> {
     })
     .eq("id", jobId);
   if (error) throw error;
+
+  // No drawing → the job goes on Hold with the remark. (No-op if already on Hold.)
+  const held = await changeJobStatus(
+    jobId,
+    "hold",
+    operator ?? null,
+    `GAD drawing removed — ${cleanRemark}`,
+  );
+  if (!held.ok) throw new Error(held.error ?? "Could not move the job to Hold");
 
   revalidatePath(`/jobs/${jobId}`);
   revalidatePath(`/jobs/${jobId}/edit`);

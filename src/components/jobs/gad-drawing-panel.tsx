@@ -10,18 +10,10 @@ import {
 } from "@/lib/actions/gad-drawings";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 import { resetPartListForNewDrawing } from "@/lib/actions/partlist";
-import { createClient } from "@/lib/supabase/client";
+import { useRouter } from "next/navigation";
+import { useToast } from "@/components/ui/toast";
 import { useOperator } from "@/lib/jobs/use-operator";
-
-const BUCKET = "gad-drawings";
-const MAX_SIZE_BYTES = 50 * 1024 * 1024; // 50 MB (matches the bucket limit)
-const ALLOWED_MIME_TYPES = new Set([
-  "application/pdf",
-  "image/png",
-  "image/jpeg",
-  "image/jpg",
-  "image/webp",
-]);
+import { validateGadFile, uploadGadFile } from "@/lib/jobs/gad-upload";
 
 interface Props {
   jobId: string | null;
@@ -40,6 +32,12 @@ interface Props {
    * returned id is then used for the upload call.
    */
   ensureJobId?: () => Promise<string | null>;
+  /**
+   * New Job form only: while there is no jobId yet, a picked file is NOT
+   * uploaded — it is handed to the parent (null = cleared), which uploads it
+   * as part of creating the job. A job is never created without its drawing.
+   */
+  onPendingFile?: (file: File | null) => void;
   /**
    * Optional close button (X) in the header. Set when the panel is
    * being shown as the right pane in split view.
@@ -61,6 +59,7 @@ export function GadDrawingPanel({
   initialUploadedAt,
   onAfterUpload,
   ensureJobId,
+  onPendingFile,
   onClose,
 }: Props) {
   const [url, setUrl] = useState<string | null>(initialUrl);
@@ -73,6 +72,10 @@ export function GadDrawingPanel({
   const [reading, setReading] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
   const { ensureOperator } = useOperator();
+  const router = useRouter();
+  const toast = useToast();
+  // File chosen for a job that doesn't exist yet (New Job form).
+  const isPending = !jobId && !!url;
 
   const isPdf = !!filename && /\.pdf$/i.test(filename);
 
@@ -84,9 +87,27 @@ export function GadDrawingPanel({
     // Reset for next picks of the same filename
     e.target.value = "";
 
+    // New job not created yet: just hold the file. The form uploads it and
+    // creates the job in one step (a job can't exist without its drawing).
+    if (!jobId && onPendingFile) {
+      const problem = validateGadFile(file);
+      if (problem) {
+        setError(problem);
+        return;
+      }
+      setError(null);
+      ensureOperator(); // capture WHO up front (prompts once per device)
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      setUrl(URL.createObjectURL(file));
+      setFilename(file.name);
+      setUploadedAt(null);
+      onPendingFile(file);
+      return;
+    }
+
     // Replacing an existing drawing implies a spec change: warn that it clears
     // the cached read + the existing Part List (rebuilt fresh from the new drawing).
-    const wasReplacing = !!url;
+    const wasReplacing = !!url && !url.startsWith("blob:");
     if (wasReplacing && !confirm("Replacing the drawing will clear this job's existing Part List and re-read the new drawing. Continue?")) {
       return;
     }
@@ -109,37 +130,20 @@ export function GadDrawingPanel({
         }
 
         // Validate up front for friendly errors (the bucket enforces these too).
-        if (file.size === 0) {
-          setError("File is empty");
-          return;
-        }
-        if (file.size > MAX_SIZE_BYTES) {
-          setError(
-            `File too large (${(file.size / 1024 / 1024).toFixed(1)} MB). Max is 50 MB.`,
-          );
-          return;
-        }
-        if (!ALLOWED_MIME_TYPES.has(file.type)) {
-          setError(
-            `Unsupported file type "${file.type}". Use PDF, PNG, JPG, or WebP.`,
-          );
+        const problem = validateGadFile(file);
+        if (problem) {
+          setError(problem);
           return;
         }
 
-        // Upload the bytes straight from the browser to Supabase Storage.
-        // Going through the server action would cap the file at the host's
-        // few-MB request-body limit; uploading direct lets the 50 MB bucket
-        // limit apply instead. We then record only the path on the job.
-        const safeName = file.name.replace(/[^A-Za-z0-9._-]/g, "_");
-        const path = `${id}/${Date.now()}-${safeName}`;
-        const supabase = createClient();
-        const { error: uploadError } = await supabase.storage
-          .from(BUCKET)
-          .upload(path, file, { contentType: file.type, upsert: false });
-        if (uploadError) {
-          setError(uploadError.message || "Upload to storage failed");
+        // Upload the bytes straight from the browser to Supabase Storage
+        // (see uploadGadFile). We then record only the path on the job.
+        const uploaded = await uploadGadFile(id, file);
+        if (!uploaded.ok) {
+          setError(uploaded.error);
           return;
         }
+        const path = uploaded.path;
 
         const result = await recordGadDrawing({
           jobId: id,
@@ -173,15 +177,35 @@ export function GadDrawingPanel({
   };
 
   const handleRemove = () => {
-    if (!jobId) return;
-    if (!confirm("Remove the GAD drawing from this job?")) return;
+    // Not-yet-created job: just drop the chosen file.
+    if (!jobId) {
+      if (!onPendingFile) return;
+      if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
+      setUrl(null);
+      setFilename(null);
+      onPendingFile(null);
+      return;
+    }
+    // A job may not run without its drawing: removing it puts the job on Hold,
+    // and the remark is mandatory (logged in the job's status history).
+    const remark = window.prompt(
+      "Removing the GAD drawing will move this job to HOLD.\n\nEnter a remark (required) — why is the drawing being removed?",
+    );
+    if (remark === null) return; // cancelled
+    if (!remark.trim()) {
+      setError("Drawing not removed — a remark is required.");
+      return;
+    }
+    const operator = ensureOperator();
     startTransition(async () => {
       setError(null);
       try {
-        await deleteGadDrawing(jobId);
+        await deleteGadDrawing(jobId, remark.trim(), operator);
         setUrl(null);
         setFilename(null);
         setUploadedAt(null);
+        toast.info("Drawing removed — job moved to Hold.");
+        router.refresh(); // status badge / dropdown pick up the Hold
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : "Delete failed");
       }
@@ -223,6 +247,11 @@ export function GadDrawingPanel({
                     · {new Date(uploadedAt).toLocaleString()}
                   </span>
                 )}
+              </div>
+            )}
+            {isPending && (
+              <div className="text-[11px] text-[var(--warning)]">
+                Will be uploaded when you create the job
               </div>
             )}
             {reading && (
@@ -312,7 +341,11 @@ export function GadDrawingPanel({
             <EmptyState
               icon={<Upload className="h-10 w-10" />}
               title="No GAD drawing yet"
-              description="Upload a PDF or image (PNG / JPG / WebP, max 50 MB) so you can cross-check items against the drawing side-by-side."
+              description={
+                !jobId && onPendingFile
+                  ? "A GAD drawing is REQUIRED to create a job. Choose a PDF or image (PNG / JPG / WebP, max 50 MB) — the job cannot be created without it."
+                  : "Upload a PDF or image (PNG / JPG / WebP, max 50 MB) so you can cross-check items against the drawing side-by-side."
+              }
               action={
                 <Button size="sm" onClick={handlePickFile} disabled={busy}>
                   {busy ? (

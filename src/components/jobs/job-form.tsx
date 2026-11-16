@@ -22,8 +22,10 @@ import {
   JobDetailsPanel,
   ElevatorSpecPanel,
 } from "@/components/jobs/job-form-panels";
+import { createJobWithDrawing } from "@/lib/actions/gad-drawings";
+import { ensureDrawingRead } from "@/lib/actions/spec-vision";
+import { uploadGadFile, removeGadFile } from "@/lib/jobs/gad-upload";
 import {
-  createJob,
   updateJob,
   saveBomSection,
   getJobTemplate,
@@ -172,9 +174,14 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
   // When ON, BOM form goes to the left half and the drawing panel to
   // the right. Each pane has its own scroll container so they're
   // independent. Auto-enabled when a drawing already exists on edit.
+  // Also opened by default for a NEW job: the drawing is mandatory there.
   const [splitView, setSplitView] = useState<boolean>(
-    !!job?.gad_drawing_url,
+    mode === "create" || !!job?.gad_drawing_url,
   );
+  // New job: the chosen drawing file, held until the job is created. A job is
+  // not added to the ERP without its GAD drawing (owner rule, 2026-11-16), so
+  // the file is uploaded and the job row created together in ensureJob().
+  const [pendingDrawing, setPendingDrawing] = useState<File | null>(null);
 
   // ── Picker state ──────────────────────────────────────────────────
   const initialPickerState = useMemo((): PickerState => {
@@ -246,8 +253,15 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     if (!floors) missing.push("Floors");
     if (!driveType) missing.push("Drive Type");
     if (!capacity) missing.push("Capacity");
+    // Only a job that doesn't exist yet needs the drawing — old jobs without
+    // one can still be edited.
+    if (!savedJobId && !pendingDrawing) {
+      missing.push("GAD Drawing (upload it in the Drawing pane)");
+    }
     return missing;
   }, [
+    savedJobId,
+    pendingDrawing,
     jobNumber,
     customerName,
     location,
@@ -681,10 +695,31 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       setJobSaved(true);
       return savedJobId;
     }
-    const created = await createJob({ ...buildJobData(), created_by: readOperator() });
+    // New job: drawing first, then the job. The id is generated here so the
+    // file can be stored under the job's folder before the row exists; if the
+    // job can't be created (e.g. duplicate number) the file is cleaned up.
+    if (!pendingDrawing) {
+      throw new Error("A GAD drawing is required — upload it before creating the job.");
+    }
+    const newId = crypto.randomUUID();
+    const operator = readOperator();
+    const uploaded = await uploadGadFile(newId, pendingDrawing);
+    if (!uploaded.ok) throw new Error(`Drawing upload failed: ${uploaded.error}`);
+    const created = await createJobWithDrawing(
+      { ...buildJobData(), id: newId, created_by: operator },
+      { path: uploaded.path, filename: pendingDrawing.name, operator },
+    );
+    if (!created.ok) {
+      await removeGadFile(uploaded.path);
+      throw new Error(created.error);
+    }
     setSavedJobId(created.id);
+    setPendingDrawing(null);
     savedDispatchDate.current = requirementDispatchDate || null;
     setJobSaved(true);
+    // Background-read the drawing so the Part List can be generated instantly
+    // later (same as an upload from the drawing pane). Never blocks the save.
+    void ensureDrawingRead(created.id).catch(() => {});
     return created.id;
   }
 
@@ -1057,31 +1092,10 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
               initialUrl={job?.gad_drawing_url ?? null}
               initialFilename={job?.gad_drawing_filename ?? null}
               initialUploadedAt={job?.gad_drawing_uploaded_at ?? null}
-              ensureJobId={async () => {
-                if (!isFormValid) {
-                  alert(
-                    `Please fill required fields before uploading a drawing:\n\n• ${missingFields.join(
-                      "\n• ",
-                    )}`,
-                  );
-                  return null;
-                }
-                try {
-                  const reason = await collectDispatchReason();
-                  if (reason === false) {
-                    notifyDispatchReasonCancelled();
-                    return null;
-                  }
-                  return await ensureJob(reason);
-                } catch (err: unknown) {
-                  alert(
-                    `Could not save the job before upload: ${
-                      err instanceof Error ? err.message : err
-                    }`,
-                  );
-                  return null;
-                }
-              }}
+              // No job yet → the pane only holds the chosen file; it is
+              // uploaded with the job on Create (see ensureJob). Once the job
+              // exists the pane uploads/replaces directly as usual.
+              onPendingFile={setPendingDrawing}
               onClose={() => setSplitView(false)}
             />
           </div>
