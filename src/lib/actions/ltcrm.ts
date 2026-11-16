@@ -3,6 +3,7 @@
 import { unstable_cache } from "next/cache";
 import { createClient } from "@supabase/supabase-js";
 import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
+import { factoryDistanceKm, siteGeotagOf } from "@/lib/geo/distance";
 import {
   fetchGstByKey,
   type RicardoFinancials,
@@ -40,6 +41,11 @@ interface FeedRow {
     bank: string | null;
     status: "approved" | "pending";
   }[];
+  /** Site geotag columns (15 Nov 2026); absent on an older feed. */
+  site_geotag_lat?: number | string | null;
+  site_geotag_lng?: number | string | null;
+  site_geotag_accuracy_m?: number | string | null;
+  site_geotag_at?: string | null;
 }
 
 function num(v: number | string | null | undefined): number | null {
@@ -69,6 +75,7 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
   if (!row) return { found: false };
 
   const gst = (await fetchGstByKey(url, anonKey, secret, [key]))[key];
+  const siteGeotag = siteGeotagOf(row);
 
   return {
     found: true,
@@ -84,6 +91,8 @@ async function fetchFinancials(key: string): Promise<RicardoFinancials | null> {
     transportTbd: row.transport_tbd,
     isAudited: row.is_audited,
     isGovernment: row.is_government ?? false,
+    siteGeotag,
+    factoryDistanceKm: factoryDistanceKm(siteGeotag),
     receivedApproved: num(row.received_approved) ?? 0,
     receivedPending: num(row.received_pending) ?? 0,
     payments: (row.payments ?? []).map((p) => ({

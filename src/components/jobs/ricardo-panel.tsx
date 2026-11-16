@@ -2,11 +2,12 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { IndianRupee, AlertTriangle } from "lucide-react";
+import { IndianRupee, AlertTriangle, MapPin } from "lucide-react";
 import {
   getCrmFinancials,
   type CrmFinancials,
 } from "@/lib/actions/crm-financials";
+import { formatAccuracyM, formatDistanceKm, mapsUrl } from "@/lib/geo/distance";
 import { getCrmPaymentEventJobs } from "@/lib/actions/crm-payment-event-count";
 import { ricardoKeyOf } from "@/lib/ricardo/job-number";
 import { ltCrmKeyOf } from "@/lib/ltcrm/job-number";
@@ -168,6 +169,36 @@ export function RicardoPanel({ jobNumber }: { jobNumber: string }) {
           sub={totalSub}
         />
         <Stat label="Transport" value={transport} />
+        {/* The site's geotag (15 Nov 2026): LT Construction's most accurate field fix (site measurement /
+            readiness survey / final-audit photos), carried by the CRM; the distance is straight-line from
+            FACTORY_LAT / FACTORY_LNG so dispatch can size the transport. */}
+        <Stat
+          label="Site location"
+          value={
+            data.siteGeotag ? (
+              <a
+                href={mapsUrl(data.siteGeotag)}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 text-sky-700 hover:underline"
+                title={`${data.siteGeotag.lat.toFixed(5)}, ${data.siteGeotag.lng.toFixed(5)} · opens Google Maps`}
+              >
+                <MapPin size={13} /> Open in Maps
+              </a>
+            ) : (
+              <span className="font-normal text-[var(--muted-foreground)]">no geotag yet</span>
+            )
+          }
+          sub={
+            data.siteGeotag
+              ? `${formatAccuracyM(data.siteGeotag.accuracyM)} · ${
+                  data.factoryDistanceKm !== null && data.factoryDistanceKm !== undefined
+                    ? `${formatDistanceKm(data.factoryDistanceKm)} from the factory (straight line)`
+                    : "distance from the factory unavailable"
+                }`
+              : "set once the site is measured, surveyed or audited"
+          }
+        />
         <Stat
           label="Received (approved)"
           value={<span className="text-emerald-700">{fmt(data.receivedApproved)}</span>}
