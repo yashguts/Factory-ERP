@@ -17,6 +17,8 @@ export type CrmLockResult =
   | { ok: true; state: CrmLockState; message: string; warning?: string }
   | { ok: false; error: string };
 
+const NAME_REQUIRED = "Your name is required for this action. Enter your name and try again.";
+
 /** Shared body of "lock" (new job / Lock now) and "lock again" (after a release). */
 async function lockOne(
   jobId: string,
@@ -105,6 +107,7 @@ export async function lockJobInCrm(jobId: string, operator?: string | null): Pro
  * on Hold — taking it off Hold is a separate, deliberate step.
  */
 export async function relockJob(jobId: string, operator?: string | null): Promise<CrmLockResult> {
+  if (!cleanName(operator)) return { ok: false, error: NAME_REQUIRED };
   return lockOne(jobId, operator, true);
 }
 
@@ -124,6 +127,9 @@ export async function releaseJob(
 ): Promise<CrmLockResult> {
   const cleanReason = reason?.trim();
   if (!cleanReason) return { ok: false, error: "A reason is required to release a job." };
+  // Releasing unlocks the CRM and stops production — it must carry a name. The
+  // screen already insists on one; this stops any path around the screen.
+  if (!cleanName(operator)) return { ok: false, error: NAME_REQUIRED };
 
   const supabase = await createClient();
   const job = await readJob(supabase, jobId);

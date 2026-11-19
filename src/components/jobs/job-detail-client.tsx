@@ -166,10 +166,11 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   }, [job.id, job.status]);
   const statusOpenAlert = statusHistory.find((h) => h.alert_kind && !h.acknowledged_at) ?? null;
 
-  const handleStatusChange = (newStatus: JobStatus) => {
+  const handleStatusChange = async (newStatus: JobStatus) => {
     const from = job.status as JobStatus;
     if (from === newStatus) return;
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     let reason: string | null = null;
     if (reasonRequired(from, newStatus)) {
       const k = alertKind(from, newStatus);
@@ -186,8 +187,9 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
 
   // "Mark Audited (with changes)" — acknowledge the current GAD revision so the
   // drift alert clears across every surface. Records who audited (operator).
-  const handleMarkAudited = () => {
-    const operator = ensureOperator();
+  const handleMarkAudited = async () => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startAudit(async () => {
       const res = await setJobBomAudited(job.id, true, operator);
       if (!res.ok) {
@@ -198,8 +200,9 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     });
   };
 
-  const handleAckStatus = (changeId: string) => {
-    const operator = ensureOperator();
+  const handleAckStatus = async (changeId: string) => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startTransition(async () => {
       const res = await acknowledgeStatusAlert(changeId, operator);
       if (!res.ok) window.alert(`Could not acknowledge: ${res.error}`);
@@ -208,7 +211,7 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     // Two-step destructive guard: must type the exact job number.
     const typed = window.prompt(
       `Permanently delete job "${job.job_number}"?\n\n` +
@@ -225,7 +228,8 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
     }
     // Deleting also releases the job's drawing/SMR lock in the CRM, which
     // records who released it.
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startTransition(async () => {
       const result = await deleteJob(job.id, operator);
       if (!result.ok) {
@@ -237,8 +241,9 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   };
 
   // "Release job" — CRM unlocks the drawing + SMR, the job goes on Hold here.
-  const handleRelease = (reason: string) => {
-    const operator = ensureOperator();
+  const handleRelease = async (reason: string) => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startLock(async () => {
       try {
         const res = await releaseJob(job.id, reason, operator);
@@ -257,8 +262,9 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   };
 
   // "Lock again" (after a release) and "Lock now" (CRM lock never confirmed).
-  const handleLock = (again: boolean) => {
-    const operator = ensureOperator();
+  const handleLock = async (again: boolean) => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startLock(async () => {
       try {
         const res = again ? await relockJob(job.id, operator) : await lockJobInCrm(job.id, operator);

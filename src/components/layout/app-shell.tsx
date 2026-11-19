@@ -1,6 +1,7 @@
 import { Sidebar } from "./sidebar";
 import { ToastProvider } from "@/components/ui/toast";
 import { GlobalSearch } from "./global-search";
+import { OperatorNameDialog } from "./operator-name-dialog";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   // NOTE: keep this layout SYNCHRONOUS. It re-renders on every server-action
@@ -15,6 +16,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <main className="flex-1 px-6 py-5 overflow-auto">{children}</main>
       </div>
       <GlobalSearch />
+      <OperatorNameDialog />
     </ToastProvider>
   );
 }

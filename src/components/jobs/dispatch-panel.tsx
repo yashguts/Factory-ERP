@@ -293,8 +293,9 @@ export function DispatchPanel({
   const revocations = clearanceRead?.ok ? revocationNotices(clearanceRead.clearances, clearance) : [];
   // Acknowledge a clearance-revocation notice (informational only). Marking the
   // row locally re-derives both the status line and the notice list.
-  const onAcknowledgeRevocation = (c: SiteClearance) => {
-    const who = ensureOperator();
+  const onAcknowledgeRevocation = async (c: SiteClearance) => {
+    const who = await ensureOperator();
+    if (!who) return; // name is mandatory: no name, no action
     setBusy("revoke:" + c.id);
     startTransition(async () => {
       const res = await acknowledgeClearanceRevocation(c.id, jobId, who);
@@ -331,8 +332,9 @@ export function DispatchPanel({
     (c) => !c.dispatch_id || !dispatchIdSet.has(c.dispatch_id),
   );
 
-  const onAcknowledge = (c: DeliveryConfirmation) => {
-    const who = ensureOperator();
+  const onAcknowledge = async (c: DeliveryConfirmation) => {
+    const who = await ensureOperator();
+    if (!who) return; // name is mandatory: no name, no action
     setBusy(c.id);
     startTransition(async () => {
       const res = await acknowledgeDeliveryConfirmation(c.id, jobId, who);
@@ -406,12 +408,13 @@ export function DispatchPanel({
     setDeliverDate(d.delivered_date ?? new Date().toISOString().slice(0, 10));
   };
 
-  const saveDelivered = (dispatchId: string) => {
+  const saveDelivered = async (dispatchId: string) => {
     if (!deliverDate) {
       toast.error("Pick the delivery date.");
       return;
     }
-    const who = ensureOperator();
+    const who = await ensureOperator();
+    if (!who) return; // name is mandatory: no name, no action
     const key = "deliver:" + dispatchId;
     setBusy(key);
     startTransition(async () => {

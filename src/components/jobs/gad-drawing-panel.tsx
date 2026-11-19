@@ -81,7 +81,7 @@ export function GadDrawingPanel({
 
   const handlePickFile = () => inputRef.current?.click();
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
     // Reset for next picks of the same filename
@@ -96,7 +96,8 @@ export function GadDrawingPanel({
         return;
       }
       setError(null);
-      ensureOperator(); // capture WHO up front (prompts once per device)
+      // The job is created under this name, so a drawing is not accepted without one.
+      if (!(await ensureOperator())) return;
       if (url?.startsWith("blob:")) URL.revokeObjectURL(url);
       setUrl(URL.createObjectURL(file));
       setFilename(file.name);
@@ -113,7 +114,8 @@ export function GadDrawingPanel({
     }
 
     // Record WHO is uploading (prompts once per device if not yet set).
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
 
     startTransition(async () => {
       setError(null);
@@ -176,7 +178,7 @@ export function GadDrawingPanel({
     });
   };
 
-  const handleRemove = () => {
+  const handleRemove = async () => {
     // Not-yet-created job: just drop the chosen file.
     if (!jobId) {
       if (!onPendingFile) return;
@@ -196,7 +198,8 @@ export function GadDrawingPanel({
       setError("Drawing not removed — a remark is required.");
       return;
     }
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startTransition(async () => {
       setError(null);
       try {

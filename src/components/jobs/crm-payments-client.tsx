@@ -41,8 +41,9 @@ export function CrmPaymentsClient({ events }: { events: CrmPaymentEvent[] }) {
   const [pending, startTransition] = useTransition();
   const [busyId, setBusyId] = useState<string | null>(null);
 
-  const ack = (toAck: CrmPaymentEvent[], doneMsg: string) => {
-    const operator = ensureOperator();
+  const ack = async (toAck: CrmPaymentEvent[], doneMsg: string) => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     setBusyId(toAck.length === 1 ? toAck[0].id : "__all__");
     startTransition(async () => {
       const res = await acknowledgeCrmPaymentEvents(

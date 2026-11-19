@@ -88,7 +88,7 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
     }
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (quantity <= 0) {
       setError("Quantity must be greater than 0");
       return;
@@ -98,7 +98,8 @@ export function InlineStockAdjust({ item, warehouses, onSuccess }: InlineStockAd
       return;
     }
     setError(null);
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
 
     startTransition(async () => {
       try {

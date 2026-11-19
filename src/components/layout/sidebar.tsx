@@ -105,7 +105,7 @@ const allItems = navGroups.flatMap((g) => g.items);
 
 export function Sidebar() {
   const pathname = usePathname();
-  const { operator, ensureOperator, setOperator } = useOperator();
+  const { operator, changeOperator } = useOperator();
 
   // GAD-drift count for the "Job Orders" red badge. Fetched CLIENT-SIDE here —
   // not in the server layout — so it never blocks a save's revalidation render
@@ -313,14 +313,7 @@ export function Sidebar() {
         <div className="border-t border-[var(--sidebar-border)] px-3 py-2">
           <button
             type="button"
-            onClick={() => {
-              if (operator) {
-                const next = window.prompt("Change your name (used on the audit trail):", operator);
-                if (next !== null) setOperator(next);
-              } else {
-                ensureOperator();
-              }
-            }}
+            onClick={() => void changeOperator()}
             title={operator ? `Signed in as ${operator}` : "Set your name (used on the audit trail)"}
             className="flex w-full items-center gap-2.5 rounded-md px-2.5 py-1.5 text-sm text-[var(--muted-foreground)] transition-colors hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
           >

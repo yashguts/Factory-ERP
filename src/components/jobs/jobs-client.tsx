@@ -406,11 +406,12 @@ export function JobsClient({
   }, [statusRefreshKey]);
 
   // Status changes go through the audited choke-point (records who/when/why + alerts).
-  const handleStatusChange = (jobId: string, newStatus: JobStatus) => {
+  const handleStatusChange = async (jobId: string, newStatus: JobStatus) => {
     const job = jobs.find((j) => j.id === jobId);
     const from = (job?.status ?? null) as JobStatus | null;
     if (from === newStatus) return;
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     let reason: string | null = null;
     if (reasonRequired(from, newStatus)) {
       const k = alertKind(from, newStatus);
@@ -467,9 +468,10 @@ export function JobsClient({
   // without a written reason, picked from a fixed list (not free text). The
   // whole change happens in one modal — new date + reason together — so the row
   // never moves until Save and there's no awkward edit-then-click-away step.
-  const confirmDispatchDateChange = (newDate: string | null, reason: string) => {
+  const confirmDispatchDateChange = async (newDate: string | null, reason: string) => {
     if (!pendingDateJobId) return;
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     handleInlineUpdate(
       pendingDateJobId,
       { requirement_dispatch_date: newDate },

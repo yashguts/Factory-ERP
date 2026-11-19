@@ -272,7 +272,7 @@ export function Ralph400Client({ jobs }: { jobs: FactoryJobOption[] }) {
       toast.error("Fix the inputs marked in red before saving.");
       return;
     }
-    ensureOperator(); // puts a name on the save; saving still works without one
+    if (!(await ensureOperator())) return; // name is mandatory: no name, no save
     setBusy("save");
     try {
       const r = await saveRalph400PartList(inp.jobNo, inp, result.lines, result.pieces);

@@ -417,8 +417,9 @@ export function R1BuilderClient({
       });
   };
 
-  const toggleAudited = () => {
-    const name = operator ?? ensureOperator();
+  const toggleAudited = async () => {
+    const name = operator ?? (await ensureOperator());
+    if (!name) return; // name is mandatory: no name, no action
     startTransition(async () => {
       const next = !jobPanel?.auditedAt;
       const r = await setR1Audited(list.jobId, next, name ?? undefined);

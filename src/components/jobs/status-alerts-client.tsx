@@ -45,8 +45,9 @@ export function StatusAlertsClient({
   const [tab, setTab] = useState<"open" | "history">("open");
   const [q, setQ] = useState("");
 
-  const ack = (id: string, jobNumber: string) => {
-    const operator = ensureOperator();
+  const ack = async (id: string, jobNumber: string) => {
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     setBusyId(id);
     startTransition(async () => {
       const res = await acknowledgeStatusAlert(id, operator);

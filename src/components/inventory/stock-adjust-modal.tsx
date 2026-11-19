@@ -218,7 +218,7 @@ export function StockAdjustModal({
     notes: "",
   });
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
 
@@ -227,7 +227,8 @@ export function StockAdjustModal({
       return;
     }
 
-    const operator = ensureOperator();
+    const operator = await ensureOperator();
+    if (!operator) return; // name is mandatory: no name, no action
     startTransition(async () => {
       try {
         await recordTransaction({
