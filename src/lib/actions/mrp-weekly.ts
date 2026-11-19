@@ -18,6 +18,7 @@
 import { createCacheClient } from "@/lib/supabase/cache-client";
 import { unstable_cache } from "next/cache";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { fetchMrpBomLines, fetchDispatchedByBomLine } from "@/lib/mrp/fast-reads";
 import { linePhase } from "@/lib/bom/bom-sections";
 import { computeMakePlanCore, explodeToLeaves } from "@/lib/actions/make-plan-core";
 import { _getOutstandingLinesUncached } from "@/lib/actions/po-outstanding";
@@ -212,11 +213,8 @@ export async function loadWeeklyDemand(
     p.catch(() => {});
     return p;
   };
-  const dispatchPromise = inFlight(
-    fetchAllRanged<{ job_bom_line_id: string; qty: number }>((from, to, withCount) =>
-      supabase.from("job_dispatch_lines").select("job_bom_line_id, qty", withCount ? { count: "exact" } : {}).not("job_bom_line_id", "is", null).range(from, to),
-    ),
-  );
+  // One DB query with the paged read as fallback — see lib/mrp/fast-reads.ts.
+  const dispatchPromise = inFlight(fetchDispatchedByBomLine(supabase));
   const rulesPromise = inFlight(
     fetchAllRanged<{ parent_item_id: string; child_item_id: string; qty: number }>(
       (from, to, withCount) =>
@@ -276,11 +274,7 @@ export async function loadWeeklyDemand(
 
   // dispatched-so-far per BOM line (whole table; identical to getMrpData —
   // prefetched above)
-  const dispatchedByLine = new Map<string, number>();
-  {
-    const rows = await dispatchPromise;
-    for (const d of rows) dispatchedByLine.set(d.job_bom_line_id, (dispatchedByLine.get(d.job_bom_line_id) ?? 0) + (Number(d.qty) || 0));
-  }
+  const dispatchedByLine = await dispatchPromise;
 
   // header → job
   const headerToJob = new Map<string, string>();
@@ -292,15 +286,8 @@ export async function loadWeeklyDemand(
   }
   if (headerToJob.size === 0) return empty;
 
-  const allLines: any[] = await fetchAllRanged((from, to, withCount) =>
-    supabase
-      .from("job_bom_lines")
-      .select("id, item_id, required_quantity, job_bom_id, category, dispatch_phase", withCount ? { count: "exact" } : {})
-      .in("job_bom_id", [...headerToJob.keys()])
-      .not("item_id", "is", null)
-      .gt("required_quantity", 0)
-      .range(from, to),
-  );
+  // One DB query with the paged read as fallback — see lib/mrp/fast-reads.ts.
+  const allLines: any[] = await fetchMrpBomLines(supabase, [...headerToJob.keys()]);
 
   // Component rules are needed DURING the loop (smart suppression builds
   // per-job maps for rule parents/children) — prefetched above, cheap await.

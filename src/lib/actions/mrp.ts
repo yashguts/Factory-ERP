@@ -6,6 +6,7 @@ import { _getPlanItemsSlimUncached } from "@/lib/actions/inventory";
 import { _getOutstandingByItemUncached } from "@/lib/actions/po-outstanding";
 import { linePhase } from "@/lib/bom/bom-sections";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
+import { fetchMrpBomLines, fetchDispatchedByBomLine } from "@/lib/mrp/fast-reads";
 import { fetchCarLintonDemand, type CarLintonDemandRow } from "@/lib/mrp/car-linton-demand";
 import { fetchCabinGlassDemand } from "@/lib/mrp/cabin-glass-demand";
 
@@ -219,24 +220,8 @@ export async function _getMrpDataUncached(
   // header -> lines chain below. Kick it off concurrently and await it just
   // before we need it (when netting demand), saving one cross-region round-trip
   // hop. Behaviour is identical — same rows, same accumulation.
-  const dispatchedByLinePromise = (async () => {
-    const dispatchedByLine = new Map<string, number>();
-    const rows = await fetchAllRanged<{ job_bom_line_id: string; qty: number }>(
-      (from, to, withCount) =>
-        supabase
-          .from("job_dispatch_lines")
-          .select("job_bom_line_id, qty", withCount ? { count: "exact" } : {})
-          .not("job_bom_line_id", "is", null)
-          .range(from, to),
-    );
-    for (const d of rows) {
-      dispatchedByLine.set(
-        d.job_bom_line_id,
-        (dispatchedByLine.get(d.job_bom_line_id) ?? 0) + (Number(d.qty) || 0),
-      );
-    }
-    return dispatchedByLine;
-  })();
+  // One DB query with the paged read as fallback — see lib/mrp/fast-reads.ts.
+  const dispatchedByLinePromise = fetchDispatchedByBomLine(supabase);
 
   // The demand folds and the row build further down each need one more read
   // (demand rules, parts lists + procurement/stock, drive-rule items, demand
@@ -306,19 +291,8 @@ export async function _getMrpDataUncached(
 
   // BOM lines for those headers. `category` lets us scope first-phase jobs to
   // their first-phase sections (dispatchPhaseOf).
-  const allLines: any[] = await fetchAllRanged(
-    (from, to, withCount) =>
-      supabase
-        .from("job_bom_lines")
-        .select(
-          "id, item_id, required_quantity, job_bom_id, category, dispatch_phase",
-          withCount ? { count: "exact" } : {},
-        )
-        .in("job_bom_id", bomHeaderIds)
-        .not("item_id", "is", null)
-        .gt("required_quantity", 0)
-        .range(from, to),
-  );
+  // One DB query with the paged read as fallback — see lib/mrp/fast-reads.ts.
+  const allLines: any[] = await fetchMrpBomLines(supabase, bomHeaderIds);
 
   const dispatchedByLine = await dispatchedByLinePromise;
 
