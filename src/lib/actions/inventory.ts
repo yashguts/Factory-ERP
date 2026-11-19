@@ -281,14 +281,24 @@ const _getItemRefsUncached = async () => {
   }
 
   const pairs = new Set<string>();
-  const facetRows = await fetchAllRanged<{ item_type: string; category_id: string | null }>(
-    (from, to, withCount) =>
-      supabase
-        .from("items")
-        .select("item_type, category_id", withCount ? { count: "exact" } : {})
-        .eq("is_active", true)
-        .range(from, to),
-  );
+  // One DB query (migration 077) instead of paging all ~33k items in 33
+  // requests. If the RPC is unavailable for any reason, fall back to the
+  // original paged read — same rows either way.
+  let facetRows: { item_type: string; category_id: string | null }[];
+  const fast = await supabase.rpc("erp_item_type_category_pairs");
+  if (!fast.error && Array.isArray(fast.data)) {
+    facetRows = fast.data as { item_type: string; category_id: string | null }[];
+  } else {
+    if (fast.error) console.error("erp_item_type_category_pairs failed — using paged read", fast.error);
+    facetRows = await fetchAllRanged<{ item_type: string; category_id: string | null }>(
+      (from, to, withCount) =>
+        supabase
+          .from("items")
+          .select("item_type, category_id", withCount ? { count: "exact" } : {})
+          .eq("is_active", true)
+          .range(from, to),
+    );
+  }
   for (const r of facetRows) {
     if (r.category_id && cabinCatIds.has(r.category_id)) continue;
     pairs.add(`${r.item_type}|${r.category_id ?? ""}`);

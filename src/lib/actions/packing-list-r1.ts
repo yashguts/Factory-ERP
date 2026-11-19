@@ -932,16 +932,26 @@ export async function getCategoryItemCounts(): Promise<Record<string, number>> {
           else children.set(c.parent_id, [c.id]);
         }
       }
-      const rows = await fetchAllRanged<{ category_id: string | null }>((from, to, wc) =>
-        supabase
-          .from("items")
-          .select("category_id", wc ? { count: "exact" } : {})
-          .eq("is_active", true)
-          .not("category_id", "is", null)
-          .range(from, to),
-      );
       const direct = new Map<string, number>();
-      for (const r of rows) if (r.category_id) direct.set(r.category_id, (direct.get(r.category_id) ?? 0) + 1);
+      // One grouped DB query (migration 077) instead of paging every active
+      // item. Falls back to the original paged read if the RPC is unavailable.
+      const fast = await supabase.rpc("erp_active_item_counts_by_category");
+      if (!fast.error && fast.data && typeof fast.data === "object" && !Array.isArray(fast.data)) {
+        for (const [catId, n] of Object.entries(fast.data as Record<string, number>)) {
+          direct.set(catId, Number(n) || 0);
+        }
+      } else {
+        if (fast.error) console.error("erp_active_item_counts_by_category failed — using paged read", fast.error);
+        const rows = await fetchAllRanged<{ category_id: string | null }>((from, to, wc) =>
+          supabase
+            .from("items")
+            .select("category_id", wc ? { count: "exact" } : {})
+            .eq("is_active", true)
+            .not("category_id", "is", null)
+            .range(from, to),
+        );
+        for (const r of rows) if (r.category_id) direct.set(r.category_id, (direct.get(r.category_id) ?? 0) + 1);
+      }
       const memo = new Map<string, number>();
       const subtree = (id: string): number => {
         const m = memo.get(id);

@@ -845,6 +845,21 @@ async function _getJobsDispatchStatusUncached(
   if (jobIds.length === 0) return out;
 
   const supabase = createCacheClient();
+
+  // Fast path (migration 077): one DB query computes every job's status with
+  // the same rules as the code below (verified identical across all jobs,
+  // 2026-11-19). It also sends the ids in the request BODY — the reads below
+  // put ~450 ids in the URL, which is slow and can overflow header limits.
+  // Any failure falls through to the original method, unchanged.
+  const fast = await supabase.rpc("erp_jobs_dispatch_status", { p_job_ids: jobIds });
+  if (!fast.error && fast.data && typeof fast.data === "object" && !Array.isArray(fast.data)) {
+    for (const [jobId, status] of Object.entries(fast.data as Record<string, string>)) {
+      if (jobId in out && (status === "partial" || status === "full")) out[jobId] = status;
+    }
+    return out;
+  }
+  if (fast.error) console.error("erp_jobs_dispatch_status failed — using paged reads", fast.error);
+
   // Dispatches and BOM headers both only need jobIds — independent reads,
   // one round-trip each, fetch concurrently.
   const [{ data: disp }, { data: allHeaders }] = await Promise.all([
