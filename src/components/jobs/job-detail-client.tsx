@@ -9,7 +9,7 @@ import {
 } from "@/components/ui/table";
 import { Tabs } from "@/components/ui/tabs";
 import { EmptyState } from "@/components/ui/empty-state";
-import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink, Settings2 } from "lucide-react";
+import { Search, ArrowUpDown, Pencil, Columns2, PanelRightClose, Trash2, Loader2, Truck, AlertTriangle, CheckCircle2, FileClock, ExternalLink, Settings2, Lock, LockOpen } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { deleteJob, setJobBomAudited } from "@/lib/actions/jobs";
 import { BOM_SECTIONS, PHASE_ORDER, dispatchPhaseOf } from "@/lib/bom/bom-sections";
@@ -28,6 +28,11 @@ import { changeJobStatus, acknowledgeStatusAlert, getJobStatusHistory } from "@/
 import { alertKind, reasonRequired, ALERT_META, statusLabel } from "@/lib/jobs/status-alert";
 import { getR1JobPanel, type R1JobPanel } from "@/lib/actions/r1-bom-sync";
 import { RicardoPanel } from "@/components/jobs/ricardo-panel";
+import { useToast } from "@/components/ui/toast";
+import { ReleaseJobModal } from "@/components/jobs/release-job-modal";
+import { lockJobInCrm, relockJob, releaseJob } from "@/lib/actions/crm-lock";
+
+const RELOCK_BEFORE_UNHOLD = "Lock the job again before taking it off Hold";
 
 const STATUS_LABELS: Record<JobStatus, string> = {
   new: "New",
@@ -94,6 +99,12 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
   const [auditing, startAudit] = useTransition();
   const { ensureOperator } = useOperator();
   const [showDispatch, setShowDispatch] = useState(false);
+  const toast = useToast();
+  // CRM drawing/SMR lock (079). Its own transition so a slow CRM round trip
+  // doesn't grey out the status dropdown and Delete.
+  const [lockBusy, startLock] = useTransition();
+  const [showRelease, setShowRelease] = useState(false);
+  const lockState = job.crm_lock_state;
   // Packing List R1 header (Draft/Final/Audited chip on the Edit Items button).
   // Client-fetched so the (parallel-owned) server page needs no new props.
   const [r1Panel, setR1Panel] = useState<R1JobPanel | null>(null);
@@ -212,13 +223,60 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
       );
       return;
     }
+    // Deleting also releases the job's drawing/SMR lock in the CRM, which
+    // records who released it.
+    const operator = ensureOperator();
     startTransition(async () => {
-      const result = await deleteJob(job.id);
+      const result = await deleteJob(job.id, operator);
       if (!result.ok) {
         alert(`Could not delete job: ${result.error}`);
         return;
       }
       router.push("/jobs");
+    });
+  };
+
+  // "Release job" — CRM unlocks the drawing + SMR, the job goes on Hold here.
+  const handleRelease = (reason: string) => {
+    const operator = ensureOperator();
+    startLock(async () => {
+      try {
+        const res = await releaseJob(job.id, reason, operator);
+        if (!res.ok) {
+          toast.error(res.error);
+          return;
+        }
+        setShowRelease(false);
+        if (res.warning) toast.error(res.warning);
+        else toast.success(`${job.job_number} released — the CRM can now change its drawing and SMR. The job is on Hold.`);
+        router.refresh();
+      } catch {
+        toast.error(`Could not release ${job.job_number}. Please try again.`);
+      }
+    });
+  };
+
+  // "Lock again" (after a release) and "Lock now" (CRM lock never confirmed).
+  const handleLock = (again: boolean) => {
+    const operator = ensureOperator();
+    startLock(async () => {
+      try {
+        const res = again ? await relockJob(job.id, operator) : await lockJobInCrm(job.id, operator);
+        if (!res.ok) {
+          toast.error(res.error);
+        } else if (res.state === "locked") {
+          toast.success(
+            again
+              ? `${job.job_number} locked again — the CRM can no longer change its drawing or SMR. The job is still on Hold.`
+              : `${job.job_number}: drawing and SMR are now locked in the CRM.`,
+          );
+        } else {
+          toast.info(res.message);
+        }
+        router.refresh();
+      } catch {
+        toast.error(`Could not lock ${job.job_number}. Please try again.`);
+      }
     });
   };
 
@@ -479,6 +537,22 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-medium leading-none ${statusPill[job.status]}`}>
                 {STATUS_LABELS[job.status]}
               </span>
+              {lockState === "locked" && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full bg-white/15 px-1.5 py-0.5 text-[10px] font-medium leading-none text-white"
+                  title="This job's drawing and site measurement report are locked in the CRM while it is in the factory. Use Release job to let the CRM change them."
+                >
+                  <Lock className="h-2.5 w-2.5" /> CRM locked
+                </span>
+              )}
+              {lockState === "released" && (
+                <span
+                  className="inline-flex items-center gap-0.5 rounded-full bg-amber-400/25 px-1.5 py-0.5 text-[10px] font-medium leading-none text-amber-100"
+                  title="Released to the CRM — its drawing and SMR can be changed there. Lock it again when the new GAD is uploaded."
+                >
+                  <LockOpen className="h-2.5 w-2.5" /> Released
+                </span>
+              )}
               {r1Panel?.hasR1 && r1Panel.status === "final" && (
                 <span
                   className="rounded-full bg-emerald-400/25 px-1.5 py-0.5 text-[10px] font-medium leading-none text-emerald-100"
@@ -523,15 +597,33 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
               {splitView ? <PanelRightClose className="h-3.5 w-3.5" /> : <Columns2 className="h-3.5 w-3.5" />}
               {splitView ? "Hide Drawing" : "Drawing"}
             </HeaderBtn>
+            {/* Only a confirmed lock can be released; while 'pending' the banner's
+                "Lock now" is the only step that makes sense. */}
+            {lockState === "locked" && (
+              <HeaderBtn
+                onClick={() => setShowRelease(true)}
+                disabled={lockBusy}
+                title="Let the CRM change this job's drawing / SMR. Puts the job on Hold and needs a reason."
+              >
+                <LockOpen className="h-3.5 w-3.5" /> Release job
+              </HeaderBtn>
+            )}
             <select
               value={job.status}
               onChange={(e) => handleStatusChange(e.target.value as JobStatus)}
               disabled={isPending}
-              title="Job status"
+              title={lockState === "released" ? RELOCK_BEFORE_UNHOLD : "Job status"}
               className="rounded bg-white/10 px-1.5 py-1 text-[11px] font-medium text-white cursor-pointer border-0 focus:outline-none focus:ring-1 focus:ring-white/50 disabled:opacity-50 [&>option]:text-black"
             >
+              {/* Released to the CRM: the job waits on Hold until it is locked
+                  again (the server refuses it too — this says so up front). */}
               {(Object.keys(STATUS_LABELS) as JobStatus[]).map((s) => (
-                <option key={s} value={s}>
+                <option
+                  key={s}
+                  value={s}
+                  disabled={lockState === "released" && s !== "hold"}
+                  title={lockState === "released" && s !== "hold" ? RELOCK_BEFORE_UNHOLD : undefined}
+                >
                   {STATUS_LABELS[s]}
                 </option>
               ))}
@@ -558,6 +650,62 @@ export function JobDetailClient({ job, bomLines, bomHeaderId, bomSectionLines, d
           </div>
         )}
       </header>
+
+      {showRelease && (
+        <ReleaseJobModal
+          jobNumber={job.job_number}
+          alreadyOnHold={job.status === "hold"}
+          busy={lockBusy}
+          onConfirm={handleRelease}
+          onCancel={() => setShowRelease(false)}
+        />
+      )}
+
+      {/* Released to the CRM — the drawing / SMR may be changing, so the job
+          waits on Hold until the factory locks it again. */}
+      {lockState === "released" && (
+        <div className="mb-4 rounded-lg border border-amber-300 bg-amber-50 px-4 py-3">
+          <div className="flex items-start gap-3">
+            <LockOpen size={18} className="mt-0.5 shrink-0 text-amber-600" />
+            <div className="flex-1 text-sm text-amber-900">
+              <div className="font-semibold">
+                Released to the CRM
+                {job.crm_released_by && job.crm_released_by !== "unknown" ? ` by ${job.crm_released_by}` : ""}
+                {job.crm_released_at && (
+                  // Fixed time zone so the server render and the browser agree on the day.
+                  <span suppressHydrationWarning>
+                    {` on ${new Date(job.crm_released_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric", timeZone: "Asia/Kolkata" })}`}
+                  </span>
+                )}
+                {job.crm_release_reason ? ` — ${job.crm_release_reason}` : ""}.
+              </div>
+              <div className="mt-0.5 text-amber-800">
+                Drawing and SMR can be changed in the CRM. Upload the new GAD here when it is ready,
+                then lock the job again.
+              </div>
+            </div>
+            <Button size="sm" onClick={() => handleLock(true)} disabled={lockBusy} className="shrink-0">
+              {lockBusy ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : <Lock className="h-4 w-4 mr-1" />}
+              Lock again
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* The CRM has not confirmed the lock (it was unreachable, or doesn't have
+          this job) — say so plainly and offer the retry. */}
+      {lockState === "pending" && (
+        <div className="mb-4 flex items-center gap-3 rounded-lg border border-[var(--border)] bg-[var(--muted)] px-4 py-2 text-sm text-[var(--muted-foreground)]">
+          <Lock size={15} className="shrink-0" />
+          <span className="flex-1">
+            CRM lock not confirmed yet — this job&apos;s drawing and SMR may still be changeable in the CRM.
+          </span>
+          <Button size="sm" variant="secondary" onClick={() => handleLock(false)} disabled={lockBusy} className="shrink-0">
+            {lockBusy ? <Loader2 className="h-4 w-4 mr-1 animate-spin" /> : null}
+            Lock now
+          </Button>
+        </div>
+      )}
 
       {/* GAD-changed-after-BOM alert — the drawing moved past what the BOM was
           reconciled against. Review the new drawing, then Mark Audited. */}

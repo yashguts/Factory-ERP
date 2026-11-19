@@ -5,6 +5,7 @@ import { createCacheClient } from "@/lib/supabase/cache-client";
 import { revalidatePath, revalidateTag, unstable_cache } from "next/cache";
 import type { JobStatus, JobStatusChange } from "@/lib/supabase/types";
 import { alertKind, reasonRequired, type StatusAlertKind } from "@/lib/jobs/status-alert";
+import { CRM_RELEASED_HOLD_MESSAGE } from "@/lib/jobs/crm-lock";
 
 /* ------------------------------------------------------------------ *
  * Job status-change alerting + audit history (047_job_status_changes).
@@ -33,11 +34,17 @@ export async function changeJobStatus(
   const supabase = await createClient();
 
   const { data: cur, error: readErr } = await supabase
-    .from("jobs").select("status").eq("id", jobId).maybeSingle();
+    .from("jobs").select("status, crm_lock_state").eq("id", jobId).maybeSingle();
   if (readErr || !cur) return { ok: false, error: readErr?.message ?? "Job not found" };
 
   const from = (cur.status as JobStatus) ?? null;
   if (from === toStatus) return { ok: true, unchanged: true };
+
+  // A job released to the CRM is having its drawing / SMR changed — the factory
+  // must not resume building until it has been locked again (079).
+  if (from === "hold" && cur.crm_lock_state === "released") {
+    return { ok: false, error: CRM_RELEASED_HOLD_MESSAGE };
+  }
 
   const cleanReason = reason?.trim() || null;
   if (reasonRequired(from, toStatus) && !cleanReason) {

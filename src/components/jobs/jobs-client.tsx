@@ -816,6 +816,22 @@ export function JobsClient({
                           GAD
                         </span>
                       )}
+                      {job.crm_lock_state === "released" && (
+                        <span
+                          title="Released to the CRM — its drawing / SMR can be changed there. The job stays on Hold until it is locked again from the job page."
+                          className="inline-flex items-center rounded bg-amber-500 px-1 py-0.5 text-[10px] font-bold leading-none text-white"
+                        >
+                          Released
+                        </span>
+                      )}
+                      {job.crm_lock_state === "pending" && (
+                        <span
+                          title="The CRM has not confirmed this job's drawing / SMR lock yet. Open the job and press Lock now."
+                          className="inline-flex items-center rounded border border-[var(--border)] bg-[var(--muted)] px-1 py-0.5 text-[10px] font-medium leading-none text-[var(--muted-foreground)]"
+                        >
+                          Not locked
+                        </span>
+                      )}
                       {!bomJobSet.has(job.id) && (
                         <span
                           title="No items filled in the Packing List R1 / BOM yet. Add items on the job's Packing List R1 to clear this."

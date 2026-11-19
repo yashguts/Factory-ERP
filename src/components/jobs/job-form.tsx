@@ -758,6 +758,9 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
       await removeGadFile(uploaded.path);
       throw new Error(created.error);
     }
+    // The job is saved either way — this only tells the operator the CRM has
+    // not confirmed the drawing/SMR lock, so they know to press "Lock now".
+    if (created.lockWarning) toast.warning(created.lockWarning);
     setSavedJobId(created.id);
     setPendingDrawing(null);
     savedDispatchDate.current = requirementDispatchDate || null;

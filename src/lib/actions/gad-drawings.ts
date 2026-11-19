@@ -5,6 +5,8 @@ import { revalidatePath, revalidateTag } from "next/cache";
 import type { createJob } from "@/lib/actions/jobs";
 import { changeJobStatus } from "@/lib/actions/job-status";
 import { checkCrmProduction } from "@/lib/actions/crm-stage";
+import { lockJobInCrm } from "@/lib/actions/crm-lock";
+import { CRM_LOCK_UNCONFIRMED_MESSAGE } from "@/lib/jobs/crm-lock";
 
 const BUCKET = "gad-drawings";
 
@@ -82,7 +84,9 @@ export async function recordGadDrawing(input: {
 }
 
 export type CreateJobWithDrawingResult =
-  | { ok: true; id: string }
+  // lockWarning: the job WAS created, but its CRM drawing/SMR lock could not be
+  // confirmed (it stayed 'pending'). Show it; never treat it as a failed save.
+  | { ok: true; id: string; lockWarning?: string }
   | { ok: false; error: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -155,10 +159,24 @@ export async function createJobWithDrawing(
     return { ok: false, error: `Could not attach the GAD drawing: ${gadErr.message}` };
   }
 
+  // The job is now in the ERP, so lock its drawings + SMR in the CRM (079).
+  // Never fails or rolls back the creation: if the CRM can't confirm, the job
+  // stays 'pending' and the job page offers "Lock now" — but it is never
+  // silent: the form is told, so the operator knows to go and press it.
+  // (ok:true covers both 'locked' and 'na'; every ok:false leaves 'pending'.)
+  let lockWarning: string | undefined;
+  try {
+    const lock = await lockJobInCrm(job.id, drawing.operator ?? null);
+    if (!lock.ok) lockWarning = CRM_LOCK_UNCONFIRMED_MESSAGE;
+  } catch (e) {
+    console.error("[crm-lock] lock after job creation failed:", e);
+    lockWarning = CRM_LOCK_UNCONFIRMED_MESSAGE;
+  }
+
   revalidateTag("jobs");
   revalidateTag("gad-alerts");
   revalidatePath("/jobs");
-  return { ok: true, id: job.id };
+  return lockWarning ? { ok: true, id: job.id, lockWarning } : { ok: true, id: job.id };
 }
 
 /**

@@ -44,6 +44,8 @@ export type DemandOverride = "jobs" | "formula" | "none";
 export type OutputRole = "component" | "cut_part" | "tooling" | "scrap";
 export type TransactionType = "purchase_in" | "production_in" | "production_out" | "adjustment" | "transfer" | "scrap" | "dispatch_out";
 export type JobStatus = "new" | "in_production" | "hold";
+export type { CrmLockState } from "@/lib/jobs/crm-lock";
+import type { CrmLockState } from "@/lib/jobs/crm-lock";
 export type JobStage = "new" | "first_phase" | "full_material";
 export type UomCategory = "quantity" | "length" | "weight" | "area" | "volume";
 
@@ -221,6 +223,16 @@ export interface Job {
   gad_uploaded_by: string | null;
   /** Whether the elevator structure is part of this job. */
   structure_included: StructureIncluded;
+  /** CRM drawing/SMR lock as the ERP last knew it (079): pending = should be
+   *  locked but the CRM hasn't confirmed; locked; released = factory released
+   *  it to the CRM; na = not a CRM job number. */
+  crm_lock_state: CrmLockState;
+  /** When the CRM last confirmed a lock or release. */
+  crm_lock_synced_at: string | null;
+  /** Last release to the CRM — kept as history after "Lock again". */
+  crm_released_at: string | null;
+  crm_released_by: string | null;
+  crm_release_reason: string | null;
   created_at: string;
   updated_at: string;
 }

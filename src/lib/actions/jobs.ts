@@ -6,6 +6,8 @@ import { unstable_cache, revalidateTag, revalidatePath } from "next/cache";
 import type { JobStatus, JobStage, JobGadVersion } from "@/lib/supabase/types";
 import { fetchAllRanged } from "@/lib/supabase/fetch-all";
 import { alertKind, reasonRequired } from "@/lib/jobs/status-alert";
+import { CRM_RELEASED_HOLD_MESSAGE } from "@/lib/jobs/crm-lock";
+import { releaseCrmLockForDelete } from "@/lib/jobs/crm-lock-server";
 
 export interface BomLineInput {
   category: string;
@@ -873,6 +875,20 @@ export async function updateJob(
       .maybeSingle();
     prevStatus = (cur?.status as JobStatus) ?? undefined;
     prevDispatchDate = (cur?.requirement_dispatch_date as string | null) ?? null;
+    // Same rule as changeJobStatus: a job released to the CRM stays on Hold
+    // until it is locked again (079). Read separately, and only when a save
+    // actually tries to take the job off Hold: the snapshot above ignores read
+    // errors, so folding the lock column into it would turn any failure of
+    // that read into a false "dispatch date changed" on every ordinary save.
+    if (data.status !== undefined && prevStatus === "hold" && data.status !== "hold") {
+      const { data: lock, error: lockErr } = await supabase
+        .from("jobs")
+        .select("crm_lock_state")
+        .eq("id", id)
+        .maybeSingle();
+      if (lockErr) throw new Error(`Could not check the job's CRM lock: ${lockErr.message}`);
+      if (lock?.crm_lock_state === "released") throw new Error(CRM_RELEASED_HOLD_MESSAGE);
+    }
   }
 
   const statusChanged =
@@ -934,8 +950,15 @@ export async function updateJob(
  */
 export async function deleteJob(
   jobId: string,
+  operator?: string | null,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!jobId) return { ok: false, error: "Missing jobId" };
+
+  // 0. The job is leaving the ERP, so its drawings + SMR must be unlocked in
+  //    the CRM first (079) — once the row is gone nobody could release it.
+  //    If the CRM can't be reached the delete is refused, nothing is touched.
+  const released = await releaseCrmLockForDelete(jobId, operator);
+  if (!released.ok) return released;
 
   const supabase = await createClient();
 
@@ -958,7 +981,14 @@ export async function deleteJob(
   // 2. Delete the job row. CASCADE handles job_bom_headers and
   //    job_bom_lines via the existing FKs.
   const { error } = await supabase.from("jobs").delete().eq("id", jobId);
-  if (error) return { ok: false, error: error.message };
+  if (error) {
+    // The CRM lock was already lifted in step 0 — the job is still here but
+    // now shows as Released. Say so, or nobody would know to lock it again.
+    const note = released.releasedNow
+      ? ' Its drawings and SMR were already unlocked in the CRM for the delete — press "Lock again" on the job if it is staying.'
+      : "";
+    return { ok: false, error: error.message + note };
+  }
 
   revalidateTag("jobs");
   revalidateTag("bom-lines");

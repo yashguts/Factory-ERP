@@ -25,7 +25,7 @@ import { cn } from "@/lib/utils";
  * stack, manual dismiss, z-index above modals (which sit at 50/60).
  */
 
-type ToastVariant = "success" | "error" | "info";
+type ToastVariant = "success" | "error" | "info" | "warning";
 
 interface ToastItem {
   id: number;
@@ -38,6 +38,8 @@ interface ToastApi {
   success: (message: string) => void;
   error: (message: string) => void;
   info: (message: string) => void;
+  /** It worked, but something needs a follow-up — amber, stays a while. */
+  warning: (message: string) => void;
 }
 
 const ToastContext = createContext<ToastApi | null>(null);
@@ -46,6 +48,7 @@ const MAX_VISIBLE = 4;
 const DURATION: Record<ToastVariant, number> = {
   success: 3500,
   info: 4500,
+  warning: 8000,
   error: 7000,
 };
 
@@ -53,12 +56,14 @@ const ICONS: Record<ToastVariant, typeof CheckCircle2> = {
   success: CheckCircle2,
   error: AlertTriangle,
   info: Info,
+  warning: AlertTriangle,
 };
 
 const STYLES: Record<ToastVariant, string> = {
   success: "border-emerald-200 bg-emerald-50 text-emerald-800",
   error: "border-red-200 bg-red-50 text-red-800",
   info: "border-blue-200 bg-blue-50 text-blue-800",
+  warning: "border-amber-300 bg-amber-50 text-amber-900",
 };
 
 export function ToastProvider({ children }: { children: React.ReactNode }) {
@@ -90,6 +95,7 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
     success: (m) => push("success", m),
     error: (m) => push("error", m),
     info: (m) => push("info", m),
+    warning: (m) => push("warning", m),
   });
   // push is stable (useCallback with stable dep), so the ref body stays valid.
 
@@ -136,6 +142,7 @@ export function useToast(): ToastApi {
       success: (m) => console.log("[toast]", m),
       error: (m) => console.error("[toast]", m),
       info: (m) => console.log("[toast]", m),
+      warning: (m) => console.warn("[toast]", m),
     };
   }
   return ctx;

@@ -3,6 +3,7 @@
 import { createClient } from "@/lib/supabase/server";
 import { revalidateTag } from "next/cache";
 import { checkCrmProduction, checkCrmProductionForJobs } from "@/lib/actions/crm-stage";
+import { lockJobsInCrm } from "@/lib/jobs/crm-lock-server";
 import type { ColumnMatchResult, JobImportResult, ParsedJobRow } from "@/lib/import/types";
 
 export async function resolveColumnMapping(
@@ -163,6 +164,10 @@ export async function executeJobImport(
     bomByJob.set(entry.jobNumber, entry.items);
   }
 
+  // Jobs created by this import — their CRM drawing/SMR lock is requested in
+  // ONE call after the loop (079), not one CRM round trip per row.
+  const createdJobs: { id: string; job_number: string; row: number }[] = [];
+
   for (let i = 0; i < jobs.length; i++) {
     const job = jobs[i];
     try {
@@ -237,6 +242,7 @@ export async function executeJobImport(
         }
         jobId = newJob.id;
         result.created++;
+        createdJobs.push({ id: jobId, job_number: job.job_number, row: i + 1 });
       }
 
       // Handle BOM lines
@@ -293,6 +299,44 @@ export async function executeJobImport(
       result.errors.push({
         row: i + 1,
         message: e instanceof Error ? e.message : "Unknown error",
+      });
+    }
+  }
+
+  // New jobs in the ERP → lock their drawings + SMR in the CRM (079), all in
+  // one go. A lock that can't be confirmed never fails the import (the rows
+  // stay counted as created); the job stays 'pending', its page offers
+  // "Lock now", and it is named below so the gap is not silent.
+  if (createdJobs.length > 0) {
+    let unconfirmed = createdJobs;
+    try {
+      await lockJobsInCrm(createdJobs.map((j) => j.id), "Excel import");
+      // Ask the ERP what actually stuck rather than interpreting the bulk
+      // answer: 'pending' is exactly "the CRM did not confirm".
+      const stillPending = new Set<string>();
+      let readOk = true;
+      const CHUNK = 200;
+      for (let c = 0; c < createdJobs.length; c += CHUNK) {
+        const { data, error } = await supabase
+          .from("jobs")
+          .select("id")
+          .in("id", createdJobs.slice(c, c + CHUNK).map((j) => j.id))
+          .eq("crm_lock_state", "pending");
+        if (error) {
+          readOk = false;
+          break;
+        }
+        for (const r of data ?? []) stillPending.add(r.id as string);
+      }
+      // If the check itself failed, nothing is confirmed — name every new job.
+      if (readOk) unconfirmed = createdJobs.filter((j) => stillPending.has(j.id));
+    } catch (e) {
+      console.error("[crm-lock] lock after import failed:", e);
+    }
+    for (const j of unconfirmed) {
+      result.errors.push({
+        row: j.row,
+        message: `Job ${j.job_number} was created, but its CRM lock is not confirmed — open the job and press Lock now.`,
       });
     }
   }
