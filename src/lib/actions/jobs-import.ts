@@ -2,6 +2,7 @@
 
 import { createClient } from "@/lib/supabase/server";
 import { revalidateTag } from "next/cache";
+import { checkCrmProduction, checkCrmProductionForJobs } from "@/lib/actions/crm-stage";
 import type { ColumnMatchResult, JobImportResult, ParsedJobRow } from "@/lib/import/types";
 
 export async function resolveColumnMapping(
@@ -122,12 +123,22 @@ export async function validateJobImport(
 
   const existingSet = new Set((existingJobs ?? []).map((j) => j.job_number));
 
+  // CRM production gate — only NEW jobs are checked; rows that update a job
+  // already in the ERP pass through untouched.
+  const crm = await checkCrmProductionForJobs(
+    jobNumbers.filter((n) => n && !existingSet.has(n)),
+  );
+
   return jobs.map((job) => {
     if (!job.job_number) {
       return { job, status: "error" as const, error: "Missing job number" };
     }
     if (existingSet.has(job.job_number)) {
       return { job, status: "update" as const };
+    }
+    const check = crm[job.job_number];
+    if (check && !check.allowed) {
+      return { job, status: "error" as const, error: check.message };
     }
     return { job, status: "new" as const };
   });
@@ -192,6 +203,12 @@ export async function executeJobImport(
         jobId = existing.id;
         result.updated++;
       } else {
+        // CRM production gate (enforced here too, not just in the preview).
+        const check = await checkCrmProduction(job.job_number);
+        if (!check.allowed) {
+          result.errors.push({ row: i + 1, message: check.message });
+          continue;
+        }
         // Create new job
         const { data: newJob, error } = await supabase
           .from("jobs")

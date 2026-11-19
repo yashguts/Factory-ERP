@@ -23,6 +23,7 @@ import {
   ElevatorSpecPanel,
 } from "@/components/jobs/job-form-panels";
 import { createJobWithDrawing } from "@/lib/actions/gad-drawings";
+import { checkCrmProduction, type CrmProductionCheck } from "@/lib/actions/crm-stage";
 import { ensureDrawingRead } from "@/lib/actions/spec-vision";
 import { uploadGadFile, removeGadFile } from "@/lib/jobs/gad-upload";
 import {
@@ -237,6 +238,38 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     };
   }, []);
 
+  // ── CRM production gate (new jobs only) ───────────────────────────
+  // A job can only be added once its CRM has it at Production Initiated
+  // (owner rule, 2026-11-19). Checked live as the number is typed so the
+  // operator sees the reason up front; createJobWithDrawing re-checks on the
+  // server. null = not checked yet / still checking (doesn't block the form).
+  const [crmCheck, setCrmCheck] = useState<CrmProductionCheck | null>(null);
+  const [crmChecking, setCrmChecking] = useState(false);
+  useEffect(() => {
+    const jn = jobNumber.trim();
+    setCrmCheck(null);
+    if (savedJobId || !jn) {
+      setCrmChecking(false);
+      return;
+    }
+    setCrmChecking(true);
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      try {
+        const res = await checkCrmProduction(jn);
+        if (!cancelled) setCrmCheck(res);
+      } catch {
+        // Leave it unchecked — the server-side check still decides on save.
+      } finally {
+        if (!cancelled) setCrmChecking(false);
+      }
+    }, 500);
+    return () => {
+      cancelled = true;
+      clearTimeout(t);
+    };
+  }, [jobNumber, savedJobId]);
+
   // ── Required-field validation ─────────────────────────────────────
   // Both "Save Details" and any "Save Phase" action must enforce that
   // these fields are filled. Returns a list of human-readable labels of
@@ -258,9 +291,15 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     if (!savedJobId && !pendingDrawing) {
       missing.push("GAD Drawing (upload it in the Drawing pane)");
     }
+    // A CRM being unreachable isn't the operator's to fix in the form — leave
+    // the button live so a retry re-checks on the server.
+    if (!savedJobId && crmCheck && !crmCheck.allowed && crmCheck.reason !== "unavailable") {
+      missing.push("CRM stage: Production Initiated");
+    }
     return missing;
   }, [
     savedJobId,
+    crmCheck,
     pendingDrawing,
     jobNumber,
     customerName,
@@ -701,6 +740,12 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
     if (!pendingDrawing) {
       throw new Error("A GAD drawing is required — upload it before creating the job.");
     }
+    // CRM gate before the upload, so a blocked job doesn't push a file first.
+    const crm = await checkCrmProduction(jobNumber);
+    if (!crm.allowed) {
+      setCrmCheck(crm);
+      throw new Error(crm.message);
+    }
     const newId = crypto.randomUUID();
     const operator = readOperator();
     const uploaded = await uploadGadFile(newId, pendingDrawing);
@@ -959,6 +1004,8 @@ export function JobForm({ mode, job, existingItemLines }: Props) {
         stage={stage}
         requirementStage={requirementStage}
         requirementDispatchDate={requirementDispatchDate}
+        crmCheck={savedJobId ? null : crmCheck}
+        crmChecking={!savedJobId && crmChecking}
         setJobNumber={setJobNumber}
         setCustomerName={setCustomerName}
         setMobileNumber={setMobileNumber}

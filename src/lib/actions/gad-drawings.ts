@@ -4,6 +4,7 @@ import { createClient } from "@/lib/supabase/server";
 import { revalidatePath, revalidateTag } from "next/cache";
 import type { createJob } from "@/lib/actions/jobs";
 import { changeJobStatus } from "@/lib/actions/job-status";
+import { checkCrmProduction } from "@/lib/actions/crm-stage";
 
 const BUCKET = "gad-drawings";
 
@@ -110,6 +111,11 @@ export async function createJobWithDrawing(
   if (!drawing?.path || !drawing.path.startsWith(`${job.id}/`)) {
     return { ok: false, error: "A GAD drawing is required to create a job." };
   }
+
+  // Owner rule (2026-11-19): the job must already be at Production Initiated
+  // (or later) in its CRM. Enforced here so the form can't be bypassed.
+  const crm = await checkCrmProduction(job.job_number);
+  if (!crm.allowed) return { ok: false, error: crm.message };
 
   const supabase = await createClient();
   const {

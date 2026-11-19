@@ -16,6 +16,7 @@ import {
   type JobStage,
   type StructureIncluded,
 } from "@/lib/supabase/types";
+import type { CrmProductionCheck } from "@/lib/actions/crm-stage";
 
 /* ------------------------------------------------------------------ */
 /*  Shared types                                                      */
@@ -71,6 +72,9 @@ interface JobDetailsPanelProps {
   stage: JobStage;
   requirementStage: JobStage;
   requirementDispatchDate: string;
+  /** New jobs only: live CRM production-gate result for the typed number. */
+  crmCheck?: CrmProductionCheck | null;
+  crmChecking?: boolean;
 
   setJobNumber: (v: string) => void;
   setCustomerName: (v: string) => void;
@@ -99,6 +103,8 @@ export function JobDetailsPanel({
   stage,
   requirementStage,
   requirementDispatchDate,
+  crmCheck,
+  crmChecking,
   setJobNumber,
   setCustomerName,
   setMobileNumber,
@@ -142,6 +148,21 @@ export function JobDetailsPanel({
             placeholder="e.g. 1234 or LT-001"
             disabled={mode === "edit" || !!savedJobId}
           />
+          {crmChecking ? (
+            <p className="mt-1 text-[11px] text-[var(--muted-foreground)]">
+              Checking CRM stage…
+            </p>
+          ) : crmCheck ? (
+            <p
+              className={
+                crmCheck.allowed
+                  ? "mt-1 text-[11px] text-[var(--success)]"
+                  : "mt-1 text-[11px] text-[var(--warning)]"
+              }
+            >
+              {crmCheck.message}
+            </p>
+          ) : null}
         </Field>
         <Field label="Customer Name *">
           <Input
